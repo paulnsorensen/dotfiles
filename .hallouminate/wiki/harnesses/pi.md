@@ -26,7 +26,7 @@ Pi uses pinned mainstream packages:
 
 `sync_pi_packages` runs `pi update --extensions` after chezmoi applies the managed settings. Exact package sources remain pinned. Renovate owns package updates in `pi.yaml`.
 
-The permission configuration replaces a harness-specific secret guard. It denies secret-bearing paths across built-in tools, Bash, MCP, and extension tools while allowing known public companion files.
+The permission configuration replaces a harness-specific secret guard. It denies secret-bearing paths across built-in tools, Bash, MCP, and extension tools while allowing known public companion files. Global `yoloMode` auto-approves `ask` decisions, but explicit `deny` rules still block access.
 
 ## Shared resources
 

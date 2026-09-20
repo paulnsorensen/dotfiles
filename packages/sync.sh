@@ -509,17 +509,22 @@ sync_npm() {
 
     log_info "Syncing npm packages"
     local installed
-    installed=$(npm ls -g --json 2>/dev/null | jq -r '.dependencies // {} | keys[]' || true)
+    installed=$(npm ls -g --json 2>/dev/null | jq -r '
+        .dependencies // {} | to_entries[]
+        | [.key, (.value.version // "-")] | @tsv
+    ' || true)
 
     while IFS=$'\t' read -r name pkg version flags_json; do
         [[ -z "$name" ]] && continue
-        local flag
+        local flag installed_version
         local -a install_args=(-g)
         while IFS= read -r flag; do
             install_args+=("$flag")
         done < <(jq -r '.[]' <<<"$flags_json")
 
-        if grep -qx "$pkg" <<<"$installed" && [[ "$missing_only" == "true" ]]; then
+        installed_version=$(awk -F '\t' -v package="$pkg" '$1 == package { print $2; exit }' <<<"$installed")
+        if [[ "$missing_only" == "true" && -n "$installed_version" ]] &&
+            [[ "$version" == "-" || "$installed_version" == "$version" ]]; then
             echo "  + $name"
             continue
         fi
@@ -530,7 +535,7 @@ sync_npm() {
                 log_error "Failed to install $pkg@$version"
                 FAILED+=("$pkg")
             fi
-        elif grep -qx "$pkg" <<<"$installed"; then
+        elif [[ -n "$installed_version" ]]; then
             echo "  + $name"
         else
             echo "  Installing $pkg..."

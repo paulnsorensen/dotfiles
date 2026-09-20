@@ -176,7 +176,9 @@ run_sync() {
     install_tilth_claude_code
     reconcile_claude_mcps
     sync_omp_plugins "$dir"
-    sync_pi_packages
+    if ! sync_pi_packages; then
+        SYNC_FAILURES+=("pi-packages")
+    fi
 
     unset DOTFILES_DEV
 

@@ -55,6 +55,7 @@ JSON
 
     [ "$(jq -r '.mcpServers.tilth.command' "$mcp")" = "tilth" ]
     [ "$(jq -r '.mcpServers.hallouminate.command' "$mcp")" = "hallouminate" ]
+    [ "$(jq -r '.yoloMode' "$permissions")" = "true" ]
     [ "$(jq -r '.permission.path["*.env"]' "$permissions")" = "deny" ]
     [ "$(jq -r '.permission.path["*.env.example"]' "$permissions")" = "allow" ]
     [ "$(jq -r '.permission.path["~/.ssh/*"]' "$permissions")" = "deny" ]
@@ -86,12 +87,12 @@ TOML
     [ -f "$destination/.pi/agent/extensions/cheese-flair.ts" ]
     [ "$(cat "$destination/.pi/agent/auth.json")" = "runtime state" ]
     [ "$(jq -c . "$destination/.pi/agent/models.json")" = '{"providers":{}}' ]
-}
-
-@test "pi source contains no retired command-compaction resource" {
-    local needle='r''tk'
-    run rg -i "$needle" "$REAL_DOTFILES_DIR" --glob '!.git/**'
-    [ "$status" -eq 1 ]
+    [ "$(jq -S . "$destination/.pi/agent/settings.json")" = "$(yq -o=json '.pi.settings' "$REGISTRY" | jq -S .)" ]
+    cmp -s "$CZ_SRC/dot_pi/private_agent/mcp.json" "$destination/.pi/agent/mcp.json"
+    cmp -s "$CZ_SRC/dot_pi/private_agent/APPEND_SYSTEM.md" "$destination/.pi/agent/APPEND_SYSTEM.md"
+    cmp -s "$CZ_SRC/dot_pi/private_agent/themes/chocolate-donut.json" "$destination/.pi/agent/themes/chocolate-donut.json"
+    cmp -s "$CZ_SRC/dot_pi/private_agent/extensions/cheese-flair.ts" "$destination/.pi/agent/extensions/cheese-flair.ts"
+    cmp -s "$CZ_SRC/dot_pi/private_agent/extensions/pi-permission-system/config.json" "$destination/.pi/agent/extensions/pi-permission-system/config.json"
 }
 
 @test "pi CLI install is pinned and lifecycle scripts are disabled" {

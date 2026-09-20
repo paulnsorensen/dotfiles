@@ -50,8 +50,8 @@ Flattened from user `message.content[]` blocks where `type='tool_result'`.
 
 ## `stop_events`
 
-Assistant messages where the model stopped generating (claude, cursor, and omp;
-omp quota stalls show as `error`). Columns: `harness`,
+Assistant messages where the model stopped generating (claude, cursor, omp, and pi;
+omp and pi quota stalls show as `error`). Columns: `harness`,
 `stop_reason`, `timestamp`, `sessionId`, `cwd`, `gitBranch`.
 
 ## `model_turns`
@@ -62,13 +62,13 @@ into several raw entries; this table groups them by `message.id`.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| harness | VARCHAR | Source harness (claude and omp; codex and cursor name no model) |
-| model | VARCHAR | Model id; omp uses `<provider>/<model>`, or the bare model when the log names no provider |
-| stop_reason | VARCHAR | Canonical stop reason; omp `toolUse`/`stop` map to `tool_use`/`end_turn` |
-| error_message | VARCHAR | Provider error text on an `error` stop (omp only) |
+| harness | VARCHAR | Source harness (claude, omp, and pi; codex and cursor name no model) |
+| model | VARCHAR | Model id; omp and pi use `<provider>/<model>`, or the bare model when the log names no provider |
+| stop_reason | VARCHAR | Canonical stop reason; omp and pi `toolUse`/`stop` map to `tool_use`/`end_turn` |
+| error_message | VARCHAR | Provider error text on an `error` stop (omp and pi) |
 | input_tokens / output_tokens / cache_read_tokens | BIGINT | Token usage for the turn |
-| prompt_tokens | BIGINT | Full context size sent for the turn (omp only) |
-| duration_ms / ttft_ms | DOUBLE | Model round-trip time and time to first token (omp only) |
+| prompt_tokens | BIGINT | Full context size sent for the turn (omp and pi) |
+| duration_ms / ttft_ms | DOUBLE | Model round-trip time and time to first token (omp and pi) |
 | tool_calls | BIGINT | Tool calls issued in the turn; 1 means the turn did not batch |
 | timestamp, sessionId, cwd | VARCHAR | Join keys |
 

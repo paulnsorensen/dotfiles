@@ -195,6 +195,24 @@ MOCK
     [ "$(cat "$PI_LOG")" = "update --extensions" ]
 }
 
+@test "Pi package reconcile failure reaches the sync summary" {
+    cd "$FAKE_DOTFILES"
+    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
+    rm -f "$MOCK_BIN/pi"
+    cat > "$MOCK_BIN/pi" <<'MOCK'
+#!/bin/bash
+case "$1" in
+    --version) printf '0.86.0\n' ;;
+    update) exit 1 ;;
+esac
+MOCK
+    chmod +x "$MOCK_BIN/pi"
+
+    run bash "$SYNC_SCRIPT"
+    assert_failure
+    assert_output_contains "Sync completed with FAILURES in: pi-packages"
+}
+
 @test "Pi version mismatch fails the harness gate" {
     rm -f "$MOCK_BIN/pi"
     cat > "$MOCK_BIN/pi" <<'MOCK'

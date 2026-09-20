@@ -12,6 +12,9 @@ stops/disables/masks them so a still-running stale copy can't restart. */ -}}
 .config/systemd/user/worker-opus.service
 local-llm/configs/lean.json
 {{ end }}
+.omp/agent/extensions/rtk.ts
+.config/rtk/filters.toml
+.claude/RTK.md
 .omp/agent/extensions/no-fork-all.ts
 
 # Retired native harnesses. Remove their configuration and runtime state;

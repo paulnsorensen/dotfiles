@@ -184,7 +184,28 @@ Copilot's chezmoi template can render into TMP without applying it:
 Cursor and Copilot extras remain user-owned. Compare only declared plugin names,
 MCP names, hook names, and counts. Do not classify every live-only entry as stale.
 
-Pi follows the same modify-script comparison pattern. Preserve `lastChangelogVersion` and compare only managed settings paths.
+Pi follows the same modify-script comparison pattern. Preserve `lastChangelogVersion` and compare only managed settings paths:
+
+    yq -o=json '.pi.settings' "$DOTFILES_DIR/chezmoi/.chezmoidata/pi.yaml" |
+      jq -S '.' > "$TMP/pi-desired.json"
+    jq -S --slurpfile desired "$TMP/pi-desired.json" '
+      . as $live
+      | reduce ($desired[0] | paths(scalars)) as $path
+          ({}; setpath($path; (try ($live | getpath($path)) catch null)))
+      | if $live | has("lastChangelogVersion")
+        then .lastChangelogVersion = $live.lastChangelogVersion
+        else . end
+    ' "$HOME/.pi/agent/settings.json" > "$TMP/pi-modifier-input.json"
+    CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" sh "$DOTFILES_DIR/chezmoi/dot_pi/private_agent/modify_settings.json" < "$TMP/pi-modifier-input.json" |
+      jq 'del(.lastChangelogVersion)' |
+      normalize_scalars - > "$TMP/pi-owner-scalars"
+    jq -S --slurpfile desired "$TMP/pi-desired.json" '
+      . as $live
+      | reduce ($desired[0] | paths(scalars)) as $path
+          ({}; setpath($path; (try ($live | getpath($path)) catch null)))
+    ' "$HOME/.pi/agent/settings.json" |
+      normalize_scalars - > "$TMP/pi-live-scalars"
+    compare_scalars "$TMP/pi-owner-scalars" "$TMP/pi-live-scalars"
 
 When OMP is in scope, run its modify script into TMP and compare normalized values:
 

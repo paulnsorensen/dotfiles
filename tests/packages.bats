@@ -959,7 +959,7 @@ YAML
     cat > "$MOCK_BIN/npm" <<'MOCKNPM'
 #!/bin/bash
 echo "npm $*" >> "$NPM_LOG"
-[[ "$1" == "ls" ]] && echo '{"dependencies":{"@earendil-works/pi-coding-agent":{}}}'
+[[ "$1" == "ls" ]] && echo '{"dependencies":{"@earendil-works/pi-coding-agent":{"version":"0.86.0"}}}'
 exit 0
 MOCKNPM
     chmod +x "$MOCK_BIN/npm"
@@ -967,6 +967,27 @@ MOCKNPM
     run bash "$SYNC_SCRIPT"
     assert_success
     ! grep -q '^npm install ' "$NPM_LOG"
+}
+
+@test "sync cache repairs a mismatched pinned npm package" {
+    cat > "$PACKAGES_FILE" <<'YAML'
+packages:
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.86.0", flags: ["--ignore-scripts"] }
+YAML
+    run_sync
+    assert_success
+    rm -f "$NPM_LOG" "$MOCK_BIN/npm"
+    cat > "$MOCK_BIN/npm" <<'MOCKNPM'
+#!/bin/bash
+echo "npm $*" >> "$NPM_LOG"
+[[ "$1" == "ls" ]] && echo '{"dependencies":{"@earendil-works/pi-coding-agent":{"version":"0.85.1"}}}'
+exit 0
+MOCKNPM
+    chmod +x "$MOCK_BIN/npm"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    grep -qx "npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.86.0" "$NPM_LOG"
 }
 
 @test "sync cache restores every configured mise package" {
