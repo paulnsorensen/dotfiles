@@ -106,7 +106,7 @@ block_sha() {
 
     for contract in '>1 file or adds public surface' \
         'taste_test: deferred-to-orchestrator' \
-        'next: reviewer' \
+        'phase-owned handoff rules below take precedence' \
         'Review mode: taste-test' \
         'contract, diff, cut-test list, and locked decisions' \
         'do not return `next: done` while deferred'; do
@@ -183,6 +183,28 @@ block_sha() {
     # The resume brief records the worktree so a resumed coder does not pay a cold install.
     run grep -Fq 'record the absolute worktree path and base SHA' "$coder"
     assert_success
+}
+
+@test "coder active-phase context handoff stays phase-owned and compact" {
+    local coder="$AGENTS_DIR/agent_definitions/coder.md"
+
+    for contract in 'status: needs-context' 'phase-owned handoff' 'checkpoint observations' 'completed edits' 'exact remaining behavior' 'targeted file ranges' 'gate results' 'worktree+base' 'locked decisions' 'parent persists'; do
+        run grep -Fqi "$contract" "$coder"
+        assert_success
+    done
+    run grep -Fq '.cheese/notes/' "$coder"
+    assert_failure
+    run grep -Fq 'next: reviewer' "$coder"
+    assert_failure
+    run grep -Fq 'next: cook' "$coder"
+    assert_failure
+}
+
+@test "delegation names phase-owned context recovery" {
+    for contract in 'active phase' 'phase-owned' 'status: needs-context' 'parent persists' 'one fresh retry'; do
+        run grep -Fqi "$contract" "$PREAMBLE"
+        assert_success
+    done
 }
 
 @test "reviewer may write only its own artifact through tilth_write" {

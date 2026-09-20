@@ -41,3 +41,6 @@ Require compact evidence and blockers, not raw transcripts.
 Use `taste-tester` for a taste-test and `reviewer` for a severity report.
 Keep reviews read-only unless the user requests fixes.
 Reuse verified worktree and base-commit context when resuming.
+For an active phase, the coder returns `status: needs-context` with compact checkpoint observations.
+The parent persists those observations through the phase-owned checkpoint protocol, resolves authoritative `working_context`, and performs one fresh retry in the same phase.
+The parent must not auto-implement the remainder after context exhaustion.

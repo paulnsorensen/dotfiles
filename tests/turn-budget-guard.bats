@@ -192,7 +192,17 @@ post_event() {
     seed_turns s1 a1 100
     fire "$(pre_event s1 a1 coder)"
     [[ "$(verdict)" == "deny" ]]
-    [[ "$output" == *"status: blocked: out of context"* ]]
+    [[ "$output" == *"status: needs-context"* ]]
+    [[ "$output" == *"local guard budget"* ]]
+    [[ "$output" == *"not a provider context failure"* ]]
+}
+
+@test "A1: non-coder hard-ceiling message reports a blocker instead of needs-context" {
+    seed_turns s1 reviewer1 50
+    fire "$(pre_event s1 reviewer1 reviewer)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$output" == *"status: blocked: <reason>"* ]]
+    [[ "$output" != *"status: needs-context"* ]]
 }
 
 # ── A2 ── hard context wall ──────────────────────────────────────
@@ -422,11 +432,25 @@ post_event() {
     fire "$(post_event s3 c1 coder)"
     [[ "$(verdict)" == "nudge" ]]
     [[ "$output" == *"wrap up"* ]]
+    [[ "$output" == *"return compact checkpoint observations inline"* ]]
+    [[ "$output" == *"do not persist a checkpoint"* ]]
     [[ "$output" == *"non-checkpoint tool calls are hard-blocked"* ]]
+    [[ "$output" == *"local guard budget"* ]]
+    [[ "$output" == *"not a provider context failure"* ]]
+
 
     # Marker set — a second PostToolUse must not nudge again.
     fire "$(post_event s3 c1 coder)"
     [[ "$(verdict)" == "allow" ]]
+}
+
+@test "A3: non-coder soft nudge keeps blocker handoff guidance" {
+    seed_turns s3 reviewer1 40
+    fire "$(post_event s3 reviewer1 reviewer)"
+    [[ "$(verdict)" == "nudge" ]]
+    [[ "$output" == *"Persist compact handoff observations"* ]]
+    [[ "$output" == *"status: blocked: <reason>"* ]]
+    [[ "$output" != *"status: needs-context"* ]]
 }
 
 @test "A3: nudge is logged once and later PostToolUse records already-nudged" {
@@ -464,7 +488,9 @@ post_event() {
     [[ "$(verdict)" == "nudge" ]]
     [[ "$output" == *"hard ceiling"* ]]
     [[ "$output" == *"mcp__tilth__tilth_write"* ]]
-    [[ "$output" == *"status: blocked: out of context"* ]]
+    [[ "$output" == *"status: needs-context"* ]]
+    [[ "$output" == *"local guard budget"* ]]
+    [[ "$output" == *"not a provider context failure"* ]]
     [[ -f "$CLAUDE_TURN_BUDGET_DIR/s3b/d1/hard-nudged" ]]
     [[ -f "$CLAUDE_TURN_BUDGET_DIR/s3b/d1/nudged" ]]
 

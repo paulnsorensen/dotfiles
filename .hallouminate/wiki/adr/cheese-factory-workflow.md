@@ -67,3 +67,23 @@ Decisions behind replacing `claude/workflows/curd-flock.js` with the spec-driven
 - **Consequences:** partial cook work is durable and usually completed within the run at the cost of ≤2 extra sonnet dispatches per drowned curd. A cook that reports `blocked` without a `worktree_path` still fails immediately — nothing to continue from.
 
 _Source: preamble and coder prompt consolidation · Updated: 2026-07-28 · Supersedes: preamble-owned fan-out and continuation attributions_
+
+## ADR-010: Phase-owned checkpoint before one targeted Cook retry [status: accepted]
+
+This decision replaces ADR-009's recovery procedure, not its requirement to preserve partial work.
+The September 19, 2026 session shows that handwritten notes and broad continuation assignments still exhaust coders.[^recovery-20260919]
+
+The worker returns compact observations with `needs-context`.
+The workflow delegates persistence to one checkpoint coordinator because its JavaScript runtime exposes no filesystem or process primitive.
+That coordinator invokes the installed Wheypoint capability without modifying source.
+The workflow starts one fresh coder only after the coordinator confirms authoritative context for the same worktree.
+The fresh coder reads the resolved ranges before implementation.
+Missing observations, failed resolution, and second exhaustion halt.
+Generic `blocked` and `halt` statuses do not imply context recovery.[^recovery-20260919]
+
+The procedure removes blanket WIP staging, branch recreation, and broad diff rereads from the recovery prompt.
+It leaves model selections and worker budget caps unchanged.
+The parent must not implement the remainder automatically.
+The coordinator's verified response remains an agent trust boundary; deterministic workflow tests verify routing, not model execution.[^recovery-20260919]
+
+[^recovery-20260919]: `claude/workflows/cheese-factory.js` (`checkpointPrompt`, `validCheckpointResult`, Cook pipeline stage); `tests/workflows/cheese-factory.test.mjs`; [[operations/subagent-dispatch-analytics]]. Decision: September 19, 2026.
