@@ -85,6 +85,12 @@ teardown() { teardown_test_env; }
     assert_file_exists "$target"
 }
 
+@test "run-on-change installs shared instructions for Pi" {
+    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl"
+
+    grep -Fq '"$HOME/.pi/agent/AGENTS.md"' "$template"
+}
+
 @test "run-on-change installs the shared Sliced Bread reference" {
     local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl"
 

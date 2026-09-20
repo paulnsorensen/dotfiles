@@ -488,9 +488,18 @@ sync_cargo() {
 ########## NPM
 
 sync_npm() {
+    local missing_only="${1:-false}"
     local npm_pkgs skip_platform
     if [[ "$PLATFORM" == "Darwin" ]]; then skip_platform="linux"; else skip_platform="mac"; fi
-    npm_pkgs=$(yq -r ".packages[] | select(kind == \"map\") | to_entries[0] | select(.value.source == \"npm\" and (.value.platform == \"$skip_platform\" | not)) | [.key, (.value.pkg // .key), (.value.version // \"\")] | @tsv" "$PACKAGES_FILE" 2>/dev/null)
+    npm_pkgs=$(
+        yq -o=json '.packages' "$PACKAGES_FILE" |
+            jq -r --arg skip "$skip_platform" '
+                .[] | select(type == "object") | to_entries[0]
+                | select(.value.source == "npm" and .value.platform != $skip)
+                | [.key, (.value.pkg // .key), (.value.version // "-"), ((.value.flags // []) | @json)]
+                | @tsv
+            '
+    )
     [[ -z "$npm_pkgs" ]] && return 0
 
     if ! command -v npm &>/dev/null; then
@@ -502,20 +511,30 @@ sync_npm() {
     local installed
     installed=$(npm ls -g --json 2>/dev/null | jq -r '.dependencies // {} | keys[]' || true)
 
-    while IFS=$'\t' read -r name pkg version; do
+    while IFS=$'\t' read -r name pkg version flags_json; do
         [[ -z "$name" ]] && continue
+        local flag
+        local -a install_args=(-g)
+        while IFS= read -r flag; do
+            install_args+=("$flag")
+        done < <(jq -r '.[]' <<<"$flags_json")
 
-        if [[ -n "$version" ]]; then
+        if grep -qx "$pkg" <<<"$installed" && [[ "$missing_only" == "true" ]]; then
+            echo "  + $name"
+            continue
+        fi
+
+        if [[ "$version" != "-" ]]; then
             echo "  Installing $pkg@$version (pinned)..."
-            if ! npm install -g "$pkg@$version" </dev/null; then
+            if ! npm install "${install_args[@]}" "$pkg@$version" </dev/null; then
                 log_error "Failed to install $pkg@$version"
                 FAILED+=("$pkg")
             fi
-        elif echo "$installed" | grep -qx "$pkg"; then
+        elif grep -qx "$pkg" <<<"$installed"; then
             echo "  + $name"
         else
             echo "  Installing $pkg..."
-            if ! npm install -g "$pkg" </dev/null; then
+            if ! npm install "${install_args[@]}" "$pkg" </dev/null; then
                 log_error "Failed to install $pkg"
                 FAILED+=("$pkg")
             fi
@@ -938,6 +957,7 @@ if check_cache; then
     log_success "Package manifests unchanged (cached), syncing mise"
     heal_missing_cask_apps
     sync_mise
+    sync_npm true
     if ((${#FAILED[@]})); then
         log_error "failed to heal ${#FAILED[@]} package(s): ${FAILED[*]}"
         exit 1

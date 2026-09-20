@@ -3,8 +3,8 @@
 How this dotfiles repo configures AI coding agents: shared registries rendered by `ap` where schemas align, plus native chezmoi registries where a harness needs first-class ownership.
 
 - [[agents-dir]] — the `agents/` registry system: MCP / hook / sub-agent / skill registries, the system-prompt body, and the shared cheese-flair assets. Declares *what* every agent gets.
-- [[global-agents-doc]] — the `agents/AGENTS.md` global agent doc deployed to Claude and Codex, with routing detail kept in the system-prompt layer.
-- [[agent-profile]] — the `ap` tool (`agent-profile/`): profiles, the four render targets (`claude`, `codex`, `cursor`, `copilot`), install vs launch, and the chezmoi drive path. OMP deliberately lives outside this compiler.
+- [[global-agents-doc]] — the `agents/AGENTS.md` global agent doc deployed to Claude, Codex, and Pi, with routing detail kept in the system-prompt layer.
+- [[agent-profile]] — the `ap` tool (`agent-profile/`): profiles, the four render targets (`claude`, `codex`, `cursor`, `copilot`), install vs launch, and the chezmoi drive path. OMP and Pi deliberately live outside this compiler.
 - [[cross-harness-plugins]] — the 5th registry (`agents/plugins/registry.yaml`): how `ap`'s `_expand_plugins` decomposes a plugin into MCP / skill / agent / hook primitives, the native-vs-decomposed install split and DEDUP, and the marketplace-root vs payload-root path model.
 - [[agent-vs-skill-tiering]] — when a behaviour earns a sub-agent vs a skill (the two axes: isolation, detect-vs-fix), the cross-repo ownership constraint (dotfiles agents ↔ easy-cheese skills), the self-filter-vs-wire-protocol scoring rule, and the deferred cheese-agent cleanup backlog.
 - [[subagent-turn-budgets]] — the measured turn and context distributions behind the `maxTurns` caps (PR #344): per-agent p50/p90/p95/max, the 120K "dumb zone" crossing data (a sub-agent caps credit burn, not context quality), and why built-in agents (`general-purpose`/`Explore`/`Plan`) sit outside the cap's reach.

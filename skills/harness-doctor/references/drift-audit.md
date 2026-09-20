@@ -25,6 +25,7 @@ retired file-reader names. Never print live values or raw file differences.
 | Cursor | User-owned live files and declared Cursor plugin projections | ~/.cursor/mcp.json, ~/.cursor/hooks.json |
 | Copilot | Chezmoi templates and declared profile projections | ~/.copilot/mcp-config.json, ~/.copilot/hooks/ |
 | OMP | chezmoi/.chezmoidata/omp.yaml and dot_omp/private_agent/modify_config.yml | ~/.omp/agent/config.yml, when OMP is in scope |
+| Pi | chezmoi/.chezmoidata/pi.yaml and dot_pi/private_agent/modify_settings.json | ~/.pi/agent/settings.json |
 
 Claude settings ownership includes static settings, Claude registry keys, and
 gate-filtered native plugin overlays. Codex overlays declared keys and MCP servers
@@ -182,6 +183,8 @@ Copilot's chezmoi template can render into TMP without applying it:
 
 Cursor and Copilot extras remain user-owned. Compare only declared plugin names,
 MCP names, hook names, and counts. Do not classify every live-only entry as stale.
+
+Pi follows the same modify-script comparison pattern. Preserve `lastChangelogVersion` and compare only managed settings paths.
 
 When OMP is in scope, run its modify script into TMP and compare normalized values:
 

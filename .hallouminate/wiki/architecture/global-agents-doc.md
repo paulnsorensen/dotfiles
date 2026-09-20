@@ -1,8 +1,7 @@
 # The global agents doc — what lives where and why
 
 `agents/AGENTS.md` is the single source for cross-project agent preferences.
-`dots sync` installs it as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`.
-The current shared agents document has no RTK import.
+`dots sync` installs it for Claude, Codex, and Pi.
 
 ## Why routing detail lives in the preamble, not the agents doc
 
@@ -12,11 +11,7 @@ Codex's `model_instructions_file`; the agents doc loads as additional context.
 Duplicating routing guidance in both paid its token cost twice, so the preamble
 owns task-to-tool routing and the agents doc keeps stable cross-project rules.
 
-OMP uses its own native `~/.omp/agent/APPEND_SYSTEM.md`; its prompt contract is
-not forced through the Claude/Codex preamble installer.
-
-An earlier review removed duplicated RTK command tables.
-The former `agents/RTK.md` source is no longer present; it is not part of the measured stack.
+OMP and Pi use native prompt addenda. Their prompt contracts are not forced through the Claude/Codex preamble installer.
 
 ### tilth search v2 graduated to the canonical surface (2026-09-07)
 
@@ -74,8 +69,7 @@ They exclude native prompts, tool schemas, loaded skills, agent bodies, user mes
 | OMP addendum | 816 / 820 | 419 / 422 | 500 |
 
 Claude's default wrappers use `--system-prompt-file`; Codex uses `model_instructions_file`.
-The declared global Claude stack does not include RTK.
-OMP uses `--append-system-prompt` with its managed addendum.
+OMP and Pi load their managed addenda natively.
 The new ceilings prevent size regression; they do not prove better instruction adherence.
 No controlled before-and-after agent evaluation runs in this change.
 

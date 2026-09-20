@@ -1,5 +1,6 @@
 # Global agent preferences
 
+This file deploys to Claude, Codex, and Pi.
 Read applicable project instructions in full.
 Repository rules override these defaults.
 
