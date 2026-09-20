@@ -28,6 +28,7 @@ test('triage-sweep coerces a repo string and verifies only close-worthy verdicts
       if (opts.label === 'ground:issue#4') return grounded(item(4, 'superseded'), 'superseded')
       if (opts.label === 'verify:issue#3') return { number: 3, refuted: false, final_verdict: 'stale', note: 'confirmed' }
       if (opts.label === 'verify:issue#4') return { number: 4, refuted: false, final_verdict: 'superseded', note: 'confirmed' }
+      if (opts.label.startsWith('map:')) return { touches: [{ number: 1, areas: ['mod'] }], links: [] }
       if (opts.label === 'route') return { routed: [], summary: 'done' }
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -36,9 +37,11 @@ test('triage-sweep coerces a repo string and verifies only close-worthy verdicts
   const result = await workflow.run({ ...globals, args: 'owner/name' })
 
   assert.equal(result.grounded.filter((entry) => entry.verify).length, 2)
+  // Items 1 (valid) and 2 (needs-info) survive triage, so the Map phase runs its four lenses.
+  assert.equal(result.lenses.length, 4)
   assert.deepEqual(trace.agents.map(({ opts }) => opts.label), [
     'gather', 'ground:issue#1', 'ground:issue#2', 'ground:issue#3', 'ground:issue#4',
-    'verify:issue#3', 'verify:issue#4', 'route',
+    'verify:issue#3', 'verify:issue#4', 'map:code', 'map:tests', 'map:docs', 'map:refs', 'route',
   ])
   assert.equal(trace.agents.some(({ opts }) => opts.label === 'verify:issue#1' || opts.label === 'verify:issue#2'), false)
   assert.match(trace.agents[0].prompt, /Repo: owner\/name\./)
