@@ -71,3 +71,5 @@
 2026-09-08 · c980af7ece888d18 · new-page · operations/ci-optimization.md · Record import-only timing, attempt identity, and comparison limits.
 
 2026-09-08 · ci-optimize-skill · merged · operations/ci-optimization.md · Record approval boundaries and executable source-name encoding.
+
+2026-09-19 · 3481e45760db7ca6 · merged · operations/subagent-dispatch-analytics.md · Records soft-stop evidence, full-file write responses, checkpoint failures, and uncapped parent takeover. Historical samples remain unchanged.
