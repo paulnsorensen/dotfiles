@@ -182,6 +182,12 @@ case "$REPORT" in
         ;;
     latency)
         # Model round-trip cost per turn. duration/ttft/prompt_k are omp-only.
+        # A database from before model_turns existed can still be inside the TTL.
+        if [[ "$(duckdb -init /dev/null "$DB" -noheader -list -c \
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = 'model_turns'" 2>/dev/null)" != 1 ]]; then
+            echo "No model_turns table in $DB — run ingest.py --force."
+            exit 0
+        fi
         run "SELECT harness, model, count(*) AS turns,
                     round(avg(tool_calls), 2) AS calls_per_turn,
                     round(100.0 * avg(CASE WHEN tool_calls = 1 THEN 1 ELSE 0 END), 1) AS single_call_pct,
@@ -192,7 +198,7 @@ case "$REPORT" in
                     round(median(prompt_tokens) / 1000) AS prompt_k_p50,
                     count(*) FILTER (WHERE stop_reason = 'error') AS error_stops
              FROM model_turns
-             WHERE model IS NOT NULL $(hf)
+             WHERE 1=1 $(hf)
              GROUP BY harness, model ORDER BY turns DESC LIMIT 25;"
         ;;
     *)

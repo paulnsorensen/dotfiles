@@ -50,13 +50,15 @@ Flattened from user `message.content[]` blocks where `type='tool_result'`.
 
 ## `stop_events`
 
-Assistant messages where the model stopped generating. Columns: `harness`,
+Assistant messages where the model stopped generating (claude, cursor, and omp;
+omp quota stalls show as `error`). Columns: `harness`,
 `stop_reason`, `timestamp`, `sessionId`, `cwd`, `gitBranch`.
 
 ## `model_turns`
 
 One row per assistant turn that names a model. Use it for round-trip latency,
-batching, and quota analysis (`query.sh latency`).
+batching, and quota analysis (`query.sh latency`). Claude splits one message
+into several raw entries; this table groups them by `message.id`.
 
 | Column | Type | Description |
 |--------|------|-------------|

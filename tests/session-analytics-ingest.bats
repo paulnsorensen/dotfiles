@@ -132,6 +132,55 @@ JSONL
     assert_output_contains '"error_message":"usage_limit_reached"'
 }
 
+@test "ingest: claude entries that share a message.id fold into one model_turns row" {
+    # Claude writes one raw entry per content block and repeats usage on each.
+    cat > "$TEST_HOME/.claude/projects/proj/sess-frag.jsonl" <<'JSONL'
+{"type":"assistant","timestamp":"2026-05-30T10:00:00Z","sessionId":"c-9","cwd":"/w","message":{"id":"msg_1","model":"claude-x","usage":{"input_tokens":10,"output_tokens":50},"content":[{"type":"tool_use","id":"f1","name":"Read","input":{}}]}}
+{"type":"assistant","timestamp":"2026-05-30T10:00:01Z","sessionId":"c-9","cwd":"/w","message":{"id":"msg_1","model":"claude-x","stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":50},"content":[{"type":"tool_use","id":"f2","name":"Read","input":{}}]}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT count(*) AS n, CAST(sum(output_tokens) AS BIGINT) AS out_tokens, max(tool_calls) AS calls, max(stop_reason) AS stop FROM model_turns WHERE harness='claude';"
+    assert_output_contains '"n":1'
+    assert_output_contains '"out_tokens":50'
+    assert_output_contains '"calls":2'
+    assert_output_contains '"stop":"tool_use"'
+}
+
+@test "ingest: a malformed omp metric becomes NULL and does not abort the ingest" {
+    mkdir -p "$TEST_HOME/.omp/agent/sessions/proj"
+    cat > "$TEST_HOME/.omp/agent/sessions/proj/bad.jsonl" <<'JSONL'
+{"type":"session","id":"o-2","cwd":"/work/omp"}
+{"type":"message","timestamp":"2026-05-30T13:00:00Z","message":{"role":"assistant","model":"gpt-x","stopReason":"stop","duration":"slow","usage":"n/a","contextSnapshot":[1],"content":[]}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT duration_ms, input_tokens, prompt_tokens, stop_reason FROM model_turns WHERE harness='omp';"
+    assert_output_contains '"duration_ms":null'
+    assert_output_contains '"input_tokens":null'
+    assert_output_contains '"prompt_tokens":null'
+    assert_output_contains '"stop_reason":"end_turn"'
+}
+
+@test "query: latency report filters by harness and counts error stops" {
+    write_claude_fixture
+    mkdir -p "$TEST_HOME/.omp/agent/sessions/proj"
+    cat > "$TEST_HOME/.omp/agent/sessions/proj/s.jsonl" <<'JSONL'
+{"type":"session","id":"o-3","cwd":"/work/omp"}
+{"type":"message","timestamp":"2026-05-30T13:00:00Z","message":{"role":"assistant","provider":"p","model":"gpt-x","stopReason":"toolUse","duration":4000,"content":[{"type":"toolCall","id":"t1","name":"read","arguments":{}}]}}
+{"type":"message","timestamp":"2026-05-30T13:00:09Z","message":{"role":"assistant","provider":"p","model":"gpt-x","stopReason":"error","errorMessage":"usage_limit_reached","content":[]}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run env SESSIONS_DB="$DB" "$REAL_DOTFILES_DIR/skills/session-analytics/scripts/query.sh" latency omp
+    assert_success
+    assert_output_contains "error_stops"
+    # One p/gpt-x row: 2 turns, 50% single-call, 4.0 s median, 1 error stop.
+    [[ "$output" =~ omp[[:space:]]*\|[[:space:]]*p/gpt-x[[:space:]]*\|[[:space:]]*2[[:space:]]*\|[[:space:]]*0\.5[[:space:]]*\|[[:space:]]*50\.0[[:space:]]*\|[[:space:]]*4\.0 ]]
+    [[ "$output" =~ \|[[:space:]]*1[[:space:]]*\|$ ]]
+    [[ "$output" != *claude* ]]
+}
+
 # --- boundary + round-trip hardening -------------------------------------
 
 @test "ingest: codex function_call_output round-trips into a tool_result with matching call_id" {

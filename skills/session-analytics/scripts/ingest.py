@@ -305,7 +305,6 @@ def _omp_turn_meta(msg):
             "input_tokens": usage.get("input"),
             "output_tokens": usage.get("output"),
             "cache_read_input_tokens": usage.get("cacheRead"),
-            "cache_creation_input_tokens": usage.get("cacheWrite"),
         },
         "duration_ms": msg.get("duration"),
         "ttft_ms": msg.get("ttft"),
@@ -813,30 +812,43 @@ def main():
     """)
 
     # Step 4b: model_turns (one row per assistant turn that names a model).
-    # Latency and prompt_tokens are omp-only; claude carries model + usage.
+    # Claude writes one raw entry per content block of a message, and repeats
+    # `usage` on each entry, so entries group by `message.id`: tool calls sum,
+    # usage takes one value. omp and other harnesses carry no `message.id` and
+    # keep one row per entry. TRY_CAST keeps one malformed metric from
+    # aborting the whole ingest. Latency and prompt_tokens are omp-only.
     print("  Creating model_turns...")
     run_sql("""
         CREATE TABLE model_turns AS
+        WITH fragments AS (
+            SELECT
+                harness, sessionId, cwd, timestamp, message,
+                coalesce(json_extract_string(message, '$.id'),
+                         'row:' || row_number() OVER ()) AS turn_key,
+                (SELECT count(*)
+                   FROM unnest(json_extract(json_extract(message, '$.content'), '$[*]')) AS c(block)
+                  WHERE json_extract_string(block, '$.type') = 'tool_use') AS tool_calls
+            FROM raw_entries
+            WHERE type = 'assistant'
+              AND message IS NOT NULL
+              AND json_extract_string(message, '$.model') IS NOT NULL
+        )
         SELECT
             harness,
-            json_extract_string(message, '$.model') AS model,
-            json_extract_string(message, '$.stop_reason') AS stop_reason,
-            json_extract_string(message, '$.error_message') AS error_message,
-            CAST(json_extract(message, '$.usage.input_tokens') AS BIGINT) AS input_tokens,
-            CAST(json_extract(message, '$.usage.output_tokens') AS BIGINT) AS output_tokens,
-            CAST(json_extract(message, '$.usage.cache_read_input_tokens') AS BIGINT)
+            any_value(json_extract_string(message, '$.model')) AS model,
+            arg_max(json_extract_string(message, '$.stop_reason'), timestamp) AS stop_reason,
+            max(json_extract_string(message, '$.error_message')) AS error_message,
+            max(TRY_CAST(json_extract(message, '$.usage.input_tokens') AS BIGINT)) AS input_tokens,
+            max(TRY_CAST(json_extract(message, '$.usage.output_tokens') AS BIGINT)) AS output_tokens,
+            max(TRY_CAST(json_extract(message, '$.usage.cache_read_input_tokens') AS BIGINT))
                 AS cache_read_tokens,
-            CAST(json_extract(message, '$.prompt_tokens') AS BIGINT) AS prompt_tokens,
-            CAST(json_extract(message, '$.duration_ms') AS DOUBLE) AS duration_ms,
-            CAST(json_extract(message, '$.ttft_ms') AS DOUBLE) AS ttft_ms,
-            (SELECT count(*)
-               FROM unnest(json_extract(json_extract(message, '$.content'), '$[*]')) AS c(block)
-              WHERE json_extract_string(block, '$.type') = 'tool_use') AS tool_calls,
-            timestamp, sessionId, cwd
-        FROM raw_entries
-        WHERE type = 'assistant'
-          AND message IS NOT NULL
-          AND json_extract_string(message, '$.model') IS NOT NULL;
+            max(TRY_CAST(json_extract(message, '$.prompt_tokens') AS BIGINT)) AS prompt_tokens,
+            max(TRY_CAST(json_extract(message, '$.duration_ms') AS DOUBLE)) AS duration_ms,
+            max(TRY_CAST(json_extract(message, '$.ttft_ms') AS DOUBLE)) AS ttft_ms,
+            CAST(sum(tool_calls) AS BIGINT) AS tool_calls,
+            min(timestamp) AS timestamp, sessionId, any_value(cwd) AS cwd
+        FROM fragments
+        GROUP BY harness, sessionId, turn_key;
     """)
 
     # Step 5: agent_spawns.

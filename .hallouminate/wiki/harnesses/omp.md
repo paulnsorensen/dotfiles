@@ -123,7 +123,7 @@ Root `dots sync` verifies exact live outputs — currently `omp/18.1.14` (`OMP_P
 
 A 2026-09-20 session-analytics audit (5,957 sessions, 190k turns) found that no single call is slow. Wall-clock time comes from turn count and dead waits:
 
-- A user prompt needs a median of 47 model turns; 79% of turns issue one tool call at about 6 s per round-trip. OMP's built-in prompt only says `SHOULD parallelize`.
+- A user prompt needs a median of 47 model turns; 94.6% of `gpt-5.6-sol` turns issue one tool call at about 5 s per round-trip. OMP's built-in prompt only says `SHOULD parallelize`.
 - `hub` `wait` totals 96.7 h against 29 h for all `bash`; the model sets `timeoutMs: 3600000`.
 - 221 of 224 model error stops are Codex `usage_limit_reached`, and those agents do not resume.
 
@@ -135,4 +135,4 @@ The repo answers with three levers. `APPEND_SYSTEM.md` makes batching a MUST, ca
 
 Completed request graphs remain durable in Milknado. This cutover does not decide whether old graphs should be retained permanently, archived, or deleted; any lifecycle policy must preserve the single-owner rule and be implemented in Milknado rather than reintroducing native Todo state.
 
-_Source: OMP Todo-to-Milknado research, guarded cutover, Codex/OMP upgrade verification, and live modal-editor smoke · Updated: 2026-08-13 · Supersedes: native OMP Todo ownership_
+_Source: OMP Todo-to-Milknado research, guarded cutover, Codex/OMP upgrade verification, live modal-editor smoke, and the 2026-09-20 session-analytics latency audit · Updated: 2026-09-20 · Supersedes: native OMP Todo ownership_
