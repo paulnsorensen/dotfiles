@@ -77,7 +77,10 @@ timestamp, title}`) supplies sessionId + cwd for every row. `message` entries:
   so `bash_cmd` extracts from `input.command`); `text`/`thinking` blocks pass
   through;
 - role `toolResult` → a user `tool_result` block, joined on `toolCallId`;
-- role `user` passes through.
+- role `user` passes through;
+- assistant `model`, `usage`, `duration`, `ttft`, `contextSnapshot.promptTokens`,
+  `stopReason`, and `errorMessage` map to Claude key names and feed
+  `model_turns`. `stopReason` `error` and `aborted` also land in `stop_events`.
 
 Error flag: every `toolResult` message carries a **msg-level `isError` boolean**
 — one convention for builtin and MCP tools. For MCP tools a duplicate flag lives

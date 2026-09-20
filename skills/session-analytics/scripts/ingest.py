@@ -280,6 +280,39 @@ def omp_discover():
     return out
 
 
+# omp stopReason -> the canonical (claude) stop_reason vocabulary.
+_OMP_STOP_REASONS = {"stop": "end_turn", "toolUse": "tool_use", "length": "max_tokens"}
+
+
+def _omp_turn_meta(msg):
+    """Per-turn model metadata from an omp assistant message, in claude key names.
+
+    Feeds ``stop_events`` and ``model_turns``. Latency fields (``duration_ms``,
+    ``ttft_ms``) and ``prompt_tokens`` are omp-only; other harnesses leave them NULL.
+    """
+    usage = msg.get("usage") if isinstance(msg.get("usage"), dict) else {}
+    snapshot = msg.get("contextSnapshot")
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    stop = msg.get("stopReason")
+    model = msg.get("model")
+    if model and msg.get("provider"):
+        model = f"{msg['provider']}/{model}"
+    meta = {
+        "model": model,
+        "stop_reason": _OMP_STOP_REASONS.get(stop, stop),
+        "error_message": msg.get("errorMessage"),
+        "usage": {
+            "input_tokens": usage.get("input"),
+            "output_tokens": usage.get("output"),
+            "cache_read_input_tokens": usage.get("cacheRead"),
+        },
+        "duration_ms": msg.get("duration"),
+        "ttft_ms": msg.get("ttft"),
+        "prompt_tokens": snapshot.get("promptTokens"),
+    }
+    return {k: v for k, v in meta.items() if v is not None}
+
+
 def omp_normalize(path):
     """oh-my-pi session JSONL -> canonical envelope.
 
@@ -337,7 +370,7 @@ def omp_normalize(path):
                 "timestamp": ts,
                 "sessionId": session_id,
                 "cwd": cwd,
-                "message": {"content": blocks},
+                "message": {"content": blocks, **_omp_turn_meta(msg)},
             }
         elif role == "toolResult":
             text = "\n".join(
@@ -776,6 +809,46 @@ def main():
           AND message IS NOT NULL
           AND json_extract_string(message, '$.stop_reason')
               IN ('end_turn', 'stop_sequence', 'max_tokens', 'success', 'error', 'aborted');
+    """)
+
+    # Step 4b: model_turns (one row per assistant turn that names a model).
+    # Claude writes one raw entry per content block of a message, and repeats
+    # `usage` on each entry, so entries group by `message.id`: tool calls sum,
+    # usage takes one value. omp and other harnesses carry no `message.id` and
+    # keep one row per entry. TRY_CAST keeps one malformed metric from
+    # aborting the whole ingest. Latency and prompt_tokens are omp-only.
+    print("  Creating model_turns...")
+    run_sql("""
+        CREATE TABLE model_turns AS
+        WITH fragments AS (
+            SELECT
+                harness, sessionId, cwd, timestamp, message,
+                coalesce(json_extract_string(message, '$.id'),
+                         'row:' || row_number() OVER ()) AS turn_key,
+                (SELECT count(*)
+                   FROM unnest(json_extract(json_extract(message, '$.content'), '$[*]')) AS c(block)
+                  WHERE json_extract_string(block, '$.type') = 'tool_use') AS tool_calls
+            FROM raw_entries
+            WHERE type = 'assistant'
+              AND message IS NOT NULL
+              AND json_extract_string(message, '$.model') IS NOT NULL
+        )
+        SELECT
+            harness,
+            any_value(json_extract_string(message, '$.model')) AS model,
+            arg_max(json_extract_string(message, '$.stop_reason'), timestamp) AS stop_reason,
+            max(json_extract_string(message, '$.error_message')) AS error_message,
+            max(TRY_CAST(json_extract(message, '$.usage.input_tokens') AS BIGINT)) AS input_tokens,
+            max(TRY_CAST(json_extract(message, '$.usage.output_tokens') AS BIGINT)) AS output_tokens,
+            max(TRY_CAST(json_extract(message, '$.usage.cache_read_input_tokens') AS BIGINT))
+                AS cache_read_tokens,
+            max(TRY_CAST(json_extract(message, '$.prompt_tokens') AS BIGINT)) AS prompt_tokens,
+            max(TRY_CAST(json_extract(message, '$.duration_ms') AS DOUBLE)) AS duration_ms,
+            max(TRY_CAST(json_extract(message, '$.ttft_ms') AS DOUBLE)) AS ttft_ms,
+            CAST(sum(tool_calls) AS BIGINT) AS tool_calls,
+            min(timestamp) AS timestamp, sessionId, any_value(cwd) AS cwd
+        FROM fragments
+        GROUP BY harness, sessionId, turn_key;
     """)
 
     # Step 5: agent_spawns.

@@ -46,3 +46,20 @@ resolve() {
     assert_success
     [ "$output" = "$TEST_HOME/.cache/dotfiles/session-analytics/sessions.duckdb" ]
 }
+
+has_table() {
+    bash -c "source '$DB_PATH_SH' && sessions_db_has_table '$1' '$2'"
+}
+
+@test "db-path: sessions_db_has_table separates present, absent, and query failure" {
+    command -v duckdb >/dev/null || skip "duckdb not installed"
+    local db="$TEST_HOME/t.duckdb"
+    duckdb -init /dev/null "$db" -c "CREATE TABLE model_turns(a INT);"
+    run has_table "$db" model_turns
+    [ "$status" -eq 0 ]
+    run has_table "$db" tool_uses
+    [ "$status" -eq 1 ]
+    printf 'not a database' | tee "$TEST_HOME/bad.duckdb" >/dev/null
+    run has_table "$TEST_HOME/bad.duckdb" model_turns
+    [ "$status" -eq 2 ]
+}
