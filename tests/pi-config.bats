@@ -41,7 +41,7 @@ JSON
 @test "pi registry pins the selected mainstream packages" {
     run yq -o=json -I=0 '.pi.settings.packages' "$REGISTRY"
     [ "$status" -eq 0 ]
-    [ "$output" = '["npm:pi-mcp-adapter@2.34.0","npm:pi-subagents@0.70.0","npm:pi-web-access@0.30.0","npm:@gotgenes/pi-permission-system@33.0.3","npm:pi-vim@0.14.2"]' ]
+    [ "$output" = '["npm:pi-mcp-adapter@2.34.0","npm:pi-subagents@0.70.1","npm:pi-web-access@0.30.0","npm:@gotgenes/pi-permission-system@33.0.3","npm:pi-vim@0.14.2"]' ]
 }
 
 @test "pi uses shared agent skills instead of a copied skill tree" {
