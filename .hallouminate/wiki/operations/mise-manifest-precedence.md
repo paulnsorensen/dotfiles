@@ -23,8 +23,8 @@ That demotion has a second consequence, which is why the GitHub-auth fix looks s
 A pin bump lands in the repo. The affected machine's live `config.toml` is two days stale. Then:
 
 1. `.sync` exports `MISE_CONFIG_FILE` at the repo source and `sync_mise` runs `MISE_GLOBAL_CONFIG_FILE="$mise_config" mise install` (`packages/sync.sh:396`). The live config outranks it, so **the bumped version is never requested**.
-2. `verify_harness_versions` (`.sync:45-86`) checks the installed `omp`, `codex`, and `pi` binaries and gates the final `chezmoi apply` on them matching (`.sync:146`). It compares against **hardcoded literals** in `.sync` — `omp/18.2.6`, `codex-cli 0.154.0`, and Pi `0.86.0` — not against the manifest. Renovate locks the OMP and Pi literals to their install pins; see [[sync-and-chezmoi]].
-3. The gate sees the old binary and skips the final apply (`.sync:157-159`), recording a `harness-versions` failure.
+2. `verify_harness_versions` (`.sync:45-87`) checks the installed `omp`, `codex`, and `pi` binaries and gates the final `chezmoi apply` on them matching (`.sync:154`). It compares against **hardcoded literals** in `.sync` — `omp/18.2.8`, `codex-cli 0.154.0`, and Pi `0.87.0` — not against the manifest. Renovate locks the OMP and Pi literals to their install pins; see [[sync-and-chezmoi]].
+3. The gate sees the old binary and skips the final apply (`.sync:165-167`), recording a `harness-versions` failure.
 4. That skipped apply was **the only step that would have refreshed the live `config.toml`** to the new pin.
 
 So the stale config causes the gate to fail, and the failing gate skips the step that would have cured the stale config. No amount of re-running escapes it — each attempt reads the same stale file and takes the same branch. Retrying is not a fix; it is the symptom.
@@ -43,7 +43,7 @@ Failure there is deliberately **non-fatal** (`.sync-lib.sh:153-157`) — it warn
 
 ### Do not delete this as redundant
 
-The obvious-looking cleanup is fatal. `.sync` *already* exports `MISE_CONFIG_FILE` pointing at `chezmoi/dot_config/mise/config.toml` for both calls into `packages/sync.sh` — the bootstrap-only call at `:113-116` and the main convergence call at `:140-141` — which makes `apply_mise_manifest` look like belt-work someone forgot to remove.
+The obvious-looking cleanup is fatal. `.sync` *already* exports `MISE_CONFIG_FILE` pointing at `chezmoi/dot_config/mise/config.toml` for both calls into `packages/sync.sh` — the bootstrap-only call at `:125-130` and the main convergence call at `:147-148` — which makes `apply_mise_manifest` look like belt-work someone forgot to remove.
 
 It isn't. Those exports predate the deadlock (`#523`, `#589`) and were in place *while it ran*. They are necessary but not sufficient: they set `MISE_GLOBAL_CONFIG_FILE`, and mise demotes that below the live file. Only `apply_mise_manifest` makes the live file right. Remove it and the eight-day deadlock comes back, with no test failing to warn you.
 
