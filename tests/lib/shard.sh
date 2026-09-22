@@ -21,25 +21,29 @@ shard_files() {
         return 1
     fi
 
-    local -A weight_of=()
-    local -a all_weights=()
+    # Indexed arrays work on the macOS Bash 3.2 shipped with the host.
+    local -a weight_names=() all_weights=() pairs=()
     if [[ -f "$weights_file" ]]; then
         local name weight
         while IFS=$'\t' read -r name weight; do
             [[ -z "$name" || "$name" == \#* ]] && continue
-            weight_of["$name"]="$weight"
+            weight_names+=("$name")
             all_weights+=("$weight")
         done < "$weights_file"
     fi
 
     local median
-    median="$(_shard_median "${all_weights[@]}")"
+    median="$(_shard_median ${all_weights[@]+"${all_weights[@]}"})"
 
-    local -a pairs=()
-    local f base w
+    local f base w j
     for f in "$@"; do
         base="${f##*/}"
-        w="${weight_of[$base]:-$median}"
+        w="$median"
+        for ((j = 0; j < ${#weight_names[@]}; j++)); do
+            if [[ "${weight_names[j]}" == "$base" && -n "${all_weights[j]}" ]]; then
+                w="${all_weights[j]}"
+            fi
+        done
         pairs+=("$w"$'\t'"$f")
     done
 
@@ -57,7 +61,7 @@ shard_files() {
     done
 
     local entry target_bin target_sum
-    for entry in "${sorted[@]}"; do
+    for entry in ${sorted[@]+"${sorted[@]}"}; do
         w="${entry%%$'\t'*}"
         f="${entry#*$'\t'}"
 

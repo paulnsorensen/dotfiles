@@ -150,10 +150,10 @@ run_tests() {
     local rc=0
     # shellcheck disable=SC2086 # intentional word splitting for multiple file args
     if [[ "$VERBOSE" == true ]]; then
-        bats --jobs "$jobs" "${timing_args[@]}" $test_files || rc=$?
+        bats --jobs "$jobs" ${timing_args[@]+"${timing_args[@]}"} $test_files || rc=$?
     else
         # TAP output filtered to failures only (plan line + not-ok + diagnostics)
-        bats --formatter tap --jobs "$jobs" "${timing_args[@]}" $test_files |
+        bats --formatter tap --jobs "$jobs" ${timing_args[@]+"${timing_args[@]}"} $test_files |
             grep -v '^ok ' || rc=$?
     fi
 
