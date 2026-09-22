@@ -991,9 +991,9 @@ def test_codex_isolated_config_defaults_to_auto_permissions(tmp_path, monkeypatc
     assert cfg["tui"]["input_mode"] == "vim"
 
 
-def test_codex_system_prompt_is_model_instructions_file(tmp_path, monkeypatch):
-    """The system prompt is injected via model_instructions_file (an absolute
-    path), NOT the reserved/noop `instructions` key."""
+def test_codex_explicit_profile_prompt_replaces_vendor_instructions(tmp_path, monkeypatch):
+    """An explicit profile prompt remains a replacement through model_instructions_file.
+    The reserved/noop `instructions` key is never emitted."""
     monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
     m = _claude_manifest(tmp_path, system_prompt="CLAUDE.md")
     (tmp_path / "CLAUDE.md").write_text("be a good codex\n")
@@ -1004,6 +1004,19 @@ def test_codex_system_prompt_is_model_instructions_file(tmp_path, monkeypatch):
     assert mif == str(tmp_path / "CLAUDE.md")
     assert "instructions" not in cfg  # the noop key is never emitted
 
+
+def test_codex_default_prompt_is_additive_developer_instructions(tmp_path, monkeypatch):
+    """A profile without an explicit prompt receives the shared preamble additively."""
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    shared = tmp_path / "agents" / "preamble.md"
+    shared.parent.mkdir()
+    shared.write_text("shared routing\n")
+    m = _claude_manifest(tmp_path)
+    _, env = overlay.build_isolated_launch(m, tmp_path, "codex")
+    cfg = _codex_config(env)
+    assert cfg["developer_instructions"] == "shared routing\n"
+    assert "model_instructions_file" not in cfg
+    assert "instructions" not in cfg
 
 def test_codex_config_is_valid_toml_with_adversarial_mcp_values(tmp_path, monkeypatch):
     """The generated config.toml must parse as TOML 1.0 AND round-trip its

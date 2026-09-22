@@ -1,8 +1,8 @@
 #!/bin/bash
 # run_onchange — re-runs whenever agents/preamble.md changes.
 #
-# Forks to chezmoi/lib/install-prompts.sh, which wires preamble.md for Codex.
-# Claude Code reads it through the cc/ccc/ccr zsh wrappers.
+# Forks to chezmoi/lib/install-prompts.sh, which adds preamble.md to Codex
+# developer instructions. Claude Code reads it through the cc/ccc/ccr wrappers.
 #
 # Prompts hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/preamble.md 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
 

@@ -30,9 +30,10 @@
 # how [mcp_servers.serena] kept running for weeks after #512 removed Serena
 # from the repo — and kept littering repos with .serena/ dirs.
 #
-# `model_instructions_file` is deliberately NOT in the registry: it is written
-# with an absolute path by run_onchange_after_install-prompts.sh.tmpl (TOML
-# cannot expand `~`). Preserve-by-default keeps whatever that script set.
+# `developer_instructions` is deliberately NOT in the registry: it is written
+# by run_onchange_after_install-prompts.sh.tmpl because its value contains the
+# shared prompt text. The installer preserves user text in the same field.
+# Preserve-by-default keeps unrelated user config and custom model prompt paths.
 
 set -eu
 

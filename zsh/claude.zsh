@@ -14,9 +14,9 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # ═══════════════════════════════════════════════════════════════════
 # Quick Access
 # ═══════════════════════════════════════════════════════════════════
-# preamble.md replaces Claude's baked system prompt via --system-prompt-file.
-# CLAUDE.md auto-discovery, hooks, plugins, auto-memory all stay active —
-# only Anthropic's system prompt is swapped out. Symbol-level reads/edits
+# preamble.md adds shared routing and preferences via --append-system-prompt-file.
+# Claude's vendor system prompt, CLAUDE.md auto-discovery, hooks, plugins, and
+# auto-memory stay active. Symbol-level reads/edits
 # now route through Serena (MCP) instead of dynamically gated LSP plugins.
 # _cc_base — common launcher: prepends preamble flag, routes through
 # bin/cc-env-exec (when present) so the spawned claude loads fresh .env keys
@@ -42,7 +42,7 @@ _cc_base() {
     set -- "${passthru[@]}"
 
     local -a flags=()
-    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--append-system-prompt-file "$AGENTS_DOTFILES/preamble.md")
     local -a cmd=(claude "${flags[@]}" "$@")
     local launcher="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-env-exec"
     [[ -x "$launcher" ]] && cmd=("$launcher" "${cmd[@]}")

@@ -18,10 +18,10 @@
 # filtered to entries whose `harnesses` includes codex.
 codex:
   # ── root config.toml keys (overlaid; undeclared live keys preserved) ──────
-  # `model_instructions_file` is deliberately absent: it is written into the
-  # live file by chezmoi/.chezmoiscripts/run_onchange_after_install-prompts.sh.tmpl
-  # with an absolute path (TOML cannot expand `~`). Omitting it here means the
-  # merge preserves whatever that script set.
+  # `developer_instructions` is written into the live file by
+  # chezmoi/.chezmoiscripts/run_onchange_after_install-prompts.sh.tmpl.
+  # The installer adds a marked shared block and preserves user text.
+  # `model_instructions_file` stays absent because it replaces Codex's vendor prompt.
   config:
     model: "gpt-5.6-terra"
     model_reasoning_effort: "medium"
