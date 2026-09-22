@@ -58,7 +58,7 @@ MOCK
     chmod +x "$MOCK_BIN/codex"
     cat > "$MOCK_BIN/pi" << 'MOCK'
 #!/bin/bash
-[[ "$1" == "--version" ]] && printf '0.86.0\n'
+[[ "$1" == "--version" ]] && printf '0.87.0\n'
 exit 0
 MOCK
     chmod +x "$MOCK_BIN/pi"
@@ -202,7 +202,7 @@ MOCK
     cat > "$MOCK_BIN/pi" <<'MOCK'
 #!/bin/bash
 case "$1" in
-    --version) printf '0.86.0\n' ;;
+    --version) printf '0.87.0\n' ;;
     update) exit 1 ;;
 esac
 MOCK
@@ -223,7 +223,7 @@ MOCK
 
     run call-sync-fn verify_harness_versions "after package convergence"
     assert_failure
-    assert_output_contains "expected 0.86.0"
+    assert_output_contains "expected 0.87.0"
 }
 
 @test "no args syncs without provisioning daily-user credentials" {
