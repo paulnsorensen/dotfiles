@@ -1,8 +1,8 @@
 # Cursor agent autonomy (Auto-review)
 
 Tracked source for a balanced Cursor Auto-review policy tuned for this
-dotfiles stack: `rtk`, tilth, hallouminate, milknado / easy-cheese,
-context7, and tavily.
+dotfiles stack: tilth, hallouminate, milknado / easy-cheese, context7, and
+tavily.
 
 Live Cursor config under `~/.cursor/` is gitignored (that tree is the
 `cursor/` symlink target). Edit the files here, then apply:

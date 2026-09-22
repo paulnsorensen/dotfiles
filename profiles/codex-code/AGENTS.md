@@ -20,4 +20,3 @@ A tight Codex session for focused implementation.
 ## Tools
 
 - Use tilth (`mcp__tilth__*`) for reading, searching, and editing files.
-- Route shell through rtk to keep test/build/git output token-lean: `rtk test <cmd>`, `rtk cargo <cmd>`, `rtk git <subcommand>`, `rtk diff`, `rtk err <cmd>`. For anything else, `rtk rewrite <full command>` prints an optimized form (exit 0) or stays quiet when the command is already optimal (exit 1) — invoke it yourself before running a shell command.

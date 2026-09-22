@@ -82,7 +82,7 @@ repo-root `agents/registry.yaml` (metadata) with bodies under
 | `taste-tester` | Seven-lens handoff check over one artifact (`default` tier on every harness) |
 | `nih-scanner` | Structural NIH pattern scanner |
 | `worktree-content-digest` | Read-only per-worktree content digest (fanned out by the worktree-triage skill) |
-| `duckdb-expert` | Read-only DuckDB analyst (session-analytics query packs; used by skill-improver) |
+| `duckdb-expert` | Read-only DuckDB analyst (session-analytics query packs; used by skillz) |
 
 Review/analysis agents use severity tiers (blocker/high/medium/low) with calibration tags (`<certain>`/`<speculative>`); surface medium+ and certain lows.
 
@@ -116,12 +116,6 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 | Hook | Tool match | Purpose |
 |------|-----------|---------|
 | `worktree-guard.js` | Edit, Write, MultiEdit, tilth_write | In a git worktree, blocks writes outside the worktree root. **Opt-out**: enforces by default; `CLAUDE_WORKTREE_GUARD=0` disables it. Extend the allowlist with `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2`. Always allowed: worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, any `.cheese/` dir |
-
-### Other
-
-| Hook | Event | Purpose |
-|------|-------|---------|
-| `rtk hook claude` | PreToolUse Bash | Token-optimizing command rewriter |
 
 ## Settings (`settings.json`)
 

@@ -1,0 +1,63 @@
+#!/bin/sh
+# Author Pi settings from .chezmoidata/pi.yaml. Preserve Pi's changelog marker.
+
+set -eu
+
+registry=${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/.chezmoidata/pi.yaml
+live=$(cat)
+
+for tool in yq jq; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "modify_settings.json: $tool missing; Pi settings are unchanged" >&2
+        printf '%s' "$live"
+        exit 0
+    fi
+done
+
+if [ ! -f "$registry" ]; then
+    echo "modify_settings.json: registry missing: $registry" >&2
+    exit 1
+fi
+
+desired=$(yq -o=json '.pi.settings' "$registry" | jq '.')
+if ! printf '%s' "$desired" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    echo "modify_settings.json: pi.settings must be a map" >&2
+    exit 1
+fi
+
+if [ -z "$live" ]; then
+    printf '%s\n' "$desired"
+    exit 0
+fi
+
+live_json=$(printf '%s' "$live" | jq '.' 2>/dev/null) || live_json=
+if [ -z "$live_json" ] || ! printf '%s' "$live_json" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    echo "modify_settings.json: live settings are not a JSON object" >&2
+    exit 1
+fi
+
+if printf '%s' "$live_json" | jq -e 'has("lastChangelogVersion")' >/dev/null; then
+    desired=$(printf '%s' "$live_json" | jq --argjson desired "$desired" \
+        '$desired + {lastChangelogVersion: .lastChangelogVersion}')
+fi
+
+unknown=$(
+    printf '%s' "$live_json" | jq -r --argjson desired "$desired" '
+        def string_path: map(select(type == "string"));
+        ([ $desired | paths | string_path ] | unique) as $known
+        | [ paths | string_path ]
+        | map(select(. as $path | ($known | any(. == $path)) | not))
+        | unique
+        | map(join("."))
+        | .[]
+    '
+)
+
+if [ -n "$unknown" ]; then
+    echo "Pi settings.json has unknown key paths:" >&2
+    printf '%s\n' "$unknown" | sed 's/^/  + /' >&2
+    echo "Promote them into $registry, then run dots sync." >&2
+    exit 1
+fi
+
+printf '%s\n' "$desired"

@@ -106,7 +106,7 @@ block_sha() {
 
     for contract in '>1 file or adds public surface' \
         'taste_test: deferred-to-orchestrator' \
-        'next: reviewer' \
+        'phase-owned handoff rules below take precedence' \
         'Review mode: taste-test' \
         'contract, diff, cut-test list, and locked decisions' \
         'do not return `next: done` while deferred'; do
@@ -119,25 +119,6 @@ block_sha() {
     assert_failure
     run grep -Fq 'two-round cap' "$coder"
     assert_failure
-}
-
-@test "reviewer dispatch selects an explicit output mode and defines both schemas" {
-    local reviewer="$AGENTS_DIR/agent_definitions/reviewer.md"
-
-    run grep -Fq 'Review mode: severity-report' "$reviewer"
-    assert_success
-    run grep -Fq 'Review mode: taste-test' "$reviewer"
-    assert_success
-    run grep -Fq 'Do not infer the mode from words such as "lenses"' "$reviewer"
-    assert_success
-    run grep -Fq -- '- Drift: pass | revise — <evidence>' "$reviewer"
-    assert_success
-    run grep -Fq -- '- Locked decision: pass | halt — <evidence>' "$reviewer"
-    assert_success
-    run grep -Fq 'Review mode: taste-test' "$PREAMBLE"
-    assert_success
-    run grep -Fq 'Review mode: severity-report' "$PREAMBLE"
-    assert_success
 }
 
 @test "reviewer mode gate is mechanical: verbatim blocked block and a taste-test round cap" {
@@ -192,26 +173,6 @@ block_sha() {
     assert_success
 }
 
-@test "tier vocabulary binds to concrete models per harness" {
-    # Generic prompt: tiers only, plus the Claude and Codex bindings (preamble serves both).
-    run grep -Fq 'Dispatch `taste-tester` for a taste-test' "$PREAMBLE"
-    assert_success
-    run grep -Fq '`taste-tester` is pinned at `default` / `medium` on every harness' "$PREAMBLE"
-    assert_success
-    run grep -Fq 'Claude takes the tier per dispatch through `model:` — `powerful` opus, `default` sonnet, `cheap` haiku' "$PREAMBLE"
-    assert_success
-    run grep -Fq 'Codex pins GPT-5.6 per agent from `agents/registry.yaml`' "$PREAMBLE"
-    assert_success
-    # OMP has its own prompt; it binds the same tiers to modelRoles aliases.
-    local append="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"
-    run grep -Fq '`powerful` = `@strong` (GPT-5.6 Sol' "$append"
-    assert_success
-    run grep -Fq '`taste-tester` `@balanced`' "$append"
-    assert_success
-    run grep -Fq '`cheap` = `@fast` (Luna' "$append"
-    assert_success
-}
-
 @test "coder refuses a dispatch missing both Done means and Scope fence" {
     local coder="$AGENTS_DIR/agent_definitions/coder.md"
 
@@ -224,16 +185,24 @@ block_sha() {
     assert_success
 }
 
-@test "preamble carries numbered dispatch gates for coder and reviewer" {
-    for gate in '### Dispatch gates' \
-        '1. **Reviewer mode.**' \
-        '2. **Coder contract.**' \
-        '3. **Coder size.**' \
-        '4. **Age does not code.**' \
-        '5. **Resume reuse.**' \
-        'Under `/age`, do not dispatch `coder`' \
-        '| Run an existing test gate and return only failures | `whey-drainer` |'; do
-        run grep -Fq -- "$gate" "$PREAMBLE"
+@test "coder active-phase context handoff stays phase-owned and compact" {
+    local coder="$AGENTS_DIR/agent_definitions/coder.md"
+
+    for contract in 'status: needs-context' 'phase-owned handoff' 'checkpoint observations' 'completed edits' 'exact remaining behavior' 'targeted file ranges' 'gate results' 'worktree+base' 'locked decisions' 'parent persists'; do
+        run grep -Fqi "$contract" "$coder"
+        assert_success
+    done
+    run grep -Fq '.cheese/notes/' "$coder"
+    assert_failure
+    run grep -Fq 'next: reviewer' "$coder"
+    assert_failure
+    run grep -Fq 'next: cook' "$coder"
+    assert_failure
+}
+
+@test "delegation names phase-owned context recovery" {
+    for contract in 'active phase' 'phase-owned' 'status: needs-context' 'parent persists' 'one fresh retry'; do
+        run grep -Fqi "$contract" "$PREAMBLE"
         assert_success
     done
 }

@@ -4,7 +4,7 @@ model: sonnet
 effort: medium
 description: >
   Audit harness configuration ownership and drift across Claude, Codex, Cursor,
-  Copilot, and OMP. Report findings without changing files by default.
+  Copilot, OMP, and Pi. Report findings without changing files by default.
   Use for harness configuration audits or settings-local cleanup.
 ---
 
@@ -46,6 +46,7 @@ user-owned, and users may add valid entries.
 | Cursor | The live profile projection and Cursor source files | Treat ~/.cursor as user-owned; report extras without stale classification |
 | Copilot | Chezmoi templates and the live profile projection | Treat ~/.copilot as user-owned; report extras without stale classification |
 | OMP | chezmoi/.chezmoidata/omp.yaml and dot_omp/private_agent/modify_config.yml when in scope | ~/.omp/agent/config.yml; native plugins reconcile separately |
+| Pi | chezmoi/.chezmoidata/pi.yaml and dot_pi/private_agent/modify_settings.json | ~/.pi/agent/settings.json; preserve Pi runtime state |
 
 The current wiki defines ownership and overrides stale details in this document.
 
@@ -100,5 +101,5 @@ Only .claude/settings.local.json may change. Never change settings.json.
 - Never publish a GitHub issue without explicit authorization for that specific action.
 - Never treat Cursor or Copilot extras as stale without repository provenance.
 - Never overwrite Codex runtime state during comparison.
-- Never touch Claude JS guards, rtk, or inline user hooks.
+- Never touch Claude JS guards or inline user hooks.
 - Never fabricate history or wiki claims.

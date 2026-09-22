@@ -27,7 +27,7 @@ The implementation extracts config/bootstrap/migration logic into sourced functi
 
 ## CI gate coverage
 
-GitHub CI's `test` job runs `just test` (Bats), `just test-python` (agent-profile pytest), and `just smoke` (Node workflow tests) as separate steps. The workflow-smoke test asserts those exact recipes so deleting one fails before merge.[^10]
+GitHub CI's `test` job is a 4-way shard matrix running `just test --shard N/4` (Bats); `just test-python` (agent-profile pytest) and `just smoke` (Node workflow tests) run in a separate `test-extras` job. The workflow-smoke test asserts those exact recipes so deleting one fails before merge.[^10] See "CI wait: sharding and the prek setup defect" below for the measurements behind that layout.
 
 ## Implemented results (2026-07-25)
 
@@ -84,6 +84,27 @@ Caveat: the test host had severe ambient syspolicyd noise (~128,600 log lines in
 macOS commonly supplies `TMPDIR` with a trailing slash. `tests/test_helper.bash` appends another separator when constructing `TEST_HOME`, while child scripts such as `.sync` derive their working directory with `pwd`, which collapses repeated separators. Tests that compare emitted absolute paths must derive the expected path from `pwd` after entering the fixture directory; do not skip these platform-independent behaviors on macOS.[^14]
 
 [^14]: tests/test_helper.bash:10; .sync:11; tests/sync-orchestrator.bats:396-404
+
+## CI wait: sharding and the prek setup defect (2026-09-12)
+
+PR #964 cut the median pull-request wait from 518.5 seconds to 88 seconds. The two changes were not equal, and the smaller one was the obvious one.
+
+**The dominant cost was one test file, invisible on macOS.** `tests/git-hooks.bats` ran `prek install-hooks` in `setup()`, which Bats re-runs before every test; each test also gets a fresh `$TEST_HOME`. On a cold ubuntu runner that rebuilt every hook environment 12 times, at 82-90 seconds each: 1,028.9 seconds of the suite's 1,283.2 seconds of measured CI cost, or **80.2%**. The same file cost 4.74 seconds on a developer macOS host, where the shell exports a persistent warm `PREK_HOME` (`zsh/core.zsh`) — a 217x platform divergence that hid the defect from every local benchmark in this page's earlier sections.
+
+Fix: build the hook environments once in `setup_file()` into a file-scoped `PREK_HOME` under `BATS_FILE_TMPDIR`, keeping per-test `$TEST_HOME`, git repo, and `prek install -f` isolation. The file fell to 1.6 seconds in CI (134.6 to 4.98 seconds measured locally with the ambient `PREK_HOME` unset). Deliberate tradeoff: a warm-shell local run of that file got ~2 seconds *slower*, because the throwaway cache can no longer reuse the developer's real one. That is accepted — reusing an ambient cache would make `prek install-hooks succeeds without errors` depend on machine state, which is the exact breakage that test exists to catch.
+
+**Sharding was the smaller half.** A 4-way matrix alone took the wait from 518.5 to 284 seconds (-45%); the git-hooks fix took it to 92 (-82%). Both together leave ~25 seconds of fixed runner startup plus ~50 seconds of tests.
+
+Gotchas worth keeping:
+
+- **Local weights do not transfer to CI.** Shard weights measured on a 15-core macOS host packed to a 1.000 imbalance ratio locally and ran 61/85/107/281 seconds on a 4-core ubuntu runner. Weights must come from the runner. `tests/shard-weights.tsv` is now refreshed from the `bats-timings-N` JUnit artifacts every `test (N)` job uploads; the refresh command is in that file's header.
+- **JUnit CPU-seconds still do not predict wall time exactly.** Weights refreshed from real ubuntu data project a 1.000 ratio but ran 74/85/64/78 (1.33x spread), because each job carries fixed setup the weights do not model. Refreshing bought 92 to 88 seconds — the smallest win of the exercise. Do not over-invest in balance.
+- **A `@test`-count proxy is worthless for weighting.** `tool-reroute.bats` has 93 tests and costs 13.8 seconds; `chezmoi-wiring.bats` has 66 and costs 31.8.
+- **The ci-optimize helper cannot certify this kind of change.** Sharding renames `test` to `test (1..4)` plus `test-extras`, so `compare` returns `context_selected_job_names_differs` at any sample count, and the acknowledgement schema waives only `environment`, `cache_state`, and `local command`. Report raw full-wait observations; do not claim a helper-verified delta.
+
+The general lesson: a per-test `setup()` that builds a tool environment is a cache miss multiplied by test count, and it is invisible wherever that cache is already warm. Look for it before tuning parallelism.[^15]
+
+[^15]: CI measurements, 2026-09-12: baseline runs 34673627407, 34663469445, 34663461747, 34651972813, 34627641215, 34626470685, 34626441391, 34626407468; post-change runs 34675258516 (shards only), 34677837749 (git-hooks fixed), 34678074937 (weights refreshed). Per-file costs from each run's `bats-timings-N` JUnit artifacts.
 
 ## Benchmarking protocol
 

@@ -12,8 +12,8 @@ the hooks into the plugin (mirrors the codex renderer's config.toml sweep).
 
 Tests assert: the dead script-hook entry (cheese-flair) is stripped,
 command-type duplicates (moshi) are stripped across every event,
-user-authored hooks the plugin does NOT manage (JS guards, rtk, a tmux
-Stop hook) are preserved, non-hook keys survive, a managed basename
+user-authored hooks the plugin does NOT manage (JS guards, an unmanaged
+user hook, a tmux Stop hook) are preserved, non-hook keys survive, a managed basename
 routed through an unmanaged event survives (cross-event invariant), and
 the sweep is a no-op when settings.json has no orphans.
 """
@@ -76,7 +76,8 @@ def _manifest_with_hooks(src: Path) -> Manifest:
 
 def _seed_legacy_settings(target: Path) -> Path:
     """Pre-seed <target>/.claude/settings.json with pre-ap leftovers PLUS
-    legit settings-only hooks (JS guard, rtk, tmux) the plugin never owns."""
+    legit settings-only hooks (JS guard, an unmanaged user hook, tmux) the
+    plugin never owns."""
     moshi = "'/home/paul/.local/bin/moshi-hook' claude-hook"
     settings = target / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True, exist_ok=True)
@@ -93,7 +94,7 @@ def _seed_legacy_settings(target: Path) -> Path:
                                     "type": "command",
                                     "command": 'node "$HOME/.claude/hooks/hook-runner.js" bash-guard.js',
                                 },
-                                {"type": "command", "command": "rtk hook claude"},
+                                {"type": "command", "command": "my-user-hook"},
                             ],
                         }
                     ],
@@ -166,11 +167,11 @@ def test_tmux_stop_hook_preserved(tmp_path: Path) -> None:
     assert "@claude-stopped" in data["hooks"]["Stop"][0]["hooks"][0]["command"]
 
 
-def test_js_guard_and_rtk_preserved(tmp_path: Path) -> None:
+def test_js_guard_and_user_hook_preserved(tmp_path: Path) -> None:
     settings = _render(tmp_path)
     text = settings.read_text()
     assert "bash-guard.js" in text
-    assert "rtk hook claude" in text
+    assert "my-user-hook" in text
     # The mixed PreToolUse block kept BOTH inner hooks (neither managed).
     data = json.loads(settings.read_text())
     assert len(data["hooks"]["PreToolUse"][0]["hooks"]) == 2
@@ -235,7 +236,7 @@ def test_cross_event_basename_survives() -> None:
 
 
 def test_prune_returns_none_when_nothing_matches() -> None:
-    arr = [{"hooks": [{"command": "rtk hook claude"}]}]
+    arr = [{"hooks": [{"command": "my-user-hook"}]}]
     assert _prune_settings_blocks(arr, _ManagedSigs(set(), {"moshi"})) is None
 
 
@@ -244,14 +245,14 @@ def test_prune_keeps_unmanaged_inner_in_mixed_block() -> None:
         {
             "hooks": [
                 {"command": "'/x/moshi-hook' claude-hook"},
-                {"command": "rtk hook claude"},
+                {"command": "my-user-hook"},
             ]
         }
     ]
     rebuilt = _prune_settings_blocks(
         arr, _ManagedSigs(set(), {"'/x/moshi-hook' claude-hook"})
     )
-    assert rebuilt == [{"hooks": [{"command": "rtk hook claude"}]}]
+    assert rebuilt == [{"hooks": [{"command": "my-user-hook"}]}]
 
 
 def test_user_command_mentioning_managed_basename_survives() -> None:

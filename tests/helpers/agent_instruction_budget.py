@@ -16,11 +16,11 @@ DISCOVERY_PATTERNS = (
     "CLAUDE.md",
     "agent-profile/AGENTS.md",
     "agents/AGENTS.md",
-    "agents/RTK.md",
     "agents/preamble.md",
     "profiles/*/AGENTS.md",
     "profiles/*/CLAUDE.md",
     "chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md",
+    "chezmoi/dot_pi/private_agent/APPEND_SYSTEM.md",
     ".github/copilot-instructions.md",
     ".github/instructions/*.instructions.md",
 )

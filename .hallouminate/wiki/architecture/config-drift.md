@@ -36,9 +36,7 @@ files above is never removed, so it lingers indefinitely.
 | **Dotfiles bug** | The repo's own source is wrong (registry → missing script, invalid hook `event`, required MCP `${VAR}` not marked `optional`, wiki index won't rebuild). | Open a gh issue. |
 | **Expected local** | Live-only, no repo provenance — a personal hook, an extra permission, the tmux Stop hook, the JS guards under `~/.claude/hooks/`, a hand-added MCP. | Leave alone. |
 
-The Claude-specific JS guards (`worktree-guard.js`, `hook-runner.js`, …), `rtk`,
-and any tmux hook are **settings-only and legit** — not managed by any render
-target, so they are *not* drift even though they live in `settings.json`.
+The Claude-specific JS guards (`worktree-guard.js`, `hook-runner.js`, …) and any tmux hook are **settings-only and legit**. Render targets do not manage them, so they are not drift.
 
 ## Historical self-heal vs current ownership
 
@@ -339,7 +337,7 @@ omitted `cwd` now gets tilth's teaching refusal instead of silent injection.)
 **Why it happens**: `packages/packages.yaml` gates the toolchain provider
 `rustup: { dev: true }` (dev machines only, `packages/sync.sh:87`), while the
 cargo-source packages that *need* a toolchain to build are ungated —
-`tilth`, `hallouminate`, `rtk`, `cargo-llvm-cov`, `cargo-update` all install on
+`tilth`, `hallouminate`, `cargo-llvm-cov`, and `cargo-update` all install on
 every machine (`sync.sh:96` selects `source==cargo AND dev==false`). A machine
 with no toolchain installs the package *entries* but has no `cargo` to build
 them, so `dots sync`/`dots up` can never rebuild or update them. The staleness

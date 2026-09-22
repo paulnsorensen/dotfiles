@@ -3,7 +3,7 @@ name: spec-verify
 model: opus
 context: fork
 effort: high
-allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(echo:*), Bash(cargo check:*), Bash(cargo clippy:*), Bash(cargo test:*), Bash(tsc:*), Bash(npm run:*), Bash(pnpm:*), Bash(yarn:*), Bash(go build:*), Bash(go vet:*), Bash(go test:*), Bash(uv run:*), Bash(python -m:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(prek:*), Bash(rtk:*), Agent, mcp__serena__*
+allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(echo:*), Bash(cargo check:*), Bash(cargo clippy:*), Bash(cargo test:*), Bash(tsc:*), Bash(npm run:*), Bash(pnpm:*), Bash(yarn:*), Bash(go build:*), Bash(go vet:*), Bash(go test:*), Bash(uv run:*), Bash(python -m:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(prek:*), Agent, mcp__serena__*
 description: >
   Verify a spec's implementation against its requirements using Serena
   structural analysis, build verification, and test coverage. Use when the user
@@ -56,11 +56,11 @@ Serena results.
 
 ### Phase 1: Quality Gates (build + lint)
 
-Run quality gate commands from the spec directly — the `rtk hook claude` PreToolUse hook filters build output automatically. This is the fastest signal — if the build is broken, everything else is moot.
+Run quality gate commands from the spec directly. This is the fastest signal because a broken build blocks later verification.
 
 For each quality gate command documented in the spec:
 
-1. Run the command (rtk rewrites it transparently)
+1. Run the command.
 2. Record pass/fail
 
 If no quality gates are documented, run the project's default build check (`cargo check`, `tsc --noEmit`, `go build ./...`, `uv run mypy .`, etc.) as a baseline.

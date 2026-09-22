@@ -30,6 +30,8 @@ fi
 VERBOSE=false
 SPECIFIC_TESTS=()
 WATCH=false
+SHARD_SPEC=""
+TIMINGS_DIR=""
 
 while (($#)); do
     case $1 in
@@ -41,12 +43,24 @@ while (($#)); do
             WATCH=true
             shift
             ;;
+        --shard)
+            SHARD_SPEC="$2"
+            shift 2
+            ;;
+        --timings)
+            TIMINGS_DIR="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: $0 [OPTIONS] [test-file ...]"
             echo
             echo "Options:"
             echo "  -v, --verbose    Show full test output (default: failures only)"
             echo "  -w, --watch      Watch for changes and re-run tests"
+            echo "  --shard I/N      Run only shard I of N (default file glob only;"
+            echo "                   ignored when test files are given explicitly)"
+            echo "  --timings DIR    Write a per-file JUnit timing report to DIR"
+            echo "                   (source data for tests/shard-weights.tsv)"
             echo "  -h, --help       Show this help message"
             echo
             echo "Examples:"
@@ -55,6 +69,7 @@ while (($#)); do
             echo "  $0 a.bats b.bats              # Run multiple test files"
             echo "  $0 -v                         # Run with verbose output"
             echo "  $0 -w                         # Watch mode"
+            echo "  $0 --shard 1/4                # Run shard 1 of 4"
             exit 0
             ;;
         *)
@@ -85,6 +100,18 @@ run_tests() {
             echo "  (Did the working directory get clobbered, or is this a vendored copy?)" >&2
             return 1
         fi
+
+        if [[ -n "$SHARD_SPEC" ]]; then
+            local shard_index="${SHARD_SPEC%%/*}" shard_total="${SHARD_SPEC##*/}"
+            # shellcheck source=lib/shard.sh
+            source "$TESTS_DIR/lib/shard.sh"
+            local -a _shard_found=()
+            while IFS= read -r _f; do
+                _shard_found+=("$_f")
+            done < <(shard_files "$shard_index" "$shard_total" "$TESTS_DIR/shard-weights.tsv" "${_found[@]}")
+            _found=("${_shard_found[@]}")
+        fi
+
         test_files="${_found[*]}"
     fi
 
@@ -113,13 +140,20 @@ run_tests() {
 
     # Parallel across files AND within files. A file whose tests share state
     # opts out via BATS_NO_PARALLELIZE_WITHIN_FILE=true in its setup_file().
+    local -a timing_args=()
+    if [[ -n "$TIMINGS_DIR" ]]; then
+        # bats -o/--output requires the directory to already exist.
+        mkdir -p "$TIMINGS_DIR"
+        timing_args=(--report-formatter junit --output "$TIMINGS_DIR")
+    fi
+
     local rc=0
     # shellcheck disable=SC2086 # intentional word splitting for multiple file args
     if [[ "$VERBOSE" == true ]]; then
-        bats --jobs "$jobs" $test_files || rc=$?
+        bats --jobs "$jobs" "${timing_args[@]}" $test_files || rc=$?
     else
         # TAP output filtered to failures only (plan line + not-ok + diagnostics)
-        bats --formatter tap --jobs "$jobs" $test_files |
+        bats --formatter tap --jobs "$jobs" "${timing_args[@]}" $test_files |
             grep -v '^ok ' || rc=$?
     fi
 

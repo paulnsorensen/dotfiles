@@ -6,7 +6,7 @@ Rationale record for the `manifest-pinned-packages` spec (durable spec: `~/.loca
 
 ### ADR-001: Hybrid manifest strategy — mise:aqua migration + Renovate regex pins  [status: accepted]
 
-- **Context:** ~90 packages install unpinned across brew/npx/uv/cargo/curl. Renovate has NO homebrew datasource, and brew cannot install arbitrary historical versions — so pinning inside brew is unenforceable. The aqua registry covers 45 of the tools (incl. claude, codex, rtk) with checksum + cosign/SLSA verification, and Renovate natively manages mise.toml.
+- **Context:** ~90 packages install unpinned across brew/npx/uv/cargo/curl. Renovate has NO homebrew datasource, and brew cannot install arbitrary historical versions — so pinning inside brew is unenforceable. The aqua registry covers 45 tools, including Claude and Codex, with checksum and provenance verification. Renovate natively manages the mise manifest.
 - **Decision:** Migrate the 45+7 pinnable tools to a chezmoi-deployed mise manifest; pin the 15 remaining packages.yaml entries (npm/uv/cargo/gh-extension) and the MCP npx args via Renovate regex custom managers.
 - **Alternatives:** (B) regex-pins-only — rejected: advisory-only versions for the largest surface, no verification. (A) mise-only — rejected: leaves npm/uv/cargo/MCP surfaces floating. Do Nothing — rejected: `npx -y @latest` at every Claude launch was the worst live exposure.
 - **Consequences:** Real machine-side verification for ~52 tools; new tool (mise) in the bootstrap chain; brew shrinks to a ~16-formula remainder + casks.
@@ -42,7 +42,7 @@ Rationale record for the `manifest-pinned-packages` spec (durable spec: `~/.loca
 ### ADR-006: Own-authored channels exempt from pinning  [status: accepted]
 
 - **Context:** tilth/hallouminate npm nightlies and milknado@main are the user's own release channels; uv's `--exclude-newer` cooldown cannot cover git deps anyway.
-- **Decision:** Leave them floating; the `run_onchange_after_install-*.sh.tmpl` nightly scripts stay untouched. Third-party moving refs (skills-ref@main, rtk@master) DO get pinned (rtk via aqua).
+- **Decision:** Leave them floating; the `run_onchange_after_install-*.sh.tmpl` nightly scripts stay untouched. Third-party moving refs such as `skills-ref@main` remain pinned.
 - **Alternatives:** Pin everything — rejected: daily nightly-bump PR noise with no trust gain (author == user).
 - **Consequences:** A trusted-author boundary exists in the manifest; documented, deliberate.
 

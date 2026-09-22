@@ -39,6 +39,17 @@ source "$DOTFILES_DIR/claude/lib/sync-common.sh"
 
 sync_parse_args "$@"
 
+# Legacy Codex skill mirror + shared agents skill root. The current `skills`
+# CLI installs the codex agent's skills into the shared ~/.agents/skills; the
+# old ~/.codex/skills mirror is a frozen fossil that Codex still reads, so sync
+# evicts it wholesale (decision: chezmoi-authoritative-codex). The agents root
+# also holds the copied local tree, so retired local skills are reconciled
+# there. Both paths are overridable so the Bats suite can point them at a
+# sandbox HOME.
+AGENTS_SKILLS_DIR="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
+LEGACY_CODEX_SKILLS_DIR="${LEGACY_CODEX_SKILLS_DIR:-$HOME/.codex/skills}"
+LOCAL_MANIFEST_NAME=".dotfiles-local-managed"
+
 # Skill sync needs npx (Node) + yq + jq. `npx skills add` clones each source and
 # places skills into each agent's skill dir; npx fetches the `skills` CLI itself
 # (float-to-latest, no pin).
@@ -109,17 +120,19 @@ fi
 echo -e "${BLUE}Harnesses:${NC} $HARNESSES"
 echo
 
-# Cache: skip when registry content + harness list match the last successful
-# run. Bust with --force, by deleting $CACHE_FILE, or by running
+# Cache external sources when registry content + harness list match the last
+# successful run. The local skills tree always runs after this cache check.
+# Bust with --force, by deleting $CACHE_FILE, or by running
 # `npx skills update --global -y` to pull upstream changes.
 CACHE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/skill-external-hash"
 REGISTRY_DIGEST=$(shasum -a 256 "$REGISTRY_FILE" | awk '{print $1}')
 COMBINED_DIGEST=$(printf '%s\n%s\n' "$REGISTRY_DIGEST" "$HARNESSES" | shasum -a 256 | awk '{print $1}')
 
+cache_hit=false
 if ! $FORCE && ! $DRY_RUN && [[ -f "$CACHE_FILE" ]] && [[ "$(cat "$CACHE_FILE" 2>/dev/null)" == "$COMBINED_DIGEST" ]]; then
-    echo -e "${GREEN}Registry + harnesses unchanged since last sync — skipping.${NC}"
+    echo -e "${GREEN}Registry + harnesses unchanged since last sync — skipping external sources.${NC}"
     echo "  Pass --force, delete $CACHE_FILE, or run 'npx --yes skills update --global -y' to refresh."
-    exit 0
+    cache_hit=true
 fi
 
 # Failure counter (one line per failed source).
@@ -214,9 +227,15 @@ source_skill_names() {
 }
 
 find_stale_source_skills() {
-    local repo="$1" expected installed
+    local repo="$1" expected installed_file
     expected=$(source_skill_names "$repo") || return 1
-    if ! installed=$(npx --yes skills list --global --json 2>&1); then
+    # `skills list --json` writes its full JSON payload with a single
+    # process.stdout.write() and can exit before a pipe drains, truncating
+    # output silently at the pipe buffer size when captured via $(...).
+    # Redirecting to a regular file is a blocking write and avoids the race.
+    installed_file=$(mktemp "${TMPDIR:-/tmp}/skill-installed.XXXXXX")
+    trap 'rm -f "$installed_file"' RETURN
+    if ! npx --yes skills list --global --json >"$installed_file" 2>&1; then
         echo -e "    ${RED}Could not list installed skills before reconciling $repo${NC}" >&2
         return 1
     fi
@@ -226,7 +245,7 @@ find_stale_source_skills() {
         | .name as $name
         | select(.source == $source and ($keep | index($name)) == null)
         | $name
-    ' <<<"$installed"; then
+    ' "$installed_file"; then
         echo -e "    ${RED}Could not parse installed skills while reconciling $repo${NC}" >&2
         return 1
     fi
@@ -341,22 +360,118 @@ install_source() {
     fi
 }
 
+# Reconcile retired local skills. install_local_tree copies the repo's skills/
+# tree into the shared agents root via `npx skills add`, but the CLI never
+# removes a skill dropped from that source: its lock records local skills with
+# source: null, which also covers retired externals and other repos' skills, so
+# a source-filtered cleanup cannot target them safely. Track the exact set we
+# install in a manifest and remove only names we previously installed that the
+# source no longer provides. Bash 3.2 compatible (macOS /bin/bash).
+reconcile_local_skills() {
+    local local_dir="$1"
+    local target="$AGENTS_SKILLS_DIR"
+    local manifest="$target/$LOCAL_MANIFEST_NAME"
+    [[ -d "$target" ]] || return 0
+
+    local -a current=()
+    local d
+    for d in "$local_dir"/*/; do
+        [[ -d "$d" ]] || continue
+        [[ -f "$d/SKILL.md" ]] || continue
+        current+=("$(basename "$d")")
+    done
+
+    if [[ -f "$manifest" ]]; then
+        local name
+        while IFS= read -r name; do
+            [[ -n "$name" ]] || continue
+            if printf '%s\n' ${current[@]+"${current[@]}"} | grep -Fxq "$name"; then
+                continue
+            fi
+            if [[ -d "$target/$name" ]]; then
+                rm -rf -- "${target:?}/${name:?}"
+                echo -e "    ${GREEN}Removed retired local skill:${NC} $name"
+            fi
+        done < "$manifest"
+    fi
+
+    if ((${#current[@]})); then
+        printf '%s\n' ${current[@]+"${current[@]}"} | LC_ALL=C sort > "$manifest"
+    else
+        : > "$manifest"
+    fi
+}
+
+# Evict the legacy ~/.codex/skills mirror wholesale (see AGENTS_SKILLS_DIR
+# note). Codex resolves skills through ~/.agents/skills, so this frozen root
+# only serves stale copies — removing it each sync keeps instruction versions
+# from mixing.
+evict_legacy_codex_skills() {
+    [[ -d "$LEGACY_CODEX_SKILLS_DIR" ]] || return 0
+    if $DRY_RUN; then
+        echo -e "  ${BLUE}[dry-run]${NC} rm -rf $LEGACY_CODEX_SKILLS_DIR (legacy Codex skill mirror)"
+        return 0
+    fi
+    rm -rf -- "${LEGACY_CODEX_SKILLS_DIR:?}"
+    echo -e "  ${GREEN}✓${NC} Removed legacy Codex skill mirror: $LEGACY_CODEX_SKILLS_DIR"
+}
+
+# Install the repo's own skills/<name>/SKILL.md tree into every harness that
+# isn't excluded. Unlike install_source, there is no per-source `harnesses:`
+# restriction to honor here, so this reuses the same AGENT_FLAGS/
+# SUPPORTED_HARNESSES already filtered for SKILL_HARNESSES + KNOWN_AGENTS +
+# SKILL_EXCLUDE_AGENTS above (claude-code is excluded there: ~/.claude/skills
+# is chezmoi-managed, same as install_source's per-repo path).
+install_local_tree() {
+    local local_dir="$DOTFILES_DIR/skills"
+    if [[ ! -d "$local_dir" ]]; then
+        echo -e "  ${YELLOW}No local skills tree at $local_dir — skipping.${NC}"
+        return 0
+    fi
+
+    local args=(--yes skills add "$local_dir" --skill '*' "${AGENT_FLAGS[@]}" -g --copy -y)
+
+    if $DRY_RUN; then
+        echo -e "  ${BLUE}[dry-run]${NC} npx ${args[*]}"
+        return 0
+    fi
+
+    local output
+    if output=$(GIT_TERMINAL_PROMPT=0 npx "${args[@]}" 2>&1); then
+        reconcile_local_skills "$local_dir"
+        echo -e "  ${GREEN}✓${NC} local skills → $SUPPORTED_HARNESSES"
+    else
+        echo -e "  ${RED}✗${NC} local skills → $SUPPORTED_HARNESSES"
+        echo x >> "$FAIL_COUNTER"
+        if [[ -n "$output" ]]; then
+            echo "$output" | tail -5 | sed -e "s/^/    /"
+        fi
+    fi
+}
+
 SOURCES=$(yq -o=json '.sources' "$REGISTRY_FILE" | jq -r 'keys[]')
 if [[ -z "$SOURCES" ]]; then
     echo -e "${YELLOW}No sources defined in registry.${NC}"
-    exit 0
+elif ! $cache_hit; then
+    for repo in $SOURCES; do
+        description=$(yq -r ".sources.\"$repo\".description // \"\"" "$REGISTRY_FILE")
+        pin=$(yq -r ".sources.\"$repo\".pin // \"\"" "$REGISTRY_FILE")
+
+        echo -e "${BLUE}Source:${NC} $repo"
+        [[ -n "$description" ]] && echo "  $description"
+
+        install_source "$repo" "$pin"
+        echo
+    done
 fi
 
-for repo in $SOURCES; do
-    description=$(yq -r ".sources.\"$repo\".description // \"\"" "$REGISTRY_FILE")
-    pin=$(yq -r ".sources.\"$repo\".pin // \"\"" "$REGISTRY_FILE")
+echo -e "${BLUE}Local skills tree${NC}"
+install_local_tree
+echo
 
-    echo -e "${BLUE}Source:${NC} $repo"
-    [[ -n "$description" ]] && echo "  $description"
-
-    install_source "$repo" "$pin"
-    echo
-done
+echo -e "${BLUE}Legacy Codex skill mirror${NC}"
+evict_legacy_codex_skills
+echo
 
 fail_count=0
 if [[ -s "$FAIL_COUNTER" ]]; then

@@ -567,10 +567,12 @@ function checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent) 
   const status = checkpointSpent
     ? 'Stop calling tools now — synthesize your findings and return inline. The checkpoint allowance is spent.'
     : `One mcp__tilth__tilth_write with ${CHECKPOINT_SHAPE} remains. No tool call is allowed except that constrained checkpoint write; after it, return inline.`;
-  return `Sub-agent budget exceeded (type '${agentType || 'default'}': ${exceeded.join(', ')}). ` +
-    `${status} ` +
-    `If your task is incomplete, open your final reply with ` +
-    `"status: blocked: out of context" so the orchestrator re-dispatches a fresh agent.`;
+  const coder = String(agentType || '').trim().toLowerCase() === 'coder';
+  const incomplete = coder
+    ? 'If your task is incomplete, open your final reply with "status: needs-context" so the phase owner can persist observations and retry the same phase.'
+    : 'If your task is incomplete, open your final reply with "status: blocked: <reason>" so the owner can handle the blocker.';
+  return `Local guard budget exceeded (type '${agentType || 'default'}': ${exceeded.join(', ')}). ` +
+    `This is a local guard budget signal, not a provider context failure. ${status} ${incomplete}`;
 }
 
 function denyReason(agentType, turns, tokens, budget, checkpointSpent) {
@@ -578,10 +580,14 @@ function denyReason(agentType, turns, tokens, budget, checkpointSpent) {
 }
 
 function nudgeContext(agentType, budget) {
-  return `Approaching this sub-agent's budget (type '${agentType || 'default'}': ` +
+  const coder = String(agentType || '').trim().toLowerCase() === 'coder';
+  const handoff = coder
+    ? 'return compact checkpoint observations inline now; do not persist a checkpoint; wrap up.'
+    : 'Persist compact handoff observations now and wrap up; if incomplete, return status: blocked: <reason>.';
+  return `Local guard budget warning (type '${agentType || 'default'}': ` +
     `soft ${budget.turnSoft} turns / ${budget.ctxSoft} context tokens). ` +
-    `Persist your handoff or partial results now and wrap up: non-checkpoint ` +
-    `tool calls are hard-blocked at the ceiling, so prefer returning a concise ` +
+    `This is a local guard budget signal, not a provider context failure. ${handoff} ` +
+    `non-checkpoint tool calls are hard-blocked at the ceiling, so prefer returning a concise ` +
     `final answer over further exploration.`;
 }
 
@@ -590,10 +596,13 @@ function hardNudgeContext(agentType, budget, checkpointSpent) {
   const checkpoint = checkpointSpent
     ? 'The one checkpoint allowance is already spent; return inline now.'
     : `One mcp__tilth__tilth_write with ${CHECKPOINT_SHAPE} is allowed to persist a checkpoint.`;
-  return `Context hard ceiling exceeded (type '${agentType || 'default'}': ` +
-    `${budget.ctxHard} tokens). ${checkpoint} Do not keep exploring. If your task is ` +
-    `incomplete, open your final reply with "status: blocked: out of context" ` +
-    `so the orchestrator re-dispatches a fresh agent.`;
+  const coder = String(agentType || '').trim().toLowerCase() === 'coder';
+  const incomplete = coder
+    ? 'If your task is incomplete, open your final reply with "status: needs-context" so the phase owner can persist observations and retry the same phase.'
+    : 'If your task is incomplete, open your final reply with "status: blocked: <reason>" so the owner can handle the blocker.';
+  return `Local guard context hard ceiling exceeded (type '${agentType || 'default'}': ` +
+    `${budget.ctxHard} tokens). This is a local guard budget signal, not a provider context failure. ` +
+    `${checkpoint} Do not keep exploring. ${incomplete}`;
 }
 
 function isCheckpointWrite(event) {

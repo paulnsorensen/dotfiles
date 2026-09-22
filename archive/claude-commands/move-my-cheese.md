@@ -118,7 +118,7 @@ Categorize each CI failure from Phase 1 recon:
 
 ### Build Check
 
-Run the project's build command directly (`cargo check`, `tsc --noEmit`, `go build ./...`, `uv run mypy .`, etc.) — the `rtk hook claude` PreToolUse hook auto-rewrites and filters output to structured errors.
+Run the project's build command directly (`cargo check`, `tsc --noEmit`, `go build ./...`, or `uv run mypy .`).
 
 If build fails, understand the failing symbols before fixing with **chisel** — use the Serena MCP (`mcp__serena__find_symbol` for type signatures, `find_referencing_symbols` for cross-refs) for local code, and Context7 (`query-docs`) for external APIs.
 
@@ -126,7 +126,7 @@ Never grep dependency caches.
 
 ### Run Tests
 
-Run the project's test command directly (`cargo test`, `npm test`, `go test ./...`, `uv run pytest`, etc.) — rtk filters test runner output via its `pytest`, `jest`, `vitest`, and `cargo` subcommands.
+Run the project's test command directly (`cargo test`, `npm test`, `go test ./...`, or `uv run pytest`).
 
 If tests pass: the CI failure was likely infra. Move to Phase 3b.
 

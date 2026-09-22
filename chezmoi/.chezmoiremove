@@ -12,7 +12,13 @@ stops/disables/masks them so a still-running stale copy can't restart. */ -}}
 .config/systemd/user/worker-opus.service
 local-llm/configs/lean.json
 {{ end }}
+.omp/agent/extensions/rtk.ts
+.config/rtk/filters.toml
+.claude/RTK.md
 .omp/agent/extensions/no-fork-all.ts
+
+# Pi local providers are disabled until the local model catalog is restored.
+.pi/agent/models.json
 
 # Retired native harnesses. Remove their configuration and runtime state;
 # package binaries are removed by packages/sync.sh.

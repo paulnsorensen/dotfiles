@@ -270,8 +270,8 @@ def codex_normalize(path):
             }
 
 
-def omp_discover():
-    root = os.path.expanduser("~/.omp/agent/sessions")
+def _pi_family_discover(config_dir):
+    root = os.path.expanduser(config_dir)
     if not os.path.isdir(root):
         return []
     out = []
@@ -280,8 +280,48 @@ def omp_discover():
     return out
 
 
-def omp_normalize(path):
-    """oh-my-pi session JSONL -> canonical envelope.
+_PI_FAMILY_STOP_REASONS = {
+    "stop": "end_turn",
+    "toolUse": "tool_use",
+    "length": "max_tokens",
+}
+
+
+def _pi_family_turn_meta(msg):
+    """Map Pi-family turn metadata to canonical Claude field names."""
+    usage = msg.get("usage") if isinstance(msg.get("usage"), dict) else {}
+    snapshot = msg.get("contextSnapshot")
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    stop = msg.get("stopReason")
+    model = msg.get("model")
+    if model and msg.get("provider"):
+        model = f"{msg['provider']}/{model}"
+    meta = {
+        "model": model,
+        "stop_reason": _PI_FAMILY_STOP_REASONS.get(stop, stop),
+        "error_message": msg.get("errorMessage"),
+        "usage": {
+            "input_tokens": usage.get("input"),
+            "output_tokens": usage.get("output"),
+            "cache_read_input_tokens": usage.get("cacheRead"),
+        },
+        "duration_ms": msg.get("duration"),
+        "ttft_ms": msg.get("ttft"),
+        "prompt_tokens": snapshot.get("promptTokens"),
+    }
+    return {key: value for key, value in meta.items() if value is not None}
+
+
+def omp_discover():
+    return _pi_family_discover("~/.omp/agent/sessions")
+
+
+def pi_discover():
+    return _pi_family_discover("~/.pi/agent/sessions")
+
+
+def _pi_family_normalize(path, harness):
+    """Pi-family session JSONL -> canonical envelope.
 
     The ``session`` header entry carries id + cwd, threaded onto every row.
     ``message`` entries: assistant ``toolCall`` blocks become tool_use blocks
@@ -332,12 +372,12 @@ def omp_normalize(path):
                 else:
                     blocks.append(block)
             yield {
-                "harness": "omp",
+                "harness": harness,
                 "type": "assistant",
                 "timestamp": ts,
                 "sessionId": session_id,
                 "cwd": cwd,
-                "message": {"content": blocks},
+                "message": {"content": blocks, **_pi_family_turn_meta(msg)},
             }
         elif role == "toolResult":
             text = "\n".join(
@@ -346,7 +386,7 @@ def omp_normalize(path):
                 if isinstance(b, dict) and b.get("type") == "text"
             )
             yield {
-                "harness": "omp",
+                "harness": harness,
                 "type": "user",
                 "timestamp": ts,
                 "sessionId": session_id,
@@ -364,13 +404,21 @@ def omp_normalize(path):
             }
         elif role == "user":
             yield {
-                "harness": "omp",
+                "harness": harness,
                 "type": "user",
                 "timestamp": ts,
                 "sessionId": session_id,
                 "cwd": cwd,
                 "message": {"content": msg.get("content")},
             }
+
+
+def omp_normalize(path):
+    return _pi_family_normalize(path, "omp")
+
+
+def pi_normalize(path):
+    return _pi_family_normalize(path, "pi")
 
 
 def cursor_discover():
@@ -579,6 +627,7 @@ ADAPTERS = [
     ("claude", claude_discover, claude_normalize),
     ("codex", codex_discover, codex_normalize),
     ("omp", omp_discover, omp_normalize),
+    ("pi", pi_discover, pi_normalize),
     ("cursor", cursor_discover, cursor_normalize),
     ("copilot", copilot_discover, None),
 ]
@@ -776,6 +825,46 @@ def main():
           AND message IS NOT NULL
           AND json_extract_string(message, '$.stop_reason')
               IN ('end_turn', 'stop_sequence', 'max_tokens', 'success', 'error', 'aborted');
+    """)
+
+    # Step 4b: model_turns (one row per assistant turn that names a model).
+    # Claude writes one raw entry per content block of a message, and repeats
+    # `usage` on each entry, so entries group by `message.id`: tool calls sum,
+    # usage takes one value. omp and other harnesses carry no `message.id` and
+    # keep one row per entry. TRY_CAST keeps one malformed metric from
+    # aborting the whole ingest. Latency and prompt_tokens are omp-only.
+    print("  Creating model_turns...")
+    run_sql("""
+        CREATE TABLE model_turns AS
+        WITH fragments AS (
+            SELECT
+                harness, sessionId, cwd, timestamp, message,
+                coalesce(json_extract_string(message, '$.id'),
+                         'row:' || row_number() OVER ()) AS turn_key,
+                (SELECT count(*)
+                   FROM unnest(json_extract(json_extract(message, '$.content'), '$[*]')) AS c(block)
+                  WHERE json_extract_string(block, '$.type') = 'tool_use') AS tool_calls
+            FROM raw_entries
+            WHERE type = 'assistant'
+              AND message IS NOT NULL
+              AND json_extract_string(message, '$.model') IS NOT NULL
+        )
+        SELECT
+            harness,
+            any_value(json_extract_string(message, '$.model')) AS model,
+            arg_max(json_extract_string(message, '$.stop_reason'), timestamp) AS stop_reason,
+            max(json_extract_string(message, '$.error_message')) AS error_message,
+            max(TRY_CAST(json_extract(message, '$.usage.input_tokens') AS BIGINT)) AS input_tokens,
+            max(TRY_CAST(json_extract(message, '$.usage.output_tokens') AS BIGINT)) AS output_tokens,
+            max(TRY_CAST(json_extract(message, '$.usage.cache_read_input_tokens') AS BIGINT))
+                AS cache_read_tokens,
+            max(TRY_CAST(json_extract(message, '$.prompt_tokens') AS BIGINT)) AS prompt_tokens,
+            max(TRY_CAST(json_extract(message, '$.duration_ms') AS DOUBLE)) AS duration_ms,
+            max(TRY_CAST(json_extract(message, '$.ttft_ms') AS DOUBLE)) AS ttft_ms,
+            CAST(sum(tool_calls) AS BIGINT) AS tool_calls,
+            min(timestamp) AS timestamp, sessionId, any_value(cwd) AS cwd
+        FROM fragments
+        GROUP BY harness, sessionId, turn_key;
     """)
 
     # Step 5: agent_spawns.

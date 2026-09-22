@@ -114,7 +114,6 @@ def test_global_resolves_canonical_allow_and_deny(global_manifest):
     allow = global_manifest.settings.get("permissions_allow", [])
     deny = global_manifest.settings.get("permissions_deny", [])
     for rule in (
-        "Bash(rtk proxy git grep:*)",
         "Bash(rm -rf:*)",
         "Bash(sudo:*)",
     ):
@@ -153,13 +152,11 @@ def test_global_deny_seed_leaves_search_routing_to_hooks(global_manifest):
     """Search-tool routing is no longer a hard deny here.
 
     grep/ag/ack plus the Grep/Glob tools are rerouted by hooks or prompting, so
-    they must stay out of the deny list. The only unroutable tunnel we still hard
-    deny is ``rtk proxy git grep`` because it would bypass structural search.
+    they must stay out of the deny list.
     """
     deny = set(global_manifest.settings.get("permissions_deny", []))
     for rule in ("Grep", "Glob", "Bash(grep:*)", "Bash(ag:*)", "Bash(ack:*)"):
         assert rule not in deny
-    assert "Bash(rtk proxy git grep:*)" in deny
 
 
 def test_global_deny_seed_safety_floor(global_manifest):

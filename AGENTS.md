@@ -43,7 +43,7 @@ Never edit a rendered target. Edit the source, then deploy.
 | Claude-native plugin | `claude/plugins/registry.yaml` | `dots sync` |
 | Codex MCP, config scalar, or agent selection | `chezmoi/.chezmoidata/codex.yaml` | `dots sync` |
 | Cursor plugin | `cursor/plugins/local/<name>/` | `dots sync` |
-| Package / profile / OMP config | `packages/packages.yaml` / `profiles/<name>/profile.yaml` / `chezmoi/.chezmoidata/omp.yaml` | relevant `dots` command |
+| Package / profile / OMP or Pi config | `packages/packages.yaml` / `profiles/<name>/profile.yaml` / `chezmoi/.chezmoidata/{omp,pi}.yaml` | relevant `dots` command |
 | Secret (API key, token) | the vault — never `.env`. Key names: `secrets/secrets.env.tmpl` | run `bin/vault-provision` as the operator |
 
 Implementation details (vault provisioning, codex merge semantics, credential isolation) live in the wiki — see [[operations/sync-and-chezmoi]] and [[architecture/chezmoi-authoritative-codex]].
@@ -68,4 +68,3 @@ Implementation details (vault provisioning, codex merge semantics, credential is
 - New `zsh/` files need an ordered `zshrc` source entry.
 - Reference docs belong in gitignored `reference/`.
 - `git commit --no-verify` is only for rare temporary prek overrides.
-- A hook rewrites shell commands through `rtk`. Do not add the prefix by hand. See `~/.claude/RTK.md` for meta commands.

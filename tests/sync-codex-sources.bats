@@ -215,10 +215,19 @@ EOF
     run _cz_codex_hooks_json "$REAL_DOTFILES_DIR/agents/hooks/registry.yaml" "/h/.codex/hooks"
     [ "$status" -eq 0 ]
     # Codex runs hook commands from the session cwd, so a relative path never
-    # resolves — every command must be absolute.
+    # resolves — every command must carry an absolute `bash /…` path. The
+    # `env DOTFILES_HARNESS=codex` prefix (parity with the ap renderer; see
+    # wiki harnesses/codex-hooks-schema) precedes it, so match the absolute
+    # bash path anywhere in the command, not just at the start.
     local relatives
-    relatives=$(printf '%s' "$output" | jq -r '[.hooks[][].hooks[].command | select(startswith("bash /") | not)] | length')
+    relatives=$(printf '%s' "$output" | jq -r '[.hooks[][].hooks[].command | select(test("bash /") | not)] | length')
     [ "$relatives" -eq 0 ]
+    # Every codex hook command carries the harness-identity prefix so a script
+    # whose output differs per harness (e.g. commit-hallouminate-reminder) knows
+    # it is running under codex.
+    local unprefixed
+    unprefixed=$(printf '%s' "$output" | jq -r '[.hooks[][].hooks[].command | select(startswith("env DOTFILES_HARNESS=codex bash /") | not)] | length')
+    [ "$unprefixed" -eq 0 ]
     # tool-reroute is harnesses:[claude] (5f78a0f) and must not leak into codex.
     run bash -c "printf '%s' '$output' | grep -c tool-reroute || true"
     [ "$output" = "0" ]

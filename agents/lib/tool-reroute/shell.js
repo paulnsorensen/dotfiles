@@ -104,11 +104,9 @@ function parse(command) {
 
 // The invoked command word of a segment, skipping `sudo`, `env VAR=val`, and
 // bare leading `VAR=val` assignment prefixes so the REAL binary is found
-// (`FOO=1 grep x` → grep). Also strip a leading `rtk` / `rtk proxy`
-// wrapper, so a model-issued `rtk grep foo` / `rtk proxy grep foo` still resolves
-// to the wrapped command word (grep) and reroutes. Returns the basename
-// (`/usr/bin/grep` → `grep`) plus the args that follow it. `{ word: null }` when
-// the segment has no command word (a lone assignment, a bare `rtk`, or empty).
+// (`FOO=1 grep x` → grep). Returns the basename (`/usr/bin/grep` → `grep`)
+// plus the args that follow it. `{ word: null }` when the segment has no
+// command word (a lone assignment or empty).
 function commandWord(argv) {
   let i = 0;
   while (i < argv.length && (argv[i] === 'sudo' || /(^|\/)env$/.test(argv[i]))) {
@@ -119,10 +117,6 @@ function commandWord(argv) {
     }
   }
   while (i < argv.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i])) i++;
-  if (i < argv.length && argv[i] === 'rtk') { // strip the rtk / rtk proxy wrapper
-    i++;
-    if (i < argv.length && argv[i] === 'proxy') i++;
-  }
   const tok = argv[i];
   if (!tok) return { word: null, args: [] };
   return { word: tok.slice(tok.lastIndexOf('/') + 1), args: argv.slice(i + 1) };

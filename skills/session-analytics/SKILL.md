@@ -14,12 +14,13 @@ allowed-tools: Bash, Read
 Interactive log queries, plus the data layer other analytics skills build on.
 The contracts live in `references/`: `canonical-schema.md` (table shapes —
 read before writing SQL), `harness-coverage.md`, `query-conventions.md`
-(pack authoring, still used by skill-improver's `duckdb-expert` packs), and
+(pack authoring, still used by skillz's `duckdb-expert` packs), and
 `calibration.md` (shared confidence/severity model).
 
 Run `<skill-dir>/scripts/query.sh <report> [harness]`. Reports: `tools`,
 `errors`, `mcp`, `skills`, `sessions`, `bash`, `denials`, `allowlist-gaps`,
-`python3`, `hooks`, `compound`, `projects`, `heatmap`. The script ingests
+`python3`, `hooks`, `compound`, `projects`, `heatmap`, `latency` (model
+round-trips, batching, and quota stops per model). The script ingests
 (1-hour TTL) and handles a missing/empty database itself.
 
 Anything not covered: `scripts/query.sh sql "SELECT ..."` with the canonical

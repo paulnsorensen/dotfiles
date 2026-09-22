@@ -10,7 +10,7 @@
 // preserved). Any other segment — a non-git command, a `|`/`||`/`&` — leaves
 // the whole thing for delegation. Only `git` is handled: wt-git is git-only,
 // and session-analytics put cd+gh denials at 3 vs 21 for cd+git, so cd+gh falls
-// through (rtk can't rewrite it either — the command just runs).
+// through (command just runs).
 
 const { parse, commandWord, shQuote } = require('./shell');
 

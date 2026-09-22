@@ -6,8 +6,8 @@
 #   source:      brew (default) | cask | tap | cargo | npm | uv | gh-extension
 #   dev:         only when DOTFILES_DEV=true
 #   platform:    mac | linux (default: both)
-#   flags:       extra args spliced into the installer (uv source only;
-#                e.g. ["--python", "3.13", "--prerelease=allow"])
+#   flags:       extra args spliced into npm/uv installers
+#                (e.g. ["--ignore-scripts"] or ["--python", "3.13"])
 #   float:       uv source only; unpinned entries only. Upgrade the tool on
 #                every sync, not only in UPGRADE_MODE (dots up).
 
@@ -53,6 +53,10 @@ packages:
   - pyenv: { dev: true }
   - docker-desktop: { source: cask, dev: true, platform: mac, greedy: false } # self-updates in-app
 
+  # AI harnesses not owned by mise
+  # renovate: datasource=npm depName=@earendil-works/pi-coding-agent
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.86.0", flags: ["--ignore-scripts"] }
+
   # LSP servers not owned by mise
   # renovate: datasource=npm depName=@vtsls/language-server
   - vtsls: { source: npm, pkg: "@vtsls/language-server", version: "0.3.0" }
@@ -67,7 +71,7 @@ packages:
 
   # Linters
   # renovate: datasource=npm depName=eslint
-  - eslint: { source: npm, version: "10.9.1" }
+  - eslint: { source: npm, version: "10.10.0" }
   # renovate: datasource=npm depName=markdownlint-cli2
   - markdownlint-cli2: { source: npm, version: "0.23.2" }
   # renovate: datasource=npm depName=@withgraphite/graphite-cli
@@ -75,13 +79,13 @@ packages:
 
   # Zed external-agent adapters (ACP)
   # renovate: datasource=npm depName=@agentclientprotocol/codex-acp
-  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "1.11.0", platform: mac } # runs Codex as a Zed ACP agent
+  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "1.12.0", platform: mac } # runs Codex as a Zed ACP agent
 
   # uv tools (Python)
   # renovate: datasource=pypi depName=ralphify
   - ralphify: { source: uv, version: "0.3.0" }
   # renovate: datasource=pypi depName=ruff
-  - ruff: { source: uv, version: "0.16.6" } # Python linter (just lint-python)
+  - ruff: { source: uv, version: "0.16.7" } # Python linter (just lint-python)
   # renovate: datasource=pypi depName=check-jsonschema
   - check-jsonschema: { source: uv, version: "0.38.0" }
   # renovate: datasource=git-refs depName=agentskills/agentskills

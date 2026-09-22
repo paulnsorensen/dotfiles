@@ -83,26 +83,39 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-This block is the in-session twin of the `/wheypoint` slug (same four fields). `/cook` writes the full report to `.cheese/cook/<slug>.md`; hand back the digest, not the full trace.
+This generic block is a compatibility digest, not an authoritative checkpoint. `/wheypoint` owns durable checkpoint state; `/cook` writes the full report to `.cheese/cook/<slug>.md`. Hand back the digest, not the full trace.
 
 After two failed attempts at the same assertion with an unchanged failure mode, do not attempt a third. Return `status: blocked: suspect-environment — <one-line hypothesis>` with the smallest reproduction and the two hypotheses you cannot distinguish. The orchestrator retains the narrow diagnosis inline and dispatches a fresh coder once the cause is known.
 
-When the diff touches >1 file or adds public surface, include `taste_test: deferred-to-orchestrator` in the handoff and record it in `.cheese/cook/<slug>.md`. Return `next: reviewer` and explicitly request `Review mode: taste-test` with the contract, diff, cut-test list, and locked decisions. Do not return `next: done` while deferred.
+When the diff touches >1 file or adds public surface, include `taste_test: deferred-to-orchestrator` in the handoff and record it in `.cheese/cook/<slug>.md`. Request `Review mode: taste-test` with the contract, diff, cut-test list, and locked decisions. The generic four-field block above remains compatibility-only; phase-owned handoff rules below take precedence. Do not return `next: done` while deferred.
 
-Your hard ceiling is 130k tokens / 100 turns; the harness kills you at it. Checkpoint incrementally, not at the ceiling. Before your first checkpoint write, create `.cheese/notes/` (a `tilth_write` `create_file` at that path creates any missing parent directory) so the checkpoint write cannot fail on a missing directory. Then write a resume brief to `.cheese/notes/<slug>.md` via `tilth_write`, and update it as each sub-task completes so an unexpected death loses nothing. When the remaining window cannot hold the next edit site, stop starting new edit sites — finish and verify the one in flight (never leave a `tilth_write` unconfirmed), then return `status: blocked: out of context`, `artifact: .cheese/notes/<slug>.md`, `next: cook` so the parent resumes with a fresh coder. Running out before the handoff means you checkpointed too late. On clean completion, do not write a resume brief — the digest above is the baton.
+### Active phase context handoff
+
+Skills own phase checkpoint and recovery. The registry supplies the 130k tokens / 100 turns hard ceiling. Do not create or update checkpoint files from this role.
+
+For an active phase, return a compact phase-owned handoff when the local guard warns or context stops work:
+
+```
+status: needs-context
+```
+
+Return checkpoint observations in the final reply, not a guessed artifact path or next phase. Include completed edits, exact remaining behavior, targeted file ranges, gate results, worktree+base, locked decisions, and known-false leads. Keep the observations under ~2k tokens.
+
+The parent persists the observations through the phase-owned checkpoint protocol, resolves authoritative `working_context`, and performs one fresh retry in the same phase. The parent must not auto-implement the remainder or choose another phase for this active-phase handoff.
+
+A local guard budget signal is distinct from a provider context failure. If the provider ends the context before a final reply, the parent uses the last available compact observations or halts when none exist. Non-phase work uses the Wheypoint skill-owned protocol.
 
 ### Resume brief
 
-The brief exists so the next coder can skip your exploration, not repeat it. Keep it under ~2k tokens and use these sections in order:
+The phase-owned checkpoint protocol turns the observations into the authoritative resume brief. Use these sections in order when the parent requests their contents:
 
 1. **Goal and done** — the contract in one sentence, then each completed sub-task with the files it changed.
-2. **Already read — do not re-read** — one `path#start-end` per range you read, with a one-line summary of what it told you. A bare filename is not an entry.
-3. **Read next, in order** — one `path#anchor` per remaining edit site, with the change it needs. This is the next coder's `Sites:` field.
-4. **Gates** — the exact command last run, its result, and the commit SHA it ran at.
-   Also record the absolute worktree path and base SHA you worked in, so the parent can reuse the worktree instead of paying a cold install again.
-5. **Locked decisions and known-false leads** — carry forward anything from your dispatch plus any you settled.
+2. **Already read — do not re-read** — one `path#start-end` per range you read, with a one-line summary of what it told you.
+3. **Read next, in order** — one targeted `path#start-end` range per remaining edit site, with the change it needs. Do not use `#anchor`.
+4. **Gates** — the exact command last run, its result, and the commit SHA it ran at. Also record the absolute worktree path and base SHA.
+5. **Locked decisions and known-false leads** — carry forward dispatch facts and settled findings.
 
-When you are the resumed coder: read the brief first, treat section 2 as already known, start at section 3, and do not re-run the gates in section 4 until you have changed something. Re-read a section-2 range only when an edit site depends on it.
+When resumed, read the authoritative brief first, start at **Read next**, and do not re-run a gate until you change something.
 
 ## Rules
 
@@ -111,7 +124,7 @@ When you are the resumed coder: read the brief first, treat section 2 as already
 - Tests encode *why* the behavior matters, not just *what* it does. A test that can't fail when business logic changes is wrong.
 - Run code for anything code can compute (counts, diffs, arithmetic) instead of eyeballing it.
 - De-slop before handoff: no speculative abstractions, dead code, or narration comments in what you wrote.
-- A denied host search is a routing signal, not an obstacle: switch to `tilth_search` or `tilth_read`. Never retry the same search through `rtk proxy` or another shell wrapper — that bypass is closed.
+- A denied host search is a routing signal, not an obstacle: switch to `tilth_search` or `tilth_read`. Never retry the same search through another shell wrapper — that bypass is closed.
 - If the correct fix needs scope you weren't granted, stop and say so. Don't ship a band-aid and call it done.
 - Commit only when asked: stage specific files by name, write a meaningful message, never `--no-verify`.
 - You may be dispatched on a scoped *slice* of a larger task with a context reference (an artifact path), not the whole job — treat that slice as your full boundary: read the reference, implement only the slice, don't re-derive or touch the rest.

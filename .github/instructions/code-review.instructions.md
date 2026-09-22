@@ -44,6 +44,7 @@ When any `skills/*/SKILL.md` is modified, check:
 ## Review Style
 
 - Only comment when confidence is high
-- If a pattern is used consistently elsewhere in the codebase, do not flag it
+- Do not report harmless style differences that match established repository conventions
+- Continue to report correctness, security, and reliability issues even when they repeat
 - Suggest specific fixes, not vague improvements
 - One comment per issue — do not repeat the same feedback across files

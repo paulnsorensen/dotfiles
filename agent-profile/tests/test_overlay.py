@@ -242,7 +242,7 @@ def test_isolated_only_allow_emits_settings(env, monkeypatch):
         env.profiles,
         "allowonly",
         "name: allowonly\nisolated: true\n"
-        'permissions_allow:\n  - "Bash(rtk:*)"\n'
+        'permissions_allow:\n  - "Bash(tilth:*)"\n'
         "mcps:\n  - name: tilth\n    command: tilth\n",
     )
     rec = _capture_exec(monkeypatch)
@@ -251,7 +251,7 @@ def test_isolated_only_allow_emits_settings(env, monkeypatch):
     args = rec["args"]
     assert "--settings" in args
     settings = json.loads(Path(args[args.index("--settings") + 1]).read_text())
-    assert settings["permissions"]["allow"] == ["Bash(rtk:*)"]
+    assert settings["permissions"]["allow"] == ["Bash(tilth:*)"]
     assert "deny" not in settings["permissions"]
 
 
@@ -966,7 +966,7 @@ def test_oss_docs_profile_writes_pinned_playwright_mcp_for_codex(
     cfg = _codex_config(env)
     assert cfg["mcp_servers"]["playwright"] == {
         "command": "npx",
-        "args": ["-y", "@playwright/mcp@0.0.80"],
+        "args": ["-y", "@playwright/mcp@0.0.82"],
     }
     assert cfg["mcp_servers"]["context7"] == {
         "command": "agent-secret-proxy",

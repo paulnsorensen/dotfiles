@@ -126,13 +126,11 @@ PINNED_ENTRIES=(
     fi
 }
 
-@test "rtk and cargo-llvm-cov cargo installer entries are absent after mise migration" {
-    local name count
-    for name in rtk cargo-llvm-cov; do
-        count=$(yq -r ".packages[] | select(kind == \"map\") | select(has(\"$name\")) | .\"$name\"" "$PACKAGES_YAML" | wc -l | tr -d ' ')
-        if [[ "$count" != "0" ]]; then
-            echo "$name still has a packages.yaml installer entry" >&2
-            return 1
-        fi
-    done
+@test "cargo-llvm-cov cargo installer entry is absent after mise migration" {
+    local count
+    count=$(yq -r '.packages[] | select(kind == "map") | select(has("cargo-llvm-cov")) | ."cargo-llvm-cov"' "$PACKAGES_YAML" | wc -l | tr -d ' ')
+    if [[ "$count" != "0" ]]; then
+        echo "cargo-llvm-cov still has a packages.yaml installer entry" >&2
+        return 1
+    fi
 }

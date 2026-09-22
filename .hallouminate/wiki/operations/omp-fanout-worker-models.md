@@ -15,7 +15,7 @@ OMP fan-out cost is controlled by two separate levers: task runtime policy decid
 
 ## Current risk profile
 
-Observed on 2026-07-20 with `rtk omp config get/list` in this repo:
+Observed on 2026-07-20 with `omp config get/list` in this repo:
 
 | Setting | Observed value | Cost implication |
 | --- | ---: | --- |

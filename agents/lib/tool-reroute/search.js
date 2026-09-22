@@ -16,8 +16,8 @@
 // search), a pattern carrying regex metacharacters (tilth matches literally), a
 // case-insensitive find (-iname/-ipath — tilth's glob is case-sensitive, so a
 // rewrite would silently narrow the match set), or any other non-name find —
-// return null and fall through to rtk delegation: never ship a rewrite that
-// silently changes search semantics, never hard-block.
+// return null and fall through (command runs unchanged): never ship a rewrite
+// that silently changes search semantics, never hard-block.
 
 const { parse, commandWord, shQuote } = require('./shell');
 

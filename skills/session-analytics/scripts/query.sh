@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # query.sh <report> [harness] | sql "SELECT ..." — canned session-log reports.
 # Reports: tools errors mcp skills sessions bash denials allowlist-gaps
-#          python3 hooks compound projects heatmap
-# Harness: all (default) | claude | codex | omp | cursor | copilot
+#          python3 hooks compound projects heatmap latency
+# Harness: all (default) | claude | codex | omp | pi | cursor | copilot
 # sql runs one raw query against the database (markdown output).
 # SESSIONS_DB overrides the database path and disables auto-ingest.
 # SESSIONS_DUCKDB_MEMORY_LIMIT overrides the duckdb memory_limit cap (default 8GB).
@@ -179,6 +179,26 @@ case "$REPORT" in
              FROM tool_uses
              WHERE timestamp::DATE >= CURRENT_DATE - INTERVAL '14' DAY $(hf)
              GROUP BY day, hour ORDER BY day DESC, hour;"
+        ;;
+    latency)
+        # Model round-trip cost per turn. duration/ttft/prompt_k are omp-only.
+        # A database from before model_turns existed can still be inside the TTL.
+        sessions_db_has_table "$DB" model_turns || case $? in
+            1) echo "No model_turns table in $DB — run ingest.py --force."; exit 0 ;;
+            *) echo "Cannot query $DB." >&2; exit 1 ;;
+        esac
+        run "SELECT harness, model, count(*) AS turns,
+                    round(avg(tool_calls), 2) AS calls_per_turn,
+                    round(100.0 * avg(CASE WHEN tool_calls = 1 THEN 1 ELSE 0 END), 1) AS single_call_pct,
+                    round(median(duration_ms) / 1000, 1) AS dur_p50_s,
+                    round(quantile_cont(duration_ms, 0.95) / 1000, 1) AS dur_p95_s,
+                    round(median(ttft_ms) / 1000, 1) AS ttft_p50_s,
+                    round(sum(duration_ms) / 3.6e6, 1) AS model_hours,
+                    round(median(prompt_tokens) / 1000) AS prompt_k_p50,
+                    count(*) FILTER (WHERE stop_reason = 'error') AS error_stops
+             FROM model_turns
+             WHERE 1=1 $(hf)
+             GROUP BY harness, model ORDER BY turns DESC LIMIT 25;"
         ;;
     *)
         echo "Unknown report: $REPORT" >&2

@@ -740,7 +740,7 @@ _cz_codex_hooks_json() {
         | group_by(.event)
         | map({ (.[0].event): [ .[] | {
                 hooks: [ { type: "command",
-                           command: ("bash " + $dir + "/" + (.script | split("/") | last)) }
+                           command: ("env DOTFILES_HARNESS=codex bash " + $dir + "/" + (.script | split("/") | last)) }
                          + (if .timeout then { timeout: .timeout } else {} end) ] }
               + (if .matcher then { matcher: .matcher } else {} end) ] })
         | add
@@ -921,6 +921,21 @@ sync_omp_chezmoi_sources() {
     fi
     log_info "Assembled OMP chezmoi source state (dot_omp/private_agent/exact_skills)"
     return 0
+}
+
+# Install or update packages declared in Pi's managed settings. Exact npm
+# versions stay pinned because Pi does not float versioned package sources.
+sync_pi_packages() {
+    if ! command -v pi &>/dev/null; then
+        log_warning "pi not found — skipping Pi package reconcile"
+        return 0
+    fi
+
+    log_info "Reconciling Pi packages"
+    if ! pi update --extensions; then
+        log_error "Pi package reconcile failed"
+        return 1
+    fi
 }
 
 # Reconcile OMP marketplace plugins and pinned npm plugins against the
