@@ -72,23 +72,74 @@ run_privileged() {
     "$@"
 }
 
+require_trusted_interpreter() {
+    local path="$1" owner mode
+    [[ -n "$DESTDIR" ]] && return 0
+    if [[ "$(uname -s)" == Darwin ]]; then
+        owner="$(stat -Lf '%u' "$path")"
+        mode="$(stat -Lf '%Lp' "$path")"
+    else
+        owner="$(stat -Lc '%u' "$path")"
+        mode="$(stat -Lc '%a' "$path")"
+    fi
+    if [[ "$owner" != 0 ]] || (( (8#$mode & 8#22) != 0 )); then
+        echo "vault-provision: Node interpreter must be root-owned and not group/other-writable: $path" >&2
+        return 1
+    fi
+}
+
+node_snapshot_complete() {
+    local target="$1" owner mode
+    [[ -x "$target/bin/node" && -x "$target/bin/npx" \
+        && -d "$target/lib/node_modules/npm" && ! -L "$target/lib/node_modules/npm" \
+        && -f "$target/lib/node_modules/npm/bin/npx-cli.js" ]] || return 1
+    [[ -n "$DESTDIR" ]] && return 0
+    if [[ "$(uname -s)" == Darwin ]]; then
+        owner="$(stat -f '%u' "$target")"
+        mode="$(stat -f '%Lp' "$target")"
+    else
+        owner="$(stat -c '%u' "$target")"
+        mode="$(stat -c '%a' "$target")"
+    fi
+    [[ "$owner" == 0 ]] && (( (8#$mode & 8#22) == 0 ))
+}
+
 install_node_runtime() {
-    local source_npx="$1" source_bin source_root version destination target chown_path
-    local wrapper temporary
+    local source_npx="$1" source_bin node_path source_root version destination target chown_path
+    local wrapper temporary node_exec npm_root
     source_bin="${source_npx%/*}"
-    source_root="${source_bin%/bin}"
-    [[ -x "$source_bin/node" && -f "$source_root/lib/node_modules/npm/bin/npx-cli.js" ]] || {
+    node_path="$source_bin/node"
+    [[ -x "$node_path" ]] || {
         echo "vault-provision: npx and node must come from one complete Node installation." >&2
         return 1
     }
-    version="$("$source_bin/node" --version)"
+    require_trusted_interpreter "$node_path" || return 1
+    node_exec="$("$node_path" -p 'process.execPath')" || {
+        echo "vault-provision: unable to determine Node executable path." >&2
+        return 1
+    }
+    [[ "$node_exec" == /*/bin/node ]] || {
+        echo "vault-provision: Node executable path is invalid: $node_exec." >&2
+        return 1
+    }
+    source_root="${node_exec%/bin/node}"
+    [[ "$source_root" != */Cellar/* ]] || {
+        echo "vault-provision: refusing Homebrew Cellar Node prefix: $source_root" >&2
+        return 1
+    }
+    npm_root="$source_root/lib/node_modules/npm"
+    [[ -x "$source_root/bin/npx" && -d "$npm_root" && ! -L "$npm_root" && -f "$npm_root/bin/npx-cli.js" ]] || {
+        echo "vault-provision: npx and npm must come from one complete Node installation." >&2
+        return 1
+    }
+    version="$("$node_path" --version)"
     [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
         echo "vault-provision: node returned an invalid version '$version'." >&2
         return 1
     }
     destination="/usr/local/libexec/dotfiles/node-${version#v}"
     target="$DESTDIR$destination"
-    if [[ ! -x "$target/bin/node" || ! -f "$target/lib/node_modules/npm/bin/npx-cli.js" ]]; then
+    if ! node_snapshot_complete "$target"; then
         run_privileged /usr/bin/install -d -m 0755 "$target"
         run_privileged /bin/cp -RL "$source_root/." "$target/"
     fi
@@ -127,9 +178,12 @@ write_privileged_value() {
 
 ensure_bitwarden_value() {
     local key="$1" project_id token value
-    if value="$(vault_secret_value bitwarden "$key" 2>/dev/null)"; then
+    if value="$(vault_secret_value bitwarden "$key")"; then
         VAULT_PROVISION_VALUE="$value"
         return 0
+    else
+        local fetch_status=$?
+        [[ "$fetch_status" -eq 1 ]] || return "$fetch_status"
     fi
     token="$(_vault_token)" || return 1
     project_id="$(_vault_project_id)" || return 1
