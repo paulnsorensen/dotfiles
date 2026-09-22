@@ -343,14 +343,13 @@ SH
 @test "core.zsh hands mise a gh-backed GitHub credential command" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     command -v gh &>/dev/null || skip "gh not installed"
-    # Regression: gh keeps its token in the macOS keychain, so hosts.yml has no
-    # oauth_token and mise's default gh_cli_tokens reader found nothing —
-    # leaving every aqua release lookup anonymous against the 60/hr per-IP cap.
-    #
-    # Only the gh-present branch is asserted. core.zsh unconditionally prepends
-    # /opt/homebrew/bin (which carries both gh and mise) before reaching the
-    # guard, so a no-gh shell cannot be simulated by controlling PATH here.
-    run zsh --no-rcs -c "source '$REAL_DOTFILES_DIR/zsh/core.zsh'; printf 'CRED=[%s]' \"\$MISE_GITHUB_CREDENTIAL_COMMAND\""
+    # Supply mise so this test checks the credential branch on minimal CI hosts.
+    local mock_bin="$BATS_TEST_TMPDIR/bin"
+    mkdir -p "$mock_bin"
+    printf '#!/bin/sh\nexit 0\n' > "$mock_bin/mise"
+    chmod +x "$mock_bin/mise"
+
+    run env PATH="$mock_bin:$PATH" zsh --no-rcs -c "source '$REAL_DOTFILES_DIR/zsh/core.zsh'; printf 'CRED=[%s]' \"\$MISE_GITHUB_CREDENTIAL_COMMAND\""
     assert_success
     [[ "$output" == *"CRED=[gh auth token]"* ]]
 }

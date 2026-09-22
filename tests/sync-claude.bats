@@ -237,7 +237,7 @@ JSON
         FORCE=false; DRY_RUN=false; TO_REMOVE='stale-mcp'
         get_item_scope() { echo 'user'; }
         remove_item() { return 0; }
-        echo '' | sync_handle_removals 'MCPs'
+        sync_handle_removals 'MCPs' </dev/null
     "
     assert_success
     assert_output_contains "Keeping stale-mcp"
