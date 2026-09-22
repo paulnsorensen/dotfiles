@@ -303,3 +303,7 @@ SH
         return 1
     fi
 }
+@test "CI installs zsh before running the Bats shards" {
+    run yq -e '.jobs["test-shard"].steps[] | select(.run == "sudo apt-get install -y zsh")' "$DOTFILES_DIR/.github/workflows/test.yml"
+    [ "$status" -eq 0 ]
+}
