@@ -11,10 +11,9 @@ description: >
   `encrypted_`, `run_once_`), Go templates, scripts, and secret backends. Do
   NOT use for stow, yadm, rcm, or other dotfile managers, generic git repo
   setup, or password-manager setup unrelated to dotfiles.
-model: haiku
-effort: low
+model: sonnet
+effort: medium
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(chezmoi:*), Bash(git:*), Bash(age:*), Bash(gpg:*), mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__tavily__tavily_extract
-context: fork
 license: MIT
 ---
 

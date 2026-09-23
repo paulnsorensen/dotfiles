@@ -6,6 +6,7 @@ helpers (`_diff`, `_atomic_write`) that the CLI module composes. Sole
 consumer is the sibling `bash-shorten.py`; tests reach the engine through
 the CLI.
 """
+
 from __future__ import annotations
 
 import difflib
@@ -33,7 +34,9 @@ _SG_CONFIG = Path(__file__).resolve().parent / "sgconfig.yml"
 # opts a region out of EVERY rule. Enforced in apply_rules (not per-rule) so it
 # covers the sg pass and the regex pass uniformly. Leading indentation and the
 # spacing around `#` / `:` are tolerated; the keyword must be the whole comment.
-_DIRECTIVE = re.compile(r"[ \t]*#[ \t]*bash-shorten:[ \t]*(disable|enable|skip)[ \t]*\Z")
+_DIRECTIVE = re.compile(
+    r"[ \t]*#[ \t]*bash-shorten:[ \t]*(disable|enable|skip)[ \t]*\Z"
+)
 
 
 def _sg_available() -> bool:
@@ -104,9 +107,12 @@ def _apply_sg(text: str, enabled: set[str]) -> tuple[str, dict[str, int]]:
         try:
             subprocess.run(
                 [
-                    "sg", "scan",
-                    "--config", str(_SG_CONFIG),
-                    "--filter", filter_regex,
+                    "sg",
+                    "scan",
+                    "--config",
+                    str(_SG_CONFIG),
+                    "--filter",
+                    filter_regex,
                     "--update-all",
                     str(tmp_path),
                 ],
@@ -261,19 +267,23 @@ def atomic_write(path: Path, content: str) -> None:
     except FileNotFoundError:
         original_mode = None
 
-    tmp = tempfile.NamedTemporaryFile(
+    with tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
         delete=False,
         dir=str(path.parent),
         prefix=f".{path.name}.",
         suffix=".tmp",
-    )
+    ) as tmp:
+        try:
+            tmp.write(content)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        except Exception:
+            tmp.close()
+            os.unlink(tmp.name)
+            raise
     try:
-        tmp.write(content)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-        tmp.close()
         if original_mode is not None:
             os.chmod(tmp.name, original_mode & 0o7777)
         os.replace(tmp.name, path)

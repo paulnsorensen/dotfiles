@@ -4,6 +4,7 @@ description: >
   Add, improve, audit, or self-update a skill or sub-agent definition so it
   runs predictably on Claude Code, Codex, OMP, and other Agent Skills hosts.
   Use for /skillz <add|improve|audit|self-update>, "improve this skill",
+  "optimize this skill", "tighten this skill",
   "audit this agent", "new skill for X", "skill not triggering", or "fix
   trigger rate". Do NOT use for CLAUDE.md or system-prompt edits, or for
   code changes that a cheese pipeline skill owns.
@@ -22,6 +23,7 @@ The product is a **predictable** definition: the same process on every run and o
 Every lens asks one question of each line: *does this make the run more predictable, or is it sediment?*
 
 The mode is the first word after the skill name.
+`optimize` and `tighten` are aliases for `improve`.
 Require a target only for `add`, `improve`, and `audit`.
 `self-update` has no target.
 Ask for the mode when it is missing.
@@ -85,21 +87,26 @@ The kernel is `../session-analytics/references/calibration.md`; the defaults:
    Create a reference only for a block that some runs skip.
    Add `agents/openai.yaml` when the skill is user-only.
    Set `model` + `effort` only when the skill is model-invoked.
-4. Register the name in `chezmoi/.chezmoidata/claude.yaml` under `claude.skills`; that list feeds every harness.
+4. Register a global skill in `chezmoi/.chezmoidata/claude.yaml` under `claude.skills`; that list feeds every harness.
+   A repo-local skill stays out of `claude.skills`; place it per `references/harness-layout.md § Repo-local skills`.
 5. Run `improve` on the new file once, then `dots sync`.
 
-Done means: the file exists, the registry names it, `dots sync` exits 0, and the Invocation lens passes.
+Done means: the file exists, `claude.skills` names it (or every repo-local host path resolves), `dots sync` exits 0, and the Invocation lens passes.
 
 ## Mode: improve
 
 1. Run the shared protocol without analytics.
 2. Apply every `<certain>` finding of severity medium or higher.
-   Show `<speculative>` findings and any protocol-semantic change to the user first; apply those only on approval.
-3. Keep the target's voice and protocol semantics. Tighten; do not redesign.
-4. Re-measure the body. Report before/after tokens and the residual findings.
-5. Run `dots sync` when the target lives under this repo's `skills/` or `agents/`.
+3. Put every `<speculative>` finding and every protocol-semantic change to the user as one approval question, with your recommendation for each.
+   Apply the approved ones and record the declined ones.
+   A delegated run returns these findings to its parent, and the parent asks.
+   A PR body or a report is not approval.
+4. Keep the target's voice and protocol semantics. Tighten; do not redesign.
+5. Re-measure the body. Report before/after tokens and the residual findings.
+6. Run `dots sync` when the target lives under this repo's `skills/` or `agents/`.
+   Confirm the deployed copy matches the source; a vendored skill with the same name overwrites a local one (`harness-layout.md § Layout`).
 
-Done means: the rubric passes with no `<certain>` finding above `low`, the body is ≤5k tok, and the repo gate (`just check` here) exits 0.
+Done means: the rubric passes with no `<certain>` finding above `low`, the user has approved or declined every `<speculative>` finding, the body is ≤5k tok, and the repo gate (`just check` here) exits 0.
 
 ## Mode: audit
 
@@ -130,7 +137,7 @@ Done means: `Checked:` is today, every source in the list was queried, and this 
 - Type: agent | skill · Invocation: model | user-only · Tools: <N allowed, N disallowed> · Body: ~N tok (before → after for improve)
 - Harnesses reached: <list> · Findings: N surfaced, N below the bar
 
-| # | Severity | Confidence | Lens | Issue (line) | Fix | Applied |
+| # | Severity | Confidence | Lens | Issue (line) | Fix | Applied (yes / approved / declined) |
 |---|---|---|---|---|---|---|
 
 ### Detail (per surfaced finding)
@@ -161,7 +168,7 @@ N findings were `<don't know>` or trivial (not shown).
 
 Read on demand:
 
-- `references/harness-layout.md` — Portability lens fires, `add`, or `self-update`; the frontmatter matrix, rules, template, sidecar, and sources.
+- `references/harness-layout.md` — Portability lens fires, `add` (global or repo-local), or `self-update`; the frontmatter matrix, rules, template, sidecar, and sources.
 - `references/analytics-ceremony.md` — `audit` and `self-update`; the `duckdb-expert` fan-out.
 - `references/anti-patterns.md` — a finding needs the expanded failure mode.
 - `references/progressive-disclosure.md` — Information hierarchy fires.

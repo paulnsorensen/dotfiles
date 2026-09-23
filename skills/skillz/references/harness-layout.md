@@ -11,6 +11,15 @@ Read when the Portability lens fires, in `add`, and in `self-update`.
 - OMP scans providers non-recursively and resolves a duplicate name by priority: native `.omp` > Claude > Codex/`.agents`.
 - Zed's own agent reads `~/.agents/skills`; ACP external agents inside Zed (Claude, Codex, OMP) use their native trees. Nothing extra is needed for Zed.
 - Pi reads `~/.pi/agent/skills` and `~/.agents/skills`; commands render as `/skill:<name>`.
+- A vendored skill source (`skills/_registry.yaml`) copies after the local selection, so a vendored skill with a local name overwrites it. Remove the name from the source repo, or give that source an explicit `skills:` list.
+
+## Repo-local skills
+
+A skill for one repository only stays out of `claude.skills`, so it never deploys globally.
+
+- Source: `.agents/skills/<name>/`. Codex, Pi, Zed, and other `.agents` hosts read it directly.
+- For each host without `.agents` project discovery, add a relative symlink in its project skill directory. Claude Code reads `.claude/skills/<name>`.
+- When `.gitignore` ignores these trees, re-include only the named paths: `dir/*`, then `!dir/skills/`, `dir/skills/*`, `!dir/skills/<name>`.
 
 ## Frontmatter matrix
 

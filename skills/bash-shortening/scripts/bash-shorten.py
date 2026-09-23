@@ -45,6 +45,7 @@ Always run `shellcheck` on the output. These rules are conservative but
 not infallible; quoting edge cases at the boundary of regex matches can
 still slip through. The script does not invoke shellcheck for you.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -57,8 +58,17 @@ from pathlib import Path
 # which can't follow the sys.path tweak; the imports work at runtime and
 # are exercised by the self-test and bats suite.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from engine import _sg_available, apply_rules, atomic_write, diff  # type: ignore[import-not-found]  # noqa: E402
-from rules import KNOWN_GROUPS, RULES, RULES_BY_ID  # type: ignore[import-not-found]  # noqa: E402
+from engine import (  # type: ignore[import-not-found]
+    _sg_available,
+    apply_rules,
+    atomic_write,
+    diff,
+)
+from rules import (  # type: ignore[import-not-found]
+    KNOWN_GROUPS,
+    RULES,
+    RULES_BY_ID,
+)
 
 # This module is a CLI script. Nothing here is part of a stable public
 # API — invoke via `python3 bash-shorten.py` or the wrapper, not by
@@ -89,7 +99,7 @@ _NEGATIVE_CASES: tuple[str, ...] = (
     "cat <<'EOF'\nThis has `text` in it.\nEOF\n",
     # find -exec rm -r must NOT collapse to -delete: rm -r removes
     # non-empty dirs while find -delete refuses them without -depth.
-    'find . -type d -exec rm -r {} \\;',
+    "find . -type d -exec rm -r {} \\;",
     # bash-shorten: disable/enable opts a region out of every rule (issue
     # #59). Lines between the directives are copied verbatim — here the
     # backtick command substitution survives untouched.
@@ -101,7 +111,7 @@ _NEGATIVE_CASES: tuple[str, ...] = (
 # Custom positive tests for cat-file-pipe-grep (which has no static .examples)
 _CAT_GREP_CASES: tuple[tuple[str, str], ...] = (
     ("cat /etc/hosts | grep localhost", "grep localhost /etc/hosts"),
-    ("cat \"$LOG\" | grep -i error", "grep -i error \"$LOG\""),
+    ('cat "$LOG" | grep -i error', 'grep -i error "$LOG"'),
 )
 
 
@@ -131,7 +141,8 @@ def self_test() -> int:
     cases.extend(("cat-file-pipe-grep", src, want) for src, want in _CAT_GREP_CASES)
 
     failures = [
-        f for label, src, want in cases
+        f
+        for label, src, want in cases
         if (f := _check_fixture(label, src, want, all_ids)) is not None
     ]
 
@@ -236,17 +247,24 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument("file", nargs="?", help="bash script to rewrite (or '-' for stdin)")
-    ap.add_argument("--apply", action="store_true", help="write the rewritten file in place")
-    ap.add_argument("--rules", help="comma-separated rule IDs to apply (default: all in active groups)")
+    ap.add_argument(
+        "--apply", action="store_true", help="write the rewritten file in place"
+    )
+    ap.add_argument(
+        "--rules",
+        help="comma-separated rule IDs to apply (default: all in active groups)",
+    )
     ap.add_argument("--skip", help="comma-separated rule IDs to disable")
     ap.add_argument(
         "--include",
         help="comma-separated opt-in rule groups to enable (default: core only). "
-             "Known: core, modernize.",
+        "Known: core, modernize.",
     )
     ap.add_argument("--list", action="store_true", help="list all rules and exit")
     ap.add_argument("--explain", metavar="ID", help="describe one rule and exit")
-    ap.add_argument("--self-test", action="store_true", help="run embedded fixtures and exit")
+    ap.add_argument(
+        "--self-test", action="store_true", help="run embedded fixtures and exit"
+    )
     return ap
 
 
