@@ -113,22 +113,25 @@ For passphrase-only (no key) encryption, set `gpg.symmetric = true`.
 
 ### Migrating from gpg to age
 
+Switch `encryption = "age"` in `chezmoi.toml` first, then re-add each
+encrypted target under the new backend:
+
 ```bash
-# decrypt every gpg-encrypted file and re-add as age
-for encrypted_file in $(chezmoi managed --include=encrypted); do
-  decrypted_file="${encrypted_file%.asc}"
-  chezmoi cat "$encrypted_file" > "$decrypted_file"
-  chezmoi re-add "$decrypted_file"
+# re-add every gpg-encrypted target as age-encrypted
+for target in $(chezmoi managed --include=encrypted); do
+  chezmoi forget "$target"
+  chezmoi add --encrypt "$target"
 done
 ```
 
 (Audit before running — destructive.)
 
-`chezmoi re-add` does **not** process templates. If any of the
-gpg-encrypted sources were also `.tmpl`, the loop above silently strips
-templating from the source. For those files, run
-`chezmoi add --encrypt --template "$decrypted_file"` instead, or migrate
-them by hand.
+`chezmoi managed` lists target paths, not source filenames, so a
+`%.asc`-style suffix strip never matches. `chezmoi forget` removes the
+old gpg-encrypted source without touching the target; `chezmoi add
+--encrypt` re-adds it under the new backend. Add `--template` too if
+the source was also a template: `chezmoi add --encrypt --template
+"$target"`.
 
 ## SOPS
 
@@ -170,10 +173,10 @@ apply time without the CLI being invoked:
 
 ```sh
 # scripts/refresh-secrets.sh
-bw unlock --raw > /tmp/.bw_session
-export BW_SESSION=$(cat /tmp/.bw_session)
+export BW_SESSION=$(bw unlock --raw)
 
-cat > ~/.local/share/chezmoi/.chezmoidata/secrets.yaml <<EOF
+umask 077
+cat > "$(chezmoi source-path)/.chezmoidata/secrets.yaml" <<EOF
 secrets:
   github_token: $(bw get password github-token)
   npm_token: $(bw get password npm-token)
@@ -182,7 +185,8 @@ EOF
 
 Then use `{{ .secrets.github_token }}` in templates. The plaintext file
 sits in the source dir unencrypted but is gitignored — fine because
-it's the same machine that already has the rendered dotfiles.
+it's the same machine that already has the rendered dotfiles. `umask
+077` keeps the file at mode 600 from creation.
 
 ## Anti-patterns
 

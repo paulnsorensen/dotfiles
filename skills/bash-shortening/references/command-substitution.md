@@ -138,5 +138,6 @@ trap 'rm -f "$TMP"' EXIT
 # ... work with "$TMP" ...
 ```
 
-The `trap ... EXIT` runs the cleanup whether the script succeeds, fails,
-or is killed — eliminating the leaked-temp-file class of bug entirely.
+The `trap ... EXIT` runs the cleanup on normal exit, on error, and on
+most signals — eliminating most of the leaked-temp-file class of bug.
+It does not run on `SIGKILL` (`kill -9`); that signal cannot be caught.

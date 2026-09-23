@@ -145,7 +145,8 @@ Example `private_dot_gitconfig.tmpl`:
     helper = osxkeychain
 {{- else if eq .chezmoi.os "linux" }}
 [credential]
-    helper = store
+    helper = libsecret
+    # No libsecret build? Use: helper = cache --timeout=3600
 {{- end }}
 ```
 

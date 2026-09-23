@@ -106,7 +106,7 @@ Done means: the file exists, `claude.skills` names it (or every repo-local host 
 6. Run `dots sync` when the target lives under this repo's `skills/` or `agents/`.
    Confirm the deployed copy matches the source; a vendored skill with the same name overwrites a local one (`harness-layout.md § Layout`).
 
-Done means: the rubric passes with no `<certain>` finding above `low`, the user has approved or declined every `<speculative>` finding, the body is ≤5k tok, and the repo gate (`just check` here) exits 0.
+Done means: the rubric passes with no `<certain>` finding above `low`, the user has approved or declined every item submitted for approval, the body is ≤5k tok, and the repo gate (`just check` here) exits 0.
 
 ## Mode: audit
 

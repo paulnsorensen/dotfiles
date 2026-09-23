@@ -119,7 +119,9 @@ join -j 1 \
 
 Both `curl` calls run in parallel (process substitution backgrounds them),
 both `jq` runs filter their stream, `join` consumes from the two named
-pipes. Zero temp files for what was a 5-step process.
+pipes. Zero temp files for what was a 5-step process. `join`'s exit
+status does not reflect a failure inside either `curl`/`jq` chain — a
+broken producer just gives `join` truncated or empty input.
 
 ## Output process substitution: `>(cmd)`
 

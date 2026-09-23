@@ -191,11 +191,14 @@ For non-trivial functions, lead with:
 my_func() {
   local arg1=${1:?missing arg1}    # fail-fast on missing required arg
   local arg2=${2:-default}
-  local OLD_IFS=$IFS               # save & restore IFS if you change it
-  trap 'IFS=$OLD_IFS' RETURN
+  local IFS=,                       # scoped to this call, no trap needed
   # ...
 }
 ```
 
 `${1:?msg}` exits with the message if `$1` is unset/empty — the bash
-equivalent of an assertion.
+equivalent of an assertion. `local IFS=...` restores the caller's `IFS`
+automatically when the function returns. Prefer it over
+`trap ... RETURN`: a `RETURN` trap set inside the function stays
+registered in the shell after the function returns, and fires again on
+the next `return` — including one from a later `source`d script.

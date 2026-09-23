@@ -95,12 +95,13 @@ URL=${URLS[$ENV]:-https://localhost}
 ```
 
 The `${URLS[$ENV]:-default}` form falls back when `$ENV` isn't a defined
-key. This is also how you avoid the noisy "unbound variable" error under
-`set -u`:
+key. It does **not** protect against an unset `$ENV` under `set -u` —
+bash expands the subscript itself first, so a missing `$ENV` still exits
+with "unbound variable". Default the subscript too:
 
 ```bash
 set -u
-URL=${URLS[$ENV]:-https://localhost}     # works even if $ENV unset
+URL=${URLS[${ENV:-}]:-https://localhost}   # works even if $ENV unset
 ```
 
 **Iteration:**

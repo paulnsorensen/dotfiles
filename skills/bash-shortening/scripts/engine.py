@@ -10,6 +10,7 @@ the CLI.
 from __future__ import annotations
 
 import difflib
+import json
 import os
 import re
 import shutil
@@ -19,9 +20,6 @@ import tempfile
 from pathlib import Path
 
 from rules import RULES, SG_HANDLED_IDS  # type: ignore[import-not-found]
-
-# Used by _apply_sg's count-back regex; mirrors the constant in rules.py.
-_VAR = r"[A-Za-z_][A-Za-z0-9_]*"
 
 # Path to the sgconfig.yml shipped alongside this script. Resolved once at
 # import time so the dispatch is deterministic regardless of cwd.
@@ -69,13 +67,11 @@ def _apply_sg(text: str, enabled: set[str]) -> tuple[str, dict[str, int]]:
     sg-handled rules outside that set are filtered out of the sg run via
     --filter so --rules / --skip work correctly across both engines.
 
-    Counts are keyed by the Python rule id (backticks, test-numeric, …) so
-    the upstream caller can present them uniformly. Counting is per-rule
-    (no shared after-pattern table): `backticks` counts removed backtick
-    pairs in the byte-level delta, `test-numeric` counts the before regex
-    against text vs new_text. When adding a new sg-handled rule, append a
-    matching branch below — pick whichever signal (before-pattern delta,
-    raw character delta, etc.) is unambiguous against untouched code.
+    Counts are keyed by the Python rule id (backticks, test-numeric, …),
+    read straight from each match's `ruleId` in a `--json` scan (sg rule
+    ids are `bash-shorten-<python-id>` or `bash-shorten-<python-id>-<variant>`
+    for suffixed forms like test-numeric-eq) so the upstream caller can
+    present them uniformly without guessing from a before/after diff.
 
     On sg failure (parse error, rule error), emits a warning and returns
     the original text with empty counts. Non-sg-handled regex rules still
@@ -101,21 +97,18 @@ def _apply_sg(text: str, enabled: set[str]) -> tuple[str, dict[str, int]]:
         tmp.write(text)
         tmp_path = Path(tmp.name)
 
+    base_cmd = ["sg", "scan", "--config", str(_SG_CONFIG), "--filter", filter_regex]
     try:
-        # sg's exit code is 0 even when rewrites apply, so we compare
-        # before/after byte counts to detect per-rule fires.
         try:
+            # --json and --update-all conflict, so count matches with a
+            # dry-run --json scan first, then apply with a second pass.
+            json_result = subprocess.run(
+                [*base_cmd, "--json=compact", str(tmp_path)],
+                check=True,
+                capture_output=True,
+            )
             subprocess.run(
-                [
-                    "sg",
-                    "scan",
-                    "--config",
-                    str(_SG_CONFIG),
-                    "--filter",
-                    filter_regex,
-                    "--update-all",
-                    str(tmp_path),
-                ],
+                [*base_cmd, "--update-all", str(tmp_path)],
                 check=True,
                 capture_output=True,
             )
@@ -129,29 +122,16 @@ def _apply_sg(text: str, enabled: set[str]) -> tuple[str, dict[str, int]]:
             return text, {}
         new_text = tmp_path.read_text(encoding="utf-8")
     finally:
-        try:
-            tmp_path.unlink()
-        except FileNotFoundError:
-            pass
+        tmp_path.unlink(missing_ok=True)
 
+    matches = json.loads(json_result.stdout or b"[]")
     counts: dict[str, int] = {}
-    if new_text != text:
-        # backticks rewrites are counted by tracking removed backtick pairs:
-        # each `\`cmd\`` → `$(cmd)` removes exactly two backticks. The
-        # after-pattern `$(...)` is too generic to count directly.
-        btick_delta = (text.count("`") - new_text.count("`")) // 2
-        if btick_delta > 0:
-            counts["backticks"] = btick_delta
-        # test-numeric: count drops in the [ $V -OP N ] (single-bracket)
-        # form. The [[ ]] form never matches the sg rule (different node
-        # kind in tree-sitter-bash) so this count is precise.
-        tn_pattern = re.compile(
-            rf"\[\s+\$({_VAR})\s+(-eq|-ne|-lt|-le|-gt|-ge)\s+(\d+)\s+\]"
-        )
-        tn_before = len(tn_pattern.findall(text))
-        tn_after = len(tn_pattern.findall(new_text))
-        if tn_before - tn_after > 0:
-            counts["test-numeric"] = tn_before - tn_after
+    for match in matches:
+        parent = match.get("ruleId", "").removeprefix("bash-shorten-")
+        for sg_id in active_sg_ids:
+            if parent == sg_id or parent.startswith(f"{sg_id}-"):
+                counts[sg_id] = counts.get(sg_id, 0) + 1
+                break
     return new_text, counts
 
 
@@ -258,6 +238,10 @@ def diff(before: str, after: str, label: str) -> str:
 
 
 def atomic_write(path: Path, content: str) -> None:
+    # Resolve first so a symlinked target gets its real file replaced
+    # in place, instead of os.replace() overwriting the symlink itself
+    # with a regular file and severing the link.
+    path = path.resolve()
     # Preserve the original file's permission and special bits (setuid,
     # setgid, sticky + ugo rwx — the full 0o7777 mask). NamedTemporaryFile
     # creates with 0600, and os.replace would otherwise silently strip the
@@ -281,15 +265,12 @@ def atomic_write(path: Path, content: str) -> None:
             os.fsync(tmp.fileno())
         except Exception:
             tmp.close()
-            os.unlink(tmp.name)
+            Path(tmp.name).unlink(missing_ok=True)
             raise
     try:
         if original_mode is not None:
             os.chmod(tmp.name, original_mode & 0o7777)
         os.replace(tmp.name, path)
     except Exception:
-        try:
-            os.unlink(tmp.name)
-        except FileNotFoundError:
-            pass
+        Path(tmp.name).unlink(missing_ok=True)
         raise

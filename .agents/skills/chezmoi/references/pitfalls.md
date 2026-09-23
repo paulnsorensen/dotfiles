@@ -4,16 +4,16 @@ The chezmoi troubleshooting page is the canonical reference:
 <https://chezmoi.io/user-guide/frequently-asked-questions/troubleshooting/>.
 The items below are the ones that bite people most often.
 
-## Editing the source directly
+## Editing an encrypted source directly
 
-**Problem.** You open `~/.local/share/chezmoi/dot_zshrc` in `$EDITOR`,
-edit, save. Next `chezmoi apply` doesn't change anything (template
-tokens are literal) or chezmoi can't decrypt (you've corrupted the
-encrypted blob).
+**Problem.** You open an `encrypted_` source file in `$EDITOR`, edit,
+save. chezmoi can't decrypt it on the next `apply` — you've corrupted
+the encrypted blob.
 
-**Fix.** Always `chezmoi edit ~/.zshrc`. chezmoi opens a hardlink in a
-temp dir; decrypts and templates round-trip transparently; your editor
-sees the right syntax (because the basename matches the target).
+**Fix.** Always `chezmoi edit ~/.ssh/config` for an encrypted target.
+chezmoi decrypts to a temp dir, opens your editor, and re-encrypts on
+save. Editing a plain or `.tmpl` source file directly is normal;
+`chezmoi edit` there only matches the editor's basename to the target.
 
 For pure git operations (commit, log, push) use `chezmoi cd`, which
 drops you into the source dir.
@@ -30,12 +30,12 @@ first; on shared machines it's mandatory.
 
 ## `.chezmoiignore` matches the wrong paths
 
-**Problem.** You add `~/.zshrc` to `.chezmoiignore` expecting chezmoi
-to skip it. It doesn't, because the ignore matches *source-relative*
+**Problem.** You add `dot_zshrc` to `.chezmoiignore` expecting chezmoi
+to skip it. It doesn't, because the ignore matches *target-relative*
 paths.
 
-**Fix.** Use the source name: `dot_zshrc`. Same for
-`private_dot_ssh/config`. The file is also a template — gate
+**Fix.** Use the target name: `.zshrc`. Same for
+`.ssh/config`. The file is also a template — gate
 platform-specific entries with
 `{{- if ne .chezmoi.os "darwin" }}...{{- end }}`.
 

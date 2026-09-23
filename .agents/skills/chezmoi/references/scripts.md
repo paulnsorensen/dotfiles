@@ -46,7 +46,7 @@ sudo apt-get install -y ripgrep fd-find fzf
 ```sh
 # .chezmoiscripts/run_onchange_after_brewfile.sh.tmpl
 #!/bin/sh
-brew bundle --file={{ .chezmoi.sourceDir }}/Brewfile
+brew bundle --file={{ joinPath .chezmoi.sourceDir "Brewfile" | quote }}
 ```
 
 Edit `Brewfile` → `chezmoi apply` re-runs this script. Touch the
@@ -146,9 +146,10 @@ template or move the variable bit to a separate `run_onchange_` script.
 ### Scripts blocking interactive apply
 
 `apply` is non-interactive by default. A script that prompts for input
-(e.g. `sudo` without cached creds) hangs forever. Run with
-`chezmoi apply --interactive` once to seed `sudo`, or use a passwordless
-sudo entry for the install commands you need.
+(e.g. `sudo` without cached creds) hangs forever. Run `sudo -v` before
+`chezmoi apply` to cache credentials — `--interactive` does not
+authenticate `sudo` by itself — or use a passwordless sudo entry for
+the install commands you need.
 
 ## Testing scripts
 

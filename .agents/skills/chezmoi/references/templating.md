@@ -55,7 +55,7 @@ has `[data] email = "x@y.z"`, then `{{ .email }}` renders `x@y.z`.
 | `output "git" "config" "user.name"` | Run a command at template time, return stdout (use sparingly) |
 | `glob "~/.config/*"` | Return matching paths |
 | `joinPath`, `quote`, `replace`, `trim` | Standard text helpers |
-| `include "name.tmpl"` | Inline another template fragment from `.chezmoitemplates/` |
+| `includeTemplate "name.tmpl" .` | Inline another template fragment from `.chezmoitemplates/` |
 | `stat "/path"` | Return file info or empty string — useful for "if file exists" |
 
 ## Prompt functions (config-template only)
@@ -111,7 +111,7 @@ Host github.com
 
 ## .chezmoiignore (templatable)
 
-Matches *source-relative* paths. Itself a template — ignore
+Matches *target-relative* paths. Itself a template — ignore
 platform-specific files when on the wrong platform:
 
 ```go-template
@@ -123,7 +123,7 @@ Library/Application Support/Code/User/settings.json
 {{- end }}
 
 {{- if .headless }}
-private_dot_config/window-manager
+.config/window-manager
 {{- end }}
 ```
 

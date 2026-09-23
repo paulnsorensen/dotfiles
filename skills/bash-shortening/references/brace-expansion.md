@@ -29,30 +29,41 @@ two literal arguments `{config,` and `logs}`. Always close-pack.
 ```bash
 # Before
 cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak
-cp /etc/nginx/sites-available/default /etc/nginx/sites-available/default.bak
 
 # After
-cp /etc/nginx/{nginx.conf,sites-available/default}{,.bak}
+cp /etc/nginx/nginx.conf{,.bak}
 ```
 
 The trailing `{,.bak}` expands to `""` and `".bak"` — the empty alternative
-is what makes "make a backup of each" idiomatic. Reads as:
+is what makes "make a backup of this file" idiomatic. Reads as:
 
 ```text
-{nginx.conf, sites-available/default} × {"", ".bak"}
-= nginx.conf nginx.conf.bak sites-available/default sites-available/default.bak
+nginx.conf × {"", ".bak"}
+= nginx.conf nginx.conf.bak
 ```
 
-`cp` consumes them in source/dest pairs.
+`cp` takes the two results as source and dest — this only works for one
+file. Stacking a second brace group to cover several files gives `cp`
+four operands and it fails, because the last one is not a directory:
+
+```bash
+$ cp /etc/nginx/{nginx.conf,sites-available/default}{,.bak}
+cp: /etc/nginx/sites-available/default.bak: Not a directory
+```
 
 **Always preview first** with `echo`:
 
 ```bash
-echo cp /etc/nginx/{nginx.conf,sites-available/default}{,.bak}
+echo cp /etc/nginx/nginx.conf{,.bak}
 ```
 
-This is non-negotiable for nested expansions — one wrong brace and you
-shuffle source and destination.
+For several files, loop instead:
+
+```bash
+for f in nginx.conf sites-available/default; do
+  cp "/etc/nginx/$f" "/etc/nginx/$f.bak"
+done
+```
 
 ## Example 23 — Numeric sequence
 
@@ -133,8 +144,9 @@ for i in {01..10}; do
 done
 ```
 
-Padding is determined by the *first* element. `{01..100}` produces
-`001 002 ... 099 100` — three digits throughout. Useful for filename
+Padding is determined by whichever endpoint has more digits, not always
+the first one — `{1..010}` and `{01..100}` both produce
+`001 002 ... 099 100`. Useful for filename
 generation (`backup-{01..30}.tar.gz`) where lexical sort order matches
 numeric order.
 

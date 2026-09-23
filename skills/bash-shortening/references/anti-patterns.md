@@ -59,9 +59,7 @@ find . -type f -name "*.log" | xargs grep -l "ERROR" | while read -r f; do d=$(d
 # Better — multi-line, named variables
 find . -type f -name "*.log" | xargs grep -l "ERROR" | while read -r file; do
   dir=$(dirname "$file")
-  mkdir -p "/archive/$dir"
-  cp "$file" "/archive/$dir/"
-  rm "$file"
+  mkdir -p "/archive/$dir" && cp "$file" "/archive/$dir/" && rm "$file"
 done
 ```
 

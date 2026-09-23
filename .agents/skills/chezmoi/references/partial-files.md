@@ -29,8 +29,9 @@ EOF
 When the file contains the string `chezmoi:modify-template`, chezmoi strips the marker lines.
 It then renders the rest as a template, with the existing target in `.chezmoi.stdin`.
 Use the template form to edit a structured file (JSON, TOML, YAML).
+Modify templates must not carry a `.tmpl` suffix; the suffix triggers a separate template pass that breaks the `.chezmoi.stdin` round-trip.
 
-Template form, `modify_dot_config_private_app.yaml.tmpl`:
+Template form, `modify_dot_config_private_app.yaml`:
 
 ```go-template
 {{- /* chezmoi:modify-template */ -}}

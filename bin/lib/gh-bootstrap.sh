@@ -81,8 +81,9 @@ ghb_render_ruleset() {
 # Usage: ghb_upsert_ruleset <repo> <ruleset-json-file>
 # Echoes "created" or "updated <id>".
 ghb_upsert_ruleset() {
-    local repo="$1" file="$2" id
-    id=$(gh api "repos/$repo/rulesets" --jq ".[] | select(.name == \"$GHB_RULESET_NAME\") | .id" | head -n1) || return 1
+    local repo="$1" file="$2" id list
+    list=$(gh api "repos/$repo/rulesets" --jq ".[] | select(.name == \"$GHB_RULESET_NAME\") | .id") || return 1
+    id=$(head -n1 <<<"$list")
     if [[ -n "$id" ]]; then
         gh api -X PUT "repos/$repo/rulesets/$id" --input "$file" >/dev/null || return 1
         echo "updated $id"
@@ -90,6 +91,19 @@ ghb_upsert_ruleset() {
         gh api -X POST "repos/$repo/rulesets" --input "$file" >/dev/null || return 1
         echo "created"
     fi
+}
+
+# Warn when a merge queue may be unavailable (private repo, no Team/
+# Enterprise plan) and remind about the merge_group CI trigger. Call before
+# a queue ruleset POST/PUT (--queue only). Non-fatal: the API call itself is
+# authoritative on whether the plan actually supports a queue.
+ghb_queue_precheck() {
+    local repo="$1" visibility
+    visibility=$(gh api "repos/$repo" --jq .visibility) || return 1
+    if [[ "$visibility" != "public" ]]; then
+        echo "gh-bootstrap: $repo is $visibility; a merge queue needs a public repo or a Team/Enterprise plan" >&2
+    fi
+    echo "gh-bootstrap: reminder — required-check workflows need 'on: merge_group' to run in the merge queue" >&2
 }
 
 # List the check-run names on the default-branch head. Required checks must
@@ -162,9 +176,9 @@ YAML
 }
 
 # .github/workflows/release.yml: a `v*` tag push publishes a release with
-# generated notes. It refuses a tag that is not on origin/main, so only
-# reviewed code ships. cancel-in-progress stays false so quick successive
-# tags all publish. Refresh the pinned checkout SHA with:
+# generated notes. It refuses a tag that is not on the default branch, so
+# only reviewed code ships. cancel-in-progress stays false so quick
+# successive tags all publish. Refresh the pinned checkout SHA with:
 #   gh api repos/actions/checkout/git/refs/tags/<tag> --jq .object.sha
 ghb_render_release_workflow() {
     cat <<'YAML'
@@ -192,12 +206,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify tag is on main
+      - name: Verify tag is on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          git fetch origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::Tag ${GITHUB_REF_NAME} is not on origin/main. Refusing to publish."
+          git fetch origin "$DEFAULT_BRANCH"
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH"; then
+            echo "::error::Tag ${GITHUB_REF_NAME} is not on origin/$DEFAULT_BRANCH. Refusing to publish."
             exit 1
           fi
 

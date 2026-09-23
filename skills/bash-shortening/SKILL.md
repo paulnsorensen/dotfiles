@@ -5,7 +5,7 @@ description: >
   readability. Use when the user says "shorten this script", "make this
   more idiomatic", "clean up this bash", "this script is too long", "is
   there a shorter way to do this in bash", asks for a review of a Bash
-  script, or when you write a new `.sh`/`.bash` script or `bash` block.
+  script, or when you write a new Bash `.sh`/`.bash` script or `bash` block.
   Covers parameter expansion, brace expansion, process substitution,
   arithmetic, functions, heredocs, associative arrays, parallel jobs, and
   IFS parsing, and refuses cryptic one-liners. Do NOT use for fish, zsh,
@@ -128,7 +128,7 @@ To add or change a rule, read `AGENTS.md` first.
 | `[ $X -gt 100 ]` / `[ $A ] && [ $B ]` | `((X > 100))` / `[[ $A && $B ]]` | arithmetic (35, 37) |
 | `mkdir a; mkdir b; mkdir c` | `mkdir -p {a,b,c}` | brace-expansion (21-22) |
 | `for i in 1 2 3 4 5` | `for i in {1..5}` (or `{01..10}`, `{2..10..2}`) | brace-expansion (23-26) |
-| `cmd > /tmp/x; cmd2 < /tmp/x; rm /tmp/x` | `cmd \| cmd2` or `cmd2 < <(cmd)` | command-substitution (5), process-substitution (29) |
+| `cmd > /tmp/x; cmd2 < /tmp/x; rm /tmp/x` | `cmd \| cmd2` or `cmd2 < <(cmd)` — differ from the temp-file form in concurrency, `SIGPIPE` handling, and `pipefail` exit status | command-substitution (5), process-substitution (29) |
 | `sort a > /tmp/a; sort b > /tmp/b; diff …` | `diff <(sort a) <(sort b)` | process-substitution (27) |
 | `if [ "$E" = dev ]; elif …` (3+ branches) | `case` or `${URLS[$E]:-default}` | functions, advanced (49) |
 | Repeated `echo "[$(date)] [LEVEL] msg"` | a `log()` function with `${1^^}` | functions (16) |

@@ -194,14 +194,14 @@ the first's success, which is rarely what you mean.
 (( a >= b ))    greater or equal
 
 == String comparisons (inside [[ ]]) ==
-[[ a == b ]]    equal       (single = also works; == is bash-preferred)
-[[ a != b ]]    not equal
-[[ a <  b ]]    lexically less than
-[[ a >  b ]]    lexically greater than
+[[ $a == $b ]]  equal       (single = also works; == is bash-preferred)
+[[ $a != $b ]]  not equal
+[[ $a <  $b ]]  lexically less than
+[[ $a >  $b ]]  lexically greater than
 [[ -z $a ]]     empty/unset
 [[ -n $a ]]     non-empty
-[[ a == pa* ]]  glob match
-[[ a =~ ^p.+ ]] regex match (no quotes around the pattern in bash 3.2+)
+[[ $a == pa* ]] glob match
+[[ $a =~ ^p.+ ]] regex match (no quotes around the pattern in bash 3.2+)
 
 == File tests (inside [[ ]] or [ ]) ==
 -e PATH         exists

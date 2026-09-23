@@ -169,16 +169,18 @@ BACKUP_DIR="/backups/$(date +%Y-%m-%d)"
 mkdir -p "$BACKUP_DIR"
 tar -czf "$BACKUP_DIR/home.tar.gz" /home
 tar -czf "$BACKUP_DIR/etc.tar.gz" /etc
-find /backups -type d -mtime +7 -delete
+find /backups -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} +
 ```
 
 Three independent shortenings:
 
 - Inline `$(date ...)` into the var — single use.
 - Drop the `if [ ! -d ]` guard — `mkdir -p` is idempotent and atomic.
-- `find -delete` instead of `-exec rm -rf {} \;` — safer (no shell
-  re-entry, no traversal-while-deleting), faster, and one fewer `find`
-  invocation per match.
+- `-mindepth 1 -maxdepth 1 ... -exec rm -rf {} +` instead of
+  `-exec rm -rf {} \;` — batches matches into fewer `rm` invocations.
+  Plain `-type d -delete` looks safer but fails on a non-empty directory,
+  so retention cleanup silently does nothing; `-exec rm -rf {} +` removes
+  the whole aged directory.
 
 For the two `tar` calls, brace expansion shortens further:
 

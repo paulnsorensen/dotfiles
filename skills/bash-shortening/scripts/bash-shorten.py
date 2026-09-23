@@ -294,7 +294,7 @@ def _run_stdin(enabled: set[str]) -> int:
 def _run_file(path: Path, enabled: set[str], apply: bool) -> int:
     text = path.read_text(encoding="utf-8")
     new_text, counts = apply_rules(text, enabled)
-    if not counts:
+    if new_text == text:
         print(f"{path}: no rewrites applicable", file=sys.stderr)
         return 0
     if apply:

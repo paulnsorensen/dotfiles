@@ -51,7 +51,7 @@ assert_rewrite() {
     for rule in sed-replace-first sed-replace-all \
                 echo-wc-c cut-c-substring \
                 expr-arith-vars expr-increment expr-arith-literal \
-                combined-tests test-numeric empty-default param-default \
+                combined-tests test-numeric empty-default \
                 mkdir-guard for-range-expansion \
                 backticks legacy-null-check empty-string-eq \
                 find-exec-rm-delete cat-file-pipe-grep \
@@ -236,7 +236,7 @@ assert_rewrite() {
 @test "rule expr-increment rewrites matched-name self-increment" {
     # expr-increment must claim COUNT=$(expr $COUNT + 1) before
     # expr-arith-literal does (which would emit C=$((C + 1))).
-    assert_rewrite 'COUNT=$(expr $COUNT + 1)' '((COUNT++))'
+    assert_rewrite 'COUNT=$(expr $COUNT + 1)' 'COUNT=$((COUNT + 1))'
 }
 
 @test "rule expr-increment SKIPS mismatched names" {
@@ -246,10 +246,6 @@ assert_rewrite() {
 
 @test "rule cut-c-substring rewrites cut -c1-N to substring" {
     assert_rewrite 'PRE=$(echo "$NAME" | cut -c1-5)' 'PRE=${NAME:0:5}'
-}
-
-@test "rule param-default rewrites positional fallback" {
-    assert_rewrite 'if [ -z "$1" ]; then NAME="anon"; fi' 'NAME=${1:-"anon"}'
 }
 
 @test "rule for-range-expansion collapses consecutive integers" {
@@ -291,6 +287,50 @@ assert_rewrite() {
     assert_rewrite 'while [ $i -lt 10 ]; do' 'while (( i < 10 )); do'
 }
 
+@test "rule test-numeric maps -eq to ==" {
+    assert_rewrite '[ $x -eq 5 ]' '(( x == 5 ))'
+}
+
+@test "rule test-numeric maps -ne to !=" {
+    assert_rewrite '[ $x -ne 5 ]' '(( x != 5 ))'
+}
+
+@test "rule test-numeric maps -le to <=" {
+    assert_rewrite '[ $x -le 5 ]' '(( x <= 5 ))'
+}
+
+@test "rule test-numeric maps -ge to >=" {
+    assert_rewrite '[ $x -ge 5 ]' '(( x >= 5 ))'
+}
+
+@test "rule test-numeric SKIPS positional parameter operand" {
+    local input='[ $1 -eq 0 ]'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule test-numeric SKIPS left-hand literal" {
+    local input='[ 10 -lt $count ]'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule test-numeric SKIPS array-length expansion" {
+    local input='[ ${#a[@]} -eq 3 ]'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule test-numeric SKIPS octal-looking operand" {
+    local input='[ $x -eq 08 ]'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
 @test "rule empty-default collapses if/then/fi guard" {
     assert_rewrite 'if [ -z "$ENV" ]; then ENV="dev"; fi' 'ENV=${ENV:-"dev"}'
 }
@@ -324,8 +364,22 @@ assert_rewrite() {
 }
 
 @test "rule find-exec-rm-delete swaps -exec rm for -delete" {
-    assert_rewrite 'find /tmp -name "*.bak" -exec rm {} \;' \
-                   'find /tmp -name "*.bak" -delete'
+    assert_rewrite 'find /tmp -type f -name "*.bak" -exec rm {} \;' \
+                   'find /tmp -type f -name "*.bak" -delete'
+}
+
+@test "rule find-exec-rm-delete SKIPS when -type f is absent" {
+    local input='find /tmp -name "*.bak" -exec rm {} \;'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule find-exec-rm-delete SKIPS when -prune is present" {
+    local input='find . -type f -prune -exec rm {} \;'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
 }
 
 @test "rule cat-file-pipe-grep drops the useless cat" {
@@ -372,7 +426,7 @@ SH
     local got
     got="$(printf 'echo "$LINE" | sed '"'"'s/foo/bar/g'"'"'\n' \
         | python3 "$SCRIPT" --include modernize -)"
-    [[ "$got" == *"sd 'foo' 'bar' <<< \"\$LINE\""* ]]
+    [[ "$got" == *"sd -F 'foo' 'bar' <<< \"\$LINE\""* ]]
 }
 
 @test "modernize group ON — grep -F → rg -F fires" {
@@ -386,7 +440,7 @@ SH
     local got
     got="$(printf 'find . -type f -name "*.py"\n' \
         | python3 "$SCRIPT" --include modernize -)"
-    [[ "$got" == *'fd -t f "*.py"'* ]]
+    [[ "$got" == *'fd -H -t f -g "*.py"'* ]]
 }
 
 @test "modernize: plain grep (no -F) is NOT migrated to rg (regex flavors differ)" {

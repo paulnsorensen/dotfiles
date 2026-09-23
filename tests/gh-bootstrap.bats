@@ -15,6 +15,7 @@ case "$*" in
     "repo view"*) echo "acme/widget" ;;
     "api repos/acme/widget/rulesets --jq"*) [[ -n "${RULESET_ID:-}" ]] && echo "$RULESET_ID" ;;
     "api repos/acme/widget --jq .default_branch") echo main ;;
+    "api repos/acme/widget --jq .visibility") echo public ;;
     "api repos/acme/widget/commits/main --jq .sha") echo abc123 ;;
     "api repos/acme/widget/commits/abc123/check-runs"*) printf 'test\nlint\ntest\n' ;;
     "api repos/acme/widget --jq"*) echo '{"squash":true}' ;;
@@ -22,6 +23,15 @@ esac
 exit 0
 MOCK
     chmod +x "$TEST_HOME/bin/gh"
+    export GIT_TOPLEVEL="$TEST_HOME/repo"
+    cat >"$TEST_HOME/bin/git" <<'MOCK'
+#!/usr/bin/env bash
+case "$*" in
+    "rev-parse --show-toplevel") echo "$GIT_TOPLEVEL" ;;
+    *) exit 1 ;;
+esac
+MOCK
+    chmod +x "$TEST_HOME/bin/git"
     export PATH="$TEST_HOME/bin:$PATH"
     # shellcheck source=bin/lib/gh-bootstrap.sh
     source "$REAL_DOTFILES_DIR/bin/lib/gh-bootstrap.sh"
@@ -116,4 +126,68 @@ teardown() {
     run "$REAL_DOTFILES_DIR/bin/gh-bootstrap" --bogus
     assert_failure
     assert_output_contains "unknown argument"
+}
+
+@test "cli: --check upserts the ruleset with a POST" {
+    cd "$TEST_HOME/repo"
+    run "$REAL_DOTFILES_DIR/bin/gh-bootstrap" --check ci
+    assert_success
+    grep -q '^api -X POST repos/acme/widget/rulesets --input' "$GH_LOG"
+}
+
+@test "cli: check-name list dedups repeated names" {
+    cd "$TEST_HOME/repo"
+    run "$REAL_DOTFILES_DIR/bin/gh-bootstrap"
+    assert_success
+    [ "$(grep -c '^  test$' <<<"$output")" -eq 1 ]
+}
+
+@test "cli: --release-notes scaffolds against the clone toplevel, not \$PWD, and loops label create" {
+    mkdir -p "$TEST_HOME/repo/sub"
+    cd "$TEST_HOME/repo/sub"
+    run "$REAL_DOTFILES_DIR/bin/gh-bootstrap" --release-notes
+    assert_success
+    [ -f "$TEST_HOME/repo/.github/release.yml" ]
+    [ ! -e "$TEST_HOME/repo/sub/.github" ]
+    [ "$(grep -c '^label create' "$GH_LOG")" -eq "${#GHB_RELEASE_LABELS[@]}" ]
+}
+
+@test "cli: --release-notes exits 2 when release.yml already differs (scaffold drift)" {
+    cd "$TEST_HOME/repo"
+    mkdir -p .github
+    echo "custom" >.github/release.yml
+    run "$REAL_DOTFILES_DIR/bin/gh-bootstrap" --release-notes
+    [ "$status" -eq 2 ]
+    assert_output_contains "differs"
+}
+
+@test "cli: --release-notes refuses when the clone does not match --repo" {
+    cd "$TEST_HOME/repo"
+    run "$REAL_DOTFILES_DIR/bin/gh-bootstrap" --repo other/thing --release-notes
+    assert_failure
+    assert_output_contains "is not other/thing"
+}
+
+@test "cli: --queue prints a visibility check and a merge_group CI-trigger reminder" {
+    cd "$TEST_HOME/repo"
+    run "$REAL_DOTFILES_DIR/bin/gh-bootstrap" --check ci --queue
+    assert_success
+    assert_output_contains "merge_group"
+}
+
+@test "upsert_ruleset: a failed ruleset lookup fails loud (not hidden by head -n1)" {
+    echo '{}' >"$TEST_HOME/r.json"
+    cat >"$TEST_HOME/bin/gh" <<'MOCK'
+#!/usr/bin/env bash
+echo "$*" >>"$GH_LOG"
+case "$*" in
+    "api repos/acme/widget/rulesets --jq"*) exit 1 ;;
+esac
+exit 0
+MOCK
+    chmod +x "$TEST_HOME/bin/gh"
+    run ghb_upsert_ruleset acme/widget "$TEST_HOME/r.json"
+    assert_failure
+    run grep -q -- '-X ' "$GH_LOG"
+    [ "$status" -ne 0 ]
 }

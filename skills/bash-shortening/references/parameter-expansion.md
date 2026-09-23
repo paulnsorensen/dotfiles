@@ -202,6 +202,9 @@ ${var^}             capitalize first character
 - **Quoting.** All these expansions need to live inside double quotes when
   the result might contain spaces: `cp "${SRC%/*}/$NAME" /dest/`. Drop the
   quotes and word-splitting strikes.
-- **Pattern is glob, not regex.** `${url//https?/x}` does not work — `?`
-  is "match one char" in glob, but the `?` after `s` makes it literal at
-  the wrong spot. Test patterns with a quick `echo "${var//pat/X}"`.
+- **Pattern is glob, not regex.** `${url//https?/Z}` does not mean
+  "replace only the literal `https?`" — `?` still means "match one
+  char" inside a glob pattern. On `https://x` it matches `https:`
+  (`https` plus one wildcard char) and gives `Z//x`; on `http://x`
+  there's no match, so it stays unchanged. Test patterns with a quick
+  `echo "${var//pat/X}"`.

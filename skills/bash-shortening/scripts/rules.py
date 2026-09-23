@@ -68,77 +68,9 @@ def _expr_op(escaped: str) -> str:
     return escaped.removeprefix("\\")
 
 
-# Detects the start of a quoted heredoc: <<'DELIM' or <<"DELIM" (optionally
-# with the <<- form for tab-indented bodies). Bash treats the body of a
-# quoted heredoc as literal text, so backticks inside must not be rewritten.
-# Unquoted heredocs (<<DELIM) DO interpolate, so they're not skipped.
-_QUOTED_HEREDOC = re.compile(r"<<-?(?P<q>['\"])(?P<delim>[A-Za-z_]\w*)(?P=q)")
-
-
-def _apply_backticks(text: str) -> tuple[str, int]:
-    """Replace `cmd` with $(cmd), skipping regions where backticks are literal text.
-
-    Skipped regions:
-    - Single-quoted strings — bash suppresses interpretation inside them.
-    - Quoted-heredoc bodies (<<'EOF' or <<"EOF") — bash leaves them literal.
-
-    Unquoted heredocs (<<EOF) DO interpolate backticks, so they are rewritten
-    normally. Double-quoted strings interpolate both `...` and $(...), so
-    they're equivalent targets — no double-quote tracking needed.
-    """
-    out: list[str] = []
-    i, n, count = 0, len(text), 0
-    in_squote = False
-    heredoc_end: str | None = (
-        None  # delimiter line that closes the current quoted heredoc
-    )
-    while i < n:
-        if heredoc_end is not None:
-            # Inside a quoted heredoc body — copy until the delimiter line.
-            line_end = text.find("\n", i)
-            if line_end == -1:
-                out.append(text[i:])
-                break
-            line = text[i:line_end]
-            out.append(text[i : line_end + 1])
-            if line.strip() == heredoc_end:
-                heredoc_end = None
-            i = line_end + 1
-            continue
-
-        c = text[i]
-        if c == "'":
-            in_squote = not in_squote
-            out.append(c)
-            i += 1
-            continue
-        if not in_squote and c == "<" and i + 1 < n and text[i + 1] == "<":
-            m = _QUOTED_HEREDOC.match(text, i)
-            if m:
-                # Emit the introducer + rest of the line, then enter heredoc body mode.
-                out.append(m.group(0))
-                heredoc_end = m.group("delim")
-                i = m.end()
-                line_end = text.find("\n", i)
-                if line_end == -1:
-                    out.append(text[i:])
-                    break
-                out.append(text[i : line_end + 1])
-                i = line_end + 1
-                continue
-        if c == "`" and not in_squote:
-            end = text.find("`", i + 1)
-            if end == -1 or "\n" in text[i + 1 : end]:
-                out.append(c)
-                i += 1
-            else:
-                out.append(f"$({text[i + 1 : end]})")
-                i = end + 1
-                count += 1
-        else:
-            out.append(c)
-            i += 1
-    return "".join(out), count
+# backticks and test-numeric are handled entirely by ast-grep (SG_HANDLED_IDS
+# below); their metadata-only pattern/replace live on the Rule entries
+# further down and no standalone apply_fn is needed here.
 
 
 _FOR_RANGE = re.compile(rf"\bfor\s+({_VAR})\s+in\s+(\d+(?:\s+\d+){{2,}})\s*;?\s*do\b")
@@ -171,21 +103,116 @@ def _apply_for_range(text: str) -> tuple[str, int]:
     return _FOR_RANGE.sub(repl, text), count
 
 
-_CAT_FILE_GREP = re.compile(
-    r'\bcat\s+("(?:[^"\\]|\\.)*"|\'[^\']*\'|[\w./~$-]+)\s*\|\s*'
-    r"grep\s+([^\n|]+?)(?=\s*$|\s*\||\s*;|\s*&&|\s*\|\|)",
-    re.MULTILINE,
+_CAT_FILE_GREP_PREFIX = re.compile(
+    r'\bcat\s+("(?:[^"\\]|\\.)*"|\'[^\']*\'|[\w./~$-]+)\s*\|\s*grep\s+'
 )
 
 
+def _grep_args_end(text: str, start: int) -> int:
+    """Return the index just past the grep argument list starting at `start`.
+
+    Stops at the first unquoted `|`, `;`, `&`, or newline, respecting single-
+    and double-quoted tokens so a quoted metacharacter (e.g. `grep -E "a|b"`)
+    is not mistaken for a pipeline separator.
+    """
+    i, n = start, len(text)
+    while i < n:
+        c = text[i]
+        if c == "'":
+            end = text.find("'", i + 1)
+            i = end + 1 if end != -1 else n
+            continue
+        if c == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                if text[j] == "\\":
+                    j += 1
+                j += 1
+            i = j + 1 if j < n else n
+            continue
+        if c in "|;&\n":
+            break
+        i += 1
+    return i
+
+
 def _apply_cat_file_grep(text: str) -> tuple[str, int]:
-    """Rewrite `cat FILE | grep PAT` to `grep PAT FILE` (drop the useless cat)."""
+    """Rewrite `cat FILE | grep PAT` to `grep PAT FILE` (drop the useless cat).
 
-    def repl(m: re.Match) -> str:
-        return f"grep {m.group(2).rstrip()} {m.group(1)}"
+    Grep arguments are consumed token-by-token via `_grep_args_end` so a
+    quoted pipe inside the pattern (e.g. `grep -E "error|warn"`) is not
+    mistaken for the end of the argument list.
+    """
+    out: list[str] = []
+    i, n, count = 0, len(text), 0
+    while i < n:
+        m = _CAT_FILE_GREP_PREFIX.search(text, i)
+        if not m:
+            out.append(text[i:])
+            break
+        out.append(text[i : m.start()])
+        args_end = _grep_args_end(text, m.end())
+        args = text[m.end() : args_end].rstrip()
+        out.append(f"grep {args} {m.group(1)}")
+        count += 1
+        i = args_end
+    return "".join(out), count
 
-    new_text, count = _CAT_FILE_GREP.subn(repl, text)
-    return new_text, count
+
+_COMBINED_TESTS = re.compile(r"\[\s+([^\[\]\n]+?)\s+\]\s*&&\s*\[\s+([^\[\]\n]+?)\s+\]")
+_TEST_AND_OR_FLAG = re.compile(r"(?:^|\s)(-a|-o)(?:\s|$)")
+_UNQUOTED_EQ_RHS = re.compile(r'(?:^|\s)(==|=|!=)\s+(?!["\'])\S')
+
+
+def _combined_tests_side_unsafe(side: str) -> bool:
+    """True when `side` cannot be safely dropped into a `[[ ]]` compound test.
+
+    `-a`/`-o` are invalid test primaries inside `[[ ]]` (bash parses them as
+    ordinary operands there, not the `[ ]` logical operators). An unquoted
+    RHS after `=`/`==`/`!=` is a literal string compare in `[ ]` but a glob
+    pattern match in `[[ ]]`, so it must stay quoted to keep the meaning.
+    """
+    return bool(_TEST_AND_OR_FLAG.search(side) or _UNQUOTED_EQ_RHS.search(side))
+
+
+def _apply_combined_tests(text: str) -> tuple[str, int]:
+    """Fuse `[ A ] && [ B ]` into `[[ A && B ]]`, skipping unsafe sides."""
+    count = 0
+
+    def repl(m: re.Match[str]) -> str:
+        nonlocal count
+        a, b = m.group(1), m.group(2)
+        if _combined_tests_side_unsafe(a) or _combined_tests_side_unsafe(b):
+            return m.group(0)
+        count += 1
+        return f"[[ {a} && {b} ]]"
+
+    return _COMBINED_TESTS.sub(repl, text), count
+
+
+_FIND_EXEC_RM = re.compile(r"(find\s+[^\n]*?)-exec\s+rm\s+(?:-f\s+)?\{\}\s+\\;")
+_FIND_UNSAFE_FLAG = re.compile(r"(?:^|\s)(-prune|-o|-or)(?:\s|$)")
+_FIND_TYPE_F = re.compile(r"(?:^|\s)-type\s+f(?:\s|$)")
+
+
+def _apply_find_exec_rm_delete(text: str) -> tuple[str, int]:
+    """Rewrite `find ... -exec rm {} \\;` to `find ... -delete`, guarded.
+
+    `-delete` implies `-depth`, which disables `-prune` and can delete
+    files an `-o`-branched expression meant to exclude. Skips when the
+    expression has `-prune`, `-o`/`-or`, or lacks `-type f`.
+    """
+    count = 0
+
+    def repl(m: re.Match[str]) -> str:
+        nonlocal count
+        expr = m.group(1)
+        if _FIND_UNSAFE_FLAG.search(expr) or not _FIND_TYPE_F.search(expr):
+            return m.group(0)
+        count += 1
+        return f"{expr}-delete"
+
+    return _FIND_EXEC_RM.sub(repl, text), count
 
 
 # --- Rule definitions -----------------------------------------------------
@@ -206,7 +233,7 @@ RULES: list[Rule] = [
         ),
         replace=lambda m: f"${{{m.group(1)}/{m.group(2)}/{m.group(3)}}}",
         source_example="13",
-        notes="Skips when sed pattern contains regex metachars (bash glob ≠ sed regex).",
+        notes="Skips when sed pattern contains regex metachars (bash glob ≠ sed regex). sed applies s/PAT/REP/ once per line; ${VAR/PAT/REP} replaces only the first occurrence in the whole string — they diverge when VAR holds more than one line.",
         examples=(
             ("X=$(echo \"$S\" | sed 's/foo/bar/')", "X=${S/foo/bar}"),
             (
@@ -263,13 +290,13 @@ RULES: list[Rule] = [
     # the literal rule would rewrite it to the more verbose `$((COUNT + 1))`.
     Rule(
         id="expr-increment",
-        description="VAR=$(expr $VAR + 1) → ((VAR++))  (matched-name self-increment)",
+        description="VAR=$(expr $VAR + 1) → VAR=$((VAR + 1))  (matched-name self-increment)",
         pattern=re.compile(rf"\b({_VAR})=\$\(\s*expr\s+\$\1\s+\+\s+1\s*\)"),
-        replace=lambda m: f"(({m.group(1)}++))",
+        replace=lambda m: f"{m.group(1)}=$(({m.group(1)} + 1))",
         source_example="33",
         shellcheck_id="SC2003",
-        notes="Cross-meta equality via backreference: only matches when the assigned name equals the operand name. ((var++)) drops the assignment-as-expression value (which the original expr form also lacked in practice).",
-        examples=(("COUNT=$(expr $COUNT + 1)", "((COUNT++))"),),
+        notes="Cross-meta equality via backreference: only matches when the assigned name equals the operand name. ((VAR++)) was rejected: it returns exit status 1 when VAR is 0 (aborts under set -e) and is a syntax error inside a `local VAR=...` assignment.",
+        examples=(("COUNT=$(expr $COUNT + 1)", "COUNT=$((COUNT + 1))"),),
     ),
     Rule(
         id="expr-arith-literal",
@@ -289,8 +316,9 @@ RULES: list[Rule] = [
         description="[ A ] && [ B ] → [[ A && B ]]  (file/string tests only; numeric pairs go through test-numeric per-side)",
         pattern=re.compile(r"\[\s+([^\[\]\n]+?)\s+\]\s*&&\s*\[\s+([^\[\]\n]+?)\s+\]"),
         replace=lambda m: f"[[ {m.group(1)} && {m.group(2)} ]]",
+        apply_fn=_apply_combined_tests,
         source_example="37",
-        notes="Conservative — only matches when neither bracket contains nested brackets or newlines. For numeric tests with -eq/-ne/-lt/-le/-gt/-ge on both sides, the sg engine rewrites each side independently to (( )); the result is correct but unfused.",
+        notes="Conservative — only matches when neither bracket contains nested brackets or newlines. Skips when either side has -a/-o (invalid inside [[ ]]) or an unquoted RHS after =/==/!= (becomes a glob match inside [[ ]] instead of a literal string compare). For numeric tests with -eq/-ne/-lt/-le/-gt/-ge on both sides, the sg engine rewrites each side independently to (( )); the result is correct but unfused.",
         examples=(
             (
                 'if [ -f "$F" ] && [ -r "$F" ]; then',
@@ -331,24 +359,14 @@ RULES: list[Rule] = [
             ),
         ),
     ),
-    Rule(
-        id="param-default",
-        description='if [ -z "$N" ]; then VAR=DEFAULT; fi → VAR=${N:-DEFAULT}  (positional param)',
-        pattern=re.compile(
-            rf'if\s+\[\s+-z\s+"\$(\d+)"\s+\]\s*;\s*then\s+'
-            rf"({_VAR})=([^\n;]+?)\s*;?\s*fi",
-            re.MULTILINE,
-        ),
-        replace=lambda m: f"{m.group(2)}=${{{m.group(1)}:-{m.group(3).strip()}}}",
-        source_example="17",
-        notes='Like empty-default but for positional parameters ($1, $2, ...). Single-line if/then/fi only. The rewrite always assigns VAR; the original only assigned when $N was empty — equivalent IF VAR was unset before the if-block, which is the idiomatic "function-prologue default" usage this rule targets.',
-        examples=(
-            (
-                'if [ -z "$1" ]; then NAME="anon"; fi',
-                'NAME=${1:-"anon"}',
-            ),
-        ),
-    ),
+    # param-default was removed: `if [ -z "$N" ]; then VAR=DEFAULT; fi` →
+    # `VAR=${N:-DEFAULT}` unconditionally assigns VAR to $N whenever $N is
+    # non-empty. When VAR held an unrelated prior value (e.g.
+    # `MODE=fast; if [ -z "$1" ]; then MODE="slow"; fi`), the rewrite
+    # silently overwrites MODE with $1 — a behavior the original code never
+    # had. There is no syntactic signal in the if/then/fi alone that
+    # distinguishes the safe "positional-default prologue" idiom from this
+    # case, so the rule is gone rather than partially correct.
     Rule(
         id="mkdir-guard",
         description='if [ ! -d "$D" ]; then mkdir -p "$D"; fi → mkdir -p "$D"',
@@ -371,11 +389,11 @@ RULES: list[Rule] = [
     Rule(
         id="backticks",
         description="`cmd` → $(cmd)  (POSIX-portable, nestable)",
-        # apply_fn handles the rewrite; the regex is unused but kept
-        # non-empty so --explain has something to show.
+        # ast-grep (SG_HANDLED_IDS) does the actual rewrite; pattern/replace
+        # are metadata only, kept so --explain and --list have something
+        # to show for this rule.
         pattern=re.compile(r"`([^`\n]+)`"),
         replace=lambda m: f"$({m.group(1)})",
-        apply_fn=_apply_backticks,
         source_example="N/A",
         shellcheck_id="SC2006",
         notes="Skips backticks inside single-quoted strings and quoted-heredoc bodies (<<'EOF' / <<\"EOF\") — both are literal text in bash. Unquoted heredocs (<<EOF) interpolate, so backticks inside are rewritten as expected.",
@@ -438,21 +456,22 @@ RULES: list[Rule] = [
     ),
     Rule(
         id="find-exec-rm-delete",
-        description="find ... -exec rm {} \\; → find ... -delete  (faster, no shell re-entry)",
+        description="find ... -type f -exec rm {} \\; → find ... -type f -delete  (faster, no shell re-entry)",
         # Only -f is matched. -r/-R/-rf would change semantics: rm -r removes
         # non-empty dirs while find -delete refuses them without -depth.
         pattern=re.compile(r"(find\s+[^\n]*?)-exec\s+rm\s+(?:-f\s+)?\{\}\s+\\;"),
         replace=lambda m: f"{m.group(1)}-delete",
+        apply_fn=_apply_find_exec_rm_delete,
         source_example="N/A",
-        notes="Use only when find paths are files or empty dirs. find -delete refuses non-empty dirs without -depth, so the rule deliberately skips -r / -rf invocations.",
+        notes="Use only when find paths are files. -delete implies -depth, which disables -prune and can delete files an -o-branched expression meant to exclude — the rule skips whenever the expression has -prune, -o, or -or, or lacks -type f.",
         examples=(
             (
-                'find /tmp -name "*.bak" -exec rm {} \\;',
-                'find /tmp -name "*.bak" -delete',
+                'find /tmp -type f -name "*.bak" -exec rm {} \\;',
+                'find /tmp -type f -name "*.bak" -delete',
             ),
             (
-                "find . -mtime +30 -exec rm -f {} \\;",
-                "find . -mtime +30 -delete",
+                "find . -type f -mtime +30 -exec rm -f {} \\;",
+                "find . -type f -mtime +30 -delete",
             ),
         ),
     ),
@@ -477,7 +496,7 @@ RULES: list[Rule] = [
     # responsibility when they opt in.
     Rule(
         id="sed-replace-to-sd",
-        description="echo \"$V\" | sed 's/X/Y/g' → sd 'X' 'Y' <<< \"$V\"  (literal-only; needs `sd`)",
+        description="echo \"$V\" | sed 's/X/Y/g' → sd -F 'X' 'Y' <<< \"$V\"  (literal-only; needs `sd`)",
         # Literal patterns only — sd uses regex by default but our guard
         # restricts to alphanumeric + safe chars so the conservative
         # mapping holds. Mirrors sed-replace-all's safety stance.
@@ -485,14 +504,14 @@ RULES: list[Rule] = [
             rf'echo\s+"\$({_VAR})"\s*\|\s*'
             rf"sed\s+'s/({_LITERAL}+)/({_LITERAL}*)/g'"
         ),
-        replace=lambda m: f"sd '{m.group(2)}' '{m.group(3)}' <<< \"${m.group(1)}\"",
+        replace=lambda m: f"sd -F '{m.group(2)}' '{m.group(3)}' <<< \"${m.group(1)}\"",
         source_example="N/A",
-        notes="Requires `sd` (https://github.com/chmln/sd). Skips when the sed pattern contains regex metachars to avoid sd-vs-sed semantic drift.",
+        notes="Requires `sd` (https://github.com/chmln/sd). -F forces literal (fixed-string) matching — sd treats its pattern as regex by default, and PAT can contain regex metacharacters (e.g. `+`) that are literal in the source sed pattern.",
         group="modernize",
         examples=(
             (
                 "echo \"$LINE\" | sed 's/foo/bar/g'",
-                "sd 'foo' 'bar' <<< \"$LINE\"",
+                "sd -F 'foo' 'bar' <<< \"$LINE\"",
             ),
         ),
     ),
@@ -516,11 +535,11 @@ RULES: list[Rule] = [
         # find does not. The rewrite changes behavior in repos with
         # gitignored matches. Opt-in only.
         pattern=re.compile(r'\bfind\s+\.\s+-type\s+f\s+-name\s+"([^"]+)"(?!\s*-)'),
-        replace=lambda m: f'fd -t f "{m.group(1)}"',
+        replace=lambda m: f'fd -H -t f -g "{m.group(1)}"',
         source_example="N/A",
-        notes="Requires `fd` (https://github.com/sharkdp/fd). BEHAVIOR DIFFERENCE: fd respects .gitignore by default; find does not. Negative lookahead skips finds that have additional flags (-mtime, -exec, etc.).",
+        notes="Requires `fd` (https://github.com/sharkdp/fd). -g treats the pattern as a glob (fd's bare positional arg is a regex, so \"*.py\" would otherwise be a regex parse error). -H matches find's default of including hidden files. BEHAVIOR DIFFERENCE: fd still respects .gitignore by default; find does not. Negative lookahead skips finds that have additional flags (-mtime, -exec, etc.).",
         group="modernize",
-        examples=(('find . -type f -name "*.py"', 'fd -t f "*.py"'),),
+        examples=(('find . -type f -name "*.py"', 'fd -H -t f -g "*.py"'),),
     ),
 ]
 

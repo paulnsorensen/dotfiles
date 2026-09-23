@@ -29,9 +29,13 @@ chezmoi renders a source file with a `.tmpl` suffix as a Go `text/template`.
 Files under `.chezmoitemplates/` are reusable fragments; they produce no target files.
 A per-machine config file holds machine variables.
 
+In this repo, the source tree is `$DOTFILES/chezmoi`. Edit its plain
+and `.tmpl` files directly, then run `dots sync` to deploy (see
+`AGENTS.md`). Only `encrypted_` files need `chezmoi edit`.
+
 Most trouble has two causes:
 
-1. Editing files under `~/.local/share/chezmoi/` directly instead of `chezmoi edit $TARGET`. This breaks template and decrypt round-trips.
+1. Editing an `encrypted_` source file directly instead of `chezmoi edit $TARGET`. This breaks the decrypt round-trip. Editing a plain or `.tmpl` source file directly is normal; `chezmoi edit` only adds editor convenience there.
 2. Committing plaintext secrets "because the repo is private". Repos leak, forks leak, and history is permanent.
 
 ## Config file vs. config template
@@ -156,7 +160,7 @@ chezmoi warns when the editor returns before `edit.minDuration` (default `1s`); 
 Each rule prevents a real foot-gun:
 
 1. **Never commit plaintext secrets**, even to a private repo. Pick exactly one backend per repo from `references/secrets.md`; mixing backends adds moving parts, not security.
-2. **Never edit encrypted or templated source files directly.** Use `chezmoi edit $TARGET` so decrypt and template round-trips happen.
+2. **Never edit an `encrypted_` source file directly.** Use `chezmoi edit $TARGET` so the decrypt round-trip happens. Editing a plain or `.tmpl` source file directly is normal.
 3. **Inspect before applying** shared or important files with `chezmoi diff` or `chezmoi apply --dry-run -v`. `exact_` deletes unmanaged entries; see it coming.
 4. **Use `prompt*` functions only in the config template** (`.chezmoi.toml.tmpl`). In regular templates they prompt on every apply, diff, and status.
 5. **Wrap chezmoi; do not replace it.** Do not write a competing dotfile manager or a shim around `chezmoi apply`.

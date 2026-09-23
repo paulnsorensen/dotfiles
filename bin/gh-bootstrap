@@ -44,6 +44,19 @@ done
 
 [[ -n "$repo" ]] || repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
+if ((notes || workflow)); then
+    toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || {
+        echo "gh-bootstrap: --release-notes/--release-workflow need a git clone" >&2
+        exit 1
+    }
+    clone_repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || clone_repo=""
+    [[ "$clone_repo" == "$repo" ]] || {
+        echo "gh-bootstrap: this clone ($clone_repo) is not $repo; run from a clone of $repo" >&2
+        exit 1
+    }
+    cd "$toplevel" || exit 1
+fi
+
 ruleset=""
 if ((${#checks[@]})); then
     ruleset=$(mktemp)
@@ -64,6 +77,7 @@ ghb_merge_state "$repo"
 
 echo "== ruleset"
 if [[ -n "$ruleset" ]]; then
+    ((queue)) && ghb_queue_precheck "$repo"
     ghb_upsert_ruleset "$repo" "$ruleset"
 else
     echo "skipped: pass --check NAME. Check names on the default branch:"
