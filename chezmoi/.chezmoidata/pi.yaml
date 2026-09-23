@@ -28,6 +28,6 @@ pi:
       # renovate: datasource=npm depName=pi-web-access
       - npm:pi-web-access@0.30.0
       # renovate: datasource=npm depName=@gotgenes/pi-permission-system
-      - npm:@gotgenes/pi-permission-system@33.0.5
+      - npm:@gotgenes/pi-permission-system@33.0.8
       # renovate: datasource=npm depName=pi-vim
       - npm:pi-vim@0.14.2
