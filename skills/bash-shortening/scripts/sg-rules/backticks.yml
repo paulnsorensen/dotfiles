@@ -1,0 +1,7 @@
+id: bash-shorten-backticks
+language: bash
+severity: hint
+message: 'Legacy `cmd` backticks expand to $(cmd) — same semantics, nestable, parses cleanly.'
+rule:
+  pattern: '`$$$CMD`'
+fix: '$($$$CMD)'

@@ -61,6 +61,13 @@ jobs:
     - name: Install bats
       run: sudo npm install -g bats
 
+    # bash-shortening tests need `sg` (ast-grep). Ubuntu's util-linux also
+    # ships `sg`, so the uv tool bin goes first on PATH.
+    - name: Install ast-grep
+      run: |
+        uv tool install ast-grep-cli==0.42.1
+        uv tool dir --bin >> "$GITHUB_PATH"
+
     - name: Install chezmoi
       run: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b /usr/local/bin
 

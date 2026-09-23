@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# gh-bootstrap — apply one-time GitHub repo policy with the gh CLI.
+#
+# Usage:
+#   gh-bootstrap [--repo OWNER/NAME] [--check NAME]... [--reviews N] [--queue]
+#                [--release-notes] [--release-workflow] [--dry-run]
+#
+#   (default)           Squash-only merges; PR title/body become the commit.
+#   --check NAME        Required status check; repeat per check. With at least
+#                       one, upsert the "main: PR + CI" default-branch ruleset.
+#                       Without, list the check names CI emits and skip it.
+#   --reviews N         Required approvals (default 0).
+#   --queue             Add a squash merge queue (public repo or Team plan).
+#   --release-notes     Scaffold .github/release.yml and its labels.
+#   --release-workflow  Scaffold .github/workflows/release.yml (tag → release).
+#   --dry-run           Print the current state and the ruleset; change nothing.
+#
+# Idempotent: re-runs update the ruleset in place and never overwrite a
+# scaffold file that differs (the diff prints instead). Rulesets need admin.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/gh-bootstrap.sh
+source "${SCRIPT_DIR}/lib/gh-bootstrap.sh"
+
+usage() { sed -n '3,19p' "$0" | sed 's/^# \{0,1\}//'; }
+
+repo="" reviews=0 queue=0 notes=0 workflow=0 dry=0
+checks=()
+while (($#)); do
+    case "$1" in
+        --repo) repo="${2:?--repo needs a value}"; shift ;;
+        --check) checks+=("${2:?--check needs a value}"); shift ;;
+        --reviews) reviews="${2:?--reviews needs a value}"; shift ;;
+        --queue) queue=1 ;;
+        --release-notes) notes=1 ;;
+        --release-workflow) workflow=1 ;;
+        --dry-run) dry=1 ;;
+        -h | --help) usage; exit 0 ;;
+        *) echo "gh-bootstrap: unknown argument: $1" >&2; usage >&2; exit 1 ;;
+    esac
+    shift
+done
+
+[[ -n "$repo" ]] || repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+
+ruleset=""
+if ((${#checks[@]})); then
+    ruleset=$(mktemp)
+    trap 'rm -f "$ruleset"' EXIT
+    ghb_render_ruleset "$reviews" "$queue" "${checks[@]}" >"$ruleset"
+fi
+
+if ((dry)); then
+    echo "== $repo merge state"; ghb_merge_state "$repo"
+    echo "== rulesets"; gh api "repos/$repo/rulesets" --jq '.[] | {id, name, enforcement}'
+    [[ -n "$ruleset" ]] && { echo "== ruleset to apply"; cat "$ruleset"; }
+    exit 0
+fi
+
+echo "== merge defaults"
+ghb_apply_merge_defaults "$repo"
+ghb_merge_state "$repo"
+
+echo "== ruleset"
+if [[ -n "$ruleset" ]]; then
+    ghb_upsert_ruleset "$repo" "$ruleset"
+else
+    echo "skipped: pass --check NAME. Check names on the default branch:"
+    ghb_check_names "$repo" | sed 's/^/  /'
+fi
+
+rc=0
+if ((notes)); then
+    echo "== release notes"
+    ghb_scaffold .github/release.yml ghb_render_release_notes || rc=$?
+    for label in "${GHB_RELEASE_LABELS[@]}"; do
+        gh label create "$label" --repo "$repo" --force >/dev/null
+    done
+    echo "labels: ${GHB_RELEASE_LABELS[*]}"
+fi
+if ((workflow)); then
+    echo "== release workflow"
+    ghb_scaffold .github/workflows/release.yml ghb_render_release_workflow || rc=$?
+fi
+exit "$rc"

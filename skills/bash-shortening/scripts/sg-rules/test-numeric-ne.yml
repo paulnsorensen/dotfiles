@@ -1,0 +1,12 @@
+id: bash-shorten-test-numeric-ne
+language: bash
+severity: hint
+message: '[ $V -ne N ] → (( V != N ))  (numeric inequality)'
+rule:
+  all:
+    - pattern: '[ $VAR -ne $N ]'
+    - has:
+        kind: variable_name
+        pattern: $V
+        stopBy: end
+fix: '(( $V != $N ))'

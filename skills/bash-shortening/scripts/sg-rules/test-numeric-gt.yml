@@ -1,0 +1,12 @@
+id: bash-shorten-test-numeric-gt
+language: bash
+severity: hint
+message: '[ $V -gt N ] → (( V > N ))  (greater-than)'
+rule:
+  all:
+    - pattern: '[ $VAR -gt $N ]'
+    - has:
+        kind: variable_name
+        pattern: $V
+        stopBy: end
+fix: '(( $V > $N ))'

@@ -1,0 +1,166 @@
+{
+  "skill_name": "bash-shortening",
+  "notes": "Routing evals: each prompt should or should not trigger the bash-shortening skill. `should_trigger` is the gold-standard label; `expected_output` restates it as the decision the router must reach.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "trigger-huge-deploy-sh",
+      "prompt": "i've got a deploy.sh in our infra/ repo that's gotten huge — like 400 lines of mostly aws cli stuff with a ton of `if [ $? -eq 0 ]` chains and tmpfiles getting created and rm'd. can you take a pass and tighten it up? our team keeps complaining it's hard to follow",
+      "expected_output": "Triggers bash-shortening: an existing bash script the user wants tightened/shortened.",
+      "files": [],
+      "should_trigger": true
+    },
+    {
+      "id": 1,
+      "name": "trigger-new-sort-by-date-sh",
+      "prompt": "writing a new script /Users/me/dev/photos/sort_by_date.sh that needs to walk ~/Pictures, read EXIF dates with exiftool, and move files into YYYY-MM/ folders. want this to be the *good* version on the first try, not the spaghetti i'd write naturally",
+      "expected_output": "Triggers bash-shortening: writing a new bash script and wanting the idiomatic/short version up front.",
+      "files": [],
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "name": "trigger-log-count-loop",
+      "prompt": "is there a less awful way to do this in bash:\nfor file in $(ls *.log); do\n  cat $file | grep ERROR | wc -l > /tmp/$file.count\ndone\nthe lint tool is yelling about it",
+      "expected_output": "Triggers bash-shortening: a bash snippet the user wants made less awful / idiomatic.",
+      "files": [],
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "name": "trigger-flatten-nested-ifs",
+      "prompt": "ok this build script i inherited has like 12 nested ifs checking exit codes. i want to flatten it. it's bash 5 on linux runners only so portability isn't a concern. file is at ci/bin/release.sh",
+      "expected_output": "Triggers bash-shortening: bash 5 script the user wants flattened/shortened.",
+      "files": [],
+      "should_trigger": true
+    },
+    {
+      "id": 4,
+      "name": "trigger-migrate-sh-pipeline",
+      "prompt": "review my migrate.sh — it does pg_dump, transforms via sed, pipes into psql. specifically worried about whether i need the temp file at /tmp/dump_$$.sql or if i can pipeline it. running on bash 5 in our debian containers",
+      "expected_output": "Triggers bash-shortening: bash script review aimed at removing a temp file via pipelining.",
+      "files": [],
+      "should_trigger": true
+    },
+    {
+      "id": 5,
+      "name": "trigger-csv-iterate-idiom",
+      "prompt": "what's the idiomatic bash for: i've got a comma-separated VAR='a,b,c,d' coming in from an env var and i want to iterate over each value. currently doing `IFS=',' read -ra arr <<< \"$VAR\"` then a for loop and it feels clunky",
+      "expected_output": "Triggers bash-shortening: asking for the idiomatic, shorter bash for an existing pattern.",
+      "files": [],
+      "should_trigger": true
+    },
+    {
+      "id": 6,
+      "name": "trigger-brace-expansion-setup",
+      "prompt": "/path/to/setup.sh creates 6 directories under /opt/myapp, copies 4 jinja templates, sets perms 750 on each. it's like 30 lines of mkdir then cp then chmod over and over. is there a brace-expansion-y way to make this maybe 5 lines",
+      "expected_output": "Triggers bash-shortening: collapse repetitive bash via brace expansion.",
+      "files": [],
+      "should_trigger": true
+    },
+    {
+      "id": 7,
+      "name": "trigger-posix-to-bash4-port",
+      "prompt": "im porting some old POSIX scripts to bash 4+ now that we dropped sh support, and i want to use the new features properly. mostly conditional substitutions and arrays. the file is build/scripts/release_helpers.sh and it's about 200 lines",
+      "expected_output": "Triggers bash-shortening: porting to bash 4+ and using newer features to shorten.",
+      "files": [],
+      "should_trigger": true
+    },
+    {
+      "id": 8,
+      "name": "trigger-tail-grep-slack-tighten",
+      "prompt": "this thing tails a log, greps for ERROR, sends slack alerts. running on bash 5 ubuntu prod. can you make it tighter?\n```\ntail -F /var/log/app.log | while read line; do\n  echo \"$line\" | grep -q ERROR\n  if [ $? -eq 0 ]; then\n    curl -X POST $SLACK_WEBHOOK -d \"{\\\"text\\\":\\\"$line\\\"}\"\n  fi\ndone\n```",
+      "expected_output": "Triggers bash-shortening: bash 5 script the user wants made tighter.",
+      "files": [],
+      "should_trigger": true
+    },
+    {
+      "id": 9,
+      "name": "trigger-process-substitution-rewrite",
+      "prompt": "i keep seeing people use `<()` in scripts at work and i half-understand it but my own bash always ends up with a temp file and trap to clean up. the file is tools/diff_configs.sh, it diffs output of two commands. can you rewrite it idiomatically and explain what changed",
+      "expected_output": "Triggers bash-shortening: rewrite a bash script idiomatically using process substitution.",
+      "files": [],
+      "should_trigger": true
+    },
+    {
+      "id": 10,
+      "name": "no-trigger-zsh-zshrc",
+      "prompt": "got a zsh script ~/.zshrc that's got this huge function for prompt setup with vcs_info and a bunch of nested if/elif blocks for git state. can you shorten it",
+      "expected_output": "Does NOT trigger: zsh, not bash — out of scope for bash-shortening.",
+      "files": [],
+      "should_trigger": false
+    },
+    {
+      "id": 11,
+      "name": "no-trigger-posix-ash-busybox",
+      "prompt": "we run alpine in prod so /bin/sh is busybox ash, no bash available. need to clean up our healthcheck.sh — it's 50 lines and i bet half could be one-liners. has to stay portable POSIX only, no bashisms",
+      "expected_output": "Does NOT trigger: POSIX-only busybox ash with no bash — bashisms are disallowed, out of scope.",
+      "files": [],
+      "should_trigger": false
+    },
+    {
+      "id": 12,
+      "name": "no-trigger-fish-config",
+      "prompt": "my fish shell config in ~/.config/fish/config.fish is a mess of abbr and aliases plus a few functions. like 200 lines. can you clean it up and shorten where possible",
+      "expected_output": "Does NOT trigger: fish shell, not bash — out of scope.",
+      "files": [],
+      "should_trigger": false
+    },
+    {
+      "id": 13,
+      "name": "no-trigger-dockerfile",
+      "prompt": "this dockerfile is huge — like 80 lines, lots of RUN apt-get update && apt-get install steps that should be combined, and we don't use multistage builds yet. can we slim it down",
+      "expected_output": "Does NOT trigger: a Dockerfile, not a bash script — out of scope.",
+      "files": [],
+      "should_trigger": false
+    },
+    {
+      "id": 14,
+      "name": "no-trigger-powershell",
+      "prompt": "powershell question — my deploy.ps1 has like 10 try/catch blocks for each azure cli call. is there a more idiomatic way to handle this in PS, maybe with $ErrorActionPreference",
+      "expected_output": "Does NOT trigger: PowerShell, not bash — out of scope.",
+      "files": [],
+      "should_trigger": false
+    },
+    {
+      "id": 15,
+      "name": "no-trigger-python-refactor",
+      "prompt": "python script utils/parse_logs.py is 200 lines of nested loops parsing nginx access logs. wanting to refactor with itertools, generators, and list comprehensions to make it cleaner",
+      "expected_output": "Does NOT trigger: Python, not bash — out of scope.",
+      "files": [],
+      "should_trigger": false
+    },
+    {
+      "id": 16,
+      "name": "no-trigger-makefile",
+      "prompt": "our Makefile is 600 lines with tons of duplicated recipes for build/test/lint across 5 services. can you split it into includes and shorten the recipes using pattern rules",
+      "expected_output": "Does NOT trigger: a Makefile, not a bash script — out of scope.",
+      "files": [],
+      "should_trigger": false
+    },
+    {
+      "id": 17,
+      "name": "no-trigger-ci-workflow-yaml",
+      "prompt": "i'm writing a CI workflow at .github/workflows/release.yml — there are 8 jobs and most of them duplicate setup-node, checkout, cache setup steps. how do i DRY it up using composite actions or matrix strategy",
+      "expected_output": "Does NOT trigger: a CI workflow YAML, not a bash script — out of scope.",
+      "files": [],
+      "should_trigger": false
+    },
+    {
+      "id": 18,
+      "name": "no-trigger-explain-set-euo-pipefail",
+      "prompt": "explain what `set -euo pipefail` actually does, especially the `-o pipefail` part — i see it at the top of every bash script at work but never know exactly what each flag changes about behavior",
+      "expected_output": "Does NOT trigger: an explain-only request, no script to shorten — out of scope.",
+      "files": [],
+      "should_trigger": false
+    },
+    {
+      "id": 19,
+      "name": "no-trigger-explain-subshell-variable",
+      "prompt": "my bash script is hanging when i pipe `cat file.txt | while read line; do COUNT=$((COUNT+1)); done` and then COUNT is 0 outside the loop. why does the variable not stick around — is this a subshell thing? not trying to refactor, just trying to understand",
+      "expected_output": "Does NOT trigger: an understand-why request, explicitly not a refactor — out of scope.",
+      "files": [],
+      "should_trigger": false
+    }
+  ]
+}

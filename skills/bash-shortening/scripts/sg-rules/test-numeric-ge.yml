@@ -1,0 +1,12 @@
+id: bash-shorten-test-numeric-ge
+language: bash
+severity: hint
+message: '[ $V -ge N ] → (( V >= N ))  (greater-or-equal)'
+rule:
+  all:
+    - pattern: '[ $VAR -ge $N ]'
+    - has:
+        kind: variable_name
+        pattern: $V
+        stopBy: end
+fix: '(( $V >= $N ))'

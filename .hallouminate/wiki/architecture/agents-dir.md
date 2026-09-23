@@ -101,6 +101,14 @@ Pure-prompt, user-invoked skills marked `disable-model-invocation: true` are the
 
 `npx skills add` never prunes: renaming a local skill leaves the old copy under `~/.agents/skills/<old-name>` until it is deleted by hand (seen with `skill-improver` → `skillz`).
 
+#### Vendored skills overwrite local skills of the same name (2026-09-22)
+
+`sync_claude_chezmoi_sources` copies the local `claude.skills` selection first. `_cz_vendor_external_skills` then copies each external source into the same `exact_skills` tree. A vendored skill with a local name silently wins. To move a skill from an external repo into `skills/`, remove it from the source repo too, or give that source an explicit `skills:` allowlist.
+
+`bash-shortening` moved from `skillz-that-grillz` into `skills/` this way. `chezmoi` moved too, but as a repo-local skill: `.agents/skills/chezmoi/` (read by Codex and other `.agents` hosts) plus a `.claude/skills/chezmoi` symlink for Claude Code. It is not in `claude.skills`, so it never deploys globally. `.gitignore` re-includes only these two paths under the ignored `.agents/` and `.claude/` trees. `tests/bash-shortening.bats` needs ast-grep's `sg` on PATH; CI installs `ast-grep-cli` through `uv tool`.
+
+`gh-bootstrap` is no longer a skill. Its work is deterministic `gh api` calls, so it is now `bin/gh-bootstrap` plus `bin/lib/gh-bootstrap.sh`: merge defaults, a "main: PR + CI" ruleset upsert, and release-notes and release-workflow scaffolds. A skill added model cost and variance with no judgment to apply.
+
 ## The edit → render → deploy workflow
 
 1. **Edit the appropriate source.** Shared registry commands cover MCP, hooks, agents, and skills; native OMP settings stay in its own `.chezmoidata` registry.
