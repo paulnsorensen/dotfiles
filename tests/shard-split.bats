@@ -109,3 +109,8 @@ union_of_shards() {
     run shard_files abc 4 "$WEIGHTS" a.bats
     [ "$status" -ne 0 ]
 }
+@test "shard_files: uses zero weight when the weights file is missing" {
+    run shard_files 1 1 "$WEIGHTS" a.bats
+    [ "$status" -eq 0 ]
+    [ "$output" = a.bats ]
+}

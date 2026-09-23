@@ -11,6 +11,7 @@ export DOTFILES_DIR="${${(%):-%N}:A:h}"
 source "$DOTFILES_DIR/zsh/core.zsh"
 source "$DOTFILES_DIR/zsh/colors.zsh"    # Chocolate Donut palette (must come before fzf/prompt)
 source "$DOTFILES_DIR/zsh/aliases.zsh"
+source "$DOTFILES_DIR/zsh/dots-update.zsh"
 source "$DOTFILES_DIR/zsh/completion.zsh"
 source "$DOTFILES_DIR/zsh/fzf.zsh"
 source "$DOTFILES_DIR/zsh/tools.zsh"     # zoxide, atuin, yazi (after fzf — atuin takes Ctrl+R)

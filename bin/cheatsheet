@@ -97,6 +97,7 @@ print_cheatsheet() {
 
     hdr "Deploy / Config"
     row "ds"                  "dots sync (deploy dotfiles)"
+    row "dps"                 "pull dotfiles, sync, check clean"
     row "dots <cmd>"          "sync / upgrade / status / doctor / test"
     row "claude-settings"     "edit ~/.claude/settings.json"
     row "claude-json-prune"   "prune stale ~/.claude.json entries"
