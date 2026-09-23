@@ -80,8 +80,8 @@ verify_harness_versions() {
         log_error "pi --version failed $phase"
         return 1
     fi
-    if [[ "$pi_version" != "0.87.0" ]]; then
-        log_error "pi version mismatch $phase: expected 0.87.0, got $pi_version"
+    if [[ "$pi_version" != "0.87.1" ]]; then
+        log_error "pi version mismatch $phase: expected 0.87.1, got $pi_version"
         return 1
     fi
 }
