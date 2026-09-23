@@ -55,7 +55,7 @@ packages:
 
   # AI harnesses not owned by mise
   # renovate: datasource=npm depName=@earendil-works/pi-coding-agent
-  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.87.0", flags: ["--ignore-scripts"] }
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.87.1", flags: ["--ignore-scripts"] }
 
   # LSP servers not owned by mise
   # renovate: datasource=npm depName=@vtsls/language-server
