@@ -59,31 +59,6 @@
       ],
       "datasourceTemplate": "github-tags",
       "depNameTemplate": "can1357/oh-my-pi"
-    },
-    {
-      "customType": "regex",
-      "description": "Keep the .sync Pi verification guard in lockstep with the package pin",
-      "managerFilePatterns": ["/^\\.sync$/"],
-      "matchStringsStrategy": "any",
-      "matchStrings": [
-        'pi_version" != "(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)"',
-        'expected (?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+), got \\$pi_version'
-      ],
-      "datasourceTemplate": "npm",
-      "depNameTemplate": "@earendil-works/pi-coding-agent"
-    },
-    {
-      "customType": "regex",
-      "description": "Keep the .sync OMP verification guard in lockstep with the installer pin",
-      "managerFilePatterns": ["/^\\.sync$/"],
-      "matchStringsStrategy": "any",
-      "matchStrings": [
-        '!= "omp/(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)"',
-        'expected omp/(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)'
-      ],
-      "datasourceTemplate": "github-tags",
-      "depNameTemplate": "can1357/oh-my-pi",
-      "extractVersionTemplate": "^v?(?<version>.*)$"
     }
   ],
 
@@ -119,16 +94,6 @@
         "tavily-cli"
       ],
       "minimumReleaseAge": "4 hours"
-    },
-    {
-      "description": "Bump the oh-my-pi installer pin and the .sync guard together in one PR",
-      "matchDepNames": ["can1357/oh-my-pi"],
-      "groupName": "oh-my-pi"
-    },
-    {
-      "description": "Bump Pi and its verification guard together",
-      "matchDepNames": ["@earendil-works/pi-coding-agent"],
-      "groupName": "pi-coding-agent"
     },
     {
       "description": "Require manual review for major updates",
