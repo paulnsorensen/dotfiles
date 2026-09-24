@@ -89,9 +89,9 @@ The kernel is `../session-analytics/references/calibration.md`; the defaults:
    Set `model` + `effort` only when the skill is model-invoked.
 4. Register a global skill in `chezmoi/.chezmoidata/claude.yaml` under `claude.skills`; that list feeds every harness.
    A repo-local skill stays out of `claude.skills`; place it per `references/harness-layout.md § Repo-local skills`.
-5. Run `improve` on the new file once, then `dots sync`.
+5. Run `improve` on the new file once, then `dots sync` for a global skill.
 
-Done means: the file exists, `claude.skills` names it (or every repo-local host path resolves), `dots sync` exits 0, and the Invocation lens passes.
+Done means: the file exists, `claude.skills` names it (or every repo-local host path resolves), `dots sync` exits 0 for a global skill, and the Invocation lens passes.
 
 ## Mode: improve
 

@@ -195,7 +195,7 @@ the first's success, which is rarely what you mean.
 
 == String comparisons (inside [[ ]]) ==
 [[ $a == "$b" ]]  equal     (single = also works; == is bash-preferred; quote $b — unquoted it is a glob pattern)
-[[ $a != $b ]]  not equal
+[[ $a != "$b" ]]  not equal
 [[ $a <  $b ]]  lexically less than
 [[ $a >  $b ]]  lexically greater than
 [[ -z $a ]]     empty/unset

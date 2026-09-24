@@ -119,10 +119,12 @@ encrypted target under the new backend:
 
 ```bash
 # re-add every gpg-encrypted target as age-encrypted
-chezmoi managed --include=encrypted --path-style=absolute | while IFS= read -r target; do
+set -euo pipefail
+targets=$(chezmoi managed --include=encrypted --path-style=absolute)
+while IFS= read -r target; do
   chezmoi forget --force "$target"
   chezmoi add --encrypt "$target"
-done
+done <<< "$targets"
 ```
 
 (Audit before running — destructive.)
@@ -133,6 +135,10 @@ old gpg-encrypted source without touching the target; `chezmoi add
 --encrypt` re-adds it under the new backend. Add `--template` too if
 the source was also a template: `chezmoi add --encrypt --template
 "$target"`.
+
+If `chezmoi add --encrypt` fails for a target, `chezmoi forget` already
+ran, so a rerun of the loop does not select that target again. Run
+`chezmoi add --encrypt "$target"` for that target directly.
 
 ## SOPS
 
@@ -177,13 +183,14 @@ apply time without the CLI being invoked:
 # scripts/refresh-secrets.sh
 set -euo pipefail
 
-export BW_SESSION=$(bw unlock --raw)
+BW_SESSION=$(bw unlock --raw)
+export BW_SESSION
 github_token=$(bw get password github-token)
 npm_token=$(bw get password npm-token)
 
 dest="$(chezmoi source-path)/.chezmoidata/secrets.yaml"
 tmp="$(mktemp "$(dirname "$dest")/secrets.yaml.XXXXXX")"
-umask 077
+trap 'rm -f "$tmp"' EXIT
 cat > "$tmp" <<EOF
 secrets:
   github_token: $github_token
@@ -194,8 +201,10 @@ mv "$tmp" "$dest"
 
 Then use `{{ .secrets.github_token }}` in templates. The plaintext file
 sits in the source dir unencrypted but is gitignored — fine because
-it's the same machine that already has the rendered dotfiles. `umask
-077` keeps the file at mode 600 from creation.
+it's the same machine that already has the rendered dotfiles. `mktemp`
+creates the temporary file at mode 0600, and `mv` replaces the old file
+in place. The `trap` removes the temporary file if the script exits
+early.
 
 ## Anti-patterns
 

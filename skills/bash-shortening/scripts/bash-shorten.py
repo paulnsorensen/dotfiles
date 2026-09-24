@@ -118,6 +118,22 @@ _NEGATIVE_CASES: tuple[str, ...] = (
     # cat-file-pipe-grep must not relocate FILE past an unquoted
     # redirection — that would change what the redirection applies to.
     "cat f | grep foo 2>&1 | wc -l",
+    # find -exec rm {} \; -> -delete: \!/'!'/"!" are quoted/escaped spellings
+    # of ! that also negate -type f, so -delete would remove directories.
+    "find . \\! -type f -exec rm {} \\;",
+    "find . '!' -type f -exec rm {} \\;",
+    'find . "!" -type f -exec rm {} \\;',
+    # combined-tests: a quoted "<"/">" is [ ]'s lexical-comparison operator
+    # spelled without the backslash; [[ ]] needs neither form.
+    '[ "$a" "<" "$b" ] && [ -f "$c" ]',
+    # combined-tests: \(/\) are [ ]'s escaped grouping operators; carrying
+    # the backslash into [[ ]] is a syntax error.
+    '[ \\( -f "$F" \\) ] && [ -w "$G" ]',
+    # cat-file-pipe-grep must not rewrite when the grep argument list has an
+    # unquoted backslash — it can escape the very chars the scan treats as
+    # separators (e.g. foo\\|bar is one pattern, not a pipeline).
+    "cat f | grep foo\\|bar",
+    "cat f | grep foo\\)",
 )
 
 # Custom positive tests for cat-file-pipe-grep (which has no static .examples)

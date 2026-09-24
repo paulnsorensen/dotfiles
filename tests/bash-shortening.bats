@@ -300,6 +300,20 @@ assert_rewrite() {
     [ "${got%$'\n'}" = "$input" ]
 }
 
+@test "rule combined-tests SKIPS when a side has a quoted \"<\" or \">\"" {
+    local input='[ "$a" "<" "$b" ] && [ -f "$c" ]'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule combined-tests SKIPS when a side has escaped parens" {
+    local input='[ \( -f "$F" \) ] && [ -w "$G" ]'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
 @test "rule test-numeric maps -gt to >" {
     assert_rewrite 'if [ $X -gt 100 ]; then' 'if (( X > 100 )); then'
 }
@@ -424,6 +438,27 @@ assert_rewrite() {
     [ "${got%$'\n'}" = "$input" ]
 }
 
+@test "rule find-exec-rm-delete SKIPS when -type f is negated with \\!" {
+    local input='find . \! -type f -exec rm {} \;'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule find-exec-rm-delete SKIPS when -type f is negated with '!'" {
+    local input="find . '!' -type f -exec rm {} \;"
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test 'rule find-exec-rm-delete SKIPS when -type f is negated with "!"' {
+    local input='find . "!" -type f -exec rm {} \;'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
 @test "rule cat-file-pipe-grep drops the useless cat" {
     assert_rewrite 'cat /etc/hosts | grep localhost' 'grep localhost /etc/hosts'
 }
@@ -446,6 +481,30 @@ assert_rewrite() {
 
 @test "rule cat-file-pipe-grep SKIPS when followed by an unquoted redirection" {
     local input='cat f | grep foo 2>&1 | wc -l'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule cat-file-pipe-grep rewrites a multi-line single-quoted pattern" {
+    local input=$'cat f | grep \'foo\nbar\''
+    local expected=$'grep \'foo\nbar\' f'
+    assert_rewrite "$input" "$expected"
+}
+
+@test "rule cat-file-pipe-grep keeps a trailing comment with an apostrophe as a comment" {
+    assert_rewrite "cat f | grep foo # don't touch" "grep foo f # don't touch"
+}
+
+@test "rule cat-file-pipe-grep SKIPS on an unquoted backslash before a pipe" {
+    local input='cat f | grep foo\|bar'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule cat-file-pipe-grep SKIPS on an unquoted backslash before a paren" {
+    local input='cat f | grep foo\)'
     local got
     got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
     [ "${got%$'\n'}" = "$input" ]

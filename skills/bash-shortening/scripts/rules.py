@@ -113,25 +113,24 @@ def _grep_args_end(text: str, start: int) -> int:
     or -1 when the argument list is unsafe to rewrite.
 
     Stops at the first unquoted `|`, `;`, `&`, unquoted `)`, word-initial
-    `#`, or newline, respecting single- and double-quoted tokens so a
-    quoted metacharacter (e.g. `grep -E "a|b"`) is not mistaken for a
-    pipeline separator. An unquoted redirection (`>`/`<`), backtick, or
-    subshell open-paren makes the whole match unsafe: relocating the FILE
-    operand past one of those would change what it applies to (e.g. the
-    `&` in `2>&1` is part of the redirection, not a separator — but rather
-    than special-case it, the redirection itself aborts the rewrite). A
-    single-quoted token that does not close on the same line is likewise
-    unsafe — it is not a real quote open (e.g. an apostrophe in a trailing
-    comment) and scanning for its close could run past the line.
+    `#`, or newline, respecting single- and double-quoted tokens (which may
+    span multiple lines) so a quoted metacharacter (e.g. `grep -E "a|b"`)
+    is not mistaken for a pipeline separator. An unquoted redirection
+    (`>`/`<`), backtick, subshell open-paren, or backslash makes the whole
+    match unsafe: relocating the FILE operand past one of those would
+    change what it applies to (e.g. the `&` in `2>&1` is part of the
+    redirection, not a separator — but rather than special-case it, the
+    redirection itself aborts the rewrite; an unquoted backslash aborts
+    too, since it can escape the very characters this scan treats as
+    separators). A single-quoted token with no closing `'` anywhere in the
+    rest of the text is unsafe — the scan cannot tell where the argument
+    list ends.
     """
     i, n = start, len(text)
     while i < n:
         c = text[i]
         if c == "'":
-            line_end = text.find("\n", i + 1)
-            if line_end == -1:
-                line_end = n
-            end = text.find("'", i + 1, line_end)
+            end = text.find("'", i + 1)
             if end == -1:
                 return -1
             i = end + 1
@@ -145,6 +144,8 @@ def _grep_args_end(text: str, start: int) -> int:
             i = j + 1 if j < n else n
             continue
         if c in "`(<>":
+            return -1
+        if c == "\\":
             return -1
         if c == "#" and (i == start or text[i - 1].isspace()):
             break
@@ -187,7 +188,8 @@ def _apply_cat_file_grep(text: str) -> tuple[str, int]:
 _COMBINED_TESTS = re.compile(r"\[\s+([^\[\]\n]+?)\s+\]\s*&&\s*\[\s+([^\[\]\n]+?)\s+\]")
 _TEST_AND_OR_FLAG = re.compile(r"(?:^|\s)(-a|-o)(?:\s|$)")
 _UNQUOTED_EQ_RHS = re.compile(r'(?:^|\s)(==|=|!=)\s+(?!["\'])\S')
-_TEST_LEXICAL_CMP = re.compile(r"\\[<>]")
+_TEST_LEXICAL_CMP = re.compile(r"\\[<>]|[\"'][<>][\"']")
+_TEST_ESCAPED_PAREN = re.compile(r"\\[()]")
 
 
 def _combined_tests_side_unsafe(side: str) -> bool:
@@ -197,13 +199,18 @@ def _combined_tests_side_unsafe(side: str) -> bool:
     ordinary operands there, not the `[ ]` logical operators). An unquoted
     RHS after `=`/`==`/`!=` is a literal string compare in `[ ]` but a glob
     pattern match in `[[ ]]`, so it must stay quoted to keep the meaning.
-    `\\<`/`\\>` are `[ ]`'s escaped lexical-comparison operators; `[[ ]]`
-    does not need the backslash, so carrying it over is a syntax error.
+    `\\<`/`\\>` are `[ ]`'s escaped lexical-comparison operators, and a
+    quoted `"<"`/`">"` is the same operator spelled without the backslash;
+    `[[ ]]` does not need either form, so carrying either over is a syntax
+    error. `\\(`/`\\)` are `[ ]`'s escaped grouping operators; `[[ ]]`
+    does not need the backslash either, so carrying it over is likewise a
+    syntax error.
     """
     return bool(
         _TEST_AND_OR_FLAG.search(side)
         or _UNQUOTED_EQ_RHS.search(side)
         or _TEST_LEXICAL_CMP.search(side)
+        or _TEST_ESCAPED_PAREN.search(side)
     )
 
 
@@ -225,7 +232,9 @@ def _apply_combined_tests(text: str) -> tuple[str, int]:
 _FIND_EXEC_RM = re.compile(r"(find\s+[^\n]*?)-exec\s+rm\s+(?:-f\s+)?\{\}\s+\\;")
 _FIND_UNSAFE_FLAG = re.compile(r"(?:^|\s)(-prune|-o|-or)(?:\s|$)")
 _FIND_TYPE_F = re.compile(r"(?:^|\s)-type\s+f(?:\s|$)")
-_FIND_NEGATED_TYPE_F = re.compile(r"(?:^|\s)(?:!|-not)\s+-type\s+f(?:\s|$)")
+_FIND_NEGATED_TYPE_F = re.compile(
+    r"(?:^|\s)(?:\\!|'!'|\"!\"|!|-not)\s+-type\s+f(?:\s|$)"
+)
 
 
 def _apply_find_exec_rm_delete(text: str) -> tuple[str, int]:
