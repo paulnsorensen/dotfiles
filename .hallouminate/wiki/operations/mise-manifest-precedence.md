@@ -23,7 +23,7 @@ That demotion has a second consequence, which is why the GitHub-auth fix looks s
 A pin bump lands in the repo. The affected machine's live `config.toml` is two days stale. Then:
 
 1. `.sync` exports `MISE_CONFIG_FILE` at the repo source and `sync_mise` runs `MISE_GLOBAL_CONFIG_FILE="$mise_config" mise install` (`packages/sync.sh:396`). The live config outranks it, so **the bumped version is never requested**.
-2. `verify_harness_versions` (`.sync:45-87`) checks the installed `omp`, `codex`, and `pi` binaries and gates the final `chezmoi apply` on them matching (`.sync:154`). It compares against **hardcoded literals** in `.sync` — `omp/18.2.8`, `codex-cli 0.154.0`, and Pi `0.87.0` — not against the manifest. Renovate locks the OMP and Pi literals to their install pins; see [[sync-and-chezmoi]].
+2. `verify_harness_versions` (`.sync:45-87`) checks the installed `omp`, `codex`, and `pi` binaries and gates the final `chezmoi apply` on them matching (`.sync:154`). It reads the expected versions from the tracked pins (for Codex, the repo mise manifest), not from the live mise config; see [[sync-and-chezmoi]].
 3. The gate sees the old binary and skips the final apply (`.sync:165-167`), recording a `harness-versions` failure.
 4. That skipped apply was **the only step that would have refreshed the live `config.toml`** to the new pin.
 

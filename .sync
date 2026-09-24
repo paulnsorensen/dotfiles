@@ -37,56 +37,13 @@ if [[ -n "$_sync_script_path" ]]; then
     _sync_script_dir="$(cd "${_sync_script_path%/*}" && pwd)"
     # shellcheck source=.sync-lib.sh
     [[ -f "$_sync_script_dir/.sync-lib.sh" ]] && source "$_sync_script_dir/.sync-lib.sh"
+    # Harness version pins are read from the files beside this script.
+    HARNESS_PIN_ROOT="$_sync_script_dir"
     unset _sync_script_dir
 fi
 unset _sync_script_path
 
 ########## Functions
-verify_harness_versions() {
-    local phase="${1:-after package convergence}"
-    local omp_version codex_version pi_version
-
-    if ! command -v omp >/dev/null 2>&1; then
-        log_error "omp unavailable $phase"
-        return 1
-    fi
-    if ! omp_version="$(omp --version)"; then
-        log_error "omp --version failed $phase"
-        return 1
-    fi
-    if [[ "$omp_version" != "omp/18.2.11" ]]; then
-        log_error "omp version mismatch $phase: expected omp/18.2.11, got $omp_version"
-        return 1
-    fi
-
-    if ! command -v codex >/dev/null 2>&1; then
-        log_error "codex unavailable $phase"
-        return 1
-    fi
-    if ! codex_version="$(codex --version)"; then
-        log_error "codex --version failed $phase"
-        return 1
-    fi
-    if [[ "$codex_version" != "codex-cli 0.154.0" ]]; then
-        log_error "codex version mismatch $phase: expected codex-cli 0.154.0, got $codex_version"
-        return 1
-    fi
-
-    if ! command -v pi >/dev/null 2>&1; then
-        log_error "pi unavailable $phase"
-        return 1
-    fi
-    if ! pi_version="$(pi --version)"; then
-        log_error "pi --version failed $phase"
-        return 1
-    fi
-    if [[ "$pi_version" != "0.87.1" ]]; then
-        log_error "pi version mismatch $phase: expected 0.87.1, got $pi_version"
-        return 1
-    fi
-}
-
-
 # Record the current sync timestamp
 record_sync_time() {
     mkdir -p "${DOTFILES_STATE_DIR}"

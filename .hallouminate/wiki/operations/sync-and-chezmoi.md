@@ -44,19 +44,22 @@ Remaining post-apply steps still run before the failure summary.[^upgrade-first]
 
 Two consequences worth internalizing:
 
-- **`verify_harness_versions` compares against hardcoded literals**, not the manifest — `omp/18.2.8`, `codex-cli 0.154.0`, and Pi `0.87.0` at `.sync:57-84`. The literals and install pins must move together or `dots sync` fails its post-install harness check. Renovate keeps the **OMP** and **Pi** guards aligned with their pins. **codex-cli** has no matching manager, so its literal still moves by hand with the manifest.
+- **`verify_harness_versions` reads each pin from its installer source** (`.sync-lib.sh`, `harness_pin_*`): OMP from `OMP_PIN` in `packages/sync.sh`, Codex from the `aqua:openai/codex` pin in `chezmoi/dot_config/mise/config.toml`, and Pi from the `pi` entry in `packages/packages.yaml`. A pin that cannot be read fails the gate loudly. `HARNESS_PIN_ROOT` (the directory of `.sync`) selects the root.
 - **The final apply is the only step that refreshes most live config**, so anything the package phase reads from a live file must be applied during *prepare* instead. That is exactly the trap in [[mise-manifest-precedence]], and the reason `apply_mise_manifest` exists in the prepare branch.
 
-### Gotcha: the OMP guard and installer pin move in one PR
+### Decision: one copy of each harness pin (2026-09-24)
 
-The OMP verify literal in `.sync` and the actual install pin `OMP_PIN` in `packages/sync.sh` are two copies of the same version that drift independently — a bump to one without the other reds the post-install harness check. `renovate.json5` keeps them locked with two coupled mechanisms:
+Until 2026-09-24, `.sync` held a second literal copy of each harness pin. Renovate
+had to rewrite both copies in one grouped PR (OMP, Pi). Codex had no manager, so its
+guard literal moved by hand. The copies drifted anyway: a session-analytics pass found
+repeated `omp version mismatch: expected omp/17.2.12, got omp/17.2.15` sync failures
+(#754), and the Codex manifest outran its guard in #818.
 
-- A `custom.regex` manager over `.sync` (`renovate.json5:75-87`) rewrites **both** the `!= "omp/<v>"` and `expected omp/<v>` occurrences from the `can1357/oh-my-pi` github-tags datasource, with `extractVersionTemplate` stripping the `v` prefix so the guard's bare `<v>` matches the `v<v>` tag. A separate manager (`renovate.json5:53-62`) bumps `OMP_PIN` itself.
-- A `groupName: oh-my-pi` packageRule (`renovate.json5:124-126`) bundles both updates into a **single PR**. This grouping is load-bearing, not tidiness: split across two PRs, each would fail the `sync OMP verification follows the managed package pin` tripwire in `tests/packages.bats` on its own, and automerge would deadlock because neither PR can go green alone.
-
-`tests/sync-orchestrator.bats` derives its expected OMP version from `OMP_PIN` in `setup_file`, so a bump needs zero test edits — only the deliberate `omp/17.1.3` fail-closed mismatch fixture stays literal (#754).
-
-Codex differs: its single source of truth is the mise manifest pin (`"aqua:openai/codex" = "rust-v<v>"` in `chezmoi/dot_config/mise/config.toml`, bumped by renovate's built-in `mise` manager). The `.sync` codex guard literal is still a manual edit — there is no `custom.regex` manager for it, because a `.sync`-only guard bump would deadlock against the manifest bump exactly like the OMP grouping warns. Instead the drift is caught, not auto-fixed: `setup_file` derives `CODEX_VER` from that manifest pin (mirroring `OMP_VER`), so a manifest bump without a matching `.sync` guard bump reds the codex harness check in CI. This closed the #818 hole, where the manifest went to `rust-v0.151.0` but the guard stayed `codex-cli 0.146.0` and CI passed anyway because the mock was hardcoded — `dots sync` then broke on every machine. The guard is now bumped by hand alongside the manifest, but CI no longer lets the two silently drift.
+The gate now reads the installer pins directly, so there is no second copy to drift.
+The `.sync` Renovate managers and the `oh-my-pi` / `pi-coding-agent` group rules are
+gone. `tests/packages.bats` checks that each reader returns its installer pin and that
+`.sync` holds no version literal. `tests/sync-orchestrator.bats` derives `OMP_VER`,
+`CODEX_VER`, and `PI_VER` from the same sources.
 
 ## Package installation (`packages/sync.sh`)
 

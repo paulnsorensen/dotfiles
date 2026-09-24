@@ -23,6 +23,9 @@ setup_file() {
     export CODEX_VER="$(sed -n 's/^"aqua:openai\/codex"[[:space:]]*=[[:space:]]*"rust-v\([^"]*\)".*/\1/p' "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml")"
     [[ -n "$CODEX_VER" ]] || { echo "could not derive CODEX_VER from chezmoi/dot_config/mise/config.toml codex pin" >&2; return 1; }
 
+    export PI_VER="$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")"
+    [[ -n "$PI_VER" ]] || { echo "could not derive PI_VER from packages/packages.yaml pi pin" >&2; return 1; }
+
     # Mock git — canned output; clone creates fake TPM dir structure
     cat > "$MOCK_BIN/git" << 'MOCK'
 #!/bin/bash
@@ -58,7 +61,7 @@ MOCK
     chmod +x "$MOCK_BIN/codex"
     cat > "$MOCK_BIN/pi" << 'MOCK'
 #!/bin/bash
-[[ "$1" == "--version" ]] && printf '0.87.1\n'
+[[ "$1" == "--version" ]] && printf '%s\n' "$PI_VER"
 exit 0
 MOCK
     chmod +x "$MOCK_BIN/pi"
@@ -202,7 +205,7 @@ MOCK
     cat > "$MOCK_BIN/pi" <<'MOCK'
 #!/bin/bash
 case "$1" in
-    --version) printf '0.87.1\n' ;;
+    --version) printf '%s\n' "$PI_VER" ;;
     update) exit 1 ;;
 esac
 MOCK
@@ -223,7 +226,47 @@ MOCK
 
     run call-sync-fn verify_harness_versions "after package convergence"
     assert_failure
-    assert_output_contains "expected 0.87.1"
+    assert_output_contains "pi version mismatch after package convergence: expected $PI_VER, got 0.85.1"
+}
+
+@test "harness gate passes when every harness matches its installer pin" {
+    run call-sync-fn verify_harness_versions "after package convergence"
+    assert_success
+}
+
+@test "Codex version mismatch names the mise pin" {
+    rm -f "$MOCK_BIN/codex"
+    cat > "$MOCK_BIN/codex" <<'MOCK'
+#!/bin/bash
+[[ "$1" == "--version" ]] && printf 'codex-cli 0.0.1\n'
+MOCK
+    chmod +x "$MOCK_BIN/codex"
+
+    run call-sync-fn verify_harness_versions "after package convergence"
+    assert_failure
+    assert_output_contains "codex version mismatch after package convergence: expected codex-cli $CODEX_VER, got codex-cli 0.0.1"
+}
+
+@test "harness gate follows the pins under HARNESS_PIN_ROOT" {
+    local root="$TEST_HOME/pins"
+    mkdir -p "$root/packages" "$root/chezmoi/dot_config/mise"
+    printf 'OMP_PIN="v%s"\n' "$OMP_VER" > "$root/packages/sync.sh"
+    printf '"aqua:openai/codex" = "rust-v%s"\n' "$CODEX_VER" > "$root/chezmoi/dot_config/mise/config.toml"
+    printf '  - pi: { source: npm, pkg: "p", version: "9.9.9", flags: [] }\n' > "$root/packages/packages.yaml"
+
+    run bash -c 'source "$1/.sync-lib.sh"; HARNESS_PIN_ROOT="$2" verify_harness_versions "after package convergence"' \
+        _ "$REAL_DOTFILES_DIR" "$root"
+    assert_failure
+    assert_output_contains "expected 9.9.9, got $PI_VER"
+}
+
+@test "harness gate fails loudly when a pin cannot be read" {
+    local root="$TEST_HOME/nopins"
+    mkdir -p "$root"
+    run bash -c 'source "$1/.sync-lib.sh"; HARNESS_PIN_ROOT="$2" verify_harness_versions' \
+        _ "$REAL_DOTFILES_DIR" "$root"
+    assert_failure
+    assert_output_contains "cannot read harness pins under $root"
 }
 
 @test "no args syncs without provisioning daily-user credentials" {

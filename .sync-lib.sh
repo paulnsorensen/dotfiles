@@ -926,6 +926,60 @@ sync_omp_chezmoi_sources() {
     return 0
 }
 
+# ── harness version gate ────────────────────────────────────────────────────
+# Each pin is read from the file that installs the harness, so the gate cannot
+# drift from the installer. Before this, .sync carried a second copy of each
+# pin, and a bump that moved one copy but not the other broke every sync.
+# $1 is the dotfiles root. Each function prints the bare version, or nothing.
+harness_pin_omp() {
+    sed -n 's/^OMP_PIN="v\{0,1\}\([^"]*\)"$/\1/p' "$1/packages/sync.sh" 2>/dev/null
+}
+
+harness_pin_codex() {
+    sed -n 's/^"aqua:openai\/codex"[[:space:]]*=[[:space:]]*"rust-v\([^"]*\)".*/\1/p' \
+        "$1/chezmoi/dot_config/mise/config.toml" 2>/dev/null
+}
+
+harness_pin_pi() {
+    sed -n 's/^[[:space:]]*- pi:.*[{,][[:space:]]*version:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "$1/packages/packages.yaml" 2>/dev/null
+}
+
+# _verify_harness_version NAME EXPECTED PHASE
+# Compare `NAME --version` with EXPECTED. Log the cause and return 1 on a miss.
+_verify_harness_version() {
+    local name="$1" expected="$2" phase="$3" actual
+    if ! command -v "$name" >/dev/null 2>&1; then
+        log_error "$name unavailable $phase"
+        return 1
+    fi
+    if ! actual="$("$name" --version)"; then
+        log_error "$name --version failed $phase"
+        return 1
+    fi
+    if [[ "$actual" != "$expected" ]]; then
+        log_error "$name version mismatch $phase: expected $expected, got $actual"
+        return 1
+    fi
+}
+
+# verify_harness_versions [PHASE]
+# Check omp, codex, and pi against their installer pins.
+verify_harness_versions() {
+    local phase="${1:-after package convergence}"
+    local root="${HARNESS_PIN_ROOT:-$dir}" omp codex pi
+    omp="$(harness_pin_omp "$root")"
+    codex="$(harness_pin_codex "$root")"
+    pi="$(harness_pin_pi "$root")"
+    if [[ -z "$omp" || -z "$codex" || -z "$pi" ]]; then
+        log_error "cannot read harness pins under $root (omp='$omp' codex='$codex' pi='$pi')"
+        return 1
+    fi
+    _verify_harness_version omp "omp/$omp" "$phase" || return 1
+    _verify_harness_version codex "codex-cli $codex" "$phase" || return 1
+    _verify_harness_version pi "$pi" "$phase" || return 1
+}
+
 # Install or update packages declared in Pi's managed settings. Exact npm
 # versions stay pinned because Pi does not float versioned package sources.
 sync_pi_packages() {

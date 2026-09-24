@@ -1284,12 +1284,15 @@ MOCKBREW
 
 # --- Integration: native harness convergence ---
 
-@test "managed OMP and Codex pins are exact" {
-    local omp_pin
-    omp_pin="$(omp_pin_version)"
-    grep -q "expected omp/${omp_pin#v}," "$REAL_DOTFILES_DIR/.sync"
-    grep -q '^"aqua:openai/codex" = "rust-v0.154.0"$' \
-        "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
+# Print one harness pin via the .sync-lib.sh reader the version gate uses.
+harness_pin() {
+    bash -c 'source "$1/.sync-lib.sh"; "harness_pin_$2" "$1"' _ "$REAL_DOTFILES_DIR" "$1"
+}
+
+@test "managed OMP, Codex, and Pi pins are exact versions" {
+    [[ "$(harness_pin omp)" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+    [[ "$(harness_pin codex)" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+    [[ "$(harness_pin pi)" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 # The companion assertion — that doc-drift's `reconciled` markers match the
 # pins above — used to live here. doc-drift moved to paulnsorensen/routines
@@ -1298,22 +1301,31 @@ MOCKBREW
 # update the marker there. doc-drift's own weekly run is what reconciles them,
 # and its `small` path opens a paired PR against this repo when it does.
 
-@test "sync OMP verification follows the managed package pin" {
-    local managed expected
+@test "sync OMP verification reads the installer pin" {
+    local managed
     managed=$(sed -n 's/^OMP_PIN="v\([^"]*\)"$/\1/p' "$SYNC_SCRIPT")
-    expected=$(sed -n 's/.*omp_version.*!= "omp\/\([^"]*\)".*/\1/p' \
-        "$REAL_DOTFILES_DIR/.sync")
     [[ -n "$managed" ]]
-    [[ "$expected" == "$managed" ]]
+    [[ "$(harness_pin omp)" == "$managed" ]]
 }
 
-
-@test "sync Pi verification follows the managed package pin" {
-    local managed expected
-    managed=$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")
-    expected=$(sed -n 's/.*pi_version.*!= "\([^"]*\)".*/\1/p' "$REAL_DOTFILES_DIR/.sync")
+@test "sync Codex verification reads the mise pin" {
+    local managed
+    managed=$(sed -n 's/^"aqua:openai\/codex" = "rust-v\([^"]*\)"$/\1/p' \
+        "$REAL_DOTFILES_DIR/chezmoi/dot_config/mise/config.toml")
     [[ -n "$managed" ]]
-    [[ "$expected" == "$managed" ]]
+    [[ "$(harness_pin codex)" == "$managed" ]]
+}
+
+@test "sync Pi verification reads the package pin" {
+    local managed
+    managed=$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")
+    [[ -n "$managed" ]]
+    [[ "$(harness_pin pi)" == "$managed" ]]
+}
+
+@test ".sync carries no second copy of a harness pin" {
+    run grep -nE 'omp/[0-9]|codex-cli [0-9]|!= "[0-9]+\.[0-9]' "$REAL_DOTFILES_DIR/.sync"
+    assert_failure
 }
 
 @test "package sync removes a stale Bun OMP before native convergence" {
