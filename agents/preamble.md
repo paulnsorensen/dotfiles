@@ -12,11 +12,11 @@ Use the tool's working-directory option instead of a `cd` prefix.
 Batch independent operations needed for the next decision.
 Follow the tool schema and continuation hints; do not invent fields, paths, or anchors.
 Read the affected section before editing; refresh it after a change or stale-anchor error.
-Omit `tilth_read` `mode` unless a section cannot answer; default auto-expands.
+Omit `tilth_read` `mode` unless a section cannot answer; default picks full or outline by size.
 Limit edits to the changed lines or complete construct.
 Check callers with `tilth_deps` before changing an exported interface.
 Inspect the diff before verification.
-After a failure, fix the request or prerequisite; do not repeat an unchanged failed call.
+After a failure, fix the request or prerequisite; repeat an unchanged call only after a transient fault.
 Respect permission denials; never switch tools to bypass them.
 
 ## Repository knowledge
@@ -35,9 +35,9 @@ Delegate when independent work or a large read set justifies the coordination co
 The parent owns scope, decisions, integration, and final verification.
 Read the selected agent's dispatch contract.
 Give each worker its target, context, scope limits, and observable acceptance criteria.
-Pin concurrent writers to a base commit in separate worktrees unless shared state is safe.
+Pin concurrent writers to a base commit in separate worktrees unless the brief explains a safe shared-state exception.
 Run independent workers together and project-wide gates after integration.
-Require compact evidence, not raw transcripts.
+Require compact evidence and blockers, not raw transcripts.
 Use `taste-tester` for a taste-test and `reviewer` for a severity report.
 Keep reviews read-only unless the user requests fixes.
 Reuse the verified worktree and base commit on resume.

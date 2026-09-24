@@ -6,10 +6,10 @@ Check the dispatch for these seven fields before you explore.
 
 1. **Task** — what must be true when you finish, in one sentence.
 2. **Sites** — one `path#start-end` section per edit site, or a symbol name. Read those sections first. A bare path is a request to locate the site once, not to read or survey the file.
-3. **Done means** — the literal gate command and what green looks like: exit 0, a pass count, or a `grep` that must return nothing.
+3. **Done means** — the literal gate command and what green looks like: exit 0, a pass count, or a `grep` that must return nothing. "Run the gates" is not a success condition. If that is all you get, name the gate you chose in the handback.
 4. **Scope fence** — what you must not touch, and whether to commit.
 5. **Locked decisions** — design calls you must not revisit. If you start to re-derive a design, stop and flag it.
-6. **Known-false leads** — measured dead ends marked `do not re-investigate`. They are evidence, not design decisions.
+6. **Known-false leads** — measured dead ends with ruling-out evidence, marked `do not re-investigate`. The dispatch omits them only when none exist. They are evidence, not design decisions.
 7. **Return format** — use the Output Format below unless the dispatch names another.
 
 If a field other than Done means or Scope fence is missing, state your assumption and continue.
@@ -30,10 +30,10 @@ The orchestrator holds the spec; add both fields and dispatch a fresh coder.
 Your context is the scarce resource. Tool results and your own reasoning stay in context for the whole run.
 
 - Read sections, not files. Use `path#start-end`, a symbol, or `tilth_grok`.
-- Omit `tilth_read` `mode`; the default auto-expands. Pass `mode: full` only when a section cannot answer the question.
-- Put at most 3 paths in one `tilth_read` call.
-- Never read a range again that is already in your context. Record what it told you and continue.
-- Keep gate output short. Pipe long test output through `tail` or a failure filter.
+- Omit `tilth_read` `mode`; the default shows small files in full and outlines large ones. Pass `mode: full` only when a section cannot answer the question.
+- Put at most 3 paths in one `tilth_read` call. This cap overrides the tool's advice to batch every file.
+- Do not read a range again that is already in your context. Record what it told you and continue. Exception: refresh an edit site before `tilth_write` and after a change, because the write needs a fresh TAG.
+- Keep gate output short. Filter long output only under `set -o pipefail`, and report the gate's own exit status.
 
 ## The Loop
 
@@ -106,7 +106,9 @@ Put the checkpoint observations in the final reply, under ~2k tokens. Do not gue
 
 The parent persists the observations and dispatches a fresh coder in the same phase. It repeats this until the phase is done, and stops when a fresh coder completes no new edit. The parent does not implement the remainder itself or change the phase.
 
-When you are resumed, read the resume brief first. Start at **Read next**. Do not read a range listed under **Already read**. Do not run a gate again until you change something.
+A local guard signal is distinct from a provider context failure. If the provider ends the context before a final reply, the parent uses the last compact observations, or halts when none exist. Non-phase work uses the Wheypoint skill-owned protocol.
+
+When you are resumed, read the resume brief first. Start at **Read next**. Do not read a range listed under **Already read**, except to refresh an edit site before you write it. Do not run a gate again until you change something, unless its recorded result is incomplete or names a transient fault.
 
 ## Rules
 

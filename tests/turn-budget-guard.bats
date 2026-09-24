@@ -839,14 +839,14 @@ backdate_mtime() {
 
 @test "A12: fork's first call, inherited context far above ctxHard, is allowed" {
     seed_turns s3 f1 5
-    seed_usage_transcript s3 f1 "178791:0:0"  # real observed inherited figure; fork exempts via baseline regardless of ctxHard (180000)
+    seed_usage_transcript s3 f1 "200000:0:0"  # above ctxHard (180000): only the fork baseline exemption allows this call
     fire "$(pre_event s3 f1 fork)"
     [[ "$(verdict)" == "allow" ]]
     [[ "$(log_record | jq -r '.budget_type')" == "fork" ]]
-    [[ "$(log_record | jq -r '.tokens')" == "178791" ]]
-    [[ "$(log_record | jq -r '.baseline')" == "178791" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "200000" ]]
+    [[ "$(log_record | jq -r '.baseline')" == "200000" ]]
     [[ "$(log_record | jq -r '.charged_tokens')" == "0" ]]
-    [[ "$(cat "$CLAUDE_TURN_BUDGET_DIR/s3/f1/baseline")" == "178791" ]]
+    [[ "$(cat "$CLAUDE_TURN_BUDGET_DIR/s3/f1/baseline")" == "200000" ]]
 }
 
 @test "A12: fork is denied once its OWN accumulation past baseline exceeds ctxHard" {

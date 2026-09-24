@@ -206,8 +206,10 @@ block_sha() {
         assert_success
     done
     # Recovery has no fixed retry cap; a no-progress stop replaces it.
+    run grep -Fq 'completes no new edit' "$AGENTS_DIR/agent_definitions/coder.md"
+    assert_success
     for prompt in "$PREAMBLE" "$AGENTS_DIR/agent_definitions/coder.md"; do
-        run grep -Fqi 'one fresh retry' "$prompt"
+        run grep -Eqi '(one|single) (fresh )?(retry|continuation)' "$prompt"
         assert_failure
     done
 }
@@ -233,7 +235,7 @@ block_sha() {
         assert_success
     done
     # Read discipline that keeps a coder under the context ceiling.
-    for rule in 'Pass `mode: full` only when a section cannot answer the question' 'at most 3 paths in one `tilth_read` call' 'Never read a range again'; do
+    for rule in 'Pass `mode: full` only when a section cannot answer the question' 'at most 3 paths in one `tilth_read` call' 'Do not read a range again'; do
         run grep -Fq "$rule" "$coder"
         assert_success
     done
@@ -307,7 +309,7 @@ block_sha() {
     # listed skill at spawn, pasting each full SKILL.md body in as a user
     # message before the agent reads its task — it is an auto-invoke list, not
     # an availability list. Measured at 32,740 tokens for the old six-skill
-    # list: 52% of the 130k context ceiling burned before the first tool call.
+    # list: 52% of the then-130k context ceiling burned before the first tool call.
     # Required role discipline is inlined in the body; Skill stays ungranted.
     run yq '.agents.coder.skills | join(" ")' "$registry"
     assert_success

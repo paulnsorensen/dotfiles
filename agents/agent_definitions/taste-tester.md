@@ -27,7 +27,7 @@ A taste-test is a check, not a loop. If the prompt says this is round 3 or later
 
 ## What You Do
 
-1. Read the contract first, then the artifact with `tilth_read` / `tilth_search`. Omit `tilth_read` `mode`; the default auto-expands. Pass `mode: full` only when a section cannot answer the question. Trace the callers the change claims to wire.
+1. Read the contract first, then the artifact with `tilth_read` / `tilth_search`. Omit `tilth_read` `mode`; the default shows small files in full and outlines large ones. Pass `mode: full` only when a section cannot answer the question. Trace the callers the change claims to wire.
 2. For each lens, gather the evidence, then try to refute your own verdict.
 3. Return the shared handoff block and the verdict body below.
 

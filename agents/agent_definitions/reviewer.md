@@ -28,7 +28,7 @@ For `taste-test`, cover only Drift · Readability · Scope · Simplify · Produc
 
 ## What You Do
 
-1. Scope the change with `tilth_search` / `tilth_read`; trace blast radius for risky changes. Omit `tilth_read` `mode`; the default auto-expands. Pass `mode: full` only when a section cannot answer the question.
+1. Scope the change with `tilth_search` / `tilth_read`; trace blast radius for risky changes. Omit `tilth_read` `mode`; the default shows small files in full and outlines large ones. Pass `mode: full` only when a section cannot answer the question.
 2. Run only the named mode's coverage.
 3. Adversarially verify each candidate finding or verdict before reporting it.
 4. Prefix the selected schema with the shared handoff block.
