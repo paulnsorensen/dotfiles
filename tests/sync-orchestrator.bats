@@ -269,6 +269,25 @@ MOCK
     assert_output_contains "cannot read harness pins under $root"
 }
 
+@test "report_harness_drift repeats recorded settings drift" {
+    local state="$TEST_HOME/.local/state/dotfiles/harness-drift"
+    mkdir -p "$state"
+    printf 'preserved modelSettings.new-model\n' > "$state/claude-settings"
+    : > "$state/omp-config"
+
+    run call-sync-fn report_harness_drift
+    assert_success
+    assert_output_contains "Unfolded harness settings in claude-settings"
+    assert_output_contains "preserved modelSettings.new-model"
+    [[ "$output" != *"omp-config"* ]]
+}
+
+@test "report_harness_drift is silent without recorded drift" {
+    run call-sync-fn report_harness_drift
+    assert_success
+    [[ -z "$output" ]]
+}
+
 @test "no args syncs without provisioning daily-user credentials" {
     cd "$FAKE_DOTFILES"
     printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"

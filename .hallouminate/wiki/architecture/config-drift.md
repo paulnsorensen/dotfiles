@@ -208,7 +208,42 @@ is present.
 [^staged-global-mcp]: harness-doctor run on 2026-06-24; `ap install global --target /tmp/harness-doctor-global.nH8lCY` modified `/home/paul/.claude.json` for tilth, context7, tavily, serena, and hallouminate.
 [^claude-user-scope-disconnected]: agent-profile/agent_profile/renderers/claude.py:516-540; agent-profile/tests/test_renderer_claude.py:test_user_scope_render_does_not_register_via_cli; agent-profile/tests/test_compile_command.py:test_compile_user_scope_stays_disconnected_from_live_config
 
+## Decision: preserve and warn (2026-09-24)
+
+The Claude, OMP, and Pi settings guards no longer halt on an unknown live
+key-path. They share `chezmoi/lib/drift-gate.sh`. Each guard keeps the live
+value, prints a `WARNING` on stderr, and records the path in
+`~/.local/state/dotfiles/harness-drift/<file>`. `dots sync` repeats the
+recorded paths after the apply (`report_harness_drift`), and `dots doctor`
+counts them as issues. A clean live file removes its record.
+
+**Why:** a session-analytics pass over Claude, Codex, and OMP logs found the
+halt was the main cause of failed `dots sync` runs. A halt skips every later
+chezmoi target and `run_onchange` installer. The halts came from harness
+upgrades that add keys, and from Claude `/model`, which writes
+`modelSettings.<model>`. Each needed a manual "fold X into registry" commit.
+The halt surfaced new keys, but it cost a broken sync every time.
+
+**Rules:**
+
+- Managed keys still converge to the registry. Only unknown paths keep their
+  live value.
+- An unknown path inside a list, or under a scalar the repo owns, has no
+  stable place in the desired document. The guard drops it and reports it as
+  `dropped`.
+- Registry-authored subtrees are wiped, not kept: Claude `enabledPlugins`,
+  `extraKnownMarketplaces`, and `hooks`. So a hook event the registry removes
+  goes away (see the next section).
+- Per-guard ignore files hold keys the harness owns at runtime. They are kept
+  without a warning: `chezmoi/lib/claude-settings-ignore.txt` (`tui`,
+  `modelSettings`, ...), `omp-config-ignore.txt` (`setupVersion`),
+  `pi-settings-ignore.txt` (`lastChangelogVersion`).
+- A corrupt or non-object live file still fails the guard.
+
 ## Known drift pattern: registry hook-event removal halts the chezmoi settings gate
+
+**Status (2026-09-24):** fixed. The gate now treats `hooks` as a
+registry-authored subtree and wipes live-only events without a warning.
 
 **Symptom**: `dots sync` fails in the chezmoi leg with `Claude settings.json has
 key-path(s) the repo does not know about` naming hook event keys (e.g.

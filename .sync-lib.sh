@@ -166,7 +166,7 @@ apply_chezmoi_source() {
             chezmoi_status=$?
             echo "  ERROR: chezmoi apply failed (exit $chezmoi_status) — alphabetically-later run_onchange installers were skipped" >&2
             echo "         See the specific error above for the cause. Common ones:" >&2
-            echo "           • settings.json unknown-key halt → fold the key into chezmoi/lib/claude-settings-authoritative.json or chezmoi/.chezmoidata/claude.yaml" >&2
+            echo "           • corrupt live harness settings file → fix or remove it (unknown keys only warn)." >&2
             echo "           • 'gh auth status' failing → run 'gh auth login', then re-run 'dots sync'." >&2
         fi
     else
@@ -978,6 +978,21 @@ verify_harness_versions() {
     _verify_harness_version omp "omp/$omp" "$phase" || return 1
     _verify_harness_version codex "codex-cli $codex" "$phase" || return 1
     _verify_harness_version pi "$pi" "$phase" || return 1
+}
+
+# ── harness settings drift ──────────────────────────────────────────────────
+# The chezmoi settings guards (chezmoi/lib/drift-gate.sh) keep unknown live
+# keys and record them under $DOTFILES_STATE_DIR/harness-drift/. Repeat them
+# after the apply so they do not scroll away in the chezmoi output.
+report_harness_drift() {
+    local drift_dir="${DOTFILES_STATE_DIR:-$HOME/.local/state/dotfiles}/harness-drift"
+    local file
+    [[ -d "$drift_dir" ]] || return 0
+    for file in "$drift_dir"/*; do
+        [[ -s "$file" ]] || continue
+        log_warning "Unfolded harness settings in ${file##*/} (live values kept; fold into the registry):"
+        sed 's/^/    /' "$file"
+    done
 }
 
 # Install or update packages declared in Pi's managed settings. Exact npm

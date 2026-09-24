@@ -1,9 +1,16 @@
 #!/bin/sh
-# Author Pi settings from .chezmoidata/pi.yaml. Preserve Pi's changelog marker.
+# Author Pi settings from .chezmoidata/pi.yaml.
+#
+# Keys listed in lib/pi-settings-ignore.txt (for example Pi's changelog
+# marker) keep their live values without a warning. Other unknown live keys
+# keep their live values with a warning (lib/drift-gate.sh); they never halt
+# `chezmoi apply`. Fold each reported key into the registry.
 
 set -eu
 
 registry=${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/.chezmoidata/pi.yaml
+ignore=$CHEZMOI_SOURCE_DIR/lib/pi-settings-ignore.txt
+gate=$CHEZMOI_SOURCE_DIR/lib/drift-gate.sh
 live=$(cat)
 
 for tool in yq jq; do
@@ -30,34 +37,25 @@ if [ -z "$live" ]; then
     exit 0
 fi
 
+# The unknown-key gate below needs the shared helpers.
+if [ ! -f "$gate" ]; then
+    echo "modify_settings.json: source missing: $gate" >&2
+    exit 1
+fi
+# shellcheck source=../../lib/drift-gate.sh
+. "$gate"
+
 live_json=$(printf '%s' "$live" | jq '.' 2>/dev/null) || live_json=
 if [ -z "$live_json" ] || ! printf '%s' "$live_json" | jq -e 'type == "object"' >/dev/null 2>&1; then
     echo "modify_settings.json: live settings are not a JSON object" >&2
     exit 1
 fi
 
-if printf '%s' "$live_json" | jq -e 'has("lastChangelogVersion")' >/dev/null; then
-    desired=$(printf '%s' "$live_json" | jq --argjson desired "$desired" \
-        '$desired + {lastChangelogVersion: .lastChangelogVersion}')
-fi
-
-unknown=$(
-    printf '%s' "$live_json" | jq -r --argjson desired "$desired" '
-        def string_path: map(select(type == "string"));
-        ([ $desired | paths | string_path ] | unique) as $known
-        | [ paths | string_path ]
-        | map(select(. as $path | ($known | any(. == $path)) | not))
-        | unique
-        | map(join("."))
-        | .[]
-    '
-)
-
-if [ -n "$unknown" ]; then
-    echo "Pi settings.json has unknown key paths:" >&2
-    printf '%s\n' "$unknown" | sed 's/^/  + /' >&2
-    echo "Promote them into $registry, then run dots sync." >&2
-    exit 1
-fi
+ignore_paths=$(drift_ignore_paths "$ignore")
+unknown=$(drift_unknown "$live_json" "$desired" "$ignore_paths")
+result=$(drift_preserve "$live_json" "$desired" "$unknown")
+desired=$(printf '%s' "$result" | jq '.doc')
+drift_report pi-settings "Pi settings.json" "$result" "$registry" "$ignore"
+desired=$(drift_overlay_ignored "$live_json" "$desired" "$ignore_paths")
 
 printf '%s\n' "$desired"

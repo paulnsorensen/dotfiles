@@ -309,6 +309,23 @@ do_doctor() {
         issues=$((issues + 1))
     fi
 
+    # Harness settings keys the chezmoi guards kept but the repo does not know.
+    echo -e "${BLUE}Checking harness settings drift...${NC}"
+    local drift_dir="${DOTFILES_STATE_DIR:-$HOME/.local/state/dotfiles}/harness-drift"
+    local drift_file drift_found=0
+    for drift_file in "$drift_dir"/*; do
+        [[ -s "$drift_file" ]] || continue
+        drift_found=1
+        issues=$((issues + 1))
+        echo -e "  ${YELLOW}⚠ Unfolded keys in ${drift_file##*/} (live values kept):${NC}"
+        sed 's/^/      /' "$drift_file"
+    done
+    if [[ $drift_found -eq 0 ]]; then
+        echo -e "  ${GREEN}✓ No unfolded harness settings${NC}"
+    else
+        echo -e "    Fold each key into its registry, then run: ${GREEN}dots sync${NC}"
+    fi
+
     # Check VS Code settings if they exist
     if [[ -d "$DOTFILES_DIR/vscode" ]]; then
         echo -e "${BLUE}Checking VS Code configuration...${NC}"
@@ -382,11 +399,10 @@ do_claude_diff() {
         echo -e "${RED}chezmoi not installed${NC} — run ${GREEN}dots sync${NC}" >&2
         exit 1
     fi
-    # The unknown-key halt gate lives in the modify_ script and only fires on
-    # `chezmoi apply`. `chezmoi diff` silently skips a target whose modify_
-    # script exits non-zero, so a would-be halt shows here as an empty (falsely
-    # "in sync") diff. Run the gate directly against the live file first so the
-    # preview surfaces what the next sync would actually reject.
+    # `chezmoi diff` silently skips a target whose modify_ script exits
+    # non-zero (a corrupt live file), so a would-be halt shows here as an
+    # empty (falsely "in sync") diff. Run the gate directly against the live
+    # file first. Its unknown-key warnings go to stderr, so repeat them too.
     local modify="$DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json"
     local settings="$HOME/.claude/settings.json"
     if [[ -f "$modify" && -f "$settings" ]]; then
@@ -398,6 +414,7 @@ do_claude_diff() {
             printf '%s\n' "$gate_err" >&2
             exit "$gate_rc"
         fi
+        [[ -z "$gate_err" ]] || printf '%s\n' "$gate_err" >&2
     fi
 
     local diff_output rc=0

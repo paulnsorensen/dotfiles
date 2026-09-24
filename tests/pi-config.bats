@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load test_helper
+bats_require_minimum_version 1.5.0
 
 setup() {
     setup_test_env
@@ -30,12 +31,24 @@ JSON
     [ "$(jq -r '.lastChangelogVersion' <<<"$output")" = "0.86.0" ]
 }
 
-@test "pi settings reject unknown live keys" {
-    run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
-{"theme":"chocolate-donut","futureSetting":true}
+@test "pi settings keep unknown live keys with a warning" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"theme":"dark","futureSetting":true}
 JSON
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"futureSetting"* ]]
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.futureSetting' <<<"$output")" = "true" ]
+    [ "$(jq -r '.theme' <<<"$output")" = "chocolate-donut" ]
+    [[ "$stderr" == *"WARNING"*"futureSetting"* ]]
+    grep -qx 'preserved futureSetting' "$DOTFILES_STATE_DIR/harness-drift/pi-settings"
+}
+
+@test "pi settings keep the ignore-listed changelog marker without a warning" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"lastChangelogVersion":"0.86.0"}
+JSON
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.lastChangelogVersion' <<<"$output")" = "0.86.0" ]
+    [[ "$stderr" != *"WARNING"* ]]
 }
 
 @test "pi registry pins the selected mainstream packages" {

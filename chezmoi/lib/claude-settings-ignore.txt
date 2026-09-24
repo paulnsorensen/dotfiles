@@ -6,6 +6,11 @@
 
 tui
 
+# Per-model effort that /model writes for each model Claude Code offers. Repo
+# entries in claude-settings-authoritative.json still win for listed models;
+# a new model's entry survives without a warning.
+modelSettings
+
 # Claude-Code runtime keys — app-owned, machine-local; exempt so the gate
 # overlays live values instead of halting.
 autoMode

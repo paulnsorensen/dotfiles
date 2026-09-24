@@ -151,6 +151,19 @@ STUB
     assert_output_contains "Profiling shell startup"
 }
 
+@test "dots doctor reports unfolded harness settings drift" {
+    mkdir -p "$DOTFILES_STATE_DIR/harness-drift"
+    printf 'preserved futureSetting\n' > "$DOTFILES_STATE_DIR/harness-drift/pi-settings"
+    run dots doctor
+    assert_output_contains "Unfolded keys in pi-settings"
+    assert_output_contains "preserved futureSetting"
+}
+
+@test "dots doctor reports no harness settings drift when none is recorded" {
+    run dots doctor
+    assert_output_contains "No unfolded harness settings"
+}
+
 @test "dots handles unknown commands gracefully" {
     run dots nonexistent
     assert_failure
@@ -271,6 +284,16 @@ stub_claude_gate() {
     assert_failure
     assert_output_contains "would HALT the next sync"
     assert_output_contains "unknown key: env.SSL_CERT_FILE"
+}
+
+@test "dots claude diff repeats the gate's unknown-key warnings" {
+    local stub_dir="$TEST_HOME/claude-diff"
+    stub_claude_diff "$stub_dir" 'exit 0'
+    stub_claude_gate "$stub_dir" 'cat >/dev/null; echo "WARNING: newKey" >&2; exit 0'
+    DOTFILES_DIR="$stub_dir" PATH="$TEST_HOME/fake-bin:$PATH" run "$stub_dir/bin/dots" claude diff
+    assert_success
+    assert_output_contains "WARNING: newKey"
+    assert_output_contains "in sync with the chezmoi source"
 }
 
 @test "dots claude diff passes the gate then reports in-sync" {

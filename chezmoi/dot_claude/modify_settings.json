@@ -28,24 +28,25 @@
 #     apply converges). This native path is never gated.
 #   * $CHEZMOI_SOURCE_DIR/lib/claude-settings-ignore.txt — dot-paths (one per
 #     line, "#" comments and blank lines allowed) exempt from the unknown-key
-#     halt gate below (prefix semantics) whose live values are overlaid back
-#     onto the merged document when the repo doesn't already own that leaf.
+#     gate below (prefix semantics) whose live values are overlaid back onto
+#     the merged document when the repo doesn't already own that leaf. These
+#     are keys Claude Code owns at runtime; they never warn.
 #
 # EVERY managed key is overwritten from source — live drift (in-app /model
 # changes, session-granted permissions, in-app plugin toggles) is discarded.
 # Promote anything you want to keep into the registry, then `dots sync`.
 #
-# Unknown-key halt gate: any live key-path outside the desired document's
-# schema is a key the app introduced. The script prints it and EXITS NON-ZERO,
-# which halts `chezmoi apply` and leaves the live file untouched — a new
-# Claude Code key/format is surfaced (fold it into the authoritative source or
-# the registry) instead of being silently clobbered. `enabledPlugins` and
-# `extraKnownMarketplaces` subtrees are exempt (their keys are dynamic plugin
-# names, not schema) — live entries there are wiped, not halted on.
-# claude-settings-ignore.txt paths are exempt the same way, but unlike the
-# dynamic-plugin subtrees their live value is preserved (overlaid onto
-# $desired) rather than wiped, unless the repo's own desired document already
-# owns that leaf.
+# Unknown-key gate (preserve and warn, lib/drift-gate.sh): any live key-path
+# outside the desired document's schema is a key the app introduced. The
+# script keeps its live value, warns on stderr, and records it under
+# ~/.local/state/dotfiles/harness-drift/. It does not halt `chezmoi apply`:
+# a halt skipped every later target and installer (the main dots sync failure
+# before this change). Fold each reported key into the authoritative source or
+# the registry. `enabledPlugins`, `extraKnownMarketplaces`, and `hooks`
+# subtrees are exempt (the registry authors them whole) — live-only entries
+# there are wiped. claude-settings-ignore.txt paths are exempt the same way,
+# but their live value is preserved (overlaid onto $desired) rather than
+# wiped, unless the repo's own desired document already owns that leaf.
 #
 # ${HOME} in registry string values is expanded here — needed for keys Claude
 # reads as literal JSON (e.g. marketplace directory paths).
@@ -55,6 +56,7 @@ set -eu
 AUTH="${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/lib/claude-settings-authoritative.json"
 REG="$CHEZMOI_SOURCE_DIR/.chezmoidata/claude.yaml"
 IGNORE="$CHEZMOI_SOURCE_DIR/lib/claude-settings-ignore.txt"
+GATE="$CHEZMOI_SOURCE_DIR/lib/drift-gate.sh"
 
 live=$(cat)
 
@@ -69,12 +71,15 @@ for tool in jq yq; do
     fi
 done
 
-for src in "$AUTH" "$REG"; do
+for src in "$AUTH" "$REG" "$GATE"; do
     if [ ! -f "$src" ]; then
         echo "modify_settings.json: source missing: $src" >&2
         exit 1
     fi
 done
+
+# shellcheck source=../lib/drift-gate.sh
+. "$GATE"
 
 # ── ignore-list parsing ─────────────────────────────────────────────────────
 # claude-settings-ignore.txt lists dot-paths (blank lines and "#" comments
@@ -82,15 +87,7 @@ done
 # path and its whole subtree) whose live values get overlaid back onto
 # $desired when $desired doesn't already own that leaf. Missing or empty
 # file: no ignore paths, behavior unchanged.
-ignore_paths='[]'
-if [ -f "$IGNORE" ]; then
-    ignore_paths=$(jq -R -s '
-        split("\n")
-        | map(gsub("#.*"; "") | gsub("^[ \t]+|[ \t]+$"; ""))
-        | map(select(length > 0))
-        | map(split("."))
-    ' "$IGNORE")
-fi
+ignore_paths=$(drift_ignore_paths "$IGNORE")
 
 # ── plugin-registry overlay ────────────────────────────────────────────────
 # Compose the gate-filtered plugin overlay for enabledPlugins /
@@ -267,52 +264,21 @@ fi
 # A live key-path is "known" when its object-key signature (array indices
 # dropped, so a value change or an extra list entry never counts as a new
 # key) is a path present in the desired document, OR it sits under a
-# dynamic-key subtree (enabledPlugins / extraKnownMarketplaces). We enumerate
-# every live node-path (not just scalar leaves) so a new key whose value is an
-# empty object/array or null is caught too.
-unknown=$(
-    printf '%s' "$live" | jq -r --argjson desired "$desired" --argjson ignore "$ignore_paths" '
-        def sig: [ .[] | strings ];
-        ([ ["enabledPlugins"], ["extraKnownMarketplaces"] ] + $ignore) as $exempt
-        | (([ $desired | paths | sig ] + [["env","SSL_CERT_FILE"]]) | unique) as $known
-        | [ paths | sig ]
-        | map(select(
-              . as $p
-              | (($known | any(. == $p)) | not)
-              and ([ $exempt[] | . as $pre | ($p[0:($pre | length)] == $pre) ] | any | not)
-          ))
-        | unique
-        | map(join("."))
-        | .[]
-    '
-)
-
-if [ -n "$unknown" ]; then
-    {
-        echo "Claude settings.json has key-path(s) the repo does not know about:"
-        printf '%s\n' "$unknown" | sed 's/^/  + /'
-        echo
-        echo "Claude Code likely introduced these. Fold each into the authoritative"
-        echo "source or the claude registry, then re-run dots sync:"
-        echo "  $AUTH"
-        echo "  $REG"
-    } >&2
-    exit 1
-fi
+# registry-authored subtree (enabledPlugins / extraKnownMarketplaces / hooks)
+# or an ignore-listed prefix. Live-only entries in those subtrees are wiped: a
+# hook event the registry dropped must go, not survive as unknown drift. env.SSL_CERT_FILE counts as known so the non-Darwin
+# transition sync wipes a live copy without a warning.
+exempt=$(printf '%s' "$ignore_paths" | jq -c '[["enabledPlugins"], ["extraKnownMarketplaces"], ["hooks"]] + .')
+unknown=$(drift_unknown "$live" "$desired" "$exempt" '[["env","SSL_CERT_FILE"]]')
+result=$(drift_preserve "$live" "$desired" "$unknown")
+desired=$(printf '%s' "$result" | jq '.doc')
+drift_report claude-settings "Claude settings.json" "$result" "$AUTH" "$REG" "$IGNORE"
 
 # ── ignore-list overlay ─────────────────────────────────────────────────────
 # Ignore-listed paths passed the gate above; copy their live value onto
 # $desired wherever $desired doesn't already own that leaf (repo intent wins
-# ties, matching the halt-gate comment above).
-desired=$(
-    printf '%s' "$live" | jq --argjson desired "$desired" --argjson ignore "$ignore_paths" '
-        . as $live
-        | [ paths(scalars) | select(. as $p
-              | [ $ignore[] | . as $pre | ($p[0:($pre | length)] == $pre) ] | any) ] as $overlay
-        | reduce $overlay[] as $p
-            ($desired; if (getpath($p) == null) then setpath($p; $live | getpath($p)) else . end)
-    '
-)
+# ties).
+desired=$(drift_overlay_ignored "$live" "$desired" "$ignore_paths")
 
 # The Darwin-only SSL_CERT_FILE pin stays gone on non-Darwin even if the
 # overlay above just restored it from a live copy (platform intent wins).

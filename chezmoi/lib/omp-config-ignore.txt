@@ -1,0 +1,7 @@
+# Dot-paths that omp owns at runtime in ~/.omp/agent/config.yml. The guard
+# chezmoi/dot_omp/private_agent/modify_config.yml keeps their live values
+# without a warning (prefix semantics: the path and its whole subtree), unless
+# the registry owns the same leaf. Blank lines and "#" comments are ignored.
+
+# Machine state omp writes when it initialises.
+setupVersion
