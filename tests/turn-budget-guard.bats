@@ -209,21 +209,21 @@ post_event() {
 
 @test "A2: Bash over the context-hard ceiling denies immediately" {
     seed_turns s2 b1 5
-    seed_usage_transcript s2 b1 "$((130000 + 1)):0:0"  # > ctxHard (130000)
+    seed_usage_transcript s2 b1 "$((180000 + 1)):0:0"  # > ctxHard (180000)
     fire "$(pre_event s2 b1 coder)"
     [[ "$(verdict)" == "deny" ]]
 }
 
 @test "A2: under both turn and context ceilings -> allow" {
     seed_turns s2 b1 5
-    seed_usage_transcript s2 b1 "100000:0:0"
+    seed_usage_transcript s2 b1 "140000:0:0"
     fire "$(pre_event s2 b1 coder)"
     [[ "$(verdict)" == "allow" ]]
 }
 
 @test "A2: PreToolUse allow writes a JSONL decision without stdout noise" {
     seed_turns s2 log1 5
-    seed_usage_transcript s2 log1 "100000:0:0"
+    seed_usage_transcript s2 log1 "140000:0:0"
     fire "$(pre_event s2 log1 coder)"
     [[ "$(verdict)" == "allow" ]]
     [[ "$(log_count)" == "1" ]]
@@ -233,16 +233,16 @@ post_event() {
     [[ "$(log_record | jq -r '.agent_id')" == "log1" ]]
     [[ "$(log_record | jq -r '.budget_type')" == "coder" ]]
     [[ "$(log_record | jq -r '.turns')" == "6" ]]
-    [[ "$(log_record | jq -r '.tokens')" == "100000" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "140000" ]]
     [[ "$(log_record | jq -r '.ctx_source')" == "tokens" ]]
 }
 
 @test "A2: tokens exactly AT the context-hard ceiling -> allow (strict '>')" {
-    # ctxHard = 130000. The wall is `tokens > ctxHard`, so a transcript
+    # ctxHard = 180000. The wall is `tokens > ctxHard`, so a transcript
     # sitting exactly on the ceiling must still pass. Mirrors the A1 turn
     # boundary; a `>=` regression would deny here.
     seed_turns s2 b2 5
-    seed_usage_transcript s2 b2 "130000:0:0"
+    seed_usage_transcript s2 b2 "180000:0:0"
     fire "$(pre_event s2 b2 coder)"
     [[ "$(verdict)" == "allow" ]]
 }
@@ -261,7 +261,7 @@ post_event() {
 @test "A2: Codex direct agent_transcript_path drives the context ceiling" {
     seed_turns s2 codex1 1
     local agent_tx="$TEST_HOME/codex-agent.jsonl"
-    jq -nc --argjson inp $((130000 + 1)) \
+    jq -nc --argjson inp $((180000 + 1)) \
         '{type:"assistant", message:{usage:{input_tokens:$inp, cache_creation_input_tokens:0, cache_read_input_tokens:0}}}' \
         > "$agent_tx"
     local json
@@ -270,12 +270,12 @@ post_event() {
     fire "$json"
     [[ "$(verdict)" == "deny" ]]
     [[ "$(log_record | jq -r '.harness')" == "codex" ]]
-    [[ "$(log_record | jq -r '.tokens')" == "$((130000 + 1))" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "$((180000 + 1))" ]]
 }
 
 @test "A2: Codex standard agent_id and agent_type still enforce the turn wall" {
     seed_turns s2 codex2 100
-    seed_usage_transcript s2 codex2 "100000:0:0"
+    seed_usage_transcript s2 codex2 "140000:0:0"
     local json
     json=$(jq -nc --arg p "$PROJ/s2.jsonl" \
         '{harness:"codex",hook_event_name:"PreToolUse",agent_id:"codex2",agent_type:"coder",session_id:"s2",transcript_path:$p,tool_name:"Bash",tool_input:{}}')
@@ -287,7 +287,7 @@ post_event() {
 # ── A2b ── one constrained checkpoint over either hard ceiling ───────
 
 @test "A2b: valid checkpoint write is allowed over the context-hard ceiling" {
-    seed_usage_transcript s2b checkpoint1 "$((130000 + 1)):0:0"
+    seed_usage_transcript s2b checkpoint1 "$((180000 + 1)):0:0"
     fire "$(checkpoint_event s2b checkpoint1 coder .cheese/handoff.md)"
     [[ "$(verdict)" == "allow" ]]
     [[ "$(log_record | jq -r '.reason')" == "checkpoint-write" ]]
@@ -305,7 +305,7 @@ post_event() {
 
 @test "A2b: a create_file checkpoint for a new handoff note is allowed over the hard ceiling" {
     local json
-    seed_usage_transcript s2b checkpoint_create "$((130000 + 1)):0:0"
+    seed_usage_transcript s2b checkpoint_create "$((180000 + 1)):0:0"
     json=$(jq -nc --argjson event "$(checkpoint_event s2b checkpoint_create coder .cheese/notes/handoff.md)" \
         '$event | .tool_input.edits[0].ops = [{op:"create_file",content:"# handoff"}]')
     fire "$json"
@@ -362,7 +362,7 @@ post_event() {
 }
 
 @test "A2b: a resume already over hard is denied unless it is the valid checkpoint" {
-    seed_usage_transcript s2b checkpoint6 "$((130000 + 1)):0:0"
+    seed_usage_transcript s2b checkpoint6 "$((180000 + 1)):0:0"
     fire "$(pre_event s2b checkpoint6 coder)"
     [[ "$(verdict)" == "deny" ]]
     [[ ! -f "$CLAUDE_TURN_BUDGET_DIR/s2b/checkpoint6/checkpoint-spent" ]]
@@ -474,7 +474,7 @@ post_event() {
 
 @test "A3: soft context-token threshold nudges even when turns are low" {
     seed_turns s3 c2 1
-    seed_usage_transcript s3 c2 "$((110000 + 1)):0:0"  # > ctxSoft (110000)
+    seed_usage_transcript s3 c2 "$((150000 + 1)):0:0"  # > ctxSoft (150000)
     fire "$(post_event s3 c2 coder)"
     [[ "$(verdict)" == "nudge" ]]
 }
@@ -483,7 +483,7 @@ post_event() {
 
 @test "A3b: hard nudge fires once on first crossing and suppresses the soft nudge too" {
     seed_turns s3b d1 1
-    seed_usage_transcript s3b d1 "$((130000 + 1)):0:0"
+    seed_usage_transcript s3b d1 "$((180000 + 1)):0:0"
     fire "$(post_event s3b d1 coder)"
     [[ "$(verdict)" == "nudge" ]]
     [[ "$output" == *"hard ceiling"* ]]
@@ -503,7 +503,7 @@ post_event() {
 @test "A3b: hard nudge still fires even when the soft nudge already fired" {
     seed_turns s3b d2 1
     mark_nudged s3b d2
-    seed_usage_transcript s3b d2 "$((130000 + 1)):0:0"
+    seed_usage_transcript s3b d2 "$((180000 + 1)):0:0"
     fire "$(post_event s3b d2 coder)"
     [[ "$(verdict)" == "nudge" ]]
     [[ "$output" == *"hard ceiling"* ]]
@@ -673,13 +673,13 @@ post_event() {
 # ── A7b ── Codex agent_transcript_path stat failure falls through ────
 
 @test "A7b: failed agent_transcript_path stat falls through to the transcript walk" {
-    seed_usage_transcript s7b g3 "$((130000 + 1)):0:0"  # over-hard, locatable via the walk
+    seed_usage_transcript s7b g3 "$((180000 + 1)):0:0"  # over-hard, locatable via the walk
     local json
     json=$(jq -nc --arg s "s7b" --arg a "g3" --arg p "$PROJ/s7b.jsonl" --arg atp "$TEST_HOME/does-not-exist.jsonl" \
         '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:"coder", session_id:$s, transcript_path:$p, agent_transcript_path:$atp, tool_name:"Bash", tool_input:{}}')
     fire "$json"
     [[ "$(verdict)" == "deny" ]]
-    [[ "$(log_record | jq -r '.tokens')" == "$((130000 + 1))" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "$((180000 + 1))" ]]
 }
 
 # ── B ── real token-usage probe (last-assistant summed usage) ────────
@@ -715,14 +715,14 @@ post_event() {
 }
 
 @test "B4: byte fallback that exceeds ctxHard on the token scale denies Bash" {
-    # A transcript with no usage line and > 520000 bytes -> / 4 > 130000
+    # A transcript with no usage line and > 720000 bytes -> / 4 > 180000
     # tokens, so the fallback proxy must still enforce the hard ceiling.
     seed_turns s10 tok4 5
-    seed_transcript s10 tok4 520004  # 520004 / 4 = 130001 > ctxHard
+    seed_transcript s10 tok4 720004  # 720004 / 4 = 180001 > ctxHard
     fire "$(pre_event s10 tok4 coder)"
     [[ "$(verdict)" == "deny" ]]
     [[ "$(log_record | jq -r '.ctx_source')" == "bytes-fallback" ]]
-    [[ "$(log_record | jq -r '.tokens')" == "130001" ]]
+    [[ "$(log_record | jq -r '.tokens')" == "180001" ]]
 }
 
 @test "B5: a good-then-torn transcript keeps the last GOOD summed usage, not the byte fallback" {
@@ -739,7 +739,7 @@ post_event() {
 }
 
 @test "B6: byte fallback allows the same constrained checkpoint exception" {
-    seed_transcript s10 tok6 520004
+    seed_transcript s10 tok6 720004
     fire "$(checkpoint_event s10 tok6 coder .context/byte-fallback.md)"
     [[ "$(verdict)" == "allow" ]]
     [[ "$(log_record | jq -r '.reason')" == "checkpoint-write" ]]
@@ -839,7 +839,7 @@ backdate_mtime() {
 
 @test "A12: fork's first call, inherited context far above ctxHard, is allowed" {
     seed_turns s3 f1 5
-    seed_usage_transcript s3 f1 "178791:0:0"  # real observed inherited figure, > ctxHard (130000)
+    seed_usage_transcript s3 f1 "178791:0:0"  # real observed inherited figure; fork exempts via baseline regardless of ctxHard (180000)
     fire "$(pre_event s3 f1 fork)"
     [[ "$(verdict)" == "allow" ]]
     [[ "$(log_record | jq -r '.budget_type')" == "fork" ]]
@@ -855,19 +855,19 @@ backdate_mtime() {
     fire "$(pre_event s4 f2 fork)"
     [[ "$(verdict)" == "allow" ]]
 
-    seed_usage_transcript s4 f2 "$((178791 + 130001)):0:0"  # baseline + 130001 charged tokens
+    seed_usage_transcript s4 f2 "$((178791 + 180001)):0:0"  # baseline + 180001 charged tokens
     fire "$(pre_event s4 f2 fork)"
     [[ "$(verdict)" == "deny" ]]
     [[ "$(log_record | jq -r '.baseline')" == "178791" ]]
-    [[ "$(log_record | jq -r '.charged_tokens')" == "130001" ]]
+    [[ "$(log_record | jq -r '.charged_tokens')" == "180001" ]]
 }
 
-@test "A12: a non-fork type (coder) at 130001 tokens is still denied — absolute path untouched" {
+@test "A12: a non-fork type (coder) at 180001 tokens is still denied — absolute path untouched" {
     seed_turns s5 c1 5
-    seed_usage_transcript s5 c1 "130001:0:0"
+    seed_usage_transcript s5 c1 "180001:0:0"
     fire "$(pre_event s5 c1 coder)"
     [[ "$(verdict)" == "deny" ]]
-    [[ "$(log_record | jq -r '.charged_tokens')" == "130001" ]]
+    [[ "$(log_record | jq -r '.charged_tokens')" == "180001" ]]
     [[ -z "$(log_record | jq -r '.baseline')" || "$(log_record | jq -r '.baseline')" == "null" ]]
 }
 

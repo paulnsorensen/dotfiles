@@ -76,7 +76,7 @@ block_sha() {
 
     run yq '.agents.coder.maxTurns' "$registry"
     [[ "$output" == "100" ]] || { echo "coder maxTurns drifted: $output" >&2; return 1; }
-    run grep -Fq '130k tokens / 100 turns' "$AGENTS_DIR/agent_definitions/coder.md"
+    run grep -Fq '180k tokens / 100 turns' "$AGENTS_DIR/agent_definitions/coder.md"
     assert_success
 }
 
@@ -201,8 +201,40 @@ block_sha() {
 }
 
 @test "delegation names phase-owned context recovery" {
-    for contract in 'active phase' 'phase-owned' 'status: needs-context' 'parent persists' 'one fresh retry'; do
+    for contract in 'active phase' 'phase-owned' 'status: needs-context' 'parent persists' 'until the phase is done' 'completes no new edit'; do
         run grep -Fqi "$contract" "$PREAMBLE"
+        assert_success
+    done
+    # Recovery has no fixed retry cap; a no-progress stop replaces it.
+    for prompt in "$PREAMBLE" "$AGENTS_DIR/agent_definitions/coder.md"; do
+        run grep -Fqi 'one fresh retry' "$prompt"
+        assert_failure
+    done
+}
+
+@test "coder handoffs carry section reads, not bare files" {
+    local coder="$AGENTS_DIR/agent_definitions/coder.md"
+
+    # Dispatch sites and the needs-context brief both name path#start-end sections,
+    # so a fresh coder starts at the edit site instead of re-reading whole files.
+    run grep -Fq 'one `path#start-end` section per edit site' "$coder"
+    assert_success
+    run grep -Fq 'Give the coder a `path#start-end` section for each edit site.' "$PREAMBLE"
+    assert_success
+    for section in 'Already read — do not re-read' 'Read next, in order' 'Do not read a range listed under **Already read**'; do
+        run grep -Fq "$section" "$coder"
+        assert_success
+    done
+    # Every code-reading prompt leaves tilth_read on its auto-expanding default.
+    run grep -Fq 'Omit `tilth_read` `mode` unless a section cannot answer' "$PREAMBLE"
+    assert_success
+    for agent in coder explorer reviewer taste-tester generalist roquefort-wrecker; do
+        run grep -Fq 'Pass `mode: full` only when a section cannot answer the question' "$AGENTS_DIR/agent_definitions/$agent.md"
+        assert_success
+    done
+    # Read discipline that keeps a coder under the context ceiling.
+    for rule in 'Pass `mode: full` only when a section cannot answer the question' 'at most 3 paths in one `tilth_read` call' 'Never read a range again'; do
+        run grep -Fq "$rule" "$coder"
         assert_success
     done
 }

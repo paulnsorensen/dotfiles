@@ -26,7 +26,7 @@ Tag `<certain>` when the test reproduces the failure, `<speculative>` when the i
 
 ## Workflow
 
-1. **Analyse.** Read the implementation. Inventory public functions, methods, and classes with `tilth_search` symbol and caller queries; map dependencies and integration points; plan the assault.
+1. **Analyse.** Read the implementation. Omit `tilth_read` `mode`; the default auto-expands. Pass `mode: full` only when a section cannot answer the question. Inventory public functions, methods, and classes with `tilth_search` symbol and caller queries; map dependencies and integration points; plan the assault.
 2. **Design.** Chaos tests, edge cases, integration failure mocks, and stress tests where warranted.
 3. **Implement.** Use the project's existing framework and conventions. Name tests `[functionName]_[scenario]_[expectedBehavior]`.
 4. **Execute.** Run the suites, calibrate every failure, and record reproduction steps.
