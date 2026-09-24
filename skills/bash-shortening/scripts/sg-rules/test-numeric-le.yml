@@ -1,0 +1,17 @@
+id: bash-shorten-test-numeric-le
+language: bash
+severity: hint
+message: '[ $V -le N ] → (( V <= N ))  (less-or-equal)'
+rule:
+  all:
+    - pattern: '[ $VAR -le $N ]'
+    - has:
+        kind: variable_name
+        pattern: $V
+        stopBy: end
+constraints:
+  VAR:
+    regex: '^\$[A-Za-z_]\w*$'
+  N:
+    regex: '^(0|[1-9]\d*)$'
+fix: '(( $V <= $N ))'

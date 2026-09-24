@@ -38,12 +38,20 @@ iterm2/com.googlecode.iterm2.plist
 claude/lib/cheese-flair.sh
 claude/reference/cheese-flair.md
 
-# Harness-managed agent skill cache (written by `gh skill install`)
-.agents/
+# Harness-managed agent skill cache (written by `gh skill install`).
+# Repo-local skills are the exception: .agents/skills/<name>/ for every
+# harness, with a .claude/skills/<name> symlink for Claude Code.
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/chezmoi/
 
 
 # Claude Code local state (settings.local.json, specs)
-.claude/
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/chezmoi
 
 # Milknado per-repo graph state (SQLite DB + WAL/SHM sidecars). Runtime only —
 # regenerated per run, never shared through the repo.

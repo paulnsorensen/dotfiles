@@ -1,0 +1,41 @@
+# ast-grep config for the bash-shortening skill.
+#
+# This is the AST-aware rule pack used by bash-shorten.py. ast-grep (`sg`)
+# is a hard requirement of the script: structural rules in sg-rules/ run
+# first, then the remaining regex-only rules in rules.py run over the
+# output. See SKILL.md for the full ruleset (currently 21 rules across
+# `core` and `modernize` groups) and which subset routes through sg.
+#
+# Run the sg pack directly with:
+#   sg scan --config skills/bash-shortening/scripts/sgconfig.yml path/to/script.sh
+#
+# Or via the wrapper (the typical entry point — handles the regex pass too):
+#   python3 scripts/bash-shorten.py path/to/script.sh
+#
+# The Python script orchestrates: it dispatches the rules in this directory
+# to sg, then runs the remaining (regex-only) rules over the sg output.
+#
+# Why isn't every rule here?
+#
+# - mkdir-guard, empty-default, param-default, expr-increment — need
+#   cross-metavariable equality (same name in two positions) to skip
+#   mismatched-var cases. ast-grep can't express that constraint cleanly;
+#   the regex rules in rules.py use a backreference instead.
+# - combined-tests — tree-sitter-bash flattens [ ... ] (test_command) into
+#   a list of word tokens, so structural matching on the operator side is
+#   brittle.
+# - for-range-expansion — needs runtime arithmetic to verify the captured
+#   integers form a step-1 ascending sequence; pure-YAML rules can't
+#   compute that.
+# - sed-replace-* — the literal-pattern guard needs character-class
+#   restrictions in the matcher, which the regex rule expresses with a
+#   regex charset.
+#
+# (test-numeric used to live in this list but moved to sg-rules/ as
+# per-operator rules so it can correctly skip [[ ]] vs [ ].)
+#
+# When tree-sitter-bash matures further (or when ast-grep adds cross-meta
+# equality), more rules can move here.
+
+ruleDirs:
+  - sg-rules

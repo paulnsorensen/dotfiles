@@ -265,6 +265,7 @@ claude:
 
   # ── ~/.claude/skills selection (repo skills/) ───────────────────────────────
   skills:
+    - bash-shortening
     - build-optimize
     - claude-local
     - ci-optimize

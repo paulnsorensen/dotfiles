@@ -1,0 +1,17 @@
+id: bash-shorten-test-numeric-eq
+language: bash
+severity: hint
+message: '[ $V -eq N ] → (( V == N ))  (numeric equality; tree-sitter scopes this to single-bracket test_command, leaving [[ ]] alone — fixes the bug where the regex form bled into [[ ]] and produced [(( ... ))]).'
+rule:
+  all:
+    - pattern: '[ $VAR -eq $N ]'
+    - has:
+        kind: variable_name
+        pattern: $V
+        stopBy: end
+constraints:
+  VAR:
+    regex: '^\$[A-Za-z_]\w*$'
+  N:
+    regex: '^(0|[1-9]\d*)$'
+fix: '(( $V == $N ))'

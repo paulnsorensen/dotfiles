@@ -565,7 +565,10 @@ _cz_vendor_external_skills() {
                 log_warning "external skill source $source: skill '$skill' not found, skipping"
                 continue
             fi
-            _cz_copy_encoded "$cache/$sp/$skill" "$dst/$(_cz_encode_name "$skill" true false)" || return 1
+            local dst_path
+            dst_path="$dst/$(_cz_encode_name "$skill" true false)"
+            [[ -e "$dst_path" ]] && log_warning "external skill source $source: skill '$skill' overwrites a local skill of the same name (claude.skills in chezmoi/.chezmoidata/claude.yaml)"
+            _cz_copy_encoded "$cache/$sp/$skill" "$dst_path" || return 1
         done
     done < <(yq -r '.sources | keys | .[]' "$registry")
 }

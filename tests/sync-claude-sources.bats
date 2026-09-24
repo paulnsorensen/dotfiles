@@ -444,6 +444,24 @@ YAML
     done
 }
 
+@test "assembly: a vendored skill name colliding with a local skill warns" {
+    mkdir -p "$ROOT/skills/ext-skill"
+    echo "# local ext" > "$ROOT/skills/ext-skill/SKILL.md"
+    cat > "$SRC/.chezmoidata/claude.yaml" <<'YAML'
+claude:
+  skills:
+    - alpha-skill
+    - beta-skill
+    - ext-skill
+  agents:
+    - tester
+YAML
+    run_assembly
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ext-skill"* ]]
+    [[ "$output" == *"overwrites a local skill"* ]]
+}
+
 @test "assembly: explicit skills list resolves under skills_path" {
     cat > "$ROOT/skills/_registry.yaml" <<'YAML'
 sources:
