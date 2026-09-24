@@ -69,7 +69,8 @@ chezmoi add --encrypt ~/.ssh/config
 
 The source becomes `encrypted_private_dot_ssh/encrypted_config.age`. The
 decrypted version only ever lives at the target path. `chezmoi edit`
-decrypts to a private temp dir for editing, then re-encrypts on save.
+decrypts to a private temp dir for editing, then re-encrypts after the
+editor exits.
 
 ### Bootstrapping the age key on a new machine
 
@@ -118,8 +119,8 @@ encrypted target under the new backend:
 
 ```bash
 # re-add every gpg-encrypted target as age-encrypted
-for target in $(chezmoi managed --include=encrypted); do
-  chezmoi forget "$target"
+chezmoi managed --include=encrypted --path-style=absolute | while IFS= read -r target; do
+  chezmoi forget --force "$target"
   chezmoi add --encrypt "$target"
 done
 ```
@@ -172,15 +173,23 @@ apply, write a small shell script that fetches and writes secrets to
 apply time without the CLI being invoked:
 
 ```sh
+#!/usr/bin/env bash
 # scripts/refresh-secrets.sh
-export BW_SESSION=$(bw unlock --raw)
+set -euo pipefail
 
+export BW_SESSION=$(bw unlock --raw)
+github_token=$(bw get password github-token)
+npm_token=$(bw get password npm-token)
+
+dest="$(chezmoi source-path)/.chezmoidata/secrets.yaml"
+tmp="$(mktemp "$(dirname "$dest")/secrets.yaml.XXXXXX")"
 umask 077
-cat > "$(chezmoi source-path)/.chezmoidata/secrets.yaml" <<EOF
+cat > "$tmp" <<EOF
 secrets:
-  github_token: $(bw get password github-token)
-  npm_token: $(bw get password npm-token)
+  github_token: $github_token
+  npm_token: $npm_token
 EOF
+mv "$tmp" "$dest"
 ```
 
 Then use `{{ .secrets.github_token }}` in templates. The plaintext file

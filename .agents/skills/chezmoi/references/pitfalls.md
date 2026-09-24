@@ -11,8 +11,8 @@ save. chezmoi can't decrypt it on the next `apply` — you've corrupted
 the encrypted blob.
 
 **Fix.** Always `chezmoi edit ~/.ssh/config` for an encrypted target.
-chezmoi decrypts to a temp dir, opens your editor, and re-encrypts on
-save. Editing a plain or `.tmpl` source file directly is normal;
+chezmoi decrypts to a temp dir, opens your editor, and re-encrypts
+after the editor exits. Editing a plain or `.tmpl` source file directly is normal;
 `chezmoi edit` there only matches the editor's basename to the target.
 
 For pure git operations (commit, log, push) use `chezmoi cd`, which

@@ -96,7 +96,7 @@ Done means: the file exists, `claude.skills` names it (or every repo-local host 
 ## Mode: improve
 
 1. Run the shared protocol without analytics.
-2. Apply every `<certain>` finding of severity medium or higher.
+2. Apply every `<certain>` finding of severity medium or higher that does not change protocol semantics.
 3. Put every `<speculative>` finding and every protocol-semantic change to the user as one approval question, with your recommendation for each.
    Apply the approved ones and record the declined ones.
    A delegated run returns these findings to its parent, and the parent asks.

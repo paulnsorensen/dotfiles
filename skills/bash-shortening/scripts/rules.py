@@ -109,18 +109,32 @@ _CAT_FILE_GREP_PREFIX = re.compile(
 
 
 def _grep_args_end(text: str, start: int) -> int:
-    """Return the index just past the grep argument list starting at `start`.
+    """Return the index just past the grep argument list starting at `start`,
+    or -1 when the argument list is unsafe to rewrite.
 
-    Stops at the first unquoted `|`, `;`, `&`, or newline, respecting single-
-    and double-quoted tokens so a quoted metacharacter (e.g. `grep -E "a|b"`)
-    is not mistaken for a pipeline separator.
+    Stops at the first unquoted `|`, `;`, `&`, unquoted `)`, word-initial
+    `#`, or newline, respecting single- and double-quoted tokens so a
+    quoted metacharacter (e.g. `grep -E "a|b"`) is not mistaken for a
+    pipeline separator. An unquoted redirection (`>`/`<`), backtick, or
+    subshell open-paren makes the whole match unsafe: relocating the FILE
+    operand past one of those would change what it applies to (e.g. the
+    `&` in `2>&1` is part of the redirection, not a separator — but rather
+    than special-case it, the redirection itself aborts the rewrite). A
+    single-quoted token that does not close on the same line is likewise
+    unsafe — it is not a real quote open (e.g. an apostrophe in a trailing
+    comment) and scanning for its close could run past the line.
     """
     i, n = start, len(text)
     while i < n:
         c = text[i]
         if c == "'":
-            end = text.find("'", i + 1)
-            i = end + 1 if end != -1 else n
+            line_end = text.find("\n", i + 1)
+            if line_end == -1:
+                line_end = n
+            end = text.find("'", i + 1, line_end)
+            if end == -1:
+                return -1
+            i = end + 1
             continue
         if c == '"':
             j = i + 1
@@ -130,7 +144,11 @@ def _grep_args_end(text: str, start: int) -> int:
                 j += 1
             i = j + 1 if j < n else n
             continue
-        if c in "|;&\n":
+        if c in "`(<>":
+            return -1
+        if c == "#" and (i == start or text[i - 1].isspace()):
+            break
+        if c in "|;&)\n":
             break
         i += 1
     return i
@@ -152,8 +170,15 @@ def _apply_cat_file_grep(text: str) -> tuple[str, int]:
             break
         out.append(text[i : m.start()])
         args_end = _grep_args_end(text, m.end())
+        if args_end == -1:
+            out.append(text[m.start() : m.end()])
+            i = m.end()
+            continue
         args = text[m.end() : args_end].rstrip()
-        out.append(f"grep {args} {m.group(1)}")
+        # A word-initial `#` right after the args needs a preceding space to
+        # stay a comment — rstrip() above would otherwise glue it onto FILE.
+        sep = " " if text[args_end : args_end + 1] == "#" else ""
+        out.append(f"grep {args} {m.group(1)}{sep}")
         count += 1
         i = args_end
     return "".join(out), count
@@ -162,6 +187,7 @@ def _apply_cat_file_grep(text: str) -> tuple[str, int]:
 _COMBINED_TESTS = re.compile(r"\[\s+([^\[\]\n]+?)\s+\]\s*&&\s*\[\s+([^\[\]\n]+?)\s+\]")
 _TEST_AND_OR_FLAG = re.compile(r"(?:^|\s)(-a|-o)(?:\s|$)")
 _UNQUOTED_EQ_RHS = re.compile(r'(?:^|\s)(==|=|!=)\s+(?!["\'])\S')
+_TEST_LEXICAL_CMP = re.compile(r"\\[<>]")
 
 
 def _combined_tests_side_unsafe(side: str) -> bool:
@@ -171,8 +197,14 @@ def _combined_tests_side_unsafe(side: str) -> bool:
     ordinary operands there, not the `[ ]` logical operators). An unquoted
     RHS after `=`/`==`/`!=` is a literal string compare in `[ ]` but a glob
     pattern match in `[[ ]]`, so it must stay quoted to keep the meaning.
+    `\\<`/`\\>` are `[ ]`'s escaped lexical-comparison operators; `[[ ]]`
+    does not need the backslash, so carrying it over is a syntax error.
     """
-    return bool(_TEST_AND_OR_FLAG.search(side) or _UNQUOTED_EQ_RHS.search(side))
+    return bool(
+        _TEST_AND_OR_FLAG.search(side)
+        or _UNQUOTED_EQ_RHS.search(side)
+        or _TEST_LEXICAL_CMP.search(side)
+    )
 
 
 def _apply_combined_tests(text: str) -> tuple[str, int]:
@@ -193,6 +225,7 @@ def _apply_combined_tests(text: str) -> tuple[str, int]:
 _FIND_EXEC_RM = re.compile(r"(find\s+[^\n]*?)-exec\s+rm\s+(?:-f\s+)?\{\}\s+\\;")
 _FIND_UNSAFE_FLAG = re.compile(r"(?:^|\s)(-prune|-o|-or)(?:\s|$)")
 _FIND_TYPE_F = re.compile(r"(?:^|\s)-type\s+f(?:\s|$)")
+_FIND_NEGATED_TYPE_F = re.compile(r"(?:^|\s)(?:!|-not)\s+-type\s+f(?:\s|$)")
 
 
 def _apply_find_exec_rm_delete(text: str) -> tuple[str, int]:
@@ -200,14 +233,20 @@ def _apply_find_exec_rm_delete(text: str) -> tuple[str, int]:
 
     `-delete` implies `-depth`, which disables `-prune` and can delete
     files an `-o`-branched expression meant to exclude. Skips when the
-    expression has `-prune`, `-o`/`-or`, or lacks `-type f`.
+    expression has `-prune`, `-o`/`-or`, lacks `-type f`, or negates
+    `-type f` with `!`/`-not` (an unmatched-file expression, so `-delete`
+    would remove directories too).
     """
     count = 0
 
     def repl(m: re.Match[str]) -> str:
         nonlocal count
         expr = m.group(1)
-        if _FIND_UNSAFE_FLAG.search(expr) or not _FIND_TYPE_F.search(expr):
+        if (
+            _FIND_UNSAFE_FLAG.search(expr)
+            or _FIND_NEGATED_TYPE_F.search(expr)
+            or not _FIND_TYPE_F.search(expr)
+        ):
             return m.group(0)
         count += 1
         return f"{expr}-delete"

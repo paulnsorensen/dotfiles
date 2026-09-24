@@ -279,6 +279,27 @@ assert_rewrite() {
     [ "${got%$'\n'}" = "$input" ]
 }
 
+@test "rule combined-tests SKIPS when a side has -a/-o" {
+    local input='[ -f "$F" -o -r "$F" ] && [ -w "$G" ]'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule combined-tests SKIPS when a side has an unquoted RHS" {
+    local input='[ "$A" = x ] && [ "$B" = "y" ]'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule combined-tests SKIPS when a side has \\< or \\>" {
+    local input='[ "$a" \< "$b" ] && [ -f "$c" ]'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
 @test "rule test-numeric maps -gt to >" {
     assert_rewrite 'if [ $X -gt 100 ]; then' 'if (( X > 100 )); then'
 }
@@ -382,12 +403,52 @@ assert_rewrite() {
     [ "${got%$'\n'}" = "$input" ]
 }
 
+@test "rule find-exec-rm-delete SKIPS when -type f is negated with !" {
+    local input='find . ! -type f -exec rm {} \;'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule find-exec-rm-delete SKIPS when -type f is negated with -not" {
+    local input='find . -not -type f -exec rm {} \;'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "rule find-exec-rm-delete SKIPS when -o/-or is present" {
+    local input='find . -type f -o -name "*.tmp" -exec rm {} \;'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
 @test "rule cat-file-pipe-grep drops the useless cat" {
     assert_rewrite 'cat /etc/hosts | grep localhost' 'grep localhost /etc/hosts'
 }
 
 @test "rule cat-file-pipe-grep preserves quoted file argument" {
     assert_rewrite 'cat "$LOG" | grep -i error' 'grep -i error "$LOG"'
+}
+
+@test "rule cat-file-pipe-grep stops at an unquoted close-paren" {
+    assert_rewrite 'X=$(cat f | grep foo)' 'X=$(grep foo f)'
+}
+
+@test "rule cat-file-pipe-grep keeps a trailing comment as a comment" {
+    assert_rewrite 'cat f | grep foo # note' 'grep foo f # note'
+}
+
+@test "rule cat-file-pipe-grep preserves a quoted pipe in the pattern" {
+    assert_rewrite 'cat f | grep -E "a|b"' 'grep -E "a|b" f'
+}
+
+@test "rule cat-file-pipe-grep SKIPS when followed by an unquoted redirection" {
+    local input='cat f | grep foo 2>&1 | wc -l'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
 }
 
 # -- Multi-rule integration -------------------------------------------------

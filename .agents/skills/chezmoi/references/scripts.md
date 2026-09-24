@@ -46,6 +46,7 @@ sudo apt-get install -y ripgrep fd-find fzf
 ```sh
 # .chezmoiscripts/run_onchange_after_brewfile.sh.tmpl
 #!/bin/sh
+# hash: {{ include "Brewfile" | sha256sum }}
 brew bundle --file={{ joinPath .chezmoi.sourceDir "Brewfile" | quote }}
 ```
 

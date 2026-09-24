@@ -175,6 +175,36 @@ teardown() {
     assert_output_contains "merge_group"
 }
 
+@test "ghb_queue_precheck warns but stays non-fatal for a private repo" {
+    cat >"$TEST_HOME/bin/gh" <<'MOCK'
+#!/usr/bin/env bash
+echo "$*" >>"$GH_LOG"
+case "$*" in
+    "api repos/acme/widget --jq .visibility") echo private ;;
+esac
+exit 0
+MOCK
+    chmod +x "$TEST_HOME/bin/gh"
+    run ghb_queue_precheck acme/widget
+    assert_success
+    assert_output_contains "is private"
+}
+
+@test "ghb_queue_precheck does not abort a set -e caller when gh api fails" {
+    cat >"$TEST_HOME/bin/gh" <<'MOCK'
+#!/usr/bin/env bash
+echo "$*" >>"$GH_LOG"
+case "$*" in
+    "api repos/acme/widget --jq .visibility") exit 1 ;;
+esac
+exit 0
+MOCK
+    chmod +x "$TEST_HOME/bin/gh"
+    run bash -c 'set -euo pipefail; source "$1/bin/lib/gh-bootstrap.sh"; ghb_queue_precheck acme/widget; echo continued' _ "$REAL_DOTFILES_DIR"
+    assert_success
+    assert_output_contains "continued"
+}
+
 @test "upsert_ruleset: a failed ruleset lookup fails loud (not hidden by head -n1)" {
     echo '{}' >"$TEST_HOME/r.json"
     cat >"$TEST_HOME/bin/gh" <<'MOCK'

@@ -99,7 +99,10 @@ ghb_upsert_ruleset() {
 # authoritative on whether the plan actually supports a queue.
 ghb_queue_precheck() {
     local repo="$1" visibility
-    visibility=$(gh api "repos/$repo" --jq .visibility) || return 1
+    if ! visibility=$(gh api "repos/$repo" --jq .visibility); then
+        echo "gh-bootstrap: could not check $repo's visibility; skipping the merge-queue precheck" >&2
+        return 0
+    fi
     if [[ "$visibility" != "public" ]]; then
         echo "gh-bootstrap: $repo is $visibility; a merge queue needs a public repo or a Team/Enterprise plan" >&2
     fi

@@ -49,7 +49,10 @@ if ((notes || workflow)); then
         echo "gh-bootstrap: --release-notes/--release-workflow need a git clone" >&2
         exit 1
     }
-    clone_repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || clone_repo=""
+    clone_repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || {
+        echo "gh-bootstrap: cannot resolve this clone's GitHub repo" >&2
+        exit 1
+    }
     [[ "$clone_repo" == "$repo" ]] || {
         echo "gh-bootstrap: this clone ($clone_repo) is not $repo; run from a clone of $repo" >&2
         exit 1

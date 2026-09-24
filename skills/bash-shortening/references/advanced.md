@@ -101,7 +101,7 @@ with "unbound variable". Default the subscript too:
 
 ```bash
 set -u
-URL=${URLS[${ENV:-}]:-https://localhost}   # works even if $ENV unset
+URL=${URLS[${ENV:-_}]:-https://localhost}   # works even if $ENV unset
 ```
 
 **Iteration:**

@@ -51,7 +51,7 @@ Implementation details (vault provisioning, codex merge semantics, credential is
 
 ## Required gates
 
-1. Run `dots sync` after registry, skill, agent, plugin, or docs-source changes, and before committing.
+1. Run `dots sync` after registry, skill, agent, plugin, or docs-source changes, and before committing (repo-local `.agents/skills/` excepted).
 2. Before completion or commit, run `just check`; completion requires exit 0. Name any unrun leg.
 3. New shell logic belongs in a sourced library with Bats coverage; keep `.sync` scripts to parsing and dispatch.
 4. For chezmoi: never commit plaintext secrets; never edit managed targets; run `chezmoi --source $DOTFILES/chezmoi diff` before template changes; use `prompt*` only in `.chezmoi.toml.tmpl`.

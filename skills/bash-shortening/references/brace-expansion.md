@@ -145,8 +145,9 @@ done
 ```
 
 Padding is determined by whichever endpoint has more digits, not always
-the first one — `{1..010}` and `{01..100}` both produce
-`001 002 ... 099 100`. Useful for filename
+the first one — `{1..010}` produces `001 002 ... 010` (padded to match
+`010`'s 3 digits), and `{01..100}` produces `001 002 ... 099 100`.
+Useful for filename
 generation (`backup-{01..30}.tar.gz`) where lexical sort order matches
 numeric order.
 

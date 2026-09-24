@@ -106,12 +106,27 @@ _NEGATIVE_CASES: tuple[str, ...] = (
     "# bash-shorten: disable\nV=`pwd`\n# bash-shorten: enable\n",
     # bash-shorten: skip no-ops the single following line.
     "# bash-shorten: skip\nV=`pwd`\n",
+    # combined-tests: -a/-o are invalid test primaries inside [[ ]] (bash
+    # parses them as ordinary operands there, not [ ]'s logical operators).
+    '[ -f "$F" -o -r "$F" ] && [ -w "$G" ]',
+    # combined-tests: an unquoted RHS after = is a literal compare in [ ]
+    # but a glob pattern match in [[ ]] — must stay quoted to keep meaning.
+    '[ "$A" = x ] && [ "$B" = "y" ]',
+    # find -exec rm {} \; -> -delete: an -o-branched expression would lose
+    # files to -delete's implied -depth.
+    'find . -type f -o -name "*.tmp" -exec rm {} \\;',
+    # cat-file-pipe-grep must not relocate FILE past an unquoted
+    # redirection — that would change what the redirection applies to.
+    "cat f | grep foo 2>&1 | wc -l",
 )
 
 # Custom positive tests for cat-file-pipe-grep (which has no static .examples)
 _CAT_GREP_CASES: tuple[tuple[str, str], ...] = (
     ("cat /etc/hosts | grep localhost", "grep localhost /etc/hosts"),
     ('cat "$LOG" | grep -i error', 'grep -i error "$LOG"'),
+    ("X=$(cat f | grep foo)", "X=$(grep foo f)"),
+    ("cat f | grep foo # note", "grep foo f # note"),
+    ('cat f | grep -E "a|b"', 'grep -E "a|b" f'),
 )
 
 
