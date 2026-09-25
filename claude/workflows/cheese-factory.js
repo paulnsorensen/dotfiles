@@ -400,9 +400,11 @@ ${observations}
 
 Run the installed archive's validate, checkpoint, and resolve commands from that working directory. Resolve the checkpoint by work_id. Return status ok only when checkpoint succeeds, resolve reports outcome authoritative with nonempty working_context, the resolved context preserves its provenance, and the verified git root remains ${cook.worktree_path}. Return status blocked with an orientation on any failure.
 
-Compute a read-only worktree progress fingerprint from the working directory: run \`git rev-parse HEAD\`, \`git status --porcelain=v1 -uall\`, and \`git diff HEAD\`, then combine their output into one nonempty string, for example a hash of the concatenation. Do not stage, commit, or otherwise change the worktree while computing it.
+Compute a read-only worktree progress fingerprint from the working directory. Run exactly this command and return its single output line verbatim as worktree_fingerprint. It hashes HEAD, status, the tracked diff, and untracked file contents, and it excludes .cheese/ so checkpoint notes do not count as progress:
+\`{ git rev-parse HEAD; git status --porcelain=v1 -uall -- . ':(exclude).cheese'; git diff HEAD --binary -- . ':(exclude).cheese'; git ls-files -z --others --exclude-standard -- . ':(exclude).cheese' | xargs -0 git hash-object --; } | git hash-object --stdin\`
+Do not stage, commit, or otherwise change the worktree while computing it.
 
-Return {"status":"ok|blocked","checkpoint_ref":"<work-id or absolute ref>","working_context":["path#start-end", ...],"worktree_fingerprint":"<combined hash>","orientation":"..."}. Do not return a checkpoint_ref, working_context, or worktree_fingerprint for a failed or non-authoritative result.`
+Return {"status":"ok|blocked","checkpoint_ref":"<work-id or absolute ref>","working_context":["path#start-end", ...],"worktree_fingerprint":"<command output>","orientation":"..."}. Do not return a checkpoint_ref, working_context, or worktree_fingerprint for a failed or non-authoritative result.`
 }
 
 function cookContinuationPrompt(curd, prevCook, round, checkpoint) {

@@ -973,6 +973,9 @@ test('a needs-context cook coordinates an authoritative checkpoint before one co
   assert.match(checkpoint.prompt, /python3 ~\/\.claude\/skills\/wheypoint\/scripts\/wheypoint\.pyz/)
   assert.doesNotMatch(checkpoint.prompt, /skills\/cook\//)
   assert.match(checkpoint.prompt, /do not mutate source/i)
+  // One exact fingerprint command: untracked contents count, .cheese/ checkpoint notes do not.
+  assert.ok(checkpoint.prompt.includes("git ls-files -z --others --exclude-standard -- . ':(exclude).cheese' | xargs -0 git hash-object --; } | git hash-object --stdin"))
+  assert.match(checkpoint.prompt, /return its single output line verbatim as worktree_fingerprint/)
   assert.match(continuation.prompt, new RegExp(`resolve --ref ${checkpointRef}`))
   assert.match(continuation.prompt, /src\/parser\.js#10-20/)
   assert.equal(result.curds[0].status, 'clean')
@@ -1002,6 +1005,7 @@ test('a failed, empty, or wrong-worktree checkpoint halts without a coder retry'
     { status: 'ok', worktree_path: '/tmp/worktrees/other', checkpoint_ref: 'parent-cook', working_context: ['src/parser.js#10-20'] },
     { status: 'ok', checkpoint_ref: 'parent-cook', working_context: ['../parser.js#10-20'] },
     { status: 'ok', checkpoint_ref: 'parent-cook', working_context: Array.from({ length: 17 }, (_, i) => `src/file-${i}.js#1-2`) },
+    { status: 'ok', worktree_path: '/tmp/worktrees/parent', checkpoint_ref: 'parent-cook', working_context: ['src/parser.js#10-20'] },
   ]) {
     const workflow = await loadWorkflow(path)
     const { globals, trace } = createRuntime({

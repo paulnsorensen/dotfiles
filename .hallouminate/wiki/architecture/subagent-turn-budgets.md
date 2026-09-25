@@ -126,11 +126,14 @@ Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
   About 45% was retained thinking and output. The coder body now requires section
   reads: dispatch sites and the `needs-context` brief use `path#start-end`. The preamble
   and every tilth-reading agent omit the `tilth_read` `mode`, because the default
-  auto-expands; `mode: full` is only for a question a section cannot answer. The parent also re-dispatches
+  picks full or outline by size; `mode: full` is only for a question a section cannot answer. The parent also re-dispatches
   fresh coders until the phase is done. It stops when a coder completes no new
   edit. This replaces the old "one fresh retry" cap, which stranded long work.
   `/cheese-factory` implements the stop with a `worktree_fingerprint` from the
-  checkpoint coordinator (HEAD, status, and diff). An unchanged fingerprint halts
+  checkpoint coordinator. One exact `git hash-object --stdin` command hashes HEAD,
+  status, the tracked diff, and untracked file contents, and excludes `.cheese/`.
+  A prescribed command matters: fresh coordinators must encode the same tree the same
+  way, and an edit inside an untracked file must count. An unchanged fingerprint halts
   with "no progress"; `COOK_CONTINUATION_LIMIT = 8` is only a runaway guard.
 
 - **Context is real tokens; each hard ceiling reserves one checkpoint write (#552).**

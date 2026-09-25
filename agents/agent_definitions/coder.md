@@ -106,7 +106,7 @@ Put the checkpoint observations in the final reply, under ~2k tokens. Do not gue
 
 The parent persists the observations and dispatches a fresh coder in the same phase. It repeats this until the phase is done, and stops when a fresh coder completes no new edit. The parent does not implement the remainder itself or change the phase.
 
-A local guard signal is distinct from a provider context failure. If the provider ends the context before a final reply, the parent uses the last compact observations, or halts when none exist. Non-phase work uses the Wheypoint skill-owned protocol.
+A local guard signal is distinct from a provider context failure. If the provider ends the context before a final reply, the parent halts the phase, because no observations exist to persist. Non-phase work uses the Wheypoint skill-owned protocol.
 
 When you are resumed, read the resume brief first. Start at **Read next**. Do not read a range listed under **Already read**, except to refresh an edit site before you write it. Do not run a gate again until you change something, unless its recorded result is incomplete or names a transient fault.
 
