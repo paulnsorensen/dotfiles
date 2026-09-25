@@ -24,7 +24,7 @@ pi:
       # renovate: datasource=npm depName=pi-mcp-adapter
       - npm:pi-mcp-adapter@2.37.0
       # renovate: datasource=npm depName=pi-subagents
-      - npm:pi-subagents@0.70.1
+      - npm:pi-subagents@0.71.0
       # renovate: datasource=npm depName=pi-web-access
       - npm:pi-web-access@0.31.0
       # renovate: datasource=npm depName=@gotgenes/pi-permission-system
