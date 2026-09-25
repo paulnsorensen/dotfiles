@@ -44,9 +44,21 @@
 # before this change). Fold each reported key into the authoritative source or
 # the registry. `enabledPlugins`, `extraKnownMarketplaces`, and `hooks`
 # subtrees are exempt (the registry authors them whole) — live-only entries
-# there are wiped. claude-settings-ignore.txt paths are exempt the same way,
-# but their live value is preserved (overlaid onto $desired) rather than
-# wiped, unless the repo's own desired document already owns that leaf.
+# there are wiped.
+#
+# claude-settings-ignore.txt paths are exempt the same way. Their live value
+# survives: the gate overlays it onto $desired, unless the repo's desired
+# document already owns that leaf.
+#
+# claude-settings-sensitive.txt lists dot-paths that grant access, run code,
+# or select what the agent reads and writes. An unknown key under one of
+# these paths halts the guard instead of preserving it — a top-level key
+# ending in "Helper" halts the same way. Fold the key into the authoritative
+# source or the registry, then re-run `dots sync`.
+#
+# claude-settings-retired.txt lists dot-paths deleted from the live file
+# before the unknown-key gate runs. A retired path never triggers a warning
+# or a halt; it is simply gone.
 #
 # ${HOME} in registry string values is expanded here — needed for keys Claude
 # reads as literal JSON (e.g. marketplace directory paths).
@@ -56,6 +68,8 @@ set -eu
 AUTH="${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/lib/claude-settings-authoritative.json"
 REG="$CHEZMOI_SOURCE_DIR/.chezmoidata/claude.yaml"
 IGNORE="$CHEZMOI_SOURCE_DIR/lib/claude-settings-ignore.txt"
+SENSITIVE="$CHEZMOI_SOURCE_DIR/lib/claude-settings-sensitive.txt"
+RETIRED="$CHEZMOI_SOURCE_DIR/lib/claude-settings-retired.txt"
 GATE="$CHEZMOI_SOURCE_DIR/lib/drift-gate.sh"
 
 live=$(cat)
@@ -246,8 +260,10 @@ if [ "$(uname -s)" != "Darwin" ]; then
     desired=$(printf '%s' "$desired" | jq 'del(.env.SSL_CERT_FILE)')
 fi
 
-# Fresh machine (empty stdin): emit the desired document.
+# Fresh machine (empty stdin): emit the desired document; no prior harness
+# drift to record.
 if [ -z "$live" ]; then
+    rm -f "$(drift_state_file claude-settings)" 2>/dev/null || true
     printf '%s\n' "$desired"
     exit 0
 fi
@@ -260,16 +276,42 @@ if ! printf '%s' "$live" | jq -e 'type == "object"' >/dev/null 2>&1; then
     exit 1
 fi
 
+# ── retired-key deletion ────────────────────────────────────────────────
+# A retired path is gone from the desired schema on purpose. Delete it from
+# the live document before the unknown-key gate runs, so it neither warns as
+# harness-introduced nor survives forever as preserved drift.
+retired_paths=$(drift_ignore_paths "$RETIRED")
+live=$(printf '%s' "$live" | jq --argjson r "$retired_paths" 'delpaths($r)')
+
 # ── unknown-key gate ─────────────────────────────────────────────────
-# A live key-path is "known" when its object-key signature (array indices
-# dropped, so a value change or an extra list entry never counts as a new
-# key) is a path present in the desired document, OR it sits under a
-# registry-authored subtree (enabledPlugins / extraKnownMarketplaces / hooks)
-# or an ignore-listed prefix. Live-only entries in those subtrees are wiped: a
-# hook event the registry dropped must go, not survive as unknown drift. env.SSL_CERT_FILE counts as known so the non-Darwin
-# transition sync wipes a live copy without a warning.
+# A live key-path is known in three cases. First, its object-key signature
+# (array indices dropped, so a value change or an extra list entry is never
+# a new key) matches a path in the desired document. Second, it sits under a
+# registry-authored subtree: enabledPlugins, extraKnownMarketplaces, or
+# hooks. Third, it sits under an ignore-listed prefix. Live-only entries
+# under a registry-authored subtree are wiped — a hook event the registry
+# dropped must go, not survive as unknown drift. env.SSL_CERT_FILE counts as
+# known, so the non-Darwin transition sync wipes a live copy without a
+# warning.
 exempt=$(printf '%s' "$ignore_paths" | jq -c '[["enabledPlugins"], ["extraKnownMarketplaces"], ["hooks"]] + .')
 unknown=$(drift_unknown "$live" "$desired" "$exempt" '[["env","SSL_CERT_FILE"]]')
+
+# ── sensitive-key halt ───────────────────────────────────────────────
+# An unknown path under a sensitive prefix (claude-settings-sensitive.txt),
+# or a top-level key ending in "Helper", halts instead of preserving. These
+# keys grant access, run code, or select what the agent reads and writes; a
+# guessed live value here is a bigger risk than a broken sync.
+sensitive_paths=$(drift_ignore_paths "$SENSITIVE")
+sensitive_hit=$(printf '%s' "$unknown" | jq -c --argjson sens "$sensitive_paths" "$DRIFT_JQ_DEFS"'
+    map(select(under($sens) or ((.[0] // "") | endswith("Helper"))))
+')
+if [ "$(printf '%s' "$sensitive_hit" | jq 'length')" -gt 0 ]; then
+    echo "modify_settings.json: unknown key(s) under a sensitive Claude setting — refusing to guess:" >&2
+    printf '%s' "$sensitive_hit" | jq -r '.[] | "  " + join(".")' >&2
+    echo "  Fold each path into $AUTH or $REG, then re-run dots sync." >&2
+    exit 1
+fi
+
 result=$(drift_preserve "$live" "$desired" "$unknown")
 desired=$(printf '%s' "$result" | jq '.doc')
 drift_report claude-settings "Claude settings.json" "$result" "$AUTH" "$REG" "$IGNORE"

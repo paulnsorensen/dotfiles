@@ -21,6 +21,8 @@ setup() {
     export SCRIPT="$REAL_DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json"
     export CZ_SRC="$REAL_DOTFILES_DIR/chezmoi"
     export AUTH="$CZ_SRC/lib/claude-settings-authoritative.json"
+    export REG="$CZ_SRC/.chezmoidata/claude.yaml"
+    export IGNORE="$CZ_SRC/lib/claude-settings-ignore.txt"
     OUT="$TEST_HOME/out.json"
     export OUT
 }
@@ -116,12 +118,65 @@ STDIN"
     grep -qx 'preserved someNewClaudeKey' "$DOTFILES_STATE_DIR/harness-drift/claude-settings"
 }
 
-@test "modify_settings: unknown nested key under a known object is kept" {
+@test "modify_settings: unknown key under permissions (sensitive) halts instead of being kept" {
     run_modify '{"permissions":{"defaultMode":"auto","newSubKey":true}}'
-    [ "$status" -eq 0 ]
-    [ "$(jq -r '.permissions.newSubKey' "$OUT")" = "true" ]
-    jq -e '.permissions.allow | length > 0' "$OUT" >/dev/null   # repo lists intact
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"sensitive Claude setting"* ]]
     [[ "$output" == *"permissions.newSubKey"* ]]
+}
+
+@test "modify_settings: unknown nested key under a non-sensitive known object is kept" {
+    run_modify '{"worktree":{"baseRef":"head","newSubKey":true}}'
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.worktree.newSubKey' "$OUT")" = "true" ]
+    jq -e '.worktree.baseRef == "head"' "$OUT" >/dev/null
+    [[ "$output" == *"worktree.newSubKey"* ]]
+}
+
+@test "modify_settings: unknown key nested under env (sensitive) halts" {
+    run_modify '{"env":{"ENABLE_TOOL_SEARCH":"true","SSL_CERT_FILE":"/etc/ssl/cert.pem","NODE_OPTIONS":"--x"}}'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"sensitive Claude setting"* ]]
+    [[ "$output" == *"env.NODE_OPTIONS"* ]]
+}
+
+@test "modify_settings: unknown top-level sensitive-listed key halts" {
+    run_modify '{"apiKeyHelper":"/bin/evil"}'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"sensitive Claude setting"* ]]
+    [[ "$output" == *"apiKeyHelper"* ]]
+}
+
+@test "modify_settings: unknown top-level key ending in Helper halts even when unlisted" {
+    run_modify '{"customThingHelper":"x"}'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"sensitive Claude setting"* ]]
+    [[ "$output" == *"customThingHelper"* ]]
+}
+
+@test "modify_settings: a retired key is deleted from live before the gate runs" {
+    local tmpsrc="$TEST_HOME/cz-retired"
+    mkdir -p "$tmpsrc/lib" "$tmpsrc/.chezmoidata"
+    cp "$CZ_SRC/.chezmoidata/claude.yaml" "$tmpsrc/.chezmoidata/claude.yaml"
+    cp "$AUTH" "$tmpsrc/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$tmpsrc/lib/drift-gate.sh"
+    printf 'retiredKey\n' > "$tmpsrc/lib/claude-settings-retired.txt"
+    run bash -c "CHEZMOI_SOURCE_DIR='$tmpsrc' sh '$SCRIPT' <<'STDIN' >'$OUT'
+{\"retiredKey\":\"old\"}
+STDIN"
+    [ "$status" -eq 0 ]
+    local first_output="$output"
+    run jq -e '.retiredKey' "$OUT"
+    [ "$status" -ne 0 ]
+    [[ "$first_output" != *"retiredKey"* ]]
+}
+
+@test "modify_settings: unknown-key warning names the fold targets" {
+    run_modify '{"someNewClaudeKey":"x"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$AUTH"* ]]
+    [[ "$output" == *"$REG"* ]]
+    [[ "$output" == *"$IGNORE"* ]]
 }
 
 @test "modify_settings: a live-only hook event is wiped without a warning" {
@@ -604,6 +659,13 @@ STDIN"
     [ "$status" -eq 0 ]
     [ "$(jq -r '.env.WHATEVER' "$OUT")" = "live-value" ]
     [ "$(jq -r '.env.ENABLE_TOOL_SEARCH' "$OUT")" = "$(jq -r '.env.ENABLE_TOOL_SEARCH' "$AUTH")" ]
+}
+
+@test "modify_settings: real ignore file keeps a new model in modelSettings without a warning" {
+    run_modify '{"modelSettings":{"claude-opus-5":{"effortLevel":"medium"},"claude-new-model":{"effortLevel":"high"}}}'
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.modelSettings["claude-new-model"].effortLevel' "$OUT")" = "high" ]
+    [[ "$output" != *"WARNING"* ]]
 }
 
 # ── auto-memory disable (AC-1, issue #717) ──────────────────────────────────

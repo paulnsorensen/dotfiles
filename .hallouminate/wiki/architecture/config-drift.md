@@ -231,14 +231,32 @@ The halt surfaced new keys, but it cost a broken sync every time.
 - An unknown path inside a list, or under a scalar the repo owns, has no
   stable place in the desired document. The guard drops it and reports it as
   `dropped`.
-- Registry-authored subtrees are wiped, not kept: Claude `enabledPlugins`,
-  `extraKnownMarketplaces`, and `hooks`. So a hook event the registry removes
-  goes away (see the next section).
+- The guard wipes registry-authored subtrees instead of keeping them: Claude
+  `enabledPlugins`, `extraKnownMarketplaces`, and `hooks`. A hook event the
+  registry removes goes away too (see the next section).
 - Per-guard ignore files hold keys the harness owns at runtime. They are kept
   without a warning: `chezmoi/lib/claude-settings-ignore.txt` (`tui`,
   `modelSettings`, ...), `omp-config-ignore.txt` (`setupVersion`),
   `pi-settings-ignore.txt` (`lastChangelogVersion`).
 - A corrupt or non-object live file still fails the guard.
+
+### Sensitive-prefix halt (Claude only)
+
+An unknown path under a prefix in `chezmoi/lib/claude-settings-sensitive.txt`
+(`env`, `apiKeyHelper`, `permissions`, `sandbox`, ...), or a top-level key
+ending in `Helper`, halts the guard instead of preserving the value. These
+paths grant access, run code, or select what the agent reads and writes. A
+guessed live value there is a bigger risk than a broken sync. The halt names
+every hit path and points at the authoritative source and the registry.
+
+### Retired-key deletion
+
+A path listed in a guard's `*-settings-retired.txt` file is gone from the
+desired schema on purpose. The guard deletes it from the live document before
+the unknown-key gate runs, so it neither warns as harness-introduced nor
+survives forever as preserved drift. Both `claude-settings-retired.txt` and
+`pi-settings-retired.txt` start empty; add a path when the registry drops a
+key for good.
 
 ## Known drift pattern: registry hook-event removal halts the chezmoi settings gate
 

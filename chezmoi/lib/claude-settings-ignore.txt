@@ -1,4 +1,4 @@
-# Dot-paths exempt from the unknown-key halt gate in
+# Dot-paths exempt from the unknown-key gate in
 # chezmoi/dot_claude/modify_settings.json (prefix semantics: the path and its
 # whole subtree). Live values at these paths are overlaid back onto the
 # merged settings.json output instead of being wiped. Blank lines and
@@ -12,7 +12,7 @@ tui
 modelSettings
 
 # Claude-Code runtime keys — app-owned, machine-local; exempt so the gate
-# overlays live values instead of halting.
+# overlays live values without a warning.
 autoMode
 inputNeededNotifEnabled
 remoteControlAtStartup

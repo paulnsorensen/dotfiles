@@ -67,19 +67,22 @@ if ! printf '%s' "$desired" | jq -e 'type == "object"' >/dev/null 2>&1; then
     exit 1
 fi
 
-# Fresh machine (empty stdin): emit the desired document.
-if [ -z "$live" ]; then
-    emit "$desired"
-    exit 0
-fi
-
-# The unknown-key gate below needs the shared helpers.
+# The unknown-key gate below needs the shared helpers. Sourced ahead of the
+# fresh-machine check so that branch can clear a stale drift state file too.
 if [ ! -f "$GATE" ]; then
     echo "modify_config.yml: source missing: $GATE" >&2
     exit 1
 fi
 # shellcheck source=../../lib/drift-gate.sh
 . "$GATE"
+
+# Fresh machine (empty stdin): emit the desired document; no prior harness
+# drift to record.
+if [ -z "$live" ]; then
+    rm -f "$(drift_state_file omp-config)" 2>/dev/null || true
+    emit "$desired"
+    exit 0
+fi
 
 # Corrupt or non-map live file: halt with guidance instead of an opaque
 # yq/jq error under set -eu. Unparseable YAML → empty live_json → halt;
@@ -92,11 +95,12 @@ if [ -z "$live_json" ] || ! printf '%s' "$live_json" | jq -e 'type == "object"' 
 fi
 
 # ── unknown-key gate ──────────────────────────────────
-# A live key-path is "known" when its object-key signature (array indices
-# dropped, so a value change or an extra list entry never counts as a new
-# key) is a path present in the desired document, a retired path, or under an
-# ignore-listed prefix. Every live node-path counts, so a new key whose value
-# is an empty object/array or null is found too.
+# A live key-path is known when its object-key signature matches. Array
+# indices are dropped from the signature, so a value change or an extra
+# list entry is never a new key. A signature is known when it matches a
+# path in the desired document, a retired path, or an ignore-listed
+# prefix. Every live node-path counts, so a new key with an empty object,
+# empty array, or null value is found too.
 ignore_paths=$(drift_ignore_paths "$IGNORE")
 retired_paths='[["compaction","thresholdTokens"],["compaction","strategy"],["task","isolation","mode"]]'
 unknown=$(drift_unknown "$live_json" "$desired" "$ignore_paths" "$retired_paths")

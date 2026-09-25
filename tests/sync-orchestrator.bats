@@ -275,6 +275,8 @@ MOCK
     printf 'preserved modelSettings.new-model\n' > "$state/claude-settings"
     : > "$state/omp-config"
 
+    # .sync derives DOTFILES_DIR from the working directory.
+    cd "$REAL_DOTFILES_DIR"
     run call-sync-fn report_harness_drift
     assert_success
     assert_output_contains "Unfolded harness settings in claude-settings"
@@ -283,9 +285,24 @@ MOCK
 }
 
 @test "report_harness_drift is silent without recorded drift" {
+    cd "$REAL_DOTFILES_DIR"
     run call-sync-fn report_harness_drift
     assert_success
     [[ -z "$output" ]]
+}
+
+@test "full sync run repeats recorded harness settings drift" {
+    cd "$FAKE_DOTFILES"
+    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
+    mkdir -p "$FAKE_DOTFILES/chezmoi/lib"
+    ln -sf "$REAL_DOTFILES_DIR/chezmoi/lib/drift-gate.sh" "$FAKE_DOTFILES/chezmoi/lib/drift-gate.sh"
+    mkdir -p "$TEST_HOME/.local/state/dotfiles/harness-drift"
+    printf 'preserved modelSettings.new-model\n' > "$TEST_HOME/.local/state/dotfiles/harness-drift/claude-settings"
+
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_output_contains "Unfolded harness settings in claude-settings (kept or dropped; see below):"
+    assert_output_contains "preserved modelSettings.new-model"
 }
 
 @test "no args syncs without provisioning daily-user credentials" {

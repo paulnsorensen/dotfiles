@@ -162,10 +162,11 @@ omp:
     # the wholesale re-author. Flat `dev.autoqaConsent` is omp's canonical
     # file shape since v17.0.0 (oh-my-pi 46ad908 renamed away from nested
     # `dev.autoqa.consent`; nested survives only as legacy read-migration).
-    # If the unknown-key gate trips on nested `dev.autoqa.*` paths, that
-    # machine's config.yml is a stale pre-rename serialization — normalize it
-    # with `omp config set dev.autoqaConsent granted` (forces a re-save);
-    # do NOT fold nested into this registry, it breaks every other machine.
+    # The unknown-key gate warns and preserves nested `dev.autoqa.*` paths;
+    # that machine's config.yml is a stale pre-rename serialization.
+    # Normalize it with `omp config set dev.autoqaConsent granted` (forces a
+    # re-save). Do NOT fold nested into this registry, it breaks every other
+    # machine.
     dev:
       autoqaConsent: granted
     # omp-introduced toggle (hides the model's thinking block in the TUI),

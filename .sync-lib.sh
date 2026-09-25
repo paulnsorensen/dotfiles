@@ -985,14 +985,17 @@ verify_harness_versions() {
 # keys and record them under $DOTFILES_STATE_DIR/harness-drift/. Repeat them
 # after the apply so they do not scroll away in the chezmoi output.
 report_harness_drift() {
-    local drift_dir="${DOTFILES_STATE_DIR:-$HOME/.local/state/dotfiles}/harness-drift"
-    local file
-    [[ -d "$drift_dir" ]] || return 0
-    for file in "$drift_dir"/*; do
-        [[ -s "$file" ]] || continue
-        log_warning "Unfolded harness settings in ${file##*/} (live values kept; fold into the registry):"
-        sed 's/^/    /' "$file"
-    done
+    # shellcheck disable=SC2153 # .sync exports DOTFILES_DIR
+    local drift_gate="$DOTFILES_DIR/chezmoi/lib/drift-gate.sh"
+    [[ -f "$drift_gate" ]] || return 0
+    # shellcheck source=chezmoi/lib/drift-gate.sh
+    source "$drift_gate"
+    local drift_tmp
+    drift_tmp=$(mktemp)
+    if drift_print_recorded "    " > "$drift_tmp"; then
+        cat "$drift_tmp"
+    fi
+    rm -f "$drift_tmp"
 }
 
 # Install or update packages declared in Pi's managed settings. Exact npm

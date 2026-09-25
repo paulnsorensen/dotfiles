@@ -311,19 +311,20 @@ do_doctor() {
 
     # Harness settings keys the chezmoi guards kept but the repo does not know.
     echo -e "${BLUE}Checking harness settings drift...${NC}"
-    local drift_dir="${DOTFILES_STATE_DIR:-$HOME/.local/state/dotfiles}/harness-drift"
-    local drift_file drift_found=0
-    for drift_file in "$drift_dir"/*; do
-        [[ -s "$drift_file" ]] || continue
-        drift_found=1
-        issues=$((issues + 1))
-        echo -e "  ${YELLOW}⚠ Unfolded keys in ${drift_file##*/} (live values kept):${NC}"
-        sed 's/^/      /' "$drift_file"
-    done
-    if [[ $drift_found -eq 0 ]]; then
-        echo -e "  ${GREEN}✓ No unfolded harness settings${NC}"
-    else
-        echo -e "    Fold each key into its registry, then run: ${GREEN}dots sync${NC}"
+    local drift_gate="$DOTFILES_DIR/chezmoi/lib/drift-gate.sh"
+    if [[ -f "$drift_gate" ]]; then
+        # shellcheck source=chezmoi/lib/drift-gate.sh
+        source "$drift_gate"
+        local drift_tmp
+        drift_tmp=$(mktemp)
+        if drift_print_recorded "      " > "$drift_tmp"; then
+            issues=$((issues + DRIFT_RECORDED_COUNT))
+            cat "$drift_tmp"
+            echo -e "    Fold each key into its registry, then run: ${GREEN}dots sync${NC}"
+        else
+            echo -e "  ${GREEN}✓ No unfolded harness settings${NC}"
+        fi
+        rm -f "$drift_tmp"
     fi
 
     # Check VS Code settings if they exist

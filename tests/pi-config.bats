@@ -51,6 +51,56 @@ JSON
     [[ "$stderr" != *"WARNING"* ]]
 }
 
+@test "pi settings reject a corrupt live file (top-level array)" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<<'[1,2,3]'
+    [ "$status" -eq 1 ]
+    [[ "$stderr" == *"not a JSON object"* ]]
+}
+
+@test "pi settings reject a corrupt live file (truncated JSON)" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<<'{bad'
+    [ "$status" -eq 1 ]
+    [[ "$stderr" == *"not a JSON object"* ]]
+}
+
+@test "pi settings warning names the fold targets" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"theme":"dark","futureSetting":true}
+JSON
+    [ "$status" -eq 0 ]
+    [[ "$stderr" == *"$REGISTRY"* ]]
+    ignore="$CZ_SRC/lib/pi-settings-ignore.txt"
+    [[ "$stderr" == *"$ignore"* ]]
+}
+
+@test "pi settings clear recorded drift once the live file is clean again" {
+    run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"theme":"dark","futureSetting":true}
+JSON
+    [ "$status" -eq 0 ]
+    [ -s "$DOTFILES_STATE_DIR/harness-drift/pi-settings" ]
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"theme":"dark"}
+JSON
+    [ "$status" -eq 0 ]
+    [[ "$stderr" != *"WARNING"* ]]
+    [ ! -e "$DOTFILES_STATE_DIR/harness-drift/pi-settings" ]
+}
+
+@test "pi settings delete a retired key from live before the gate runs" {
+    local tmpsrc="$TEST_HOME/pi-retired"
+    mkdir -p "$tmpsrc/lib" "$tmpsrc/.chezmoidata"
+    cp "$REGISTRY" "$tmpsrc/.chezmoidata/pi.yaml"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$tmpsrc/lib/drift-gate.sh"
+    printf 'retiredKey\n' > "$tmpsrc/lib/pi-settings-retired.txt"
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$tmpsrc" sh "$SCRIPT" <<'JSON'
+{"theme":"dark","retiredKey":"old"}
+JSON
+    [ "$status" -eq 0 ]
+    run jq -e '.retiredKey' <<<"$output"
+    [ "$status" -ne 0 ]
+}
+
 @test "pi registry pins the selected mainstream packages" {
     run yq -o=json -I=0 '.pi.settings.packages' "$REGISTRY"
     [ "$status" -eq 0 ]

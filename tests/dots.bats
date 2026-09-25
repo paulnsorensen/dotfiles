@@ -155,8 +155,23 @@ STUB
     mkdir -p "$DOTFILES_STATE_DIR/harness-drift"
     printf 'preserved futureSetting\n' > "$DOTFILES_STATE_DIR/harness-drift/pi-settings"
     run dots doctor
-    assert_output_contains "Unfolded keys in pi-settings"
+    assert_output_contains "Unfolded harness settings in pi-settings (kept or dropped; see below):"
     assert_output_contains "preserved futureSetting"
+}
+
+@test "dots doctor issue count grows with each recorded drift file" {
+    run dots doctor
+    local before=0
+    if [[ "$output" =~ Found\ ([0-9]+)\ issue ]]; then before="${BASH_REMATCH[1]}"; fi
+
+    mkdir -p "$DOTFILES_STATE_DIR/harness-drift"
+    printf 'preserved a\n' > "$DOTFILES_STATE_DIR/harness-drift/claude-settings"
+    printf 'preserved b\n' > "$DOTFILES_STATE_DIR/harness-drift/pi-settings"
+    run dots doctor
+    local after=0
+    if [[ "$output" =~ Found\ ([0-9]+)\ issue ]]; then after="${BASH_REMATCH[1]}"; fi
+
+    [ "$after" -eq $((before + 2)) ]
 }
 
 @test "dots doctor reports no harness settings drift when none is recorded" {

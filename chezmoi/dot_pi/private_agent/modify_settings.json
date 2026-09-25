@@ -2,14 +2,18 @@
 # Author Pi settings from .chezmoidata/pi.yaml.
 #
 # Keys listed in lib/pi-settings-ignore.txt (for example Pi's changelog
-# marker) keep their live values without a warning. Other unknown live keys
-# keep their live values with a warning (lib/drift-gate.sh); they never halt
-# `chezmoi apply`. Fold each reported key into the registry.
+# marker) keep their live values without a warning. Keys listed in
+# lib/pi-settings-retired.txt are deleted from the live file before the
+# gate runs, so a key the registry retired never survives as drift. Other
+# unknown live keys keep their live values with a warning
+# (lib/drift-gate.sh); they never halt `chezmoi apply`. Fold each reported
+# key into the registry.
 
 set -eu
 
 registry=${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/.chezmoidata/pi.yaml
 ignore=$CHEZMOI_SOURCE_DIR/lib/pi-settings-ignore.txt
+retired=$CHEZMOI_SOURCE_DIR/lib/pi-settings-retired.txt
 gate=$CHEZMOI_SOURCE_DIR/lib/drift-gate.sh
 live=$(cat)
 
@@ -32,12 +36,8 @@ if ! printf '%s' "$desired" | jq -e 'type == "object"' >/dev/null 2>&1; then
     exit 1
 fi
 
-if [ -z "$live" ]; then
-    printf '%s\n' "$desired"
-    exit 0
-fi
-
-# The unknown-key gate below needs the shared helpers.
+# The unknown-key gate below needs the shared helpers. Sourced ahead of the
+# fresh-machine check so that branch can clear a stale drift state file too.
 if [ ! -f "$gate" ]; then
     echo "modify_settings.json: source missing: $gate" >&2
     exit 1
@@ -45,11 +45,20 @@ fi
 # shellcheck source=../../lib/drift-gate.sh
 . "$gate"
 
+if [ -z "$live" ]; then
+    rm -f "$(drift_state_file pi-settings)" 2>/dev/null || true
+    printf '%s\n' "$desired"
+    exit 0
+fi
+
 live_json=$(printf '%s' "$live" | jq '.' 2>/dev/null) || live_json=
 if [ -z "$live_json" ] || ! printf '%s' "$live_json" | jq -e 'type == "object"' >/dev/null 2>&1; then
     echo "modify_settings.json: live settings are not a JSON object" >&2
     exit 1
 fi
+
+retired_paths=$(drift_ignore_paths "$retired")
+live_json=$(printf '%s' "$live_json" | jq --argjson r "$retired_paths" 'delpaths($r)')
 
 ignore_paths=$(drift_ignore_paths "$ignore")
 unknown=$(drift_unknown "$live_json" "$desired" "$ignore_paths")

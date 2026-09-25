@@ -83,4 +83,69 @@ gate() {
         gate drift_report demo "Demo file" '{"preserved":["a"],"dropped":[]}' /src
     [ "$status" -eq 0 ]
     [[ "$stderr" == *"+ a"* ]]
+    [[ "$stderr" == *"WARNING: could not persist drift state file: $TEST_HOME/blocker/harness-drift/demo"* ]]
+}
+
+@test "drift_report warns on stderr when it cannot remove a stale state file" {
+    local state="$DOTFILES_STATE_DIR/harness-drift/demo"
+    mkdir -p "$state"
+    gate drift_report demo "Demo file" '{"preserved":[],"dropped":[]}' /src
+    [ "$status" -eq 0 ]
+    [[ "$stderr" == *"WARNING: could not remove stale drift state file: $state"* ]]
+}
+
+@test "drift_report describes drop reason as list or owned-scalar" {
+    gate drift_report demo "Demo file" \
+        '{"preserved":[],"dropped":["l.x","s.y"],"dropReasons":{"l.x":"list","s.y":"owned-scalar"}}' /src
+    [ "$status" -eq 0 ]
+    [[ "$stderr" == *"- l.x  (inside a managed list; live value not kept)"* ]]
+    [[ "$stderr" == *"- s.y  (under a repo-owned value; live value not kept)"* ]]
+}
+
+@test "drift_overlay_ignored copies an owned empty object or array but not owned paths" {
+    gate drift_overlay_ignored \
+        '{"m":{"emptyObj":{},"emptyArr":[],"already":"live"}}' \
+        '{"m":{"already":"repo"}}' '[["m"]]'
+    [ "$status" -eq 0 ]
+    [ "$(jq -c . <<<"$output")" = '{"m":{"already":"repo","emptyObj":{},"emptyArr":[]}}' ]
+}
+
+@test "drift_preserve records list vs owned-scalar drop reasons" {
+    gate drift_preserve '{"list":[{"x":1}],"s":{"y":2},"new":1}' '{"list":[],"s":"scalar"}' \
+        '[["list","x"],["s","y"],["new"]]'
+    [ "$status" -eq 0 ]
+    [ "$(jq -c '.dropReasons' <<<"$output")" = '{"list.x":"list","s.y":"owned-scalar"}' ]
+    [ "$(jq -c '.preserved' <<<"$output")" = '["new"]' ]
+}
+
+@test "drift_state_dir and drift_state_file resolve under DOTFILES_STATE_DIR" {
+    gate drift_state_dir
+    [ "$status" -eq 0 ]
+    [ "$output" = "$DOTFILES_STATE_DIR/harness-drift" ]
+
+    gate drift_state_file demo
+    [ "$status" -eq 0 ]
+    [ "$output" = "$DOTFILES_STATE_DIR/harness-drift/demo" ]
+}
+
+@test "drift_print_recorded prints recorded files and sets the count" {
+    mkdir -p "$DOTFILES_STATE_DIR/harness-drift"
+    printf 'preserved a.b\n' > "$DOTFILES_STATE_DIR/harness-drift/demo"
+    : > "$DOTFILES_STATE_DIR/harness-drift/empty"
+
+    gate drift_print_recorded "  "
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Unfolded harness settings in demo (kept or dropped; see below):"* ]]
+    [[ "$output" == *"  preserved a.b"* ]]
+    [[ "$output" != *"empty"* ]]
+}
+
+@test "drift_print_recorded returns 1 and sets zero count without recorded drift" {
+    gate drift_print_recorded
+    [ "$status" -eq 1 ]
+    [ -z "$output" ]
+
+    # shellcheck disable=SC2016 # expands in the child shell
+    run --separate-stderr sh -c '. "$GATE"; drift_print_recorded >/dev/null; printf "%s" "$DRIFT_RECORDED_COUNT"'
+    [ "$output" = "0" ]
 }
