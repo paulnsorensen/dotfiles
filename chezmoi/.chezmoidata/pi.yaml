@@ -26,7 +26,7 @@ pi:
       # renovate: datasource=npm depName=pi-subagents
       - npm:pi-subagents@0.70.1
       # renovate: datasource=npm depName=pi-web-access
-      - npm:pi-web-access@0.30.0
+      - npm:pi-web-access@0.31.0
       # renovate: datasource=npm depName=@gotgenes/pi-permission-system
       - npm:@gotgenes/pi-permission-system@33.1.1
       # renovate: datasource=npm depName=pi-vim
