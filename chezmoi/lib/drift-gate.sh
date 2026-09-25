@@ -111,6 +111,16 @@ drift_state_file() {
     printf '%s/%s\n' "$(drift_state_dir)" "$1"
 }
 
+# drift_clear_state NAME
+# Remove the drift state file of one harness. Warn on failure. Never fail the
+# guard.
+drift_clear_state() {
+    _dcs_state=$(drift_state_file "$1")
+    if ! rm -f "$_dcs_state" 2>/dev/null; then
+        printf 'WARNING: could not remove stale drift state file: %s\n' "$_dcs_state" >&2
+    fi
+}
+
 # drift_print_recorded INDENT
 # Print every non-empty harness-drift state file under a shared heading, each
 # line prefixed by INDENT. Set DRIFT_RECORDED_COUNT to the file count.
@@ -142,9 +152,7 @@ drift_report() {
     _dr_lines=$(printf '%s' "$_dr_result" | jq -r '
         (.preserved[] | "preserved " + .), (.dropped[] | "dropped " + .)')
     if [ -z "$_dr_lines" ]; then
-        if ! rm -f "$_dr_state" 2>/dev/null; then
-            printf 'WARNING: could not remove stale drift state file: %s\n' "$_dr_state" >&2
-        fi
+        drift_clear_state "$_dr_name"
         return 0
     fi
     {

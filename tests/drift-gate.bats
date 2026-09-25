@@ -94,6 +94,24 @@ gate() {
     [[ "$stderr" == *"WARNING: could not remove stale drift state file: $state"* ]]
 }
 
+@test "drift_clear_state removes a state file" {
+    local state="$DOTFILES_STATE_DIR/harness-drift/demo"
+    mkdir -p "$DOTFILES_STATE_DIR/harness-drift"
+    printf 'preserved a.b\n' > "$state"
+    gate drift_clear_state demo
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    [ ! -e "$state" ]
+}
+
+@test "drift_clear_state warns on stderr and returns 0 when removal fails" {
+    local state="$DOTFILES_STATE_DIR/harness-drift/demo"
+    mkdir -p "$state"
+    gate drift_clear_state demo
+    [ "$status" -eq 0 ]
+    [[ "$stderr" == *"WARNING: could not remove stale drift state file: $state"* ]]
+}
+
 @test "drift_report describes drop reason as list or owned-scalar" {
     gate drift_report demo "Demo file" \
         '{"preserved":[],"dropped":["l.x","s.y"],"dropReasons":{"l.x":"list","s.y":"owned-scalar"}}' /src

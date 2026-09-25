@@ -263,7 +263,7 @@ fi
 # Fresh machine (empty stdin): emit the desired document; no prior harness
 # drift to record.
 if [ -z "$live" ]; then
-    rm -f "$(drift_state_file claude-settings)" 2>/dev/null || true
+    drift_clear_state claude-settings
     printf '%s\n' "$desired"
     exit 0
 fi

@@ -46,7 +46,7 @@ fi
 . "$gate"
 
 if [ -z "$live" ]; then
-    rm -f "$(drift_state_file pi-settings)" 2>/dev/null || true
+    drift_clear_state pi-settings
     printf '%s\n' "$desired"
     exit 0
 fi

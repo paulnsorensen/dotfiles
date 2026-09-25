@@ -160,6 +160,18 @@ STUB
 }
 
 @test "dots doctor issue count grows with each recorded drift file" {
+    # Stub zsh so the shell-startup timing check in `dots doctor` never adds
+    # its own issue; otherwise a slow real `zsh -i` run makes the before/after
+    # comparison flaky.
+    local stub_bin="$TEST_HOME/stub-bin"
+    mkdir -p "$stub_bin"
+    cat > "$stub_bin/zsh" <<'STUB'
+#!/bin/bash
+exit 0
+STUB
+    chmod +x "$stub_bin/zsh"
+    PATH="$stub_bin:$PATH"
+
     run dots doctor
     local before=0
     if [[ "$output" =~ Found\ ([0-9]+)\ issue ]]; then before="${BASH_REMATCH[1]}"; fi

@@ -79,7 +79,7 @@ fi
 # Fresh machine (empty stdin): emit the desired document; no prior harness
 # drift to record.
 if [ -z "$live" ]; then
-    rm -f "$(drift_state_file omp-config)" 2>/dev/null || true
+    drift_clear_state omp-config
     emit "$desired"
     exit 0
 fi
