@@ -19,8 +19,9 @@ path = "agents/AGENTS.md"
 max_tokens = 550
 
 [[source]]
+# 520: PR #1051 added section-read and coder re-dispatch rules (2026-09-24).
 path = "agents/preamble.md"
-max_tokens = 500
+max_tokens = 520
 
 [[source]]
 path = "profiles/codex-code/AGENTS.md"

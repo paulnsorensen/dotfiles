@@ -118,6 +118,24 @@ error path — the guard caps runaways, it must never become a denial-of-service
 
 Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
 
+- **Context ceilings are 150k soft / 180k hard (2026-09-24).** They were 110k / 130k.
+  Session analytics over 48 hours showed that coders stop on context, not turns.
+  All 4 denied coders crossed 130k at 31–59 tool calls, far below the 100-turn cap.
+  The median coder peaked at 108k. About 40% of growth was tool results, mostly
+  batched whole-file `tilth_read` calls (the largest returned 50k characters).
+  About 45% was retained thinking and output. The coder body now requires section
+  reads: dispatch sites and the `needs-context` brief use `path#start-end`. The preamble
+  and every tilth-reading agent omit the `tilth_read` `mode`, because the default
+  picks full or outline by size; `mode: full` is only for a question a section cannot answer. The parent also re-dispatches
+  fresh coders until the phase is done. It stops when a coder completes no new
+  edit. This replaces the old "one fresh retry" cap, which stranded long work.
+  `/cheese-factory` implements the stop with a `worktree_fingerprint` from the
+  checkpoint coordinator. One exact `git hash-object --stdin` command hashes HEAD,
+  status, the tracked diff, and untracked file contents, and excludes `.cheese/`.
+  A prescribed command matters: fresh coordinators must encode the same tree the same
+  way, and an edit inside an untracked file must count. An unchanged fingerprint halts
+  with "no progress"; `COOK_CONTINUATION_LIMIT = 8` is only a runaway guard.
+
 - **Context is real tokens; each hard ceiling reserves one checkpoint write (#552).**
   The signal remains the last assistant `message.usage` sum (`input +
   cache_creation + cache_read`), not transcript bytes. Once either the turn or

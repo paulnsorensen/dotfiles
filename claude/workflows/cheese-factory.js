@@ -5,7 +5,7 @@ export const meta = {
   phases: [
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
     { title: 'Decompose', detail: 'opus decomposer produces curds with depends_on edges; JS merges file-overlapping or dependency-coupled curds; mini-specs written per curd' },
-    { title: 'Cook', detail: 'sonnet coder implements one curd in an isolated worktree via /cook --auto; one needs-context cook gets one fresh continuation from an authoritative checkpoint' },
+    { title: 'Cook', detail: 'sonnet coder implements one curd in an isolated worktree via /cook --auto; a needs-context cook gets repeated fresh continuations from authoritative checkpoints while the worktree keeps changing' },
     { title: 'Taste', detail: 'opus reviewer 5-lens gate over the cook diff; revise triggers a bounded corrective pass' },
     { title: 'Press', detail: 'sonnet coder hardens tests via /press --auto' },
     { title: 'Integrate', detail: 'one coder merges surviving curd branches into an integration branch, slug-sorted, --no-ff; conflicts exclude that curd downstream' },
@@ -66,7 +66,7 @@ if (CORRECTIVE_ROUNDS > MAX_CORRECTIVE_ROUNDS) {
   CORRECTIVE_ROUNDS = MAX_CORRECTIVE_ROUNDS
 }
 
-const COOK_CONTINUATIONS = 1
+const COOK_CONTINUATION_LIMIT = 8
 const CONTINUABLE_COOK_RE = /^needs-context$/i
 
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]*$/
@@ -184,7 +184,8 @@ const validCheckpointResult = (value, worktreePath) =>
   value && value.status === 'ok' &&
   (!Object.hasOwn(value, 'worktree_path') || (validCookWorktree(value.worktree_path) && value.worktree_path.trim() === worktreePath.trim())) &&
   validCookCheckpointRef(value.checkpoint_ref) &&
-  validGroundedRanges(value.working_context)
+  validGroundedRanges(value.working_context) &&
+  typeof value.worktree_fingerprint === 'string' && value.worktree_fingerprint.trim().length > 0
 
 const CHECKPOINT_SCHEMA = {
   type: 'object',
@@ -193,6 +194,7 @@ const CHECKPOINT_SCHEMA = {
     status: { type: 'string' },
     checkpoint_ref: { type: 'string' },
     working_context: { type: 'array', items: { type: 'string' } },
+    worktree_fingerprint: { type: 'string' },
     orientation: { type: 'string' },
   },
 }
@@ -398,14 +400,18 @@ ${observations}
 
 Run the installed archive's validate, checkpoint, and resolve commands from that working directory. Resolve the checkpoint by work_id. Return status ok only when checkpoint succeeds, resolve reports outcome authoritative with nonempty working_context, the resolved context preserves its provenance, and the verified git root remains ${cook.worktree_path}. Return status blocked with an orientation on any failure.
 
-Return {"status":"ok|blocked","checkpoint_ref":"<work-id or absolute ref>","working_context":["path#start-end", ...],"orientation":"..."}. Do not return a checkpoint_ref or working_context for a failed or non-authoritative result.`
+Compute a read-only worktree progress fingerprint from the working directory. Run exactly this command and return its single output line verbatim as worktree_fingerprint. It hashes HEAD, status, the tracked diff, and untracked file contents, and it excludes .cheese/ so checkpoint notes do not count as progress:
+\`{ git rev-parse HEAD; git status --porcelain=v1 -uall -- . ':(exclude).cheese'; git diff HEAD --binary -- . ':(exclude).cheese'; git ls-files -z --others --exclude-standard -- . ':(exclude).cheese' | xargs -0 git hash-object --; } | git hash-object --stdin\`
+Do not stage, commit, or otherwise change the worktree while computing it.
+
+Return {"status":"ok|blocked","checkpoint_ref":"<work-id or absolute ref>","working_context":["path#start-end", ...],"worktree_fingerprint":"<command output>","orientation":"..."}. Do not return a checkpoint_ref, working_context, or worktree_fingerprint for a failed or non-authoritative result.`
 }
 
 function cookContinuationPrompt(curd, prevCook, round, checkpoint) {
   const branch = branchFor(curd.slug)
   const checkpointRef = checkpoint.checkpoint_ref
   const resolvedContext = JSON.stringify(checkpoint.working_context)
-  return `You are a FRESH Cook continuation (round ${round}/${COOK_CONTINUATIONS}) of the /cheese-factory pipeline for curd "${curd.slug}". The phase-owner coordinator verified an authoritative checkpoint.
+  return `You are a FRESH Cook continuation (round ${round}) of the /cheese-factory pipeline for curd "${curd.slug}". The phase-owner coordinator verified an authoritative checkpoint.
 
 1. Preserve the existing worktree at ${prevCook.worktree_path}. Do not recreate it, reset it, or check out another branch.
 2. FIRST ACTION inside that worktree: resolve the checkpoint with \`python3 ~/.claude/skills/wheypoint/scripts/wheypoint.pyz resolve --ref ${checkpointRef}\`. Stop immediately with status needs-context if the result is non-authoritative or its working_context is empty.
@@ -601,7 +607,8 @@ const chainResults = await pipeline(
       let cook = await agent(cookPrompt(curd), { label: `cook:${curd.slug}`, phase: 'Cook', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: COOK_SCHEMA })
       let round = 0
       let checkpointFailure = null
-      while (cook && typeof cook.status === 'string' && CONTINUABLE_COOK_RE.test(cook.status) && round < COOK_CONTINUATIONS) {
+      let prevFingerprint = null
+      while (cook && typeof cook.status === 'string' && CONTINUABLE_COOK_RE.test(cook.status) && round < COOK_CONTINUATION_LIMIT) {
         if (!validCookWorktree(cook.worktree_path)) {
           checkpointFailure = 'cook needs-context handoff requires a valid absolute worktree_path'
           break
@@ -615,8 +622,13 @@ const chainResults = await pipeline(
           checkpointFailure = 'Cook checkpoint coordinator did not return a verified authoritative checkpoint for the existing worktree'
           break
         }
+        if (round > 0 && checkpoint.worktree_fingerprint === prevFingerprint) {
+          checkpointFailure = `${curd.slug}: cook continuation made no progress (worktree fingerprint unchanged since the prior checkpoint)`
+          break
+        }
+        prevFingerprint = checkpoint.worktree_fingerprint
         round++
-        log(`${curd.slug}: cook returned needs-context — dispatching one fresh-coder continuation.`)
+        log(`${curd.slug}: cook returned needs-context — dispatching fresh-coder continuation ${round}.`)
         cook = await agent(cookContinuationPrompt(curd, cook, round, checkpoint), { label: `cook:${curd.slug}:c${round}`, phase: 'Cook', agentType: 'coder', model: 'sonnet', schema: COOK_SCHEMA })
       }
       return { curd, branch, cook, checkpointFailure, failure: null }
@@ -630,7 +642,7 @@ const chainResults = await pipeline(
     if (checkpointFailure) return { curd, branch, cook, taste: null, tasteRounds: 0, failure: { stage: 'cook', message: checkpointFailure } }
     if (!cook || cook.status !== 'ok' || !validCookWorktree(cook.worktree_path)) {
       const message = cook?.status === 'needs-context' && validCookWorktree(cook.worktree_path)
-        ? 'cook needs-context handoff exhausted the single fresh continuation'
+        ? `cook needs-context handoff exhausted the continuation limit (${COOK_CONTINUATION_LIMIT})`
         : `cook did not reach status ok with a valid worktree_path (last status: ${cook ? cook.status : 'none'})`
       return { curd, branch, cook, taste: null, tasteRounds: 0, failure: { stage: 'cook', message } }
     }

@@ -257,7 +257,7 @@ agents:
     # spawn, pasting each full SKILL.md body in as a user message before the
     # agent reads its task — it is an auto-invoke list, not an availability
     # list. The old list (cook/press/cure/de-slop/tdd-assertions/commit) cost
-    # 32,740 tokens, 52% of the 130k context ceiling, every dispatch. Required
+    # 32,740 tokens, 52% of the then-130k context ceiling, every dispatch. Required
     # role discipline is inlined in the coder body; Skill remains ungranted.
     skills: []
     maxTurns: 100

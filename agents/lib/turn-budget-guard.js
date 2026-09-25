@@ -69,15 +69,15 @@ const DECISION_LOG_MAX_BYTES = 5 * 1024 * 1024;
 // real token counts read from the transcript's last assistant
 // `message.usage` line (input_tokens + cache_creation_input_tokens +
 // cache_read_input_tokens — the summed live context the model last
-// ingested), not a byte proxy: ~110K-token soft / ~130K-token hard. When no
+// ingested), not a byte proxy: ~150K-token soft / ~180K-token hard. When no
 // usage line can be read, `statSync(...).size / BYTES_PER_TOKEN_ESTIMATE`
 // (a ~4-bytes/token estimate on the token scale) stands in as a fail-open
 // fallback proxy for the same thresholds — strictly monotonic, which is all
 // a ceiling needs. Per Claude Code's documented async transcript writes, the
 // reading can trail the model's live context by up to one turn; acceptable
 // for a monotonic ceiling. Unknown agent_types fall to `default`.
-const CONTEXT_SOFT_TOKENS = 110_000;
-const CONTEXT_HARD_TOKENS = 130_000;
+const CONTEXT_SOFT_TOKENS = 150_000;
+const CONTEXT_HARD_TOKENS = 180_000;
 const BUDGETS = {
   coder: { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   // general-purpose sub-agents run the same coder-shaped workloads.

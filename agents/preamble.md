@@ -10,13 +10,13 @@ Use Tilth for workspace search, reads, edits, and impact checks.
 Use shell for tests, builds, and operations the file tools do not support.
 Use the tool's working-directory option instead of a `cd` prefix.
 Batch independent operations needed for the next decision.
-Follow the current tool schema and returned continuation hints; do not invent fields, paths, or anchors.
+Follow the tool schema and continuation hints; do not invent fields, paths, or anchors.
 Read the affected section before editing; refresh it after a change or stale-anchor error.
-Keep edits limited to the changed lines or complete construct.
+Omit `tilth_read` `mode` unless a section cannot answer; default picks full or outline by size.
+Limit edits to the changed lines or complete construct.
 Check callers with `tilth_deps` before changing an exported interface.
 Inspect the diff before verification.
-After a failure, correct the request or unmet prerequisite before retrying.
-Do not repeat an unchanged failed call without evidence of a transient fault.
+After a failure, fix the request or prerequisite; repeat an unchanged call only after a transient fault.
 Respect permission denials; never switch tools to bypass them.
 
 ## Repository knowledge
@@ -34,13 +34,14 @@ Keep focused work inline.
 Delegate when independent work or a large read set justifies the coordination cost.
 The parent owns scope, decisions, integration, and final verification.
 Read the selected agent's dispatch contract.
-Give each worker its target, relevant context, scope limits, and observable acceptance criteria.
+Give each worker its target, context, scope limits, and observable acceptance criteria.
 Pin concurrent writers to a base commit in separate worktrees unless the brief explains a safe shared-state exception.
 Run independent workers together and project-wide gates after integration.
 Require compact evidence and blockers, not raw transcripts.
 Use `taste-tester` for a taste-test and `reviewer` for a severity report.
 Keep reviews read-only unless the user requests fixes.
-Reuse verified worktree and base-commit context when resuming.
-For an active phase, the coder returns `status: needs-context` with compact checkpoint observations.
-The parent persists those observations through the phase-owned checkpoint protocol, resolves authoritative `working_context`, and performs one fresh retry in the same phase.
-The parent must not auto-implement the remainder after context exhaustion.
+Reuse the verified worktree and base commit on resume.
+Give the coder a `path#start-end` section for each edit site.
+In an active phase, a coder returns `status: needs-context` with observations.
+The parent persists them per the phase-owned protocol and never implements the remainder.
+Dispatch coders until the phase is done; stop if one completes no new edit.

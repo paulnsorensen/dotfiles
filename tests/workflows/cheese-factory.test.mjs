@@ -947,7 +947,7 @@ test('a needs-context cook coordinates an authoritative checkpoint before one co
     respond: ({ opts }) => {
       if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
       if (opts.label === 'cook:parent') return { status: 'needs-context', worktree_path: worktreePath, checkpoint_observations: observations, orientation: 'partial' }
-      if (opts.label === 'cook:parent:checkpoint') return { status: 'ok', checkpoint_ref: checkpointRef, working_context: ['src/parser.js#10-20'] }
+      if (opts.label === 'cook:parent:checkpoint') return { status: 'ok', checkpoint_ref: checkpointRef, working_context: ['src/parser.js#10-20'], worktree_fingerprint: 'fp1' }
       if (opts.label === 'cook:parent:c1') return cook('parent')
       if (opts.label === 'taste:parent') return taste('pass')
       if (opts.label === 'press:parent') return phaseOk('parent', 'press')
@@ -973,6 +973,9 @@ test('a needs-context cook coordinates an authoritative checkpoint before one co
   assert.match(checkpoint.prompt, /python3 ~\/\.claude\/skills\/wheypoint\/scripts\/wheypoint\.pyz/)
   assert.doesNotMatch(checkpoint.prompt, /skills\/cook\//)
   assert.match(checkpoint.prompt, /do not mutate source/i)
+  // One exact fingerprint command: untracked contents count, .cheese/ checkpoint notes do not.
+  assert.ok(checkpoint.prompt.includes("git ls-files -z --others --exclude-standard -- . ':(exclude).cheese' | xargs -0 git hash-object --; } | git hash-object --stdin"))
+  assert.match(checkpoint.prompt, /return its single output line verbatim as worktree_fingerprint/)
   assert.match(continuation.prompt, new RegExp(`resolve --ref ${checkpointRef}`))
   assert.match(continuation.prompt, /src\/parser\.js#10-20/)
   assert.equal(result.curds[0].status, 'clean')
@@ -1002,6 +1005,7 @@ test('a failed, empty, or wrong-worktree checkpoint halts without a coder retry'
     { status: 'ok', worktree_path: '/tmp/worktrees/other', checkpoint_ref: 'parent-cook', working_context: ['src/parser.js#10-20'] },
     { status: 'ok', checkpoint_ref: 'parent-cook', working_context: ['../parser.js#10-20'] },
     { status: 'ok', checkpoint_ref: 'parent-cook', working_context: Array.from({ length: 17 }, (_, i) => `src/file-${i}.js#1-2`) },
+    { status: 'ok', worktree_path: '/tmp/worktrees/parent', checkpoint_ref: 'parent-cook', working_context: ['src/parser.js#10-20'] },
   ]) {
     const workflow = await loadWorkflow(path)
     const { globals, trace } = createRuntime({
@@ -1094,7 +1098,45 @@ test('oversized needs-context observations halt without truncation or checkpoint
   assert.match(result.curds[0].excluded_reason, /observations/i)
 })
 
-test('a second needs-context exhaustion halts without another checkpoint or coder retry', async () => {
+test('a second needs-context cook with a changed fingerprint dispatches another fresh continuation', async () => {
+  const workflow = await loadWorkflow(path)
+  const observations = {
+    completed: 'implemented the parser',
+    remaining: 'run the focused gate',
+    grounded: 'src/parser.js#10-20',
+    gates: 'node --test tests/parser.test.mjs: pass',
+    worktree_base: '/tmp/worktrees/parent @ 39abaa4',
+    source_ranges: ['src/parser.js#10-20'],
+    locked_decisions: 'retry the same phase only',
+    known_false_leads: 'none',
+  }
+  let checkpointCalls = 0
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
+      if (opts.label === 'cook:parent' || opts.label === 'cook:parent:c1') return { status: 'needs-context', worktree_path: '/tmp/worktrees/parent', checkpoint_observations: observations, orientation: 'partial' }
+      if (opts.label === 'cook:parent:checkpoint') {
+        checkpointCalls++
+        return { status: 'ok', checkpoint_ref: 'parent-cook', worktree_path: '/tmp/worktrees/parent', working_context: ['src/parser.js#10-20'], worktree_fingerprint: `fp${checkpointCalls}` }
+      }
+      if (opts.label === 'cook:parent:c2') return cook('parent')
+      if (opts.label === 'taste:parent') return taste('pass')
+      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
+      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
+      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
+      if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'plated', pr_url: 'https://example.test/pr/parent' }])
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+  const labels = trace.agents.map(({ opts }) => opts.label)
+
+  assert.deepEqual(labels, ['resolve', 'cook:parent', 'cook:parent:checkpoint', 'cook:parent:c1', 'cook:parent:checkpoint', 'cook:parent:c2', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate'])
+  assert.equal(result.curds[0].status, 'clean')
+})
+
+test('a needs-context cook whose worktree fingerprint does not change halts with no progress and no further coder', async () => {
   const workflow = await loadWorkflow(path)
   const observations = {
     completed: 'implemented the parser',
@@ -1110,7 +1152,7 @@ test('a second needs-context exhaustion halts without another checkpoint or code
     respond: ({ opts }) => {
       if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
       if (opts.label === 'cook:parent' || opts.label === 'cook:parent:c1') return { status: 'needs-context', worktree_path: '/tmp/worktrees/parent', checkpoint_observations: observations, orientation: 'partial' }
-      if (opts.label === 'cook:parent:checkpoint') return { status: 'ok', checkpoint_ref: 'parent-cook', worktree_path: '/tmp/worktrees/parent', working_context: ['src/parser.js#10-20'] }
+      if (opts.label === 'cook:parent:checkpoint') return { status: 'ok', checkpoint_ref: 'parent-cook', worktree_path: '/tmp/worktrees/parent', working_context: ['src/parser.js#10-20'], worktree_fingerprint: 'same-fp' }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1118,11 +1160,45 @@ test('a second needs-context exhaustion halts without another checkpoint or code
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const labels = trace.agents.map(({ opts }) => opts.label)
 
-  assert.deepEqual(labels, ['resolve', 'cook:parent', 'cook:parent:checkpoint', 'cook:parent:c1'])
-  assert.equal(result.curds[0].status, 'failed')
-  assert.equal(labels.filter((label) => label === 'cook:parent:checkpoint').length, 1)
+  assert.deepEqual(labels, ['resolve', 'cook:parent', 'cook:parent:checkpoint', 'cook:parent:c1', 'cook:parent:checkpoint'])
   assert.equal(labels.filter((label) => label === 'cook:parent:c2').length, 0)
+  assert.equal(result.curds[0].status, 'failed')
+  assert.match(result.curds[0].excluded_reason, /no progress/i)
+})
+
+test('a needs-context cook that never resolves halts at the continuation limit', async () => {
+  const workflow = await loadWorkflow(path)
+  const observations = {
+    completed: 'implemented the parser',
+    remaining: 'run the focused gate',
+    grounded: 'src/parser.js#10-20',
+    gates: 'node --test tests/parser.test.mjs: pass',
+    worktree_base: '/tmp/worktrees/parent @ 39abaa4',
+    source_ranges: ['src/parser.js#10-20'],
+    locked_decisions: 'retry the same phase only',
+    known_false_leads: 'none',
+  }
+  let checkpointCalls = 0
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
+      if (opts.label === 'cook:parent' || /^cook:parent:c\d+$/.test(opts.label)) return { status: 'needs-context', worktree_path: '/tmp/worktrees/parent', checkpoint_observations: observations, orientation: 'partial' }
+      if (opts.label === 'cook:parent:checkpoint') {
+        checkpointCalls++
+        return { status: 'ok', checkpoint_ref: 'parent-cook', worktree_path: '/tmp/worktrees/parent', working_context: ['src/parser.js#10-20'], worktree_fingerprint: `fp${checkpointCalls}` }
+      }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+  const labels = trace.agents.map(({ opts }) => opts.label)
+
+  assert.equal(labels.filter((label) => /^cook:parent:c\d+$/.test(label)).length, 8)
+  assert.equal(labels.includes('cook:parent:c9'), false)
+  assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /exhausted/i)
+  assert.match(result.curds[0].excluded_reason, /8/)
 })
 
 test('age:barrier reporting medium+ with no per-curd routing marks the curd dirty', async () => {
