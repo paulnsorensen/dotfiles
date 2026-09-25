@@ -315,12 +315,16 @@ do_doctor() {
     if [[ -f "$drift_gate" ]]; then
         # shellcheck source=chezmoi/lib/drift-gate.sh
         source "$drift_gate"
-        local drift_tmp
+        local drift_tmp drift_rc=0
         drift_tmp=$(mktemp)
-        if drift_print_recorded "      " > "$drift_tmp"; then
+        drift_print_recorded "      " > "$drift_tmp" || drift_rc=$?
+        if [[ $drift_rc -eq 0 ]]; then
             issues=$((issues + DRIFT_RECORDED_COUNT))
             cat "$drift_tmp"
             echo -e "    Fold each key into its registry, then run: ${GREEN}dots sync${NC}"
+        elif [[ $drift_rc -eq 2 ]]; then
+            issues=$((issues + 1))
+            echo -e "  ${YELLOW}⚠ Cannot read the harness drift state directory${NC}"
         else
             echo -e "  ${GREEN}✓ No unfolded harness settings${NC}"
         fi

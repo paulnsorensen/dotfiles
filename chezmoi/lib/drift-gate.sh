@@ -125,11 +125,16 @@ drift_clear_state() {
 # Print every non-empty harness-drift state file under a shared heading, each
 # line prefixed by INDENT. Set DRIFT_RECORDED_COUNT to the file count.
 # Return 1 and print nothing when no state file holds recorded drift.
+# Return 2 and warn on stderr when the state directory cannot be read.
 drift_print_recorded() {
     _dpr_indent=${1:-}
     _dpr_dir=$(drift_state_dir)
     DRIFT_RECORDED_COUNT=0
     [ -d "$_dpr_dir" ] || return 1
+    if [ ! -r "$_dpr_dir" ] || [ ! -x "$_dpr_dir" ]; then
+        printf 'WARNING: cannot read drift state directory: %s\n' "$_dpr_dir" >&2
+        return 2
+    fi
     for _dpr_file in "$_dpr_dir"/*; do
         [ -s "$_dpr_file" ] || continue
         DRIFT_RECORDED_COUNT=$((DRIFT_RECORDED_COUNT + 1))

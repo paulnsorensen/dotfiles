@@ -158,6 +158,20 @@ gate() {
     [[ "$output" != *"empty"* ]]
 }
 
+@test "drift_print_recorded returns 2 and warns when the state directory is unreadable" {
+    [ "$(id -u)" -ne 0 ] || skip "root reads any directory"
+    mkdir -p "$DOTFILES_STATE_DIR/harness-drift"
+    printf 'preserved a.b\n' > "$DOTFILES_STATE_DIR/harness-drift/demo"
+    chmod 000 "$DOTFILES_STATE_DIR/harness-drift"
+
+    # shellcheck disable=SC2016 # expands in the child shell
+    run --separate-stderr sh -c '. "$1"; drift_print_recorded' _ "$GATE"
+    chmod 755 "$DOTFILES_STATE_DIR/harness-drift"
+    [ "$status" -eq 2 ]
+    [ -z "$output" ]
+    [[ "$stderr" == *"cannot read drift state directory"* ]]
+}
+
 @test "drift_print_recorded returns 1 and sets zero count without recorded drift" {
     gate drift_print_recorded
     [ "$status" -eq 1 ]
