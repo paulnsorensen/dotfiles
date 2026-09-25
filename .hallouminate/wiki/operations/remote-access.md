@@ -114,10 +114,17 @@ The audit checks each `tmux.conf` option against tmux 3.7b source and mosh 1.4.0
   Ghostty that reaches a host as `xterm-256color` gets no `sync` without this line.
   mosh-server ignores mode 2026 because `get_DEC_mode` has no case for it.
 - **`terminal-features 'xterm*:RGB'`.** This line replaces the legacy `terminal-overrides` RGB flag.
-  mosh 1.4.0 passes 24-bit colour and always sets `TERM=xterm-256color`.
-- **Keep the other options.** mosh 1.4.0 handles focus events (1004), SGR mouse (1006), bracketed paste (2004), and OSC 52 `c` selections.
-  So `focus-events`, `mouse`, and `set-clipboard on` work on both paths.
-- **Passthrough works on SSH only.** mosh has no DCS dispatch, so `allow-passthrough` output (kitty graphics) does not reach a mosh client.
+  mosh 1.4.0 passes 24-bit colour.
+  mosh-server sets `TERM=xterm-256color` for a 256-colour client, else `xterm` (`mosh-server.cc`); `xterm*` matches both.
+- **`Ms` override for OSC 52 over mosh.** tmux copy mode and `set-buffer -w` send `ESC]52;;data`, with an empty selector (`window-copy.c`).
+  mosh 1.4.0 `OSC_dispatch` keeps only the `52;c;` prefix, so these copies never reached Moshi.
+  The override `Ms=\E]52;%?%p1%l%t%p1%s%ec%;;%p2%s\007` prints `c` for an empty selector and passes other selectors through.
+  A plain `Ms=\E]52;c;%p2%s\007` does not work: tmux sends nothing when the format skips `%p1`.
+  A pty probe confirms `]52;c;` for tmux copies, and `c` and `p` from pane applications pass through unchanged.
+- **Keep the other options.** mosh 1.4.0 handles focus events (1004), SGR mouse (1006), and bracketed paste (2004).
+  So `focus-events` and `mouse` work on both paths.
+- **Passthrough works on SSH only.** tmux unwraps passthrough into raw bytes, and kitty graphics uses APC.
+  mosh ignores APC and DCS and sends only its own screen state, so `allow-passthrough` output does not reach a mosh client.
 - **The status line has no wire cost.** `status.c` redraws the status line only when `grid_compare` finds a change.
   So `status-interval 15` costs only local CPU for continuum's `#()` hook.
   Do not set `status-interval 0`, because continuum saves from that hook.
