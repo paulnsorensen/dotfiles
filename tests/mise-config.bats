@@ -72,7 +72,7 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 }
 
 @test "backend-managed tools use their backend prefix syntax" {
-    [[ "$(yq -p=toml '.tools."npm:bash-language-server"' "$CONFIG")" == "5.6.0" ]]
+    [[ "$(yq -p=toml '.tools."npm:bash-language-server"' "$CONFIG")" == "5.8.0" ]]
     [[ "$(yq -p=toml '.tools."npm:yaml-language-server"' "$CONFIG")" == "1.24.0" ]]
     [[ "$(yq -p=toml '.tools."npm:basedpyright"' "$CONFIG")" == "1.40.1" ]]
     [[ "$(yq -p=toml '.tools."cargo:eza"' "$CONFIG")" == "0.23.5" ]]
