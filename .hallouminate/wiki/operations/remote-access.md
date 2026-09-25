@@ -102,6 +102,30 @@ mosh paper), so large outputs over mosh look chunky by design, not by bug.
 `MOSH_SERVER_NETWORK_TMOUT` resets on any datagram, so a roaming phone
 client keeps its mosh-server alive across network changes.
 
+## tmux options for remote links (2026-09-25 audit)
+
+The audit checks each `tmux.conf` option against tmux 3.7b source and mosh 1.4.0 source.
+
+- **`escape-time 10`, not 0.** The value 10 is the upstream default since tmux 3.5 (`options-table.c`).
+  At 0, an Alt key or terminal reply split across packets parses as Escape plus text.
+  This breaks the `M-1..M-9` bindings (tmux-sensible issue #41).
+- **`terminal-features 'xterm*:sync'`.** tmux wraps redraws in DECSET 2026 only when the client has a `Sync` capability (`tty.c` `tty_sync_start`).
+  The built-in table in `tty-features.c` gives `sync` to iTerm2 and foot only.
+  Ghostty that reaches a host as `xterm-256color` gets no `sync` without this line.
+  mosh-server ignores mode 2026 because `get_DEC_mode` has no case for it.
+- **`terminal-features 'xterm*:RGB'`.** This line replaces the legacy `terminal-overrides` RGB flag.
+  mosh 1.4.0 passes 24-bit colour and always sets `TERM=xterm-256color`.
+- **Keep the other options.** mosh 1.4.0 handles focus events (1004), SGR mouse (1006), bracketed paste (2004), and OSC 52 `c` selections.
+  So `focus-events`, `mouse`, and `set-clipboard on` work on both paths.
+- **Passthrough works on SSH only.** mosh has no DCS dispatch, so `allow-passthrough` output (kitty graphics) does not reach a mosh client.
+- **The status line has no wire cost.** `status.c` redraws the status line only when `grid_compare` finds a change.
+  So `status-interval 15` costs only local CPU for continuum's `#()` hook.
+  Do not set `status-interval 0`, because continuum saves from that hook.
+- **SSH client, not tmux.** `ObscureKeystrokeTiming` (OpenSSH 9.5+, on by default) sends keystrokes at 20 ms intervals with chaff packets.
+  Set `ObscureKeystrokeTiming no` per host to remove that latency; the cost is keystroke-timing privacy.
+  OpenSSH 10.1+ already marks interactive sessions EF, so `IPQoS` needs no change.
+  The repo does not manage `~/.ssh/config`.
+
 ## Related
 
 - [[sync-and-chezmoi]] — how `packages/packages.yaml` and `dots sync` deploy brew formulae.
