@@ -1,0 +1,18 @@
+# Dot-paths that halt (not warn) when a live key beneath them is unknown to
+# the repo's desired document, in chezmoi/dot_claude/modify_settings.json
+# (prefix semantics: the path and its whole subtree). These are keys that
+# grant access, run code, or select what the agent may read and write. Fold
+# a reported path into claude-settings-authoritative.json or claude.yaml
+# instead of guessing at its value. Blank lines and "#" comments are
+# ignored. A top-level key ending in "Helper" is sensitive too (checked in
+# code, not listed here) — Claude Code shells out to it as configured.
+
+env
+apiKeyHelper
+statusLine
+awsAuthRefresh
+awsCredentialExport
+enableAllProjectMcpServers
+enabledMcpjsonServers
+permissions
+sandbox

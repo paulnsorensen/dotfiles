@@ -112,7 +112,7 @@ Create one temporary directory. Each comparison stores normalized owner data in 
           | $name'
     }
 
-    CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" sh "$DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" < "$HOME/.claude/settings.json" |
+    CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" DOTFILES_STATE_DIR="$TMP/state" sh "$DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" < "$HOME/.claude/settings.json" |
       normalize_scalars - > "$TMP/claude-owner-scalars"
     normalize_scalars "$HOME/.claude/settings.json" > "$TMP/claude-live-scalars"
     compare_scalars "$TMP/claude-owner-scalars" "$TMP/claude-live-scalars"
@@ -184,7 +184,7 @@ Copilot's chezmoi template can render into TMP without applying it:
 Cursor and Copilot extras remain user-owned. Compare only declared plugin names,
 MCP names, hook names, and counts. Do not classify every live-only entry as stale.
 
-Pi follows the same modify-script comparison pattern. Preserve `lastChangelogVersion` and compare only managed settings paths:
+Pi follows the same modify-script comparison pattern. Compare only the settings paths that the registry manages:
 
     yq -o=json '.pi.settings' "$DOTFILES_DIR/chezmoi/.chezmoidata/pi.yaml" |
       jq -S '.' > "$TMP/pi-desired.json"
@@ -192,12 +192,8 @@ Pi follows the same modify-script comparison pattern. Preserve `lastChangelogVer
       . as $live
       | reduce ($desired[0] | paths(scalars)) as $path
           ({}; setpath($path; (try ($live | getpath($path)) catch null)))
-      | if $live | has("lastChangelogVersion")
-        then .lastChangelogVersion = $live.lastChangelogVersion
-        else . end
     ' "$HOME/.pi/agent/settings.json" > "$TMP/pi-modifier-input.json"
-    CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" sh "$DOTFILES_DIR/chezmoi/dot_pi/private_agent/modify_settings.json" < "$TMP/pi-modifier-input.json" |
-      jq 'del(.lastChangelogVersion)' |
+    CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" DOTFILES_STATE_DIR="$TMP/state" sh "$DOTFILES_DIR/chezmoi/dot_pi/private_agent/modify_settings.json" < "$TMP/pi-modifier-input.json" |
       normalize_scalars - > "$TMP/pi-owner-scalars"
     jq -S --slurpfile desired "$TMP/pi-desired.json" '
       . as $live
@@ -209,7 +205,7 @@ Pi follows the same modify-script comparison pattern. Preserve `lastChangelogVer
 
 When OMP is in scope, run its modify script into TMP and compare normalized values:
 
-    CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" sh "$DOTFILES_DIR/chezmoi/dot_omp/private_agent/modify_config.yml" < "$HOME/.omp/agent/config.yml" |
+    CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" DOTFILES_STATE_DIR="$TMP/state" sh "$DOTFILES_DIR/chezmoi/dot_omp/private_agent/modify_config.yml" < "$HOME/.omp/agent/config.yml" |
       yq -p=yaml -o=json '.' |
       normalize_scalars - > "$TMP/omp-owner-scalars"
     yq -p=yaml -o=json '.' "$HOME/.omp/agent/config.yml" |

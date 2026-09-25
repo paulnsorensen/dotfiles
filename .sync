@@ -38,6 +38,7 @@ if [[ -n "$_sync_script_path" ]]; then
     # shellcheck source=.sync-lib.sh
     [[ -f "$_sync_script_dir/.sync-lib.sh" ]] && source "$_sync_script_dir/.sync-lib.sh"
     # Harness version pins are read from the files beside this script.
+    # shellcheck disable=SC2034 # read by verify_harness_versions in .sync-lib.sh
     HARNESS_PIN_ROOT="$_sync_script_dir"
     unset _sync_script_dir
 fi
@@ -127,6 +128,8 @@ run_sync() {
         log_error "final chezmoi runner missing: $dir/chezmoi/.sync"
         SYNC_FAILURES+=("chezmoi")
     fi
+
+    report_harness_drift
 
     install_tpm
     install_prek_hooks

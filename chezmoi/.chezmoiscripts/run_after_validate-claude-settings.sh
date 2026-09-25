@@ -11,8 +11,8 @@
 #
 # Note: the schemastore schema is permissive — it accepts unknown keys, so this
 # is a type/shape backstop (it rejects e.g. a non-object root), not a guard
-# against arbitrary drift. New-key enforcement lives in modify_settings.json's
-# unknown-key gate.
+# against arbitrary drift. New-key handling lives in modify_settings.json's
+# unknown-key gate: it preserves and warns, except sensitive keys, which halt.
 set -euo pipefail
 
 target="$HOME/.claude/settings.json"

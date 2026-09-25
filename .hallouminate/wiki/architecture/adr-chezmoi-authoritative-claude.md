@@ -81,3 +81,5 @@ Related: [[architecture/agent-profile]], [[operations/sync-and-chezmoi]].
   hand-dropped into an `exact_` dir is deleted on apply. ap's hook self-heal
   needs no port — wholesale `hooks` authorship subsumes it. The
   `modify_settings.json` unknown-key halt gate is retained as the safety net.
+  (Superseded 2026-09-24: the gate now keeps and reports unknown keys instead
+  of halting. See [[config-drift]] § "Decision: preserve and warn".)

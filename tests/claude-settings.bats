@@ -7,7 +7,8 @@
 # from $CHEZMOI_SOURCE_DIR/lib/claude-settings-authoritative.json (static
 # keys) + $CHEZMOI_SOURCE_DIR/.chezmoidata/claude.yaml (registry-authored
 # hooks / enabledPlugins / extraKnownMarketplaces / permissions lists). Live
-# drift on managed keys is WIPED; unknown live keys halt. These tests drive it
+# drift on managed keys is WIPED; unknown live keys are kept with a warning
+# (lib/drift-gate.sh) and never halt. These tests drive it
 # directly (no real chezmoi) by setting CHEZMOI_SOURCE_DIR to the repo's
 # chezmoi dir.
 
@@ -20,6 +21,8 @@ setup() {
     export SCRIPT="$REAL_DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json"
     export CZ_SRC="$REAL_DOTFILES_DIR/chezmoi"
     export AUTH="$CZ_SRC/lib/claude-settings-authoritative.json"
+    export REG="$CZ_SRC/.chezmoidata/claude.yaml"
+    export IGNORE="$CZ_SRC/lib/claude-settings-ignore.txt"
     OUT="$TEST_HOME/out.json"
     export OUT
 }
@@ -106,27 +109,101 @@ STDIN"
     jq -e '.permissions.allow | length > 3' "$OUT" >/dev/null
 }
 
-@test "modify_settings: unknown top-level key halts (non-zero, no write, named on stderr)" {
-    run_modify '{"model":"opus","someNewClaudeKey":"x"}'
-    [ "$status" -ne 0 ]
-    [ ! -s "$OUT" ]                          # live left unmodified (nothing written)
-    [[ "$output" == *"someNewClaudeKey"* ]]
+@test "modify_settings: unknown top-level key is kept, warned on stderr, and recorded" {
+    run_modify '{"model":"drifted","someNewClaudeKey":"x"}'
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.someNewClaudeKey' "$OUT")" = "x" ]                  # live value kept
+    [ "$(jq -r '.model' "$OUT")" = "$(jq -r '.model' "$AUTH")" ]     # managed drift wiped
+    [[ "$output" == *"WARNING"*"someNewClaudeKey"* ]]
+    grep -qx 'preserved someNewClaudeKey' "$DOTFILES_STATE_DIR/harness-drift/claude-settings"
 }
 
-@test "modify_settings: unknown nested key under a known object halts" {
+@test "modify_settings: unknown key under permissions (sensitive) halts instead of being kept" {
     run_modify '{"permissions":{"defaultMode":"auto","newSubKey":true}}'
-    [ "$status" -ne 0 ]
-    [ ! -s "$OUT" ]
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"sensitive Claude setting"* ]]
     [[ "$output" == *"permissions.newSubKey"* ]]
 }
 
-@test "modify_settings: unknown key with empty-object/array/null value still halts" {
+@test "modify_settings: unknown nested key under a non-sensitive known object is kept" {
+    run_modify '{"worktree":{"baseRef":"head","newSubKey":true}}'
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.worktree.newSubKey' "$OUT")" = "true" ]
+    jq -e '.worktree.baseRef == "head"' "$OUT" >/dev/null
+    [[ "$output" == *"worktree.newSubKey"* ]]
+}
+
+@test "modify_settings: unknown key nested under env (sensitive) halts" {
+    run_modify '{"env":{"ENABLE_TOOL_SEARCH":"true","SSL_CERT_FILE":"/etc/ssl/cert.pem","NODE_OPTIONS":"--x"}}'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"sensitive Claude setting"* ]]
+    [[ "$output" == *"env.NODE_OPTIONS"* ]]
+}
+
+@test "modify_settings: unknown top-level sensitive-listed key halts" {
+    run_modify '{"apiKeyHelper":"/bin/evil"}'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"sensitive Claude setting"* ]]
+    [[ "$output" == *"apiKeyHelper"* ]]
+}
+
+@test "modify_settings: unknown top-level key ending in Helper halts even when unlisted" {
+    run_modify '{"customThingHelper":"x"}'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"sensitive Claude setting"* ]]
+    [[ "$output" == *"customThingHelper"* ]]
+}
+
+@test "modify_settings: a retired key is deleted from live before the gate runs" {
+    local tmpsrc="$TEST_HOME/cz-retired"
+    mkdir -p "$tmpsrc/lib" "$tmpsrc/.chezmoidata"
+    cp "$CZ_SRC/.chezmoidata/claude.yaml" "$tmpsrc/.chezmoidata/claude.yaml"
+    cp "$AUTH" "$tmpsrc/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$tmpsrc/lib/drift-gate.sh"
+    printf 'retiredKey\n' > "$tmpsrc/lib/claude-settings-retired.txt"
+    run bash -c "CHEZMOI_SOURCE_DIR='$tmpsrc' sh '$SCRIPT' <<'STDIN' >'$OUT'
+{\"retiredKey\":\"old\"}
+STDIN"
+    [ "$status" -eq 0 ]
+    local first_output="$output"
+    run jq -e '.retiredKey' "$OUT"
+    [ "$status" -ne 0 ]
+    [[ "$first_output" != *"retiredKey"* ]]
+}
+
+@test "modify_settings: unknown-key warning names the fold targets" {
+    run_modify '{"someNewClaudeKey":"x"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$AUTH"* ]]
+    [[ "$output" == *"$REG"* ]]
+    [[ "$output" == *"$IGNORE"* ]]
+}
+
+@test "modify_settings: a live-only hook event is wiped without a warning" {
+    # The registry authors hooks whole. An event it dropped must not survive
+    # as unknown drift (the removed-hook-event halt, wiki config-drift).
+    run_modify '{"hooks":{"RetiredEvent":[{"matcher":"x","hooks":[]}]}}'
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.hooks | has("RetiredEvent")' "$OUT")" = "false" ]
+    [[ "$output" != *"WARNING"* ]]
+}
+
+@test "modify_settings: a clean live file clears the recorded drift" {
+    mkdir -p "$DOTFILES_STATE_DIR/harness-drift"
+    echo 'preserved stale' > "$DOTFILES_STATE_DIR/harness-drift/claude-settings"
+    run_modify '{"model":"opus"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"WARNING"* ]]
+    [ ! -e "$DOTFILES_STATE_DIR/harness-drift/claude-settings" ]
+}
+
+@test "modify_settings: unknown key with empty-object/array/null value is still surfaced and kept" {
     # Regression: a future Claude Code feature key defaulting to {}/[]/null
     # must be surfaced, not silently dropped by the merge.
     for v in '{}' '[]' 'null'; do
         run_modify "{\"model\":\"opus\",\"newFeature\":$v}"
-        [ "$status" -ne 0 ] || { echo "value $v did not halt"; return 1; }
-        [ ! -s "$OUT" ]
+        [ "$status" -eq 0 ] || { echo "value $v failed"; return 1; }
+        [ "$(jq -c '.newFeature' "$OUT")" = "$v" ]
         [[ "$output" == *"newFeature"* ]]
     done
 }
@@ -144,6 +221,7 @@ STDIN"
     mkdir -p "$tmpsrc/lib" "$tmpsrc/.chezmoidata"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$tmpsrc/.chezmoidata/claude.yaml"
     jq '. + {someNewClaudeKey:"default"}' "$AUTH" > "$tmpsrc/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$tmpsrc/lib/drift-gate.sh"
     run bash -c "CHEZMOI_SOURCE_DIR='$tmpsrc' sh '$SCRIPT' <<'STDIN' >'$OUT'
 {\"someNewClaudeKey\":\"x\"}
 STDIN"
@@ -188,6 +266,7 @@ setup_chezmoi_apply_env() {
     mkdir -p "$CZ_INT_SRC/dot_claude" "$CZ_INT_SRC/lib" "$CZ_INT_SRC/.chezmoidata" "$CZ_INT_DEST/.claude" "$TEST_HOME/int-cfg"
     cp "$SCRIPT" "$CZ_INT_SRC/dot_claude/modify_settings.json"
     cp "$AUTH"   "$CZ_INT_SRC/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$CZ_INT_SRC/lib/drift-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$CZ_INT_SRC/.chezmoidata/claude.yaml"
     printf 'lib/\n' > "$CZ_INT_SRC/.chezmoiignore"
     cat > "$TEST_HOME/int-cfg/chezmoi.toml" <<TOML
@@ -212,16 +291,16 @@ cz_apply() {
     [ ! -e "$CZ_INT_DEST/lib" ]
 }
 
-@test "modify_settings (chezmoi apply): unknown key HALTS apply and leaves the live file untouched" {
+@test "modify_settings (chezmoi apply): unknown key does not halt apply; its live value survives" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
     setup_chezmoi_apply_env
     # seed a valid live file, then inject an app key the repo does not know
-    printf '%s\n' '{"model":"opus","appAddedUnknown":"x"}' > "$SETTINGS"
-    local before; before=$(cat "$SETTINGS")
+    printf '%s\n' '{"model":"drifted","appAddedUnknown":"x"}' > "$SETTINGS"
     cz_apply
-    [ "$status" -ne 0 ]                                   # chezmoi apply failed
-    [ "$(cat "$SETTINGS")" = "$before" ]                  # live file NOT clobbered
-    [[ "$output" == *"appAddedUnknown"* ]]                # offending key surfaced
+    [ "$status" -eq 0 ]                                            # apply continues
+    [ "$(jq -r .appAddedUnknown "$SETTINGS")" = "x" ]              # unknown key kept
+    [ "$(jq -r .model "$SETTINGS")" = "$(jq -r .model "$AUTH")" ]  # managed key enforced
+    [[ "$output" == *"appAddedUnknown"* ]]                         # key surfaced
 }
 
 # ── post-apply schema validator ─────────────────────────────────────────────
@@ -305,6 +384,7 @@ setup_custom_registry() {
     CUSTOM_SRC="$root/chezmoi"
     mkdir -p "$CUSTOM_SRC/lib" "$CUSTOM_SRC/.chezmoidata" "$root/claude/plugins"
     cp "$AUTH" "$CUSTOM_SRC/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$CUSTOM_SRC/lib/drift-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$CUSTOM_SRC/.chezmoidata/claude.yaml"
     printf 'plugins:\n%s\n' "$1" > "$root/claude/plugins/registry.yaml"
 }
@@ -344,6 +424,7 @@ setup_custom_registry() {
     local src="$root/chezmoi"
     mkdir -p "$src/lib" "$src/.chezmoidata"
     cp "$AUTH" "$src/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$src/lib/drift-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$src/.chezmoidata/claude.yaml"
     # No $root/claude/plugins/registry.yaml.
     run bash -c "env -u TODOIST CHEZMOI_SOURCE_DIR='$src' sh '$SCRIPT' </dev/null >'$OUT'"
@@ -382,6 +463,7 @@ setup_native_registry() {
     NSRC="$root/chezmoi"
     mkdir -p "$NSRC/lib" "$NSRC/.chezmoidata" "$root/agents/plugins"
     cp "$AUTH" "$NSRC/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$NSRC/lib/drift-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$NSRC/.chezmoidata/claude.yaml"
     printf 'plugins:\n%s\n' "$1" > "$root/agents/plugins/registry.yaml"
 }
@@ -471,6 +553,7 @@ run_native() {
     local src="$TEST_HOME/hz/chezmoi"
     mkdir -p "$src/lib" "$src/.chezmoidata"
     cp "$AUTH" "$src/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$src/lib/drift-gate.sh"
     # shellcheck disable=SC2016  # literal ${HOME} token, expanded by modify_settings, not the shell
     yq '.claude.extraKnownMarketplaces.tok.source.source = "directory"
         | .claude.extraKnownMarketplaces.tok.source.path = "${HOME}/tok"' \
@@ -508,6 +591,7 @@ setup_ignore_registry() {
     IGN_SRC="$root/chezmoi"
     mkdir -p "$IGN_SRC/lib" "$IGN_SRC/.chezmoidata"
     cp "$AUTH" "$IGN_SRC/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$IGN_SRC/lib/drift-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$IGN_SRC/.chezmoidata/claude.yaml"
     printf '%s\n' "$1" > "$IGN_SRC/lib/claude-settings-ignore.txt"
 }
@@ -530,11 +614,12 @@ env.SSL_CERT_FILE'
     [ "$(jq -r '.tui.theme' "$OUT")" = "solarized" ]
 }
 
-@test "modify_settings: a live key outside the ignore list still halts the gate" {
+@test "modify_settings: a live key outside the ignore list still warns" {
     setup_ignore_registry 'tui'
-    run_modify_ignore '{"env":{"ENABLE_TOOL_SEARCH":"true","FOO":"bar"}}'
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"env.FOO"* ]]
+    run_modify_ignore '{"env":{"ENABLE_TOOL_SEARCH":"true","FOO":"bar"},"tui":{"theme":"x"}}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARNING"*"env.FOO"* ]]
+    [[ "$output" != *"tui.theme"* ]]
 }
 
 @test "modify_settings: authoritative value wins over ignore when both own the path" {
@@ -546,25 +631,26 @@ env.SSL_CERT_FILE'
     [ "$(jq -r '.model' "$OUT")" = "$(jq -r '.model' "$AUTH")" ]
 }
 
-@test "modify_settings: empty ignore file behaves exactly like today (unknown key halts)" {
+@test "modify_settings: empty ignore file leaves every unknown key warned" {
     setup_ignore_registry ''
     run_modify_ignore '{"env":{"ENABLE_TOOL_SEARCH":"true","FOO":"bar"}}'
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"env.FOO"* ]]
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARNING"*"env.FOO"* ]]
 }
 
-@test "modify_settings: missing ignore file behaves exactly like today (unknown key halts)" {
+@test "modify_settings: missing ignore file leaves every unknown key warned" {
     local root="$TEST_HOME/noignroot"
     local src="$root/chezmoi"
     mkdir -p "$src/lib" "$src/.chezmoidata"
     cp "$AUTH" "$src/lib/claude-settings-authoritative.json"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$src/lib/drift-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$src/.chezmoidata/claude.yaml"
     # No lib/claude-settings-ignore.txt written.
     run bash -c "env -u TODOIST CHEZMOI_SOURCE_DIR='$src' sh '$SCRIPT' <<'STDIN' >'$OUT'
 {\"tui\":{\"theme\":\"solarized\"}}
 STDIN"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"tui.theme"* ]]
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARNING"*"tui"* ]]
 }
 
 @test "modify_settings: ignore-listed prefix passes arbitrary live keys under it, authoritative keeps its own" {
@@ -573,6 +659,13 @@ STDIN"
     [ "$status" -eq 0 ]
     [ "$(jq -r '.env.WHATEVER' "$OUT")" = "live-value" ]
     [ "$(jq -r '.env.ENABLE_TOOL_SEARCH' "$OUT")" = "$(jq -r '.env.ENABLE_TOOL_SEARCH' "$AUTH")" ]
+}
+
+@test "modify_settings: real ignore file keeps a new model in modelSettings without a warning" {
+    run_modify '{"modelSettings":{"claude-opus-5":{"effortLevel":"medium"},"claude-new-model":{"effortLevel":"high"}}}'
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.modelSettings["claude-new-model"].effortLevel' "$OUT")" = "high" ]
+    [[ "$output" != *"WARNING"* ]]
 }
 
 # ── auto-memory disable (AC-1, issue #717) ──────────────────────────────────

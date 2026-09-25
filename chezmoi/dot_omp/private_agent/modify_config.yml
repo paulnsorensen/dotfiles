@@ -11,18 +11,18 @@
 # symbolPreset change, a hand-edited disabledProviders list) is discarded.
 # Promote anything you want to keep into the registry, then `dots sync`.
 #
-# setupVersion exemption: `setupVersion` is machine state omp writes when it
-# initialises. It is NOT in the registry; the script preserves it from the
-# live file so apply never resets omp's setup marker.
+# Ignore list: $CHEZMOI_SOURCE_DIR/lib/omp-config-ignore.txt holds dot-paths
+# that omp owns at runtime (for example `setupVersion`, the marker omp writes
+# when it initialises). Their live values are kept without a warning, unless
+# the registry owns the same leaf.
 #
-# Unknown-key halt gate: any live key-path outside the desired document's
-# schema is a key omp introduced. The script prints it and EXITS NON-ZERO,
-# which halts `chezmoi apply` and leaves the live file untouched — a new omp
-# config key is surfaced (fold it into the registry) instead of being silently
-# clobbered. The one explicit retired-key path below is allow-delete migration:
-# it is removed by wholesale rendering, while every genuinely unknown path
-# still halts. No dynamic-key subtrees exist here (setupVersion is handled by
-# inclusion in the desired document).
+# Unknown-key gate (preserve and warn, lib/drift-gate.sh): any live key-path
+# outside the desired document's schema is a key omp introduced, usually on an
+# upgrade. The script keeps its live value, warns on stderr, and records it
+# under ~/.local/state/dotfiles/harness-drift/. It does not halt
+# `chezmoi apply`. Fold each reported key into the registry. The explicit
+# retired-key paths below are allow-delete migrations: wholesale rendering
+# removes them without a warning.
 #
 # NOTE: ~/.omp/agent/ also holds live sqlite DBs (agent.db, history.db,
 # models.db) — the source dir is NOT exact_, so those survive apply untouched.
@@ -30,6 +30,8 @@
 set -eu
 
 REG="${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/.chezmoidata/omp.yaml"
+IGNORE="$CHEZMOI_SOURCE_DIR/lib/omp-config-ignore.txt"
+GATE="$CHEZMOI_SOURCE_DIR/lib/drift-gate.sh"
 
 live=$(cat)
 
@@ -65,8 +67,19 @@ if ! printf '%s' "$desired" | jq -e 'type == "object"' >/dev/null 2>&1; then
     exit 1
 fi
 
-# Fresh machine (empty stdin): emit the desired document.
+# The unknown-key gate below needs the shared helpers. Sourced ahead of the
+# fresh-machine check so that branch can clear a stale drift state file too.
+if [ ! -f "$GATE" ]; then
+    echo "modify_config.yml: source missing: $GATE" >&2
+    exit 1
+fi
+# shellcheck source=../../lib/drift-gate.sh
+. "$GATE"
+
+# Fresh machine (empty stdin): emit the desired document; no prior harness
+# drift to record.
 if [ -z "$live" ]; then
+    drift_clear_state omp-config
     emit "$desired"
     exit 0
 fi
@@ -81,43 +94,20 @@ if [ -z "$live_json" ] || ! printf '%s' "$live_json" | jq -e 'type == "object"' 
     exit 1
 fi
 
-# Preserve setupVersion (machine state) from live into the desired document.
-desired=$(printf '%s' "$live_json" | jq --argjson desired "$desired" '
-    if has("setupVersion") then $desired + {setupVersion: .setupVersion} else $desired end')
-
 # ── unknown-key gate ──────────────────────────────────
-# A live key-path is "known" when its object-key signature (array indices
-# dropped, so a value change or an extra list entry never counts as a new
-# key) is a path present in the desired document. We enumerate every live
-# node-path (not just scalar leaves) so a new key whose value is an empty
-# object/array or null is caught too. setupVersion is in the desired document
-# (preserved above), so it never trips this gate.
+# A live key-path is known when its object-key signature matches. Array
+# indices are dropped from the signature, so a value change or an extra
+# list entry is never a new key. A signature is known when it matches a
+# path in the desired document, a retired path, or an ignore-listed
+# prefix. Every live node-path counts, so a new key with an empty object,
+# empty array, or null value is found too.
+ignore_paths=$(drift_ignore_paths "$IGNORE")
 retired_paths='[["compaction","thresholdTokens"],["compaction","strategy"],["task","isolation","mode"]]'
-unknown=$(
-    printf '%s' "$live_json" | jq -r \
-        --argjson desired "$desired" \
-        --argjson retired "$retired_paths" '
-        def sig: [ .[] | strings ];
-        ([ $desired | paths | sig ] | unique) as $known
-        | [ paths | sig ]
-        | map(select(. as $p |
-            (($known | any(. == $p)) or ($retired | any(. == $p))) | not))
-        | unique
-        | map(join("."))
-        | .[]
-    '
-)
-
-if [ -n "$unknown" ]; then
-    {
-        echo "omp config.yml has key-path(s) the repo does not know about:"
-        printf '%s\n' "$unknown" | sed 's/^/  + /'
-        echo
-        echo "omp likely introduced these. Fold each into the registry, then re-run dots sync:"
-        echo "  $REG"
-    } >&2
-    exit 1
-fi
+unknown=$(drift_unknown "$live_json" "$desired" "$ignore_paths" "$retired_paths")
+result=$(drift_preserve "$live_json" "$desired" "$unknown")
+desired=$(printf '%s' "$result" | jq '.doc')
+drift_report omp-config "omp config.yml" "$result" "$REG" "$IGNORE"
+desired=$(drift_overlay_ignored "$live_json" "$desired" "$ignore_paths")
 
 # ── write ────────────────────────────────────────────
 # No merge: the desired document IS the file. Live drift on managed keys is

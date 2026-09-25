@@ -309,6 +309,28 @@ do_doctor() {
         issues=$((issues + 1))
     fi
 
+    # Harness settings keys the chezmoi guards kept but the repo does not know.
+    echo -e "${BLUE}Checking harness settings drift...${NC}"
+    local drift_gate="$DOTFILES_DIR/chezmoi/lib/drift-gate.sh"
+    if [[ -f "$drift_gate" ]]; then
+        # shellcheck source=chezmoi/lib/drift-gate.sh
+        source "$drift_gate"
+        local drift_tmp drift_rc=0
+        drift_tmp=$(mktemp)
+        drift_print_recorded "      " > "$drift_tmp" || drift_rc=$?
+        if [[ $drift_rc -eq 0 ]]; then
+            issues=$((issues + DRIFT_RECORDED_COUNT))
+            cat "$drift_tmp"
+            echo -e "    Fold each key into its registry, then run: ${GREEN}dots sync${NC}"
+        elif [[ $drift_rc -eq 2 ]]; then
+            issues=$((issues + 1))
+            echo -e "  ${YELLOW}⚠ Cannot read the harness drift state directory${NC}"
+        else
+            echo -e "  ${GREEN}✓ No unfolded harness settings${NC}"
+        fi
+        rm -f "$drift_tmp"
+    fi
+
     # Check VS Code settings if they exist
     if [[ -d "$DOTFILES_DIR/vscode" ]]; then
         echo -e "${BLUE}Checking VS Code configuration...${NC}"
@@ -382,11 +404,10 @@ do_claude_diff() {
         echo -e "${RED}chezmoi not installed${NC} — run ${GREEN}dots sync${NC}" >&2
         exit 1
     fi
-    # The unknown-key halt gate lives in the modify_ script and only fires on
-    # `chezmoi apply`. `chezmoi diff` silently skips a target whose modify_
-    # script exits non-zero, so a would-be halt shows here as an empty (falsely
-    # "in sync") diff. Run the gate directly against the live file first so the
-    # preview surfaces what the next sync would actually reject.
+    # `chezmoi diff` silently skips a target whose modify_ script exits
+    # non-zero (a corrupt live file), so a would-be halt shows here as an
+    # empty (falsely "in sync") diff. Run the gate directly against the live
+    # file first. Its unknown-key warnings go to stderr, so repeat them too.
     local modify="$DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json"
     local settings="$HOME/.claude/settings.json"
     if [[ -f "$modify" && -f "$settings" ]]; then
@@ -398,6 +419,7 @@ do_claude_diff() {
             printf '%s\n' "$gate_err" >&2
             exit "$gate_rc"
         fi
+        [[ -z "$gate_err" ]] || printf '%s\n' "$gate_err" >&2
     fi
 
     local diff_output rc=0

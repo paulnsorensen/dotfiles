@@ -1,0 +1,6 @@
+# Dot-paths deleted from ~/.pi/agent/settings.json before the unknown-key
+# gate runs, in chezmoi/dot_pi/private_agent/modify_settings.json (prefix
+# semantics: the path and its whole subtree). A retired path is gone from
+# the repo's desired schema on purpose; deleting it here means the old live
+# key is removed silently instead of surviving forever as preserved drift.
+# Blank lines and "#" comments are ignored. Empty for now.

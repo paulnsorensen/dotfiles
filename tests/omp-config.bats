@@ -6,7 +6,8 @@
 # The script reads the live file on stdin and emits the desired document
 # composed from the `omp.config` subtree of
 # $CHEZMOI_SOURCE_DIR/.chezmoidata/omp.yaml. Live drift on managed keys is
-# WIPED; setupVersion (machine state) is preserved; unknown live keys halt.
+# WIPED; setupVersion (machine state) is preserved; unknown live keys are
+# kept with a warning (lib/drift-gate.sh) and never halt.
 # These tests drive it directly (no real chezmoi) by setting
 # CHEZMOI_SOURCE_DIR to the repo's chezmoi dir.
 
@@ -141,7 +142,7 @@ setupVersion: 1'
     [ "$(yq '.setupVersion' "$OUT")" = "1" ]
 }
 
-@test "omp-config: unknown task isolation key still halts" {
+@test "omp-config: unknown task isolation key is kept with a warning" {
     run_modify 'symbolPreset: nerd
 theme:
   dark: chocolate-donut
@@ -152,8 +153,8 @@ task:
     enabled: true
     unexpected: true
 setupVersion: 1'
-    [ "$status" -ne 0 ]
-    [ ! -s "$OUT" ]
+    [ "$status" -eq 0 ]
+    [ "$(yq '.task.isolation.unexpected' "$OUT")" = "true" ]
     [[ "$output" == *"task.isolation.unexpected"* ]]
 }
 @test "omp-config: unknown compaction key is not covered by retired-key deletion" {
@@ -166,20 +167,34 @@ compaction:
   keepRecentTokens: 20000
   unexpectedNewOption: true
 setupVersion: 1'
-    [ "$status" -ne 0 ]
-    [ ! -s "$OUT" ]
+    [ "$status" -eq 0 ]
+    [ "$(yq '.compaction.unexpectedNewOption' "$OUT")" = "true" ]
+    [ "$(yq '.compaction.strategy' "$OUT")" != "shake" ]
     [[ "$output" == *"compaction.unexpectedNewOption"* ]]
     [[ "$output" == *".chezmoidata/omp.yaml"* ]]
+    [[ "$output" != *"compaction.strategy"* ]]
 }
 
 
-@test "omp-config: unknown key halts (non-zero, no write, key + registry named on stderr)" {
-    run_modify 'symbolPreset: nerd
+@test "omp-config: unknown key is kept, warned, and recorded; managed drift is still wiped" {
+    run_modify 'symbolPreset: ascii
 unexpectedThemeKnob: dark'
-    [ "$status" -ne 0 ]
-    [ ! -s "$OUT" ]                                   # live left unmodified (nothing written)
-    [[ "$output" == *"unexpectedThemeKnob"* ]]        # offending key surfaced
-    [[ "$output" == *".chezmoidata/omp.yaml"* ]]      # registry path named
+    [ "$status" -eq 0 ]
+    [ "$(yq '.unexpectedThemeKnob' "$OUT")" = "dark" ]  # live value kept
+    [ "$(yq '.symbolPreset' "$OUT")" = "nerd" ]         # managed drift wiped
+    [[ "$output" == *"WARNING"*"unexpectedThemeKnob"* ]]
+    [[ "$output" == *".chezmoidata/omp.yaml"* ]]        # registry path named
+    grep -qx 'preserved unexpectedThemeKnob' "$DOTFILES_STATE_DIR/harness-drift/omp-config"
+}
+
+@test "omp-config: a clean live file clears the recorded drift" {
+    mkdir -p "$DOTFILES_STATE_DIR/harness-drift"
+    echo 'preserved stale' > "$DOTFILES_STATE_DIR/harness-drift/omp-config"
+    run_modify 'symbolPreset: nerd
+setupVersion: 1'
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"WARNING"* ]]
+    [ ! -e "$DOTFILES_STATE_DIR/harness-drift/omp-config" ]
 }
 
 @test "omp-config: corrupt (non-map) live file halts with guidance" {

@@ -1275,9 +1275,10 @@ TOML
 @test "claude settings.json: source uses modify_ prefix, not create_/dot_settings" {
     # Repo-authoritative: modify_settings.json authors the live file wholesale
     # on every apply (seed + registry-rendered hooks/plugins/permissions),
-    # overwriting in-app drift, with an unknown-key halt gate. The retired
-    # `create_` seed (write-once) is gone; a bare dot_settings.json would
-    # render without that gate and silently clobber unexpected live keys.
+    # overwriting in-app drift, with an unknown-key gate that keeps and reports
+    # unknown live keys. The retired `create_` seed (write-once) is gone; a bare
+    # dot_settings.json would render without that gate and silently clobber
+    # unexpected live keys.
     [[ -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" ]]
     [[ -x "$REAL_DOTFILES_DIR/chezmoi/dot_claude/modify_settings.json" ]]
     [[ ! -f "$REAL_DOTFILES_DIR/chezmoi/dot_claude/create_settings.json" ]]

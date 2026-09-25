@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load test_helper
+bats_require_minimum_version 1.5.0
 
 setup() {
     setup_test_env
@@ -30,12 +31,74 @@ JSON
     [ "$(jq -r '.lastChangelogVersion' <<<"$output")" = "0.86.0" ]
 }
 
-@test "pi settings reject unknown live keys" {
-    run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
-{"theme":"chocolate-donut","futureSetting":true}
+@test "pi settings keep unknown live keys with a warning" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"theme":"dark","futureSetting":true}
 JSON
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.futureSetting' <<<"$output")" = "true" ]
+    [ "$(jq -r '.theme' <<<"$output")" = "chocolate-donut" ]
+    [[ "$stderr" == *"WARNING"*"futureSetting"* ]]
+    grep -qx 'preserved futureSetting' "$DOTFILES_STATE_DIR/harness-drift/pi-settings"
+}
+
+@test "pi settings keep the ignore-listed changelog marker without a warning" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"lastChangelogVersion":"0.86.0"}
+JSON
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.lastChangelogVersion' <<<"$output")" = "0.86.0" ]
+    [[ "$stderr" != *"WARNING"* ]]
+}
+
+@test "pi settings reject a corrupt live file (top-level array)" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<<'[1,2,3]'
     [ "$status" -eq 1 ]
-    [[ "$output" == *"futureSetting"* ]]
+    [[ "$stderr" == *"not a JSON object"* ]]
+}
+
+@test "pi settings reject a corrupt live file (truncated JSON)" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<<'{bad'
+    [ "$status" -eq 1 ]
+    [[ "$stderr" == *"not a JSON object"* ]]
+}
+
+@test "pi settings warning names the fold targets" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"theme":"dark","futureSetting":true}
+JSON
+    [ "$status" -eq 0 ]
+    [[ "$stderr" == *"$REGISTRY"* ]]
+    ignore="$CZ_SRC/lib/pi-settings-ignore.txt"
+    [[ "$stderr" == *"$ignore"* ]]
+}
+
+@test "pi settings clear recorded drift once the live file is clean again" {
+    run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"theme":"dark","futureSetting":true}
+JSON
+    [ "$status" -eq 0 ]
+    [ -s "$DOTFILES_STATE_DIR/harness-drift/pi-settings" ]
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"theme":"dark"}
+JSON
+    [ "$status" -eq 0 ]
+    [[ "$stderr" != *"WARNING"* ]]
+    [ ! -e "$DOTFILES_STATE_DIR/harness-drift/pi-settings" ]
+}
+
+@test "pi settings delete a retired key from live before the gate runs" {
+    local tmpsrc="$TEST_HOME/pi-retired"
+    mkdir -p "$tmpsrc/lib" "$tmpsrc/.chezmoidata"
+    cp "$REGISTRY" "$tmpsrc/.chezmoidata/pi.yaml"
+    cp "$CZ_SRC/lib/drift-gate.sh" "$tmpsrc/lib/drift-gate.sh"
+    printf 'retiredKey\n' > "$tmpsrc/lib/pi-settings-retired.txt"
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$tmpsrc" sh "$SCRIPT" <<'JSON'
+{"theme":"dark","retiredKey":"old"}
+JSON
+    [ "$status" -eq 0 ]
+    run jq -e '.retiredKey' <<<"$output"
+    [ "$status" -ne 0 ]
 }
 
 @test "pi registry pins the selected mainstream packages" {
