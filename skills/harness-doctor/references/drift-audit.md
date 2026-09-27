@@ -26,6 +26,7 @@ retired file-reader names. Never print live values or raw file differences.
 | Copilot | Chezmoi templates and declared profile projections | ~/.copilot/mcp-config.json, ~/.copilot/hooks/ |
 | OMP | chezmoi/.chezmoidata/omp.yaml and dot_omp/private_agent/modify_config.yml | ~/.omp/agent/config.yml, when OMP is in scope |
 | Pi | chezmoi/.chezmoidata/pi.yaml and dot_pi/private_agent/modify_settings.json | ~/.pi/agent/settings.json |
+| T3 Code | chezmoi/.chezmoidata/t3.yaml, dot_t3/userdata/modify_settings.json, and dot_t3/userdata/claude-settings.json | ~/.t3/userdata/settings.json (providers.claudeAgent.launchArgs only) |
 
 Claude settings ownership includes static settings, Claude registry keys, and
 gate-filtered native plugin overlays. Codex overlays declared keys and MCP servers

@@ -1,0 +1,74 @@
+#!/bin/sh
+# Author T3 Code settings from .chezmoidata/t3.yaml.
+#
+# T3 rewrites ~/.t3/userdata/settings.json from its UI, so this guard merges
+# the registry keys into the live document instead of replacing it. Keys
+# listed in lib/t3-settings-ignore.txt (UI state, provider toggles) keep
+# their live values without a warning. Keys listed in
+# lib/t3-settings-retired.txt are deleted from the live file before the
+# gate runs. Other unknown live keys keep their live values with a warning
+# (lib/drift-gate.sh); they never halt `chezmoi apply`. Fold each reported
+# key into the registry.
+#
+# A literal `$HOME` inside a registry string expands to the target home
+# directory, because chezmoi data files are not templated.
+
+set -eu
+
+registry=${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/.chezmoidata/t3.yaml
+ignore=$CHEZMOI_SOURCE_DIR/lib/t3-settings-ignore.txt
+retired=$CHEZMOI_SOURCE_DIR/lib/t3-settings-retired.txt
+gate=$CHEZMOI_SOURCE_DIR/lib/drift-gate.sh
+live=$(cat)
+
+for tool in yq jq; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "modify_settings.json: $tool missing; T3 settings are unchanged" >&2
+        printf '%s' "$live"
+        exit 0
+    fi
+done
+
+if [ ! -f "$registry" ]; then
+    echo "modify_settings.json: registry missing: $registry" >&2
+    exit 1
+fi
+
+home=${CHEZMOI_HOME_DIR:-${HOME:?HOME is unset}}
+desired=$(yq -o=json '.t3.settings' "$registry" \
+    | jq --arg home "$home" 'walk(if type == "string" then gsub("\\$HOME"; $home) else . end)')
+if ! printf '%s' "$desired" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    echo "modify_settings.json: t3.settings must be a map" >&2
+    exit 1
+fi
+
+if [ ! -f "$gate" ]; then
+    echo "modify_settings.json: source missing: $gate" >&2
+    exit 1
+fi
+# shellcheck source=../../lib/drift-gate.sh
+. "$gate"
+
+if [ -z "$live" ]; then
+    drift_clear_state t3-settings
+    printf '%s\n' "$desired"
+    exit 0
+fi
+
+live_json=$(printf '%s' "$live" | jq '.' 2>/dev/null) || live_json=
+if [ -z "$live_json" ] || ! printf '%s' "$live_json" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    echo "modify_settings.json: live settings are not a JSON object" >&2
+    exit 1
+fi
+
+retired_paths=$(drift_ignore_paths "$retired")
+live_json=$(printf '%s' "$live_json" | jq --argjson r "$retired_paths" 'delpaths($r)')
+
+ignore_paths=$(drift_ignore_paths "$ignore")
+unknown=$(drift_unknown "$live_json" "$desired" "$ignore_paths")
+result=$(drift_preserve "$live_json" "$desired" "$unknown")
+desired=$(printf '%s' "$result" | jq '.doc')
+drift_report t3-settings "T3 settings.json" "$result" "$registry" "$ignore"
+desired=$(drift_overlay_ignored "$live_json" "$desired" "$ignore_paths")
+
+printf '%s\n' "$desired"
