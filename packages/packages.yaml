@@ -73,7 +73,7 @@ packages:
   # renovate: datasource=npm depName=eslint
   - eslint: { source: npm, version: "10.11.0" }
   # renovate: datasource=npm depName=markdownlint-cli2
-  - markdownlint-cli2: { source: npm, version: "0.23.2" }
+  - markdownlint-cli2: { source: npm, version: "0.23.3" }
   # renovate: datasource=npm depName=@withgraphite/graphite-cli
   - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux, version: "1.8.6" } # `gt` — stacked-diff PR workflow
 
