@@ -1,0 +1,13 @@
+# Deployed by chezmoi. Source: dotfiles chezmoi/dot_config/systemd/user/.
+# Persistent=true runs a missed week at the next login. Without
+# `loginctl enable-linger`, the timer runs only while a user session exists.
+[Unit]
+Description=Weekly package-manager cache cleanup (bin-doctor clean)
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

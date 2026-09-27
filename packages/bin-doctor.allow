@@ -1,0 +1,30 @@
+# bin-doctor allowlist — installs that `bin-doctor check` accepts although
+# neither packages.yaml nor the mise manifest declares them.
+#
+# Format: <kind>:<name>  # reason
+# <kind> is brew, cargo, uv, npm, or shadow. Every line needs a reason.
+
+# Bootstrap trust roots (see [[operations/brew-machine-prune]]).
+brew:mise                                # brew installs mise before sync_mise runs
+brew:rustup                              # mise's rust entry delegates toolchains to rustup
+
+# Own-authored nightly channels, installed by chezmoi run_after scripts (ADR-006).
+npm:@paulnsorensen/tilth-nightly
+npm:@paulnsorensen/hallouminate-nightly
+
+# Accepted-unmanaged boundary on the macOS work machine; work projects need
+# these (see [[operations/brew-machine-prune]]).
+brew:docker
+brew:docker-compose
+brew:colima
+brew:kubernetes-cli
+brew:yarn
+brew:biome
+brew:postgresql@15
+brew:redis
+brew:temporal
+brew:python@3.12
+brew:poppler
+brew:yamlfmt
+brew:yamllint
+brew:yabai

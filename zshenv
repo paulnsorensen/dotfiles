@@ -40,9 +40,14 @@ unset MISE_SHIMS_DIR
 # without rustc on PATH here, sccache fails with "cannot find binary path".
 # Interactive shells get these via zsh/core.zsh; mirrored here for the
 # non-interactive bootstrap.
-if [[ "$OSTYPE" == darwin* && -d /opt/homebrew/opt/rustup/bin && ":$PATH:" != *":/opt/homebrew/opt/rustup/bin:"* ]]; then
-  export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
-fi
+# Both platforms use brew's rustup proxies, so a brew `rust` formula never
+# owns cargo/rustc (bin-doctor flags that formula as a conflict).
+for _rustup_bin in /opt/homebrew/opt/rustup/bin /home/linuxbrew/.linuxbrew/opt/rustup/bin "$HOME/.linuxbrew/opt/rustup/bin"; do
+  if [[ -d "$_rustup_bin" && ":$PATH:" != *":$_rustup_bin:"* ]]; then
+    export PATH="$_rustup_bin:$PATH"
+  fi
+done
+unset _rustup_bin
 if [[ -d "$HOME/.cargo/bin" && ":$PATH:" != *":$HOME/.cargo/bin:"* ]]; then
   export PATH="$HOME/.cargo/bin:$PATH"
 fi

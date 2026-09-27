@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Deployed by chezmoi. Runs `bin-doctor clean` every Sunday at 10:00.
+     launchd runs a job missed during sleep at wake; bin-doctor builds its
+     own PATH because launchd never reads shell rc files. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.dotfiles.bin-doctor-clean</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{ joinPath (dir .chezmoi.sourceDir) "bin" "bin-doctor" }}</string>
+    <string>clean</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>10</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>19</integer>
+  <key>StandardOutPath</key>
+  <string>{{ .chezmoi.homeDir }}/Library/Logs/bin-doctor-clean.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{ .chezmoi.homeDir }}/Library/Logs/bin-doctor-clean.log</string>
+</dict>
+</plist>
