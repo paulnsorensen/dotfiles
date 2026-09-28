@@ -73,3 +73,5 @@
 2026-09-08 · ci-optimize-skill · merged · operations/ci-optimization.md · Record approval boundaries and executable source-name encoding.
 
 2026-09-19 · 3481e45760db7ca6 · merged · operations/subagent-dispatch-analytics.md · Records soft-stop evidence, full-file write responses, checkpoint failures, and uncapped parent takeover. Historical samples remain unchanged.
+
+2026-09-28 · opencode-native · new-page · harnesses/opencode.md · Re-added OpenCode as a native chezmoi harness (opencode.yaml + drift-gated modify_opencode.json, tilth and shared MCPs, secret-path permissions, preamble via `instructions`). Merged the harness index and sync-and-chezmoi pages.

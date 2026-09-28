@@ -14,10 +14,10 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     [[ $status -eq 0 ]]
 }
 
-@test "mise config pins exactly 51 tools (42 aqua + 3 core-plugin + 6 backend)" {
+@test "mise config pins exactly 52 tools (43 aqua + 3 core-plugin + 6 backend)" {
     run yq -p=toml -o=json '.tools | length' "$CONFIG"
     [[ $status -eq 0 ]]
-    [[ "$output" == "51" ]]
+    [[ "$output" == "52" ]]
 }
 
 @test "no tool version is 'latest' or a floating range specifier" {

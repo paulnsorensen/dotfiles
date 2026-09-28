@@ -146,3 +146,21 @@ TOML
     done
     [[ "$(grep -c 'model_instructions_file' "$CODEX_HOME/config.toml")" -eq 1 ]]
 }
+
+# ── OpenCode wiring ──────────────────────────────────────────────────────────
+
+@test "install-prompts.sh copies preamble.md to \$OPENCODE_HOME/preamble.md" {
+    export OPENCODE_HOME="$TEST_HOME/.config/opencode"
+    INSTALL_PROMPTS_HAVE_CODEX=0 \
+        run bash "$LIB" "$PREAMBLE_SRC"
+    assert_success
+    assert_file_exists "$OPENCODE_HOME/preamble.md"
+    diff "$PREAMBLE_SRC" "$OPENCODE_HOME/preamble.md"
+}
+
+@test "opencode instructions reference the installed preamble path" {
+    # OpenCode expands the home-relative prefix itself, so compare in yq.
+    run yq -e '.opencode.config.instructions[0] == "~/.config/opencode/preamble.md"' \
+        "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/opencode.yaml"
+    assert_success
+}

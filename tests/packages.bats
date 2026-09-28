@@ -1930,16 +1930,30 @@ MOCKCARGO
 
 @test "retired harness cleanup removes brew, mise, and native installs" {
     write_test_yaml
-    write_mock_brew $'opencode\ncrush'
+    write_mock_brew $'crush'
     mkdir -p "$TEST_HOME/.local/bin"
-    touch "$TEST_HOME/.local/bin/opencode" "$TEST_HOME/.local/bin/crush"
+    touch "$TEST_HOME/.local/bin/crush"
 
     run_sync
     assert_success
 
-    grep -qx "brew uninstall opencode" "$BREW_LOG"
     grep -qx "brew uninstall crush" "$BREW_LOG"
-    grep -q "mise uninstall --yes --all aqua:anomalyco/opencode aqua:charmbracelet/crush" "$MISE_LOG"
-    [[ ! -e "$TEST_HOME/.local/bin/opencode" ]]
+    grep -q "^mise uninstall --yes --all aqua:charmbracelet/crush config=" "$MISE_LOG"
     [[ ! -e "$TEST_HOME/.local/bin/crush" ]]
+}
+
+@test "opencode migrates off brew and native installs onto the mise pin" {
+    write_test_yaml
+    write_mock_brew $'opencode'
+    mkdir -p "$TEST_HOME/.local/bin"
+    touch "$TEST_HOME/.local/bin/opencode"
+
+    run_sync
+    assert_success
+    assert_output_contains "Removing Homebrew opencode (now native-managed)"
+
+    grep -qx "brew uninstall opencode" "$BREW_LOG"
+    run grep -q "uninstall.*aqua:anomalyco/opencode" "$MISE_LOG"
+    assert_failure
+    [[ ! -e "$TEST_HOME/.local/bin/opencode" ]]
 }

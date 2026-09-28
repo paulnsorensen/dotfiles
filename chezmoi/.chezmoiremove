@@ -21,13 +21,11 @@ local-llm/configs/lean.json
 .pi/agent/models.json
 
 # Retired native harnesses. Remove their configuration and runtime state;
-# package binaries are removed by packages/sync.sh.
-.config/opencode
+# package binaries are removed by packages/sync.sh. OpenCode returned as a
+# native chezmoi harness (dot_config/opencode/); only the old `ap` profile
+# tree and the curl-installer directory stay retired.
 .opencode
 .config/opencode-profiles
-.local/share/opencode
-.local/state/opencode
-.cache/opencode
 .config/crush
 .local/share/crush
 .local/state/crush
