@@ -25,6 +25,7 @@ The suite uses two different capture tools for two different jobs, not one tool 
 - agent-tty's render profiles are only `reference-dark` / `reference-light`, each with a fixed background/foreground pair. ANSI-256 colors paint in the renderer's own palette, not the terminal's configured scheme, so an agent-tty screenshot proves layout correctness, not palette correctness. VHS is the tool that proves palette.
 - `run` returns no child exit status. A test invoked through `agent-tty run` cannot report pass/fail through its own exit code; run tests through the normal shell instead.
 - `wait` takes a `--timeout <ms>` flag, and a screenshot response's artifact path is at the JSON key `result.artifactPath`.
+- A session does not end when the agent that created it exits. On 2026-09-28, 12 `agent-tty _host` processes were still running 18 to 21 hours after their agents exited. They had been reparented to launchd and kept TUI fixtures and headless Chromium alive (#1101). The rule: create every session with `--idle-timeout-ms`, and `destroy` it explicitly. Use an EXIT trap only in a script that runs in one shell, because each agent Bash call is a new shell. `agent-tty gc` does not reach these sessions: it works on one `--home` at a time, and the home registry was empty.
 
 ## Upstream skills loaded at run time, not vendored
 

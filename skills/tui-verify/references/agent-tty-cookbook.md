@@ -7,11 +7,24 @@ and Node versions before use.
 
 ```bash
 HOME_DIR="$(mktemp -d)"
-SID=$(agent-tty --home "$HOME_DIR" create --json --cols 80 --rows 24 --shell /bin/zsh | jq -r '.result.sessionId')
+SID=$(agent-tty --home "$HOME_DIR" create --json --cols 80 --rows 24 --shell /bin/zsh --idle-timeout-ms 1800000 | jq -r '.result.sessionId')
 ```
 
 Positional args after `--` become a COMMAND, not shell args — do not pass
 shell flags like `-il` there; it kills the session. Use `--shell` instead.
+
+Always set `--idle-timeout-ms`. A session does not end when its agent exits.
+Its `_host` process and every child it started (TUI fixtures, headless
+Chromium) keep running until a `destroy` or the idle timeout.
+
+In a script that runs in one shell, also destroy the session on exit:
+
+```bash
+trap 'agent-tty --home "$HOME_DIR" destroy "$SID" --json >/dev/null 2>&1; rm -rf "$HOME_DIR"' EXIT
+```
+
+Do not set this trap in an agent Bash tool call. Each call is a new shell, so
+the trap destroys the session when that call returns.
 
 ## Launch + wait for readiness
 
@@ -67,6 +80,15 @@ agent-tty --home "$HOME_DIR" snapshot "$SID" --format text --json | jq -r '.resu
 
 ## Teardown
 
+Destroy every session you created, also after a failed step, then remove the home:
+
 ```bash
 agent-tty --home "$HOME_DIR" destroy "$SID" --json
+rm -rf "$HOME_DIR"
+```
+
+Find hosts that outlived their agent (`ppid` 1, long `etime`):
+
+```bash
+ps -axo pid,ppid,etime,command | grep '[a]gent-tty.*_host'
 ```
