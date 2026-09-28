@@ -276,6 +276,73 @@ JSONL
     assert_output_contains '"successes":"3"'
 }
 
+@test "ingest: codex oversized numeric outputs preserve content and error classification" {
+    run python3 - "$INGEST" "$DB" "$TEST_HOME" <<'PY'
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+ingest, database, home = sys.argv[1:]
+digits = "9" * 5000
+oversized_json = '{"exit_code":' + digits + '}'
+header = "Script completed\nWall time 0.0 seconds\nOutput:\n"
+blocks = [
+    {"type": "input_text", "text": header},
+    {"type": "input_text", "text": oversized_json},
+    {"type": "input_text", "text": '{"exit_code":1}'},
+]
+cases = {
+    "plain": (oversized_json, "false"),
+    "blocks": (blocks, "true"),
+    "serialized-blocks": (json.dumps(blocks), "true"),
+    "envelope": (header + oversized_json, "false"),
+    "legacy-positive": ("Process exited with code " + digits, "true"),
+    "legacy-negative": ("Process exited with code -" + digits, "true"),
+    "legacy-zero": ("Process exited with code " + "0" * 5000, "false"),
+    "legacy-negative-zero": ("Process exited with code -" + "0" * 5000, "false"),
+    "legacy-padded": ("Process exited with code " + "0" * 5000 + "1", "true"),
+    "legacy-unicode-zero": ("Process exited with code " + "\u0660" * 5000, "false"),
+}
+fixture = Path(home) / ".codex/sessions/2026/05/30/rollout-numeric.jsonl"
+entries = [{
+    "timestamp": "2026-05-30T12:00:00Z",
+    "type": "session_meta",
+    "payload": {"id": "numeric", "cwd": "/work/codex"},
+}]
+for call_id, (output, _) in cases.items():
+    entries.append({
+        "timestamp": "2026-05-30T12:00:01Z",
+        "type": "response_item",
+        "payload": {
+            "type": "function_call_output", "call_id": call_id, "output": output,
+        },
+    })
+fixture.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+result = subprocess.run(
+    [sys.executable, ingest, "--force"],
+    env={**os.environ, "PYTHONINTMAXSTRDIGITS": "4300"},
+    capture_output=True, text=True,
+)
+assert result.returncode == 0, result.stdout + result.stderr
+query = """SELECT message FROM raw_entries
+           WHERE harness='codex' AND type='user';"""
+result = subprocess.run(
+    ["duckdb", database, "-json", "-c", query],
+    check=True, capture_output=True, text=True,
+)
+actual = {}
+for row in json.loads(result.stdout):
+    block = row["message"]["content"][0]
+    actual[block["tool_use_id"]] = (block["content"], block["is_error"])
+assert actual == cases, actual
+print(f"Verified {len(cases)} numeric outputs")
+PY
+    assert_success
+    assert_output_contains "Verified 10 numeric outputs"
+}
+
 
 @test "ingest: a malformed JSONL line is skipped without aborting the run" {
     cat > "$TEST_HOME/.claude/projects/proj/sess-corrupt.jsonl" <<'JSONL'

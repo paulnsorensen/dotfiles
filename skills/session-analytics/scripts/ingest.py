@@ -169,7 +169,7 @@ def _codex_content_block_payloads(blocks):
     for block in blocks[1:]:
         try:
             payload = json.loads(block["text"].strip())
-        except json.JSONDecodeError:
+        except ValueError:
             continue
         if isinstance(payload, dict):
             yield payload
@@ -187,7 +187,7 @@ def _codex_structured_payloads(out):
     text = out.strip()
     try:
         parsed = json.loads(text)
-    except json.JSONDecodeError:
+    except ValueError:
         parsed = None
     if isinstance(parsed, dict):
         yield parsed
@@ -212,7 +212,7 @@ def _codex_structured_payloads(out):
             return
         try:
             parsed, end = decoder.raw_decode(text, position)
-        except json.JSONDecodeError:
+        except ValueError:
             return
         if isinstance(parsed, dict):
             yield parsed
@@ -229,7 +229,7 @@ def _codex_output_is_error(out):
         return "true"
     if isinstance(out, str):
         match = re.search(r"Process exited with code (-?\d+)\b", out)
-        if match and int(match.group(1)) != 0:
+        if match and any(int(digit) != 0 for digit in match.group(1).lstrip("-")):
             return "true"
     return "false"
 
