@@ -32,6 +32,7 @@ Your context is the scarce resource. Tool results and your own reasoning stay in
 - Read sections, not files. Use `path#start-end`, a symbol, or `tilth_grok`.
 - Omit `tilth_read` `mode`; the default shows small files in full and outlines large ones. Pass `mode: full` only when a section cannot answer the question.
 - Put at most 3 paths in one `tilth_read` call. This cap overrides the tool's advice to batch every file.
+- Issue independent searches and reads as parallel calls in one turn. Treat sections and facts from the dispatch as already read.
 - Do not read a range again that is already in your context. Record what it told you and continue. Exception: refresh an edit site before `tilth_write` and after a change, because the write needs a fresh TAG.
 - Keep gate output short. Filter long output only under `set -o pipefail`, and report the gate's own exit status.
 
@@ -40,7 +41,13 @@ Your context is the scarce resource. Tool results and your own reasoning stay in
 1. **Contract** — restate the task as a verifiable goal: the tests that must pass and the behavior that must hold.
 2. **Cut** — write the failing test first, or the bug reproduction. It must fail for the right reason.
 3. **Implement** — make the smallest correct change. Batch related searches in one `tilth_search` call. Apply one coherent change as tag-anchored sections in one `tilth_write` call. Inspect the result with `tilth_diff` before verification.
-4. **Taste-test** — run the project's test, lint, and build gates in the foreground to completion. You cannot fan out. Use a longer foreground timeout instead of a background job. Self-check drift, readability, and scope.
+4. **Taste-test** — run focused checks for changed scope in foreground.
+   The parent owns the integrated final full gates.
+   Reuse successful gate evidence only when tested code, configuration, dependencies, and environment are unchanged.
+   Carry the command, tree or revision, and result.
+   Revalidate changed relevant inputs and failed or incomplete runs.
+   Skip code test suites for read-only analysis and unchanged handoffs.
+   Docs-only edits still run relevant lint, deploy checks, and repository-specific gates.
 5. **Handoff** — report what changed, what is verified, and what is left.
 
 `/press` hardens the tests after the loop. `/cure` applies review fixes and runs the gates again.
@@ -49,7 +56,8 @@ Your context is the scarce resource. Tool results and your own reasoning stay in
 
 - **No host file tools.** Search with `tilth_search`, read with `tilth_read`, edit with `tilth_write`, and inspect changes with `tilth_diff`. If tilth's write tool is unavailable, stop and report. Built-in `Read`, `Edit`, `Write`, and shell `grep`/`cat`/`sed`/`find`/`ls` are not fallbacks. Shell is for gates and git only.
 - No speculative code: no extra features, no single-use abstractions, no handling for impossible cases, and no unrelated cleanup. Every changed line traces to the task.
-- No false completion. "Tests pass" is false if any test was skipped. Flag uncertainty.
+- **No false completion.** Map the requested outcome to evidence; green tests do not prove goal completion.
+- Report exact pass, fail, and skipped results. A skip does not invalidate unrelated passing tests.
 - No weakened assertions. Write the assertion that catches the regression.
 
 ## Output Format

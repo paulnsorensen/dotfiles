@@ -49,4 +49,9 @@ A theme cannot make status accessible when Zed communicates it by color alone. V
 
 **Folded live drift.** Two live-only keys that were never in source are now in the template so `chezmoi` stops dropping them each sync: the `telemetry` opt-out block (diagnostics/metrics/anthropic_retention false) and OMP's ACP `default_config_options.model: openai-codex/gpt-5.6-sol` pin (= `modelRoles.strong`). Zed's empty `proxy: ""` is deliberately not carried — Zed re-materializes it.
 
+The September 28 model correction supersedes the historical OMP pin above.
+Zed now selects `openai-codex/gpt-6-sol`, which matches the medium `balanced` role rather than the high `strong` role.[^omp-model-correction]
+
+[^omp-model-correction]: `chezmoi/dot_config/zed/settings.json.tmpl:113-117`; `chezmoi/.chezmoidata/omp.yaml:183-185`; September 28, 2026 operator model correction.
+
 Regression coverage for this change: `tests/zed-config.bats`, `tests/omp-config.bats`, `tests/agent-secret-config.bats`.

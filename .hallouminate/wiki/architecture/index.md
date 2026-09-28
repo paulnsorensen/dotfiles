@@ -21,13 +21,14 @@ How this dotfiles repo configures AI coding agents: shared registries rendered b
 - [[adr-chezmoi-authoritative-claude]] — the ADR series behind chezmoi-authoritative global Claude config: retiring `ap` from live installs, the forked `claude.yaml` registry, MCPs via the `claude mcp` CLI + manifest, and `exact_` dirs + wholesale settings-key authorship.
 - [[codex-first-class-review]] — Codex first-class fixes: user-level hook command resolution, hook-health diagnostics in `harness-doctor`, isolated Codex profile projection, MCP tool-scope cleanup, and the remaining `PreToolUse` matcher-verification gap.
 - [[chezmoi-authoritative-codex]] — the Codex counterpart to the Claude ADR series: `~/.codex` converges on `dots sync` from `codex.yaml` + `private_dot_codex/`, why `config.toml` is *merged* (the CLI writes its own runtime state into the same file) while `mcp_servers` is replaced wholesale, and the chezmoi attribute-order / `private_` gotchas.
+- [[t3-code-launch]] — the T3 Code counterpart: T3 launches Claude through the Agent SDK with `bypassPermissions` by default, which makes Claude Code inject a Bash-over-file-tools preamble that pulls agents off tilth; chezmoi merges `providers.claudeAgent.launchArgs` into `~/.t3/userdata/settings.json` and ships a T3-only `--settings` file that disables claude.ai connectors. Also records the stale `~/.cargo/bin/hallouminate` 0.4.1 timeout that looked like a T3 MCP failure.
 
 ## Routing and orchestration doctrine
 
 - [[subagent-routing-policy]] — "discover, then commit": never ask a cheap worker to judge its own capability; gather bounded facts, let a deterministic policy pick the route, and spend frontier tokens only at serial bottlenecks (the shared plan, the fresh-context review).
 - [[fanout-fanin-discipline]] — the *how* to [[subagent-routing-policy]]'s *whether*: the wall-clock-vs-token economics of a fan-out, and why parallelism buys latency rather than lower total spend.
 - [[knowledge-graph-playbook]] — digest of the Anthropic KG/multi-agent playbook, kept for the doctrine that transfers here: stage-tiered model selection, shared memory over an orchestrator bottleneck, grounded evaluation, unattended-loop discipline.
-- [[omp-agent-model-effort]] — the workload→model/effort table for OMP-native agents, and the rule that registry `effort` is Claude-only and must never be mirrored into OMP frontmatter.
+- [[omp-agent-model-effort]] — the workload model and effort table. Registry effort pins Claude and Codex; OMP thinking stays independent.
 
 ## Profiles and workflows
 

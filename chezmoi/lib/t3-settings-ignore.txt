@@ -1,0 +1,26 @@
+# Dot-paths that T3 Code owns at runtime in ~/.t3/userdata/settings.json. The
+# guard chezmoi/dot_t3/userdata/modify_settings.json keeps their live values
+# without a warning (prefix semantics: the path and its whole subtree), unless
+# the registry owns the same leaf. Blank lines and "#" comments are ignored.
+
+# Sidebar and project UI state.
+projectSettingsFolded
+sidebarAutoSettleAfterDays
+# Thread environment default (worktree vs. local); set from the T3 UI.
+defaultThreadEnvMode
+# Provider enable toggles, binary paths, and custom model lists. Only
+# providers.claudeAgent.launchArgs is registry-owned.
+providers.codex
+providers.cursor
+providers.grok
+providers.opencode
+providers.antigravity
+providers.claudeAgent.enabled
+providers.claudeAgent.binaryPath
+providers.claudeAgent.configDir
+providers.claudeAgent.customModels
+providers.claudeAgent.autoCompactWindow
+providerInstances
+observability
+usageLimitSources
+usagePriceOverrides

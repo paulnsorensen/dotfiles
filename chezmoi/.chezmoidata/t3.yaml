@@ -1,0 +1,18 @@
+# T3 Code registry. Chezmoi authors the keys below in ~/.t3/userdata/settings.json
+# while T3 owns UI state, provider toggles, and runtime caches under ~/.t3.
+#
+# Why these keys exist (see wiki architecture/t3-code-launch):
+# - T3 launches Claude through the Agent SDK and defaults the permission mode
+#   to bypassPermissions. Claude Code then injects a "prefer Bash over file
+#   tools" preamble that pulls agents off tilth. An explicit --permission-mode
+#   in launchArgs overrides the T3 default.
+# - --settings points at the chezmoi-managed claude-settings.json next to the
+#   live file. It disables claude.ai connectors for T3 sessions only, so tilth
+#   and hallouminate stay in the preloaded tool list. $HOME is expanded by the
+#   modify script; chezmoi data files are not templated.
+
+t3:
+  settings:
+    providers:
+      claudeAgent:
+        launchArgs: "--permission-mode acceptEdits --settings $HOME/.t3/userdata/claude-settings.json"

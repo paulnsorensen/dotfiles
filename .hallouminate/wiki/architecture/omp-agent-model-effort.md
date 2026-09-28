@@ -1,41 +1,54 @@
 # OMP agent model and effort routing
 
-Canonical agents choose their Codex GPT-5.6 model by workload, while each OMP-native agent chooses `thinkingLevel` independently. Registry `effort` remains Claude-specific and follows the established Claude tier policy: Haiku `low`, Sonnet `medium`, Opus `high`. Never mirror registry `effort` into OMP frontmatter.[^1]
+Astra is the high tier, Sol is the medium tier, and Luna is the cheap tier.
+Terra is retired from active dotfiles configuration.
+This policy records the user's September 28, 2026 decision, not a permanent vendor model ranking.[^1]
 
 ## Workload policy
 
-| Canonical agents | Codex model | OMP thinking | Rationale |
+| Canonical agents | Codex model | Codex effort | OMP thinking |
 |---|---|---|---|
-| `reviewer` | GPT-5.6 Sol | `xhigh` | Quality-first final review |
-| `ghostbuster`, `researcher` | GPT-5.6 Terra | `high` | Broad evidence synthesis with bounded output |
-| `taste-tester` | GPT-5.6 Terra | `medium` | Seven-lens handoff check; `default` tier so the taste-test never pays Sol |
-| `generalist` | GPT-5.6 Terra | `xhigh` | Open-ended mixed work needs deeper reasoning |
-| `roquefort-wrecker`, `coder` | GPT-5.6 Luna | `xhigh` | Bounded write tasks pair the high-volume tier with deep reasoning |
-| `explorer` | GPT-5.6 Luna | `high` | High-volume local inspection with concise synthesis |
-| `nih-scanner` | GPT-5.6 Luna | `medium` | Structural candidate collection without final judgment |
-| `duckdb-expert`, `whey-drainer`, `worktree-content-digest` | GPT-5.6 Luna | `low` | Mechanical execution and compression |
+| `reviewer` | GPT-6 Astra | `high` | `xhigh` |
+| `ghostbuster`, `researcher` | GPT-6 Sol | `medium` | `high` |
+| `taste-tester` | GPT-6 Sol | `medium` | `medium` |
+| `generalist`, `coder` | GPT-6 Sol | `medium` | `xhigh` |
+| `explorer` | GPT-6 Sol | `medium` | `high` |
+| `roquefort-wrecker` | GPT-6 Luna | `medium` | `xhigh` |
+| `nih-scanner` | GPT-6 Luna | `medium` | `medium` |
+| `duckdb-expert`, `whey-drainer`, `worktree-content-digest` | GPT-6 Luna | `low` | `low` |
 
-`cheese-reviewer` is OMP-only rather than canonical; it mirrors the final reviewer at `@strong`/`xhigh`.[^2]
+Coder and explorer use Sol because their role contracts require medium capability.
+Mechanical test execution and structural scans retain Luna.
+Reviewers use Astra; checklist taste-tests use Sol.[^1]
 
-The retired `fromage-age-arch`, `fromage-age-history`, `fromage-fort`, `fromage-secaudit`, and `ricotta-reducer` agents have no canonical registrations or OMP-native copies. Their removal and replacement paths are documented in [[agent-vs-skill-tiering]].[^3]
+`cheese-reviewer` remains OMP-only and uses `@strong` with `xhigh` thinking.[^2]
+OMP thinking levels remain independent from Claude and Codex effort.
 
 ## Harness ownership
 
-- `agents/registry.yaml:models.codex` records the workload-specific Codex family. OMP-native files express that family through `@strong`, `@balanced`, or `@fast` aliases.[^1]
-- `chezmoi/.chezmoidata/omp.yaml:154` sets interactive OMP sessions to `@strong:medium`: Sol quality with bounded reasoning. Agent files still select their own model alias and `thinkingLevel`.[^6]
-- `agents/registry.yaml:effort` is a Claude-honored field. It stays coupled to `models.claude`, not to the Codex family or OMP thinking.[^1]
-- `chezmoi/dot_omp/private_agent/agents/*.md:thinkingLevel` owns OMP reasoning depth. Its value follows the workload table above.[^2]
+- `agents/registry.yaml:models.codex` owns each canonical Codex model.
+- Registry `effort` owns Claude and Codex effort.
+- Both Codex renderers emit `model_reasoning_effort` when registry effort exists.
+- An agent without registry effort leaves the Codex setting absent.
+- OMP-native agent files own their `thinkingLevel`; renderers do not copy registry effort into them.[^1][^3]
 
-OpenAI describes Sol as the frontier tier, Terra as the intelligence/cost balance, and Luna as the efficient high-volume tier. Reasoning effort is a separate setting.[^4] OMP accepts `thinkingLevel` through `xhigh` and supports model-role aliases, including aliases with thinking suffixes.[^5]
+Explicit Codex effort prevents a medium worker from depending on the parent's reasoning setting.
+Previously, both renderers copied the model but dropped effort.[^3]
 
-## Enforcement
+OMP aliases map `strong` to Astra, `balanced` to Sol, and `fast` to Luna.
+The interactive default is `@balanced:medium`; `task` uses `@balanced`.
+Coder and explorer use `@balanced`.
+The tight profile also uses Sol at medium effort.[^4]
 
-`tests/agent-skill-model-effort.bats` locks Claude tier-to-effort policy and the workload-specific `models.codex` matrix. `tests/omp-agents.bats` separately locks the exact OMP agent inventory, model aliases, and `thinkingLevel` values.[^2]
+## Verification
 
-[^1]: `agents/registry.yaml:11-12`, `agents/registry.yaml:23-267`
-[^2]: `tests/agent-skill-model-effort.bats:1-117`, `tests/omp-agents.bats:8-130`, `chezmoi/dot_omp/private_agent/agents/cheese-reviewer.md:1-7`
-[^3]: `agents/registry.yaml:23-267`, `chezmoi/dot_omp/private_agent/agents/`
-[^4]: <https://developers.openai.com/api/docs/guides/latest-model>
-[^5]: <https://github.com/can1357/oh-my-pi/blob/main/docs/settings.md>, <https://github.com/can1357/oh-my-pi/blob/main/docs/models.md>
+Model-policy tests lock the Claude effort mapping and the Codex workload matrix.
+Renderer tests check present and absent Codex effort.
+OMP tests separately check aliases and thinking levels.[^2][^3]
 
-[^6]: `chezmoi/.chezmoidata/omp.yaml:150-163`, `tests/omp-config.bats:34-52`, `tests/omp-agents.bats:121-130`
+See [[agents-dir]] and [[subagent-routing-policy]] for dispatch rules.
+
+[^1]: `agents/registry.yaml`; `tests/agent-skill-model-effort.bats`
+[^2]: `tests/omp-agents.bats`; `chezmoi/dot_omp/private_agent/agents/cheese-reviewer.md`
+[^3]: `.sync-lib.sh:_cz_render_codex_agent`; `agent-profile/agent_profile/renderers/codex.py:CodexRenderer._write_agents`; `agent-profile/tests/test_renderer_agents.py`; `tests/sync-codex-sources.bats`
+[^4]: `chezmoi/.chezmoidata/omp.yaml`; `chezmoi/private_dot_omp-tight/agent/config.yml`; `tests/omp-config.bats`

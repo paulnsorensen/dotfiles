@@ -11,14 +11,45 @@ and reviewer; a 500-line mechanical rename with good tests may not.
 
 ## The five-stage default topology
 
-| Stage | Role | Tier (claude / codex / omp role) | Why |
+| Stage | Role | Tier (Claude / Codex / OMP role) | Why |
 |---|---|---|---|
-| 0 Intake | parent/router | sonnet / terra / `default` | enforce policy without flagship cost per tool call |
-| 1 Scope | read-only scoper | haiku / luna / `tiny` | facts: files, call paths, tests, contracts, risk flags, slices |
-| 2 Plan | planner (only when triggered) | opus–fable high–xhigh / sol xhigh / `plan` | ambiguity, interfaces, sequencing, invariants |
-| 3 Execute | leaf coder(s) | sonnet / terra / `task` | implement precise slices with explicit ownership |
-| 4 Integrate | parent or integrator | sonnet / terra (strong when coupled) | merge, contract drift, cross-slice validation |
-| 5 Review | fresh-context reviewer | opus–fable high–xhigh / sol high–xhigh / `slow` | global bugs, security, missing tests, invalid assumptions |
+| 0 Intake | parent/router | sonnet / Sol / `default` | enforce policy without high-tier cost per tool call |
+| 1 Scope | read-only explorer | sonnet / Sol / `balanced` | inspect contracts, call paths, tests, and risk |
+| 2 Plan | planner, when triggered | opus high / Astra high / `plan` | resolve ambiguity, sequencing, and invariants |
+| 3 Execute | named coder | sonnet medium / Sol medium / `task` | implement precise slices with explicit ownership |
+| 4 Integrate | parent | sonnet / Sol; escalate when coupled | check merges and cross-slice behavior |
+| 5 Review | fresh-context reviewer | opus high / Astra high / `slow` | find global bugs, security gaps, and invalid assumptions |
+
+This table supersedes the original July model names.
+The September 28 policy retires Terra and removes Fable from automatic routing.
+Registry effort pins Claude and Codex; OMP thinking remains independent.[^current-tiers]
+
+Removing Fable from the authoritative JSON alone does not remove its live setting.
+The `modelSettings` ignore overlay preserves live-only entries.
+Retire `modelSettings.claude-fable-5-1` explicitly before that overlay, and test the complete modifier with an existing live value.[^fable-retirement]
+
+[^fable-retirement]: `chezmoi/dot_claude/modify_settings.json:279-284,319-323`; `chezmoi/lib/claude-settings-retired.txt`; `chezmoi/lib/claude-settings-ignore.txt`; September 28 live-deployment check.
+
+[^current-tiers]: `agents/registry.yaml`; `chezmoi/.chezmoidata/codex.yaml`; `chezmoi/.chezmoidata/omp.yaml`; [[omp-agent-model-effort]]
+
+### Configuration, not a runtime dispatch guard
+
+Use GPT-6 Luna for cheap work, GPT-6 Sol for medium work, and GPT-6 Astra for high-tier work.
+The September 28 correction uses `gpt-6-luna` and `gpt-6-sol`, not the earlier GPT-5.6 identifiers.[^model-correction]
+
+The user rejects the runtime dispatch guard proposed in PR #1090.
+The guard checked requested dispatch arguments against deployed role files; it did not verify provider execution.
+Its generic-role bans and override rules could block legitimate built-in workflows.
+Model pins, explicit effort rendering, Fable retirement, and regression tests address the configuration defects without that extra runtime restriction.[^guard-decision]
+
+Named-specialist and bounded-fork guidance stays in the shared preamble.
+This is prompt guidance, not a hook-enforced ban.
+Restart running harness sessions after deployment so their cached role definitions match the deployed files.
+The Codex analytics adapter still cannot prove each child's executed model or effort.[^routing-verification]
+
+[^model-correction]: September 28, 2026 operator correction; `agents/registry.yaml`; `chezmoi/.chezmoidata/codex.yaml`; `chezmoi/.chezmoidata/omp.yaml`; `chezmoi/.chezmoidata/pi.yaml`.
+[^guard-decision]: September 28, 2026 operator decision to remove the runtime guard from PR #1090; supersedes the earlier guard proposal.
+[^routing-verification]: `agents/preamble.md`; `tests/agent-skill-model-effort.bats`; `tests/sync-codex-sources.bats`; [[operations/subagent-dispatch-analytics]].
 
 ## Discover-then-commit: the route decision
 

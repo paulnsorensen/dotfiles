@@ -25,6 +25,27 @@ process from starting, so the flag and tool name must move together.
 
 [^tilth-graduation]: Tilth main `src/main.rs`, `src/mcp/mod.rs`, and `src/mcp/tools/definitions.rs`; dotfiles `agents/preamble.md:17` and `agents/mcp/registry.yaml:31-35`.
 
+## Outcome-first verification
+
+Completion evidence must address the requested outcome, not only a passing test suite.
+For simplification work, the remaining complexity matters as much as the implementation's correctness.[^outcome-verification]
+
+The parent owns the final integrated gates.
+Workers use focused checks during implementation.
+Successful evidence remains reusable only while its relevant code, configuration, dependencies, and environment remain unchanged.
+Read-only analysis and unchanged handoffs do not justify another code test suite.
+These defaults preserve explicit repository gates for changed source and configuration.[^outcome-verification]
+
+Dispatch validation belongs before spawning, not only inside the worker's refusal gate.
+The parent supplies the review mode or the coder's completion criteria and scope fence.
+This avoids paying for a worker whose only result is a missing-contract refusal.[^dispatch-preflight]
+
+Instruction assertions and token budgets verify the deployed contract, not model adherence or a measured speed improvement.
+A later outcome audit must check whether agents satisfy user goals with less repeated work.
+
+[^outcome-verification]: `agents/AGENTS.md`, `agents/agent_definitions/coder.md`, and root `AGENTS.md`.
+[^dispatch-preflight]: `agents/preamble.md` and `tests/phase-agent-handoff.bats`.
+
 ## Facts moved out of the agents doc (still true, just not standing context)
 
 - **Agent permission modes**: `acceptEdits` and `bypassPermissions` only

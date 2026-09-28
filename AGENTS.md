@@ -27,6 +27,7 @@ When work establishes a durable decision or gotcha, record its *why* with `add_m
 | Git tooling, prek, Claude plugins | [[operations/dev-environment]] |
 | Remote access | [[operations/remote-access]] |
 | TUI design suite, agent-tty, VHS | [[architecture/tui-suite]] |
+| T3 Code launch args, permission mode, connectors | [[architecture/t3-code-launch]] |
 
 **Layout:** `bin/` (live CLI), `agents/` (registries and definitions), `agent-profile/` (`ap`), `profiles/`, harness directories, `skills/`, `.agents/skills/` (repo-local skills), `chezmoi/`, `packages/`, `zsh/`, `tests/`, and `.hallouminate/wiki/`.
 
@@ -42,6 +43,7 @@ Never edit a rendered target. Edit the source, then deploy.
 | Cross-harness plugin | `agents/plugins/registry.yaml` | `dots sync` or `plugin-sync` |
 | Claude-native plugin | `claude/plugins/registry.yaml` | `dots sync` |
 | Codex MCP, config scalar, or agent selection | `chezmoi/.chezmoidata/codex.yaml` | `dots sync` |
+| T3 Code Claude launch args or T3-only Claude settings | `chezmoi/.chezmoidata/t3.yaml` / `chezmoi/dot_t3/userdata/claude-settings.json` | `dots sync`, then restart T3 |
 | Cursor plugin | `cursor/plugins/local/<name>/` | `dots sync` |
 | Package / profile / OMP or Pi config | `packages/packages.yaml` / `profiles/<name>/profile.yaml` / `chezmoi/.chezmoidata/{omp,pi}.yaml` | relevant `dots` command |
 | Secret (API key, token) | the vault — never `.env`. Key names: `secrets/secrets.env.tmpl` | run `bin/vault-provision` as the operator |
@@ -52,10 +54,12 @@ Implementation details (vault provisioning, codex merge semantics, credential is
 ## Required gates
 
 1. Run `dots sync` after registry, skill, agent, plugin, or docs-source changes, and before committing (repo-local `.agents/skills/` excepted).
-2. Before completion or commit, run `just check`; completion requires exit 0. Name any unrun leg.
+2. Before completion or commit for source or configuration changes, run `just check`. Require exit 0 and name any unrun leg.
 3. New shell logic belongs in a sourced library with Bats coverage; keep `.sync` scripts to parsing and dispatch.
 4. For chezmoi: never commit plaintext secrets; never edit managed targets; run `chezmoi --source $DOTFILES/chezmoi diff` before template changes; use `prompt*` only in `.chezmoi.toml.tmpl`.
 5. When auto mode requests Bash file operations, use the configured file tools. OMP uses native tools; Claude and Codex use Tilth.
+6. Read-only analysis and unchanged handoffs may omit code test suites and `just check`.
+7. Docs-only edits still run relevant lint, deploy checks, and repository-specific gates.
 
 ## Commands
 

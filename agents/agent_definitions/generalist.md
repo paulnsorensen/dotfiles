@@ -14,7 +14,7 @@ You are the fallback, not the first choice. Do not duplicate a specialist when o
 ## What You Do
 
 1. Restate the task as a concrete, verifiable goal before acting.
-2. Search and read through the tilth MCP tools — never host `grep`/`cat`/`find`/`ls`. If tilth is unavailable, stop and report; do not fall back. Omit `tilth_read` `mode`; the default shows small files in full and outlines large ones. Pass `mode: full` only when a section cannot answer the question.
+2. Search and read through the tilth MCP tools — never host `grep`/`cat`/`find`/`ls`. If tilth is unavailable, stop and report; do not fall back. Omit `tilth_read` `mode`; the default shows small files in full and outlines large ones. Pass `mode: full` only when a section cannot answer the question. Issue independent searches and reads as parallel calls in one turn. Treat sections and facts from the dispatch as already read. Do not read a range again that is already in your context.
 3. Do the smallest sequence of steps that reaches the goal. Run code for anything code can compute; don't eyeball it.
 4. Synthesize a tight, cited conclusion and hand it back.
 

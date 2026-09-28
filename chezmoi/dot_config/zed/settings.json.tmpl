@@ -111,9 +111,9 @@
       "env": {}
     },
     "OMP": {
-      // Pin OMP's ACP model to modelRoles.strong (see chezmoi/.chezmoidata/omp.yaml).
+      // Pin OMP's ACP model to modelRoles.balanced (see chezmoi/.chezmoidata/omp.yaml).
       "default_config_options": {
-        "model": "openai-codex/gpt-5.6-sol"
+        "model": "openai-codex/gpt-6-sol"
       },
       "type": "custom",
       "command": {{ (or (lookPath "omp") "omp") | quote }},

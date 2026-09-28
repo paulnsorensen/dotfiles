@@ -3,6 +3,7 @@
 #   chezmoi/dot_claude/modify_settings.json      (~/.claude/settings.json)
 #   chezmoi/dot_omp/private_agent/modify_config.yml   (~/.omp/agent/config.yml)
 #   chezmoi/dot_pi/private_agent/modify_settings.json (~/.pi/agent/settings.json)
+#   chezmoi/dot_t3/userdata/modify_settings.json    (~/.t3/userdata/settings.json)
 #
 # Policy: preserve and warn. A live key-path that the repo does not know about
 # is a key the harness introduced. The guard keeps its live value, prints a

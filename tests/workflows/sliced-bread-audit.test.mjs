@@ -597,3 +597,26 @@ test('a triple-backtick run in evidence stays inside the issue body code fence',
     '<!-- sba:domains/x/a.py:model-purity:4 -->',
   ].join('\n'))
 })
+
+
+test('dispatches each audit stage on its selected model and effort tier', async () => {
+  const { globals, trace } = build({
+    slices: [slice('x')],
+    on: ({ opts }) => {
+      if (opts.label === 'eval:x') return { slice: 'x', findings: [finding({ severity: 'high' })] }
+      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('refute:')) return { refuted: false, reasoning: 'confirmed' }
+      if (opts.label.startsWith('issues:batch')) return { results: [{ index: 0, created: true, url: 'https://gh/1' }] }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  await workflow.run({ ...globals, args: {} })
+  const byLabel = new Map(trace.agents.map(({ opts }) => [opts.label, opts]))
+  assert.deepEqual([byLabel.get('map:slices').model, byLabel.get('map:slices').effort], ['sonnet', 'medium'])
+  assert.deepEqual([byLabel.get('map:gh-setup').model, byLabel.get('map:gh-setup').effort], ['haiku', 'low'])
+  assert.deepEqual([byLabel.get('eval:x').model, byLabel.get('eval:x').effort], ['opus', 'high'])
+  assert.deepEqual([byLabel.get('cite:x').model, byLabel.get('cite:x').effort], ['sonnet', 'low'])
+  const refuter = [...byLabel.entries()].find(([label]) => label.startsWith('refute:'))[1]
+  assert.deepEqual([refuter.model, refuter.effort], ['opus', 'high'])
+  assert.deepEqual([byLabel.get('issues:batch-1').model, byLabel.get('issues:batch-1').effort], ['haiku', 'low'])
+})

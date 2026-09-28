@@ -1014,7 +1014,32 @@ MOCKNPM
 
     run_sync
     assert_success
-    [[ "$(<"$TEST_HOME/mise-github-auth")" == "gh auth token" ]]
+    [[ "$(<"$TEST_HOME/mise-github-auth")" == "$MOCK_BIN/gh auth token" ]]
+}
+
+@test "sync clears an inherited credential command when no real gh resolves" {
+    write_test_yaml
+    write_mock_mise_recording_github_auth
+    # Keep the real gh fixture out of PATH so only the mise shim remains.
+    rm -f "$MOCK_BIN/gh"
+
+    local shim_dir="$TEST_HOME/mise-shim"
+    local toolbox="$BATS_TEST_TMPDIR/toolbox"
+    mkdir -p "$shim_dir" "$toolbox"
+    ln -s "$MOCK_BIN/mise" "$shim_dir/gh"
+
+    local utility utility_path
+    for utility in bash yq jq shasum sha256sum awk sed grep cut sort tr head tail cat chmod mkdir rm mv ln mktemp dirname tee wc find xargs sleep readlink uname sysctl id env git; do
+        utility_path="$(command -v "$utility" 2>/dev/null || true)"
+        [[ -n "$utility_path" ]] && ln -s "$utility_path" "$toolbox/$utility"
+    done
+
+    export MISE_GITHUB_CREDENTIAL_COMMAND="stale auth token"
+    export PATH="$shim_dir:$MOCK_BIN:$toolbox"
+
+    run_sync
+    assert_success
+    [[ "$(<"$TEST_HOME/mise-github-auth")" == "unset" ]]
 }
 
 @test "cached sync fails when mise cannot restore configured tools" {
@@ -1867,6 +1892,40 @@ MOCKCARGO
     assert_success
 
     [[ ! -e "$TEST_HOME/.local/bin/claude" ]]
+}
+
+@test "migrate_harness_off_native keeps a marked host launcher symlink" {
+    write_test_yaml
+    mkdir -p "$TEST_HOME/.local/bin" "$TEST_HOME/launchers"
+    printf '#!/bin/sh\n# dotfiles: keep-harness-launcher\nexec true\n' > "$TEST_HOME/launchers/codex-contain.sh"
+    chmod +x "$TEST_HOME/launchers/codex-contain.sh"
+    ln -s "$TEST_HOME/launchers/codex-contain.sh" "$TEST_HOME/.local/bin/codex"
+    touch "$TEST_HOME/.local/bin/claude"
+
+    run_sync
+    assert_success
+    assert_output_contains "Keeping codex launcher"
+    assert_output_contains "Removing native claude binary"
+
+    [[ -L "$TEST_HOME/.local/bin/codex" ]]
+    [[ ! -e "$TEST_HOME/.local/bin/claude" ]]
+}
+
+@test "migrate_harness_off_native ignores a marker cut off at the 4 KiB header limit" {
+    write_test_yaml
+    mkdir -p "$TEST_HOME/.local/bin"
+    local marker='# dotfiles: keep-harness-launcher'
+    # The marker ends exactly at byte 4096, but its line continues past it.
+    {
+        printf '%*s\n' $((4096 - ${#marker} - 1)) '' | tr ' ' a
+        printf '%sx\n' "$marker"
+    } > "$TEST_HOME/.local/bin/codex"
+
+    run_sync
+    assert_success
+    assert_output_contains "Removing native codex binary"
+
+    [[ ! -e "$TEST_HOME/.local/bin/codex" ]]
 }
 
 @test "retired harness cleanup removes brew, mise, and native installs" {

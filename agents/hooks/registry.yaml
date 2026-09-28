@@ -142,7 +142,7 @@ hooks:
   # ─── Deep-think nudge ───────────────────────────────────────────────
   # When a reasoning-heavy skill (briesearch/culture/spec/mold) is invoked at an
   # effort BELOW `high`, inject an additionalContext nudge to checkpoint
-  # (/wheypoint) and relaunch on opus/xhigh for deeper synthesis. Hooks cannot
+  # (/wheypoint) and relaunch on Opus/high for deeper synthesis. Hooks cannot
   # change model/effort mid-session (model is read once at session start; effort
   # only via /effort), so a nudge is the ceiling of what is buildable. Self-
   # contained bash + jq — no shared_assets. claude-only: effort.level and
@@ -155,7 +155,7 @@ hooks:
     harnesses: [claude]
     matcher: "Skill"
     timeout: 5
-    description: Nudge a checkpoint-and-relaunch on opus/xhigh for deep-synthesis skills at effort below high
+    description: Nudge a checkpoint-and-relaunch on opus/high for deep-synthesis skills at effort below high
 
   # ─── Sub-agent turn/context budget ──────────────────────────────────
   # Enforces a per-sub-agent turn + context-byte ceiling that Claude Code's

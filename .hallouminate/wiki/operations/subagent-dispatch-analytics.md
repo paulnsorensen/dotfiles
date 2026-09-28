@@ -15,6 +15,30 @@ resolved to one of 578 roots; 548 matched a recorded dispatch.
 
 Reproduce with the queries in `references/subagent-runs.md`.
 
+### Model-routing audit, September 28, 2026
+
+Compare the dispatch role, requested model, and executed model separately.
+A task description that says "coder" does not prove that the caller selected the named coder.
+
+The September 21–28 audit links 452 of 465 Claude dispatches to executed models.
+It joins each sidechain's initial user content to the dispatch prompt, then follows `parentUuid`.
+The named coder runs include 137 Sonnet executions, 44 explicit Opus executions, and three unlinked dispatches.
+Nine general-purpose dispatches execute Fable, including three editing tasks.
+Four Fable review tasks follow the built-in `simplify` invocation.
+
+Twenty Opus coder dispatches follow an explicit user request.
+Do not classify every model override as an error.
+Distinguish deliberate escalation from generic-role inheritance.
+
+The canonical Codex adapter drops execution-model and effort context.
+Codex spawn arguments prove what the caller requests, not what the child executes.
+Claude's model settings also do not prove each child's effective effort.
+
+Reproduce with `skills/session-analytics/scripts/query.sh sql`, using `tool_uses` and `raw_entries`.
+The schema and coverage references describe these limits.[^model-audit]
+
+[^model-audit]: `skills/session-analytics/references/canonical-schema.md`; `skills/session-analytics/references/harness-coverage.md`; local session-analytics audit, September 28, 2026 (aggregate results only).
+
 ## Population
 
 | agent | runs | avg prompt (chars) | median tools | median secs | tool err % |
@@ -235,6 +259,44 @@ These source changes need publication and deployment before later sessions can m
 [^20260919-session]: Claude session `0f1b8bc0-66e8-49b3-a3e7-4f0103e58708`, cwd suffix `easy-cheese/tehran-v2`, September 19, 2026, 23:03–23:49 UTC. Canonical `raw_entries` supplies assistant usage and full tool-result blocks. Coders: `a8c17c8ef8e71004d` and `ad868e3a733d79a83`. Context is input plus cache-read plus cache-creation tokens; parent and sidechain rows are separated.
 [^20260919-guard]: `agents/lib/turn-budget-guard.js:79-82,580-596,641-650,694-708`; parent announcement at `2026-09-19T23:16:48.432Z` in the cited session.
 [^20260919-log]: `~/.local/state/claude-turn-budget/decisions.jsonl`, queried through `2026-09-20T02:23:34.083Z`; grouped by `(session_id, agent_id)`, filtered to `agent_type = coder`.
+
+## Measured 2026-09-28: re-reads, unbatched turns, and throughput
+
+The window is August 28 through September 28, 2026, for Claude and Codex.
+A read is `Read`, `tilth_read`, or a shell `cat`/`sed`/`head`/`tail` on a path.
+Each repeat read is an exact duplicate, another section of the same file, or a read after an edit.[^20260928-rereads]
+
+| Measure | Claude subagents | Codex subagents |
+|---|---:|---:|
+| Reads | 114,233 | 6,486 |
+| Exact duplicate reads | 11,951 | 810 |
+| Same file, other section | 22,038 | 1,544 |
+| Repeat after an edit | 4,208 | 389 |
+| Files the parent read before the spawn | 11% | 45% |
+| Worst role repeat rate | coder 39% | coder 66% |
+
+Claude re-reads mostly inside coders.
+Codex re-reads mostly re-ground files that the parent already holds.
+
+Model turns do not batch.
+Of the Sonnet 5 turns, 84% issue exactly one tool call, with a median of 30 output tokens.
+A turn with little output still costs 2–4 seconds of model latency.
+
+The logs show no sustained throttling.
+Claude decode rate stays flat across UTC hours and context sizes: 74 tok/s for Fable 5.1, 80 for Opus 5, 95 for Sonnet 5, and 109 for Opus 5.5.
+Claude logs 6 `rate_limit_error` and 4 `overloaded_error` records in the month.
+These rare errors do not change the flat decode rate.
+Codex never records `rate_limit_reached`.
+Codex decode is about 48 tok/s for GPT-5.6 Luna and Sol, and 29.5 tok/s for GPT-6 Astra at every effort.
+Higher effort adds output tokens, not decode time per token.
+
+The September 28 change adds three rules.
+The preamble tells every session to batch independent calls in one turn.
+It tells parents to pass the sections they already read as `path#start-end` with key facts.
+The worker bodies treat those sections as read and forbid a second read of a range in context.
+Effort stays unchanged, because PR #1090 already pins it per role.
+
+[^20260928-rereads]: Ad hoc scripts over `~/.claude/projects/*/<session>/subagents/agent-*.jsonl` and Codex rollout files, grouped by agent and parent session. Parent overlap counts files that the parent read before the first subagent read. The evidence precedes the September 28 routing change.
 
 ## What changed as a result
 

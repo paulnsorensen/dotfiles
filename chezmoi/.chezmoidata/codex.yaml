@@ -23,7 +23,7 @@ codex:
   # with an absolute path (TOML cannot expand `~`). Omitting it here means the
   # merge preserves whatever that script set.
   config:
-    model: "gpt-5.6-terra"
+    model: "gpt-6-sol"
     model_reasoning_effort: "medium"
     approval_policy: "on-request"
     approvals_reviewer: "guardian_subagent"
@@ -69,10 +69,10 @@ codex:
   # Rendered to <name>.toml from agents/registry.yaml metadata at assembly
   # time. Every name must exist in the registry AND declare the codex harness;
   # the assembler fails loud otherwise.
-  # Model per agent comes from registry `models.codex`. Tier ladder: Sol =
-  # `powerful`, Terra = `default`, Luna = `cheap`. Agent definitions own these
-  # bindings. reviewer Sol; taste-tester, researcher, generalist, ghostbuster
-  # Terra; coder, explorer, nih-scanner, duckdb-expert, whey-drainer,
+  # Model per agent comes from registry `models.codex`. Tier ladder: Astra =
+  # `powerful`, Sol = `default`, Luna = `cheap`. Agent definitions own these
+  # bindings. reviewer Astra; taste-tester, researcher, generalist, ghostbuster,
+  # coder, explorer Sol; nih-scanner, duckdb-expert, whey-drainer,
   # roquefort-wrecker, worktree-content-digest Luna. This config has no
   # per-spawn model override, so a taste-test dispatches `taste-tester`.
   agents:

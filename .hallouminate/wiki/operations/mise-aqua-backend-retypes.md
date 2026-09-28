@@ -28,4 +28,20 @@ a latent class of breakage in `bin/` scripts that CI (newer bash) never
 catches. Guard with `${arr[@]+"${arr[@]}"}` (fixed in `bin/dotsclaude`;
 `tests/cc-env.bats` test 109 is the canary).
 
+## Asset-name changes are not backend retypes
+
+Check mise's embedded registry before changing a tool pin or backend after an asset-name mismatch.
+Mise 2026.7.14 expects unversioned difftastic archive names.
+Difftastic 0.71.0 publishes version-prefixed names, including `difft-0.71.0-aarch64-apple-darwin.tar.gz`.[^difft-assets]
+
+Updating Homebrew mise from 2026.7.14 to 2026.9.14 fixes this mismatch.
+The newer embedded registry contains the version-prefixed rule.[^mise-registry]
+Run `brew upgrade mise` for a Homebrew installation.
+Keep the `aqua:Wilfred/difftastic = "0.71.0"` pin and rerun `dots sync`.
+The macOS ARM64 deployment installs that pinned archive after this update.
+A backend migration is unnecessary because the release still provides binaries.
+
+[^difft-assets]: [difftastic 0.71.0 assets](https://github.com/Wilfred/difftastic/releases/tag/0.71.0)
+[^mise-registry]: [mise 2026.7.14 registry](https://github.com/jdx/mise/blob/v2026.7.14/vendor/aqua-registry/registry.yml) and [mise 2026.9.14 registry](https://github.com/jdx/mise/blob/v2026.9.14/vendor/aqua-registry/registry.yml); verified local installation on 2026-09-27.
+
 Related: [[adr/manifest-pinned-packages]], [[operations/sync-and-chezmoi]].

@@ -90,6 +90,13 @@ block_sha() {
     done
 }
 
+@test "preamble carries named-role and bounded-fork policy" {
+    run grep -Fq 'Use named specialists instead of generic inherited roles' "$PREAMBLE"
+    assert_success
+    run grep -Fq 'Codex dispatches set `fork_turns` to `none` or a positive integer string' "$PREAMBLE"
+    assert_success
+}
+
 @test "coder owns its sizing heuristics and concrete-split blocking rule" {
     local coder="$AGENTS_DIR/agent_definitions/coder.md"
 
@@ -148,9 +155,9 @@ block_sha() {
     local body="$AGENTS_DIR/agent_definitions/taste-tester.md"
     local omp="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/agents/taste-tester.md"
 
-    # Pinned at default / medium: Claude sonnet, Codex Terra, OMP @balanced.
+    # Pinned at default / medium: Claude sonnet, Codex Sol, OMP @balanced.
     [[ "$(yq -r '.agents.taste-tester.models.claude' "$registry")" == sonnet ]]
-    [[ "$(yq -r '.agents.taste-tester.models.codex' "$registry")" == gpt-5.6-terra ]]
+    [[ "$(yq -r '.agents.taste-tester.models.codex' "$registry")" == gpt-6-sol ]]
     [[ "$(yq -r '.agents.taste-tester.effort' "$registry")" == medium ]]
     [[ "$(yq --front-matter=extract -r '.model' "$omp")" == '@balanced' ]]
     # Every harness selects it.
@@ -241,6 +248,19 @@ block_sha() {
     done
 }
 
+@test "workers batch reads and trust dispatch-supplied sections" {
+    # Parents hand over what they already read; workers read it once, in parallel.
+    run grep -Fq 'Batch independent calls in one turn.' "$PREAMBLE"
+    assert_success
+    run grep -Fq 'already-read `path#start-end` sections with key facts.' "$PREAMBLE"
+    assert_success
+    for agent in coder explorer reviewer taste-tester generalist roquefort-wrecker; do
+        for rule in 'Issue independent searches and reads as parallel calls in one turn.' 'Treat sections and facts from the dispatch as already read.' 'Do not read a range again that is already in your context'; do
+            run grep -Fq "$rule" "$AGENTS_DIR/agent_definitions/$agent.md"
+            assert_success
+        done
+    done
+}
 @test "reviewer may write only its own artifact through tilth_write" {
     local registry="$AGENTS_DIR/registry.yaml"
 
@@ -470,4 +490,57 @@ with open("../agents/registry.yaml") as handle:
 print(str(agent_is_read_only(explorer)).lower())
 ') || skip "Python ground truth unavailable"
     [[ "$result" == false ]]
+}
+
+@test "completion maps the requested outcome beyond green tests" {
+    local root="$AGENTS_DIR/AGENTS.md"
+    run grep -Fq 'Map outcomes to evidence' "$root"
+    assert_success
+    run grep -Fq 'Green tests do not prove completion' "$root"
+    assert_success
+    run grep -Fq 'For simplification, compare net diff and remaining complexity' "$root"
+    assert_success
+}
+
+@test "verification is proportional and carries reusable evidence" {
+    local root="$REAL_DOTFILES_DIR/AGENTS.md"
+    local coder="$AGENTS_DIR/agent_definitions/coder.md"
+
+    for contract in \
+        'run focused checks for changed scope in foreground' \
+        'The parent owns the integrated final full gates' \
+        'Reuse successful gate evidence only when tested code, configuration, dependencies, and environment are unchanged' \
+        'Carry the command, tree or revision, and result' \
+        'Revalidate changed relevant inputs and failed or incomplete runs' \
+        'Skip code test suites for read-only analysis and unchanged handoffs'; do
+        run grep -Fq "$contract" "$coder"
+        assert_success
+    done
+    run grep -Fq 'Docs-only edits still run relevant lint, deploy checks, and repository-specific gates' "$root"
+    assert_success
+}
+
+@test "parent dispatches carry review mode and coder contract" {
+    for contract in \
+        'Review mode: severity-report' \
+        'Review mode: taste-test' \
+        'Done means' \
+        'Scope fence'; do
+        run grep -Fq "$contract" "$PREAMBLE"
+        assert_success
+    done
+    run grep -Fq 'Do not reopen a completed review on unchanged scope without new concrete evidence' "$PREAMBLE"
+    assert_success
+}
+
+@test "coder reports exact gate results without treating skips as total failure" {
+    local coder="$AGENTS_DIR/agent_definitions/coder.md"
+    run grep -Fq 'Map the requested outcome to evidence; green tests do not prove goal completion' "$coder"
+    assert_success
+    run grep -Fq 'Report exact pass, fail, and skipped results' "$coder"
+    assert_success
+    run grep -Fq 'A skip does not invalidate unrelated passing tests' "$coder"
+    assert_success
+    run grep -Fq '"Tests pass" is false if any test was skipped' "$coder"
+    assert_failure
 }

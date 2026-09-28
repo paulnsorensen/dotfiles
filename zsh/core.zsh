@@ -92,16 +92,27 @@ fi
 # copies so a mise-managed tool (e.g. claude, codex) resolves before any
 # stale native/brew install still on PATH from before migration.
 if command -v mise 1>/dev/null 2>&1; then
-  # gh keeps its token in the macOS keychain, so ~/.config/gh/hosts.yml has no
-  # `oauth_token` and mise's default gh_cli_tokens reader finds nothing —
-  # leaving every aqua release lookup anonymous against the 60/hr per-IP cap.
-  # This has to be the env var, not a [settings] block: packages/sync.sh runs
-  # `mise install` with MISE_GLOBAL_CONFIG_FILE aimed at the repo source, which
-  # demotes ~/.config/mise/config.toml to a non-global config where mise
-  # ignores credential_command and demands `mise trust`.
-  if command -v gh 1>/dev/null 2>&1; then
-    export MISE_GITHUB_CREDENTIAL_COMMAND="gh auth token"
+  # gh stores its token in the macOS keychain.
+  # ~/.config/gh/hosts.yml therefore lacks `oauth_token`.
+  # mise's default reader finds nothing and anonymous requests hit the rate cap.
+  # Use the env var because sync points MISE_GLOBAL_CONFIG_FILE at the repo.
+  # That makes the user config non-global and disables credential_command there.
+  #
+  # Name a real absolute `gh`, never the mise shim.
+  # zshenv puts mise shims first on PATH.
+  # A bare `gh` re-enters mise through that shim.
+  # Skip candidates resolving to mise and keep the first real path.
+  unset MISE_GITHUB_CREDENTIAL_COMMAND
+  _dotfiles_gh=
+  for _dotfiles_gh_candidate in ${^path}/gh(N-*); do
+    [[ "${_dotfiles_gh_candidate:A:t}" == mise ]] && continue
+    _dotfiles_gh="${_dotfiles_gh_candidate:A}"
+    break
+  done
+  if [[ -n "$_dotfiles_gh" ]]; then
+    export MISE_GITHUB_CREDENTIAL_COMMAND="${(q)_dotfiles_gh} auth token"
   fi
+  unset _dotfiles_gh _dotfiles_gh_candidate
   eval "$(mise activate zsh)"
 fi
 

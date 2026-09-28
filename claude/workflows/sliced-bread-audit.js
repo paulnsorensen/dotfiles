@@ -2,13 +2,13 @@
 export const meta = {
   name: 'sliced-bread-audit',
   description:
-    'Deep slice-by-slice audit of a Sliced Bread codebase: map the slices, run one fable evaluator per slice plus a concurrent cross-slice dependency pass, then verify every finding as a second phase — a batch citation-check followed by an adversarial refuter on blocker/high — and open labeled GitHub issues for confirmed findings in batches.',
+    'Deep slice-by-slice audit of a Sliced Bread codebase: map the slices, run one Opus evaluator per slice plus a concurrent cross-slice dependency pass, then verify every finding as a second phase — a batch citation-check followed by an adversarial Opus refuter on blocker/high — and open labeled GitHub issues for confirmed findings in batches.',
   whenToUse:
     'Audit a repo (or subtree) against Sliced Bread architecture and code quality with findings landing as GitHub issues. Requires gh auth in the target repo. Pass {dry_run: true} to preview without filing issues.',
   phases: [
     { title: 'Map', detail: 'discover slices; in parallel, gh setup (labels + existing audit issues)' },
-    { title: 'Evaluate', detail: 'one fable evaluator per slice (pipelined into Verify) + concurrent cross-slice pass', model: 'fable' },
-    { title: 'Verify', detail: 'per-slice sonnet batch citation-check; one adversarial fable refuter per blocker/high' },
+    { title: 'Evaluate', detail: 'one Opus/high evaluator per slice (pipelined into Verify) + concurrent cross-slice pass', model: 'opus', effort: 'high' },
+    { title: 'Verify', detail: 'per-slice Sonnet/low batch citation-check; one adversarial Opus/high refuter per blocker/high', model: 'opus', effort: 'high' },
     { title: 'File', detail: 'dedupe against existing issues, cap, file gh issues in batches of 10' },
   ],
 }
@@ -384,7 +384,7 @@ async function runBounded(items, task, limit = WORKERS) {
 
 phase('Map')
 const [mapOutcome, setupOutcome] = await parallel([
-  () => safeAgent(mapPrompt(), { label: 'map:slices', phase: 'Map', schema: SLICE_MAP_SCHEMA, model: 'fable' }),
+  () => safeAgent(mapPrompt(), { label: 'map:slices', phase: 'Map', schema: SLICE_MAP_SCHEMA, model: 'sonnet', effort: 'medium' }),
   () => safeAgent(setupPrompt(), { label: 'map:gh-setup', phase: 'Map', schema: SETUP_SCHEMA, model: 'haiku', effort: 'low' }),
 ])
 const sliceMap = mapOutcome && mapOutcome.ok ? mapOutcome.value : null
@@ -484,7 +484,7 @@ async function verifyFindings(findings, label) {
       label: `refute:${finding.file}:${finding.line}`,
       phase: 'Verify',
       schema: VERDICT_SCHEMA,
-      model: 'fable',
+      model: 'opus',
       effort: 'high',
     })
   )
@@ -519,7 +519,7 @@ const evaluationResults = await runBounded(evaluationItems, async (item) => {
     label: `eval:${item.name}`,
     phase: 'Evaluate',
     schema: FINDINGS_SCHEMA,
-    model: 'fable',
+    model: 'opus',
     effort: 'high',
   })
   return { item, outcome }

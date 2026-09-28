@@ -20,8 +20,9 @@ max_tokens = 550
 
 [[source]]
 # 520: PR #1051 added section-read and coder re-dispatch rules (2026-09-24).
+# 530: parallel-call batching and read-section handoff rules (2026-09-28).
 path = "agents/preamble.md"
-max_tokens = 520
+max_tokens = 530
 
 [[source]]
 path = "profiles/codex-code/AGENTS.md"
@@ -106,15 +107,16 @@ max_tokens = 5000
 [family.overrides]
 "skills/xray/SKILL.md" = 5800
 
+# 1060: parallel-call batching and read-section handoff rules (2026-09-28).
 [[stack]]
 name = "global_codex"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1050
+max_tokens = 1060
 
 [[stack]]
 name = "global_claude"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1050
+max_tokens = 1060
 
 [[stack]]
 name = "repo_codex"

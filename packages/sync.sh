@@ -15,7 +15,7 @@ PLATFORM="$(uname)"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}"
 MISE_BOOTSTRAP_CONFIG_FILE="${MISE_BOOTSTRAP_CONFIG_FILE:-$SCRIPT_DIR/../chezmoi/dot_config/mise/config.toml}"
 # renovate: datasource=github-tags depName=can1357/oh-my-pi
-OMP_PIN="v18.3.4"
+OMP_PIN="v18.4.0"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -33,6 +33,8 @@ log_error()   { echo -e "${RED}[packages]${NC} $1" >&2; }
 # Linux Homebrew/yq bootstrap helpers (also reused by bootstrap-linux.sh).
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib-linux-bootstrap.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-gh-resolve.sh"
 
 if [[ ! -f "$PACKAGES_FILE" ]]; then
     log_warning "packages.yaml not found"
@@ -379,17 +381,20 @@ sync_mise() {
         return 0
     fi
 
-    # Authenticate mise's GitHub reads. gh stores its token in the macOS
-    # keychain, so ~/.config/gh/hosts.yml carries no `oauth_token` and mise's
-    # default gh_cli_tokens reader finds nothing — leaving the aqua release
-    # lookups anonymous against the 60/hr per-IP cap, which they exhaust and
-    # then re-request every run (a 403 caches nothing). Must be the env var:
-    # MISE_GLOBAL_CONFIG_FILE below demotes ~/.config/mise/config.toml to a
-    # non-global config, where mise ignores a `credential_command` setting and
-    # rejects the file as untrusted. zsh/core.zsh exports this for interactive
-    # shells; repeated here so bootstrap and non-interactive runs are covered.
-    if command -v gh &>/dev/null; then
-        export MISE_GITHUB_CREDENTIAL_COMMAND="gh auth token"
+    # Authenticate mise's GitHub reads with a real `gh` path.
+    # gh stores its token in the macOS keychain, not hosts.yml.
+    # mise's default reader finds nothing, so aqua requests hit the rate cap.
+    # Use the env var because MISE_GLOBAL_CONFIG_FILE makes config non-global.
+    # Repeat this setup for bootstrap and non-interactive runs.
+    #
+    # A bare `gh` re-enters mise through its shim.
+    # resolve_real_gh returns an absolute, non-shim path.
+    local real_gh
+    if real_gh="$(resolve_real_gh)"; then
+        MISE_GITHUB_CREDENTIAL_COMMAND="$(printf '%q' "$real_gh") auth token"
+        export MISE_GITHUB_CREDENTIAL_COMMAND
+    else
+        unset MISE_GITHUB_CREDENTIAL_COMMAND
     fi
 
     log_info "Converging mise-managed tool versions from $mise_config..."
@@ -744,11 +749,19 @@ migrate_harness_off_brew() {
 }
 
 # Remove a stale native-installed binary for a mise-migrated harness so
-# mise's shim is the only thing left on PATH.
+# mise's shim is the only thing left on PATH. A host launcher that wraps the
+# mise binary (crabbot's codex-contain.sh) keeps itself with a marker line in
+# its first 4 KiB. Only the header is read, so a large binary stays cheap.
+# The header's last line may be cut at the byte limit, so it never counts.
+HARNESS_KEEP_MARKER='# dotfiles: keep-harness-launcher'
 migrate_harness_off_native() {
     local harness="$1"
     local path="$HOME/.local/bin/$harness"
     [[ -e "$path" ]] || return 0
+    if [[ -f "$path" ]] && grep -qsFx -- "$HARNESS_KEEP_MARKER" < <(head -c 4096 -- "$path" | sed '$d'); then
+        log_info "  Keeping $harness launcher (marked keep-harness-launcher)"
+        return 0
+    fi
     log_info "  Removing native $harness binary (now mise-managed)..."
     rm -f "$path"
 }
