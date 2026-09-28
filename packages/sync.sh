@@ -396,12 +396,16 @@ bump_mise_manifest() {
 
     # Stage beside the manifest and rename over it, so an interrupted or
     # out-of-space copy can never leave a truncated tracked manifest.
+    # GNU stat first: on Linux `stat -f` is a *filesystem* query and answers
+    # with mount data instead of failing. Default to 644 when neither form
+    # yields an octal mode.
     local staged mode
-    mode="$(stat -f '%Lp' "$source" 2>/dev/null || stat -c '%a' "$source")"
+    mode="$(stat -c '%a' "$source" 2>/dev/null || stat -f '%Lp' "$source" 2>/dev/null)"
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]] || mode=644
     if ! staged=$(mktemp "$source.XXXXXX") \
         || ! cp "$live" "$staged" \
         || ! cmp -s "$live" "$staged" \
-        || ! chmod "${mode:-644}" "$staged" \
+        || ! chmod "$mode" "$staged" \
         || ! mv -f "$staged" "$source"; then
         [[ -n "${staged:-}" ]] && rm -f "$staged"
         log_error "mise pins bumped in $live but the mirror into $source failed — the final chezmoi apply reverts the live file; re-run dots sync"
