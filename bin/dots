@@ -323,8 +323,11 @@ do_doctor() {
         # shellcheck source=bin/lib/agent-secret-doctor.sh
         source "$broker_lib"
         local broker_findings category pid detail
-        broker_findings=$(ps -axo pid=,command= | asd_stale_brokers)
-        if [[ -z "$broker_findings" ]]; then
+        # Under set -e and pipefail, a failed ps would end do_doctor here.
+        if ! broker_findings=$(ps -axo pid=,command= | asd_stale_brokers); then
+            echo -e "  ${RED}✗ Unable to list processes for the broker check${NC}"
+            issues=$((issues + 1))
+        elif [[ -z "$broker_findings" ]]; then
             echo -e "  ${GREEN}✓ No orphaned or duplicate brokers${NC}"
         else
             while IFS=$'\t' read -r category pid detail; do

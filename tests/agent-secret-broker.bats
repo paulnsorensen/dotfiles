@@ -575,6 +575,10 @@ wait_exit() {
     # launchd restarts a KeepAlive job only after an unsuccessful exit. A
     # broker that exits 0 on SIGTERM stays down until the next reboot.
     [[ "$rc" -eq 143 ]]
+    # A client can no longer reach the stopped broker.
+    run proxy_call '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    assert_failure
+    [[ "$output" != *protocolVersion* ]]
 }
 
 @test "a broker exits when the process that started it exits" {
@@ -593,4 +597,7 @@ wait_exit() {
         return 1
     fi
     [[ ! -e "$orphan_socket" && ! -e "$orphan_control" ]]
+    run "$PROXY" --socket "$orphan_socket" <<< '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    assert_failure
+    [[ "$output" != *protocolVersion* ]]
 }
