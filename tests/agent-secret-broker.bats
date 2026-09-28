@@ -513,3 +513,74 @@ PY
     run "$CTL" approve --socket "$TEST_ROOT/no-such.sock" --nonce --consumer fixture
     [[ "$output" == *"expected one argument"* ]]
 }
+
+# wait_exit <pid> — succeed once <pid> exits, fail if it is still alive after 5 s.
+wait_exit() {
+    local _
+    for _ in {1..100}; do
+        kill -0 "$1" 2>/dev/null || return 0
+        sleep 0.05
+    done
+    return 1
+}
+
+@test "a second broker refuses a socket that a live broker still serves" {
+    "$BROKER" --policy "$POLICY" --socket "$SOCKET" --control-socket "$TEST_ROOT/second-control.sock" \
+        >"$TEST_ROOT/second.log" 2>&1 &
+    local second=$! rc=0
+    if ! wait_exit "$second"; then
+        kill "$second" 2>/dev/null || true
+        echo "second broker kept running and took over the live socket" >&2
+        return 1
+    fi
+    wait "$second" || rc=$?
+    [[ "$rc" -eq 2 ]]
+    grep -q "already served" "$TEST_ROOT/second.log"
+    [[ ! -e "$TEST_ROOT/second-control.sock" ]]
+
+    run proxy_call '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    assert_success
+    [[ "$output" == *'"protocolVersion":"2025-06-18"'* ]]
+}
+
+@test "a broker replaces a stale socket left by a killed predecessor" {
+    kill -KILL "$BROKER_PID"
+    wait "$BROKER_PID" 2>/dev/null || true
+    [[ -S "$SOCKET" && -S "$CONTROL" ]]
+
+    "$BROKER" --policy "$POLICY" --socket "$SOCKET" --control-socket "$CONTROL" >"$TEST_ROOT/next.log" 2>&1 &
+    export BROKER_PID=$!
+    local _
+    for _ in {1..50}; do
+        [[ -S "$SOCKET" && -S "$CONTROL" ]] && kill -0 "$BROKER_PID" 2>/dev/null && break
+        sleep 0.02
+    done
+    run proxy_call '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    assert_success
+    [[ "$output" == *'"protocolVersion":"2025-06-18"'* ]]
+}
+
+@test "SIGTERM stops the broker and removes both sockets" {
+    kill -TERM "$BROKER_PID"
+    wait_exit "$BROKER_PID"
+    unset BROKER_PID
+    [[ ! -e "$SOCKET" && ! -e "$CONTROL" ]]
+}
+
+@test "a broker exits when the process that started it exits" {
+    local orphan_socket="$TEST_ROOT/orphan.sock" orphan_control="$TEST_ROOT/orphan-control.sock"
+    # The parent shell backgrounds the broker, waits for its socket, then
+    # exits: the same shape as an aborted test run or a closed agent session.
+    bash -c '"$0" --policy "$1" --socket "$2" --control-socket "$3" >/dev/null 2>&1 &
+        echo $! > "$4"
+        for _ in {1..100}; do [[ -S "$2" ]] && exit 0; sleep 0.02; done
+        exit 1' "$BROKER" "$POLICY" "$orphan_socket" "$orphan_control" "$TEST_ROOT/orphan.pid"
+    local orphan
+    orphan=$(<"$TEST_ROOT/orphan.pid")
+    if ! wait_exit "$orphan"; then
+        kill "$orphan" 2>/dev/null || true
+        echo "orphaned broker $orphan kept running after its parent exited" >&2
+        return 1
+    fi
+    [[ ! -e "$orphan_socket" && ! -e "$orphan_control" ]]
+}

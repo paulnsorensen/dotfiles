@@ -11,6 +11,7 @@ import pathlib
 import pwd
 import secrets
 import selectors
+import signal
 import socket
 import stat
 import struct
@@ -757,6 +758,28 @@ class Broker:
         self._control_listener: socket.socket | None = None
 
     @staticmethod
+    def _socket_served(path: pathlib.Path) -> bool:
+        """Report whether a live listener still accepts connections on <path>.
+
+        Only a refused or vanished connection proves the socket is stale. A
+        second broker that unlinks a live socket steals it silently, and the
+        first broker keeps running with no way to serve.
+        """
+        probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        probe.settimeout(1)
+        try:
+            probe.connect(str(path))
+        except (ConnectionRefusedError, FileNotFoundError):
+            return False
+        except socket.timeout:
+            return True
+        except OSError as exc:
+            raise ConfigError("socket path cannot be probed") from exc
+        finally:
+            probe.close()
+        return True
+
+    @staticmethod
     def _bind(path: pathlib.Path, owner_uid: int) -> socket.socket:
         try:
             existing = path.lstat()
@@ -767,6 +790,8 @@ class Broker:
         if existing is not None:
             if not stat.S_ISSOCK(existing.st_mode):
                 raise ConfigError("socket path is not a socket")
+            if Broker._socket_served(path):
+                raise ConfigError(f"socket already served: {path}")
             path.unlink()
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
@@ -900,10 +925,16 @@ class Broker:
                 pass
 
     def run(self) -> int:
+        # launchd and systemd start the installed broker under PID 1, so its
+        # parent never changes. Any other parent (a test run, an agent session)
+        # owns the broker's lifetime: once it exits, the broker exits too.
+        parent = os.getppid()
+        signal.signal(signal.SIGTERM, lambda _signum, _frame: self._stop.set())
         self.start()
         try:
             while not self._stop.wait(1):
-                pass
+                if os.getppid() != parent:
+                    break
         except KeyboardInterrupt:
             return 0
         finally:
