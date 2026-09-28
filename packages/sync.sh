@@ -33,6 +33,8 @@ log_error()   { echo -e "${RED}[packages]${NC} $1" >&2; }
 # Linux Homebrew/yq bootstrap helpers (also reused by bootstrap-linux.sh).
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib-linux-bootstrap.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-gh-resolve.sh"
 
 if [[ ! -f "$PACKAGES_FILE" ]]; then
     log_warning "packages.yaml not found"
@@ -388,8 +390,13 @@ sync_mise() {
     # non-global config, where mise ignores a `credential_command` setting and
     # rejects the file as untrusted. zsh/core.zsh exports this for interactive
     # shells; repeated here so bootstrap and non-interactive runs are covered.
-    if command -v gh &>/dev/null; then
-        export MISE_GITHUB_CREDENTIAL_COMMAND="gh auth token"
+    #
+    # Must name a real gh binary, never the mise shim (packages/lib-gh-resolve.sh):
+    # naming a bare `gh` re-enters the shim from inside mise's own credential
+    # command, forever — the fork chain that wedged crabbot on 2026-09-28.
+    local real_gh
+    if real_gh="$(resolve_real_gh)"; then
+        export MISE_GITHUB_CREDENTIAL_COMMAND="$(printf '%q' "$real_gh") auth token"
     fi
 
     log_info "Converging mise-managed tool versions from $mise_config..."

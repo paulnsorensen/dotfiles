@@ -1014,7 +1014,7 @@ MOCKNPM
 
     run_sync
     assert_success
-    [[ "$(<"$TEST_HOME/mise-github-auth")" == "gh auth token" ]]
+    [[ "$(<"$TEST_HOME/mise-github-auth")" == "$MOCK_BIN/gh auth token" ]]
 }
 
 @test "cached sync fails when mise cannot restore configured tools" {

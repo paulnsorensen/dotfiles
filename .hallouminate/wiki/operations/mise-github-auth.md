@@ -28,12 +28,18 @@ So the env var is the only lever that survives the sync's own config plumbing.
 
 ## Wired in two places, both guarded
 
-Both sites export it only when `gh` is actually present:
+Both sites export it only when a real `gh` binary is present:
 
-- `zsh/core.zsh:99-101` — interactive shells, just before `mise activate`.
-- `packages/sync.sh:391-393` — bootstrap and non-interactive runs, which never source `core.zsh`.
+- `zsh/core.zsh` — interactive shells, just before `mise activate`.
+- `packages/sync.sh` via `resolve_real_gh` in `packages/lib-gh-resolve.sh` — bootstrap and non-interactive runs, which never source `core.zsh`.
 
 The duplication is intentional. Removing either one leaves a real path unauthenticated.
+
+## The command must name an absolute, non-shim `gh`
+
+A bare `gh auth token` is a fork bomb when `gh` is itself a mise shim. `zshenv` puts `~/.local/share/mise/shims` first on PATH, and non-interactive shells never run the `mise activate` hook that moves install dirs ahead of it. So `gh` resolves to `shims/gh -> mise`. When mise needs a token, it runs `sh -c 'gh auth token'`, which runs the shim, which runs mise, which runs the credential command again. On 2026-09-28 a `just test` in a Codex agent built a 1,810-deep chain and wedged crabbot (crabbot wiki `wedge-2026-09-28-mise-gh-fork-recursion`).
+
+Both sites now skip every PATH candidate whose resolved target is `mise`, and embed the first real binary's absolute path. If only the shim exists, they leave the variable unset. The token is the same from any real `gh`, because all of them read the same `gh` auth store.
 
 ## Which pins actually hit the network
 

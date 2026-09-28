@@ -340,18 +340,81 @@ SH
     assert_success
 }
 
-@test "core.zsh hands mise a gh-backed GitHub credential command" {
+# Extract the absolute gh path core.zsh embedded, from a captured
+# "CRED=[<path> auth token]" (or "CRED=[unset]") marker.
+_cred_gh_path() {
+    [[ "$1" =~ CRED=\[([^]]*)\ auth\ token\] ]] && printf '%s' "${BASH_REMATCH[1]}"
+}
+
+@test "core.zsh hands mise a gh-backed GitHub credential command naming a real, absolute gh" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     command -v gh &>/dev/null || skip "gh not installed"
+    local zsh_bin
+    zsh_bin="$(command -v zsh)"
     # Supply mise so this test checks the credential branch on minimal CI hosts.
     local mock_bin="$BATS_TEST_TMPDIR/bin"
     mkdir -p "$mock_bin"
     printf '#!/bin/sh\nexit 0\n' > "$mock_bin/mise"
     chmod +x "$mock_bin/mise"
 
-    run env PATH="$mock_bin:$PATH" zsh --no-rcs -c "source '$REAL_DOTFILES_DIR/zsh/core.zsh'; printf 'CRED=[%s]' \"\$MISE_GITHUB_CREDENTIAL_COMMAND\""
+    run env PATH="$mock_bin:$PATH" "$zsh_bin" --no-rcs -c "unset MISE_GITHUB_CREDENTIAL_COMMAND; source '$REAL_DOTFILES_DIR/zsh/core.zsh'; printf 'CRED=[%s]' \"\$MISE_GITHUB_CREDENTIAL_COMMAND\""
     assert_success
-    [[ "$output" == *"CRED=[gh auth token]"* ]]
+
+    # Regression: the old code exported the bare, unqualified "gh", which mise
+    # shims/gh resolves to itself — the fork-recursion root cause.
+    assert_output_not_contains "CRED=[gh auth token]"
+
+    local gh_path
+    gh_path="$(_cred_gh_path "$output")"
+    [[ "$gh_path" == /* ]]
+    [[ -x "$gh_path" ]]
+    [[ "$(basename "$(readlink -f "$gh_path")")" != "mise" ]]
+}
+
+@test "core.zsh skips a mise gh shim ahead on PATH and resolves a real gh" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local zsh_bin
+    zsh_bin="$(command -v zsh)"
+    local shim_dir="$BATS_TEST_TMPDIR/shim"
+    local real_dir="$BATS_TEST_TMPDIR/real"
+    mkdir -p "$shim_dir" "$real_dir"
+
+    # A fake mise binary, and a gh symlink resolving to it — mirrors
+    # ~/.local/share/mise/shims/gh -> mise.
+    printf '#!/bin/sh\nexit 0\n' > "$shim_dir/mise"
+    chmod +x "$shim_dir/mise"
+    ln -s "$shim_dir/mise" "$shim_dir/gh"
+
+    printf '#!/bin/sh\necho real-gh\n' > "$real_dir/gh"
+    chmod +x "$real_dir/gh"
+
+    run env PATH="$shim_dir:$real_dir:$PATH" "$zsh_bin" --no-rcs -c "unset MISE_GITHUB_CREDENTIAL_COMMAND; source '$REAL_DOTFILES_DIR/zsh/core.zsh'; printf 'CRED=[%s]' \"\$MISE_GITHUB_CREDENTIAL_COMMAND\""
+    assert_success
+
+    local gh_path
+    gh_path="$(_cred_gh_path "$output")"
+    # A real, executable gh that is not the shim itself — whichever real gh
+    # the resolver reached first, it must have skipped shim_dir/gh.
+    [[ -n "$gh_path" ]]
+    [[ -x "$gh_path" ]]
+    [[ "$gh_path" != "$shim_dir/gh" ]]
+    [[ "$(basename "$(readlink -f "$gh_path")")" != "mise" ]]
+}
+
+@test "core.zsh does not export a credential command when only a mise gh shim is on PATH" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local zsh_bin
+    zsh_bin="$(command -v zsh)"
+    local shim_dir="$BATS_TEST_TMPDIR/shim-only"
+    mkdir -p "$shim_dir"
+    printf '#!/bin/sh\nexit 0\n' > "$shim_dir/mise"
+    chmod +x "$shim_dir/mise"
+    ln -s "$shim_dir/mise" "$shim_dir/gh"
+
+    # PATH holds only the shim dir, so no real gh exists anywhere on it.
+    run env PATH="$shim_dir" "$zsh_bin" --no-rcs -c "unset MISE_GITHUB_CREDENTIAL_COMMAND; source '$REAL_DOTFILES_DIR/zsh/core.zsh'; printf 'CRED=[%s]' \"\${MISE_GITHUB_CREDENTIAL_COMMAND-unset}\""
+    assert_success
+    [[ "$output" == *"CRED=[unset]"* ]]
 }
 
 @test "zshenv prepends the mise shims dir ahead of stale PATH entries" {

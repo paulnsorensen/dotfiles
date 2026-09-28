@@ -96,9 +96,24 @@ if command -v mise 1>/dev/null 2>&1; then
   # `mise install` with MISE_GLOBAL_CONFIG_FILE aimed at the repo source, which
   # demotes ~/.config/mise/config.toml to a non-global config where mise
   # ignores credential_command and demands `mise trust`.
-  if command -v gh 1>/dev/null 2>&1; then
-    export MISE_GITHUB_CREDENTIAL_COMMAND="gh auth token"
+  #
+  # Must name a real gh binary, never the mise shim. zshenv puts
+  # ~/.local/share/mise/shims first on PATH, so a bare `gh` resolves to
+  # shims/gh -> mise. mise then runs `sh -c 'gh auth token'` for the
+  # credential command, which re-enters the shim, which re-enters mise,
+  # forever — a 1,810-deep fork chain wedged crabbot on 2026-09-28. Skip any
+  # PATH candidate that resolves to mise and embed the first real gh's
+  # absolute path instead.
+  _dotfiles_gh=
+  for _dotfiles_gh_candidate in ${^path}/gh(N-*); do
+    [[ "${_dotfiles_gh_candidate:A:t}" == mise ]] && continue
+    _dotfiles_gh="$_dotfiles_gh_candidate"
+    break
+  done
+  if [[ -n "$_dotfiles_gh" ]]; then
+    export MISE_GITHUB_CREDENTIAL_COMMAND="${(q)_dotfiles_gh} auth token"
   fi
+  unset _dotfiles_gh _dotfiles_gh_candidate
   eval "$(mise activate zsh)"
 fi
 
