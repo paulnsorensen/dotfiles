@@ -87,8 +87,10 @@ agent-tty --home "$HOME_DIR" destroy "$SID" --json
 rm -rf "$HOME_DIR"
 ```
 
-Find hosts that outlived their agent (`ppid` 1, long `etime`):
+Find hosts that outlived their agent. Every `_host` daemonizes to ppid 1, so
+ppid does not identify an orphan. Look for a long `etime`, then compare each
+session id with `agent-tty --home "$HOME_DIR" list --json`:
 
 ```bash
-ps -axo pid,ppid,etime,command | grep '[a]gent-tty.*_host'
+ps -axo pid,etime,command | grep '[a]gent-tty.*_host'
 ```

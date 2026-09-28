@@ -120,9 +120,10 @@ finding as `state, size, axis, what you see, expected, severity
 ## Step 7 — Clean up
 
 `destroy` the session, also when an earlier step fails. A session outlives its
-agent: only `destroy` or the `--idle-timeout-ms` set at `create` ends it. Note
-artifact paths in the report. Recordings may contain secrets — keep the
-agent-tty home under `mktemp -d` and do not commit PNGs unless the user asks.
+agent: only `destroy` or the `--idle-timeout-ms` set at `create` ends it. In the
+report, cite the copied `.cheese/tui-verify/` paths, not paths inside the
+agent-tty home; teardown removes the home. Recordings may contain secrets —
+keep the home under `mktemp -d` and do not commit PNGs unless the user asks.
 
 ## What text snapshots cannot prove
 
