@@ -428,6 +428,64 @@ EOF
     assert_output_contains "[dry-run] rm -rf"
 }
 
+# ─── superseded native skill copies ────────────────────────────────────
+# Older skills-CLI releases copied Cursor skills into ~/.cursor/skills and a
+# retired leg copied a tree into ~/.pi/agent/skills. Both harnesses read the
+# shared ~/.agents/skills, so a same-name copy there is a frozen duplicate.
+
+@test "skill sync: evicts native copies that ~/.agents/skills supersedes" {
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
+sources: {}
+EOF
+    write_env "cursor"
+
+    mkdir -p "$HOME/.agents/skills/cook" "$HOME/.cursor/skills/cook" "$HOME/.pi/agent/skills/cook"
+    printf '# fresh\n' > "$HOME/.agents/skills/cook/SKILL.md"
+    printf '# stale\n' > "$HOME/.cursor/skills/cook/SKILL.md"
+    printf '# stale\n' > "$HOME/.pi/agent/skills/cook/SKILL.md"
+
+    run_sync
+    assert_success
+    [[ ! -e "$HOME/.cursor/skills/cook" ]]
+    [[ ! -e "$HOME/.pi/agent/skills/cook" ]]
+    assert_output_contains "Removed superseded cursor skill copies: cook"
+    assert_output_contains "Removed superseded pi skill copies: cook"
+}
+
+@test "skill sync: keeps manifest-owned and harness-only native skill copies" {
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
+sources: {}
+EOF
+    write_env "cursor"
+
+    mkdir -p "$HOME/.agents/skills/xray" "$HOME/.cursor/skills/xray" "$HOME/.cursor/skills/only-here"
+    printf '# shared\n' > "$HOME/.agents/skills/xray/SKILL.md"
+    printf '# managed\n' > "$HOME/.cursor/skills/xray/SKILL.md"
+    printf 'xray\n' > "$HOME/.cursor/skills/.dotfiles-managed"
+    printf '# native\n' > "$HOME/.cursor/skills/only-here/SKILL.md"
+
+    run_sync
+    assert_success
+    [[ -f "$HOME/.cursor/skills/xray/SKILL.md" ]]
+    [[ -f "$HOME/.cursor/skills/only-here/SKILL.md" ]]
+    run grep -F "Removed superseded" <<<"$output"
+    assert_failure
+}
+
+@test "skill sync: --dry-run reports but keeps superseded native copies" {
+    write_registry
+    write_env "cursor"
+
+    mkdir -p "$HOME/.agents/skills/cook" "$HOME/.cursor/skills/cook"
+    printf '# fresh\n' > "$HOME/.agents/skills/cook/SKILL.md"
+    printf '# stale\n' > "$HOME/.cursor/skills/cook/SKILL.md"
+
+    run_sync --dry-run
+    assert_success
+    [[ -f "$HOME/.cursor/skills/cook/SKILL.md" ]]
+    assert_output_contains "superseded by"
+}
+
 # ─── retired local-skill reconciliation ────────────────────────────────
 # install_local_tree copies the repo's skills/ tree into the shared agents
 # root. The CLI never removes a name dropped from that source, so a manifest

@@ -80,6 +80,37 @@ gone. `tests/packages.bats` checks that each reader returns its installer pin an
 
 **Order of operations**: download into `~/.local/bin/.omp-stage` → `chmod +x` → ad-hoc `codesign` on Darwin (an unsigned binary is killed on first exec, so signing must precede the probe) → probe `--version` against `OMP_PIN` → `mv` over `~/.local/bin/omp`. The staged rename swaps the directory entry, so a live omp session cannot cause ETXTBSY, and a truncated or unstartable download never reaches the live path. `tests/packages.bats` asserts the pinned asset URL, the absence of any `api.github.com` call, the event order, and both failure legs. Recorded 2026-09-02.
 
+## Update vectors (2026-09-28)
+
+`dots sync` runs in upgrade mode by default (`parse_sync_args` in `.sync-lib.sh`). `dots update` and `dots up` add a Git pull in front of the same sync. Renovate moves every pin; the pull delivers it. The table names each channel, whether one sync moves it, and the mechanism.
+
+| Channel | Moves on `dots sync` | Mechanism |
+|---|---|---|
+| Brew formulae in `packages/packages.yaml` (now incl. `mise`) | yes | `brew update` + `brew upgrade --formula <declared>` in `sync_brew` |
+| Brew formulae not declared | no | by design; declare a formula to upgrade it |
+| Casks | yes | `upgrade_casks_greedy`; `greedy: false` casks self-update |
+| mise tools, claude, codex (`chezmoi/dot_config/mise/config.toml`) | to the pin | `mise install`; Renovate bumps the pin |
+| omp (`OMP_PIN`), pi (npm pin) | to the pin | `converge_omp_native`, `sync_npm` |
+| cargo, npm, gh-extension entries | to the pin | unpinned entries install once and never float |
+| uv tools | to the pin | `float: true` moves every sync; unpinned entries move in upgrade mode |
+| tilth, hallouminate | yes | `run_after_install-*.sh.tmpl` nightly channel |
+| Claude skills (`~/.claude/skills`) | yes | chezmoi vendoring; unpinned sources float to the default branch |
+| Codex, Cursor, Copilot skills (`~/.agents/skills`) | yes | `install-external.sh --force` (`npx skills add --copy`) |
+| Claude MCP entries, plugin membership | yes | `reconcile_claude_mcps`; plugin reconcile on registry change |
+| Claude plugin versions | no | `claude plugin update <name>`; the CLI owns this |
+| OMP plugins, Pi extensions | yes | `sync_omp_plugins`, `pi update --extensions` |
+| tmux plugins | yes | `install_plugins`, then `update_plugins all` in upgrade mode |
+| Homebrew itself | yes | `brew update` |
+| macOS, App Store apps, Tailscale | no | `softwareupdate`, `mas upgrade`, and the app; outside `dots` |
+
+### Gotcha: the mise binary was never declared
+
+`sync_mise` bootstrapped `mise` with `brew install`, but `brew upgrade --formula <declared>` only moves declared formulae. `mise` is now a declared formula in `packages/packages.yaml`.
+
+### Gotcha: stale native skill copies shadow `~/.agents/skills`
+
+Older `skills` CLI releases copied Cursor skills into `~/.cursor/skills`, and a retired leg copied a tree into `~/.pi/agent/skills`. Both harnesses read `~/.agents/skills` now, so those copies froze in June and August while the shared tree kept moving. `install-external.sh` evicts a copy when the same name exists in `~/.agents/skills` and no `.dotfiles-managed*` manifest in that root owns it. Manifest-owned and harness-only skills stay.
+
 ## Chezmoi-managed subset
 
 chezmoi renders the files that need per-machine templating (work vs. personal git email), per-OS branching, or secret injection — things plain symlinks can't do. Everything else stays on the symlink system.

@@ -314,6 +314,8 @@ sync_post_package_entries() {
 # Install TPM (tmux plugin manager) if not present, then run install_plugins
 # on every sync — it's idempotent (skips already-installed plugins), so this
 # also repairs machines where the plugin dir predates newly added plugins.
+# Upgrade mode (the `dots sync` default) then runs update_plugins, because an
+# installed plugin never moves on its own.
 install_tpm() {
     command -v tmux &>/dev/null || return 0
 
@@ -331,6 +333,14 @@ install_tpm() {
     "$install_plugins" 2>&1 | while read -r line; do
       log_info "  $line"
     done
+
+    local update_plugins="$HOME/.tmux/plugins/tpm/bin/update_plugins"
+    if [[ "${UPGRADE_MODE:-false}" == "true" && -x "$update_plugins" ]]; then
+        log_info "Updating tmux plugins..."
+        "$update_plugins" all 2>&1 | while read -r line; do
+          log_info "  $line"
+        done
+    fi
 }
 
 # ── claude chezmoi source assembly ──────────────────────────────────────────

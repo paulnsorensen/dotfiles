@@ -72,7 +72,7 @@ ${GREEN}Usage:${NC} dots [command] [args]
 ${BLUE}Commands:${NC}
   ${GREEN}update${NC}          Pull latest changes and run sync
   ${GREEN}sync${NC}            Run the sync script (upgrades packages by default)
-  ${GREEN}upgrade${NC}         Pull dotfiles, then upgrade brew remainder/casks and exempt channels
+  ${GREEN}upgrade${NC}         Pull dotfiles, then run the same upgrade-mode sync
   ${GREEN}status${NC}          Show git status of dotfiles
   ${GREEN}rollback${NC}        Show how to undo a sync (git revert + dots sync)
   ${GREEN}doctor${NC}          Run health checks and profile shell
@@ -90,7 +90,7 @@ ${BLUE}Quick Actions:${NC}
   ${GREEN}dots s${NC}          Sync (shorthand)
   ${GREEN}dots s refresh${NC}  Force re-check all packages (bypass cache)
   ${GREEN}dots s --no-upgrade${NC}  Sync without package upgrades
-  ${GREEN}dots up${NC}         Upgrade packages (shorthand)
+  ${GREEN}dots up${NC}         Pull + sync (shorthand)
   ${GREEN}dots t${NC}          Test (shorthand)
 
 ${BLUE}Examples:${NC}
