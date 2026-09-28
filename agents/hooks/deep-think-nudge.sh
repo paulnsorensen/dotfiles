@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook (Claude-only): when a reasoning-heavy skill — briesearch,
 # culture, spec, or mold — is invoked at an effort BELOW `high`, inject an
-# additionalContext nudge suggesting a checkpoint-and-relaunch on opus/xhigh for
+# additionalContext nudge suggesting a checkpoint-and-relaunch on Opus/high for
 # deeper synthesis. Hooks cannot change model/effort mid-session (model is read
 # once at session start; effort only via the interactive /effort command), so a
 # nudge is the ceiling of what is buildable. Gated to effort < high so an
@@ -48,7 +48,7 @@ cat <<'EOF'
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
-    "additionalContext": "This is a reasoning-heavy synthesis skill running below `high` effort. Before diving in, offer the user a deeper path: run /wheypoint to write a resumable checkpoint, then relaunch on Opus at xhigh effort (Opus is the default model; run /effort xhigh or relaunch the session) for the hardest synthesis. Hooks cannot switch model/effort mid-session, so this is a suggestion the user opts into — do not block or auto-switch."
+    "additionalContext": "This is a reasoning-heavy synthesis skill running below `high` effort. Before diving in, offer the user a deeper path: run /wheypoint to write a resumable checkpoint, then relaunch on Opus at high effort (Opus is the default model; run /effort high or relaunch the session) for the hardest synthesis. Hooks cannot switch model/effort mid-session, so this is a suggestion the user opts into — do not block or auto-switch."
   }
 }
 EOF

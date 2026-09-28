@@ -1248,6 +1248,13 @@ TOML
         "$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json"
 }
 
+@test "claude settings.json: retired Fable and Terra bindings are absent" {
+    local settings="$REAL_DOTFILES_DIR/chezmoi/lib/claude-settings-authoritative.json"
+    jq -e '.modelSettings | has("claude-fable-5-1") | not' "$settings" >/dev/null
+    ! grep -Eqi 'fable|terra|xhigh' "$settings"
+    [[ "$(jq -r '.modelSettings."claude-opus-4-8".effortLevel' "$settings")" == high ]]
+}
+
 @test "claude settings.json: authoritative source has NO legacy SessionStart hook entry" {
     # SessionStart wiring now renders into settings.json from the claude
     # registry `hooks` block (chezmoi/.chezmoidata/claude.yaml). A hand-written

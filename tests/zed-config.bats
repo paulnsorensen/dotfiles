@@ -67,7 +67,7 @@ TOML
     [ "$(jq -c '.context_servers.context7.env' "$stripped")" = '{}' ]
     [ "$(jq -r '.context_servers.tavily | has("envFile")' "$stripped")" = "false" ]
     # OMP ACP model pin preserved (folded from live drift).
-    [ "$(jq -r '.agent_servers.OMP.default_config_options.model' "$stripped")" = "openai-codex/gpt-5.6-sol" ]
+    [ "$(jq -r '.agent_servers.OMP.default_config_options.model' "$stripped")" = "openai-codex/gpt-6-sol" ]
     [ "$(jq -r '.project_panel.dock' "$stripped")" = "left" ]
     [ "$(jq -r '.relative_line_numbers' "$stripped")" = "enabled" ]
     [ "$(jq -r '.vertical_scroll_margin' "$stripped")" = "5" ]

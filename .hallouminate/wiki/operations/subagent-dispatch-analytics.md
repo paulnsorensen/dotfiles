@@ -15,6 +15,30 @@ resolved to one of 578 roots; 548 matched a recorded dispatch.
 
 Reproduce with the queries in `references/subagent-runs.md`.
 
+### Model-routing audit, September 28, 2026
+
+Compare the dispatch role, requested model, and executed model separately.
+A task description that says "coder" does not prove that the caller selected the named coder.
+
+The September 21–28 audit links 452 of 465 Claude dispatches to executed models.
+It joins each sidechain's initial user content to the dispatch prompt, then follows `parentUuid`.
+The named coder runs include 137 Sonnet executions, 44 explicit Opus executions, and three unlinked dispatches.
+Nine general-purpose dispatches execute Fable, including three editing tasks.
+Four Fable review tasks follow the built-in `simplify` invocation.
+
+Twenty Opus coder dispatches follow an explicit user request.
+Do not classify every model override as an error.
+Distinguish deliberate escalation from generic-role inheritance.
+
+The canonical Codex adapter drops execution-model and effort context.
+Codex spawn arguments prove what the caller requests, not what the child executes.
+Claude's model settings also do not prove each child's effective effort.
+
+Reproduce with `skills/session-analytics/scripts/query.sh sql`, using `tool_uses` and `raw_entries`.
+The schema and coverage references describe these limits.[^model-audit]
+
+[^model-audit]: `skills/session-analytics/references/canonical-schema.md`; `skills/session-analytics/references/harness-coverage.md`; local session-analytics audit, September 28, 2026 (aggregate results only).
+
 ## Population
 
 | agent | runs | avg prompt (chars) | median tools | median secs | tool err % |

@@ -26,9 +26,9 @@ is_inline_skill() {
 
 expected_agent_codex_model() {
     case "$1" in
-        reviewer) echo gpt-5.6-sol ;;
-        taste-tester|ghostbuster|researcher|generalist) echo gpt-5.6-terra ;;
-        roquefort-wrecker|coder|explorer|nih-scanner|duckdb-expert|whey-drainer|worktree-content-digest) echo gpt-5.6-luna ;;
+        reviewer) echo gpt-6-astra ;;
+        taste-tester|ghostbuster|researcher|generalist|coder|explorer) echo gpt-6-sol ;;
+        roquefort-wrecker|nih-scanner|duckdb-expert|whey-drainer|worktree-content-digest) echo gpt-6-luna ;;
         *) echo UNMAPPED ;;
     esac
 }
@@ -119,4 +119,9 @@ expected_agent_codex_model() {
 
 @test "self-eval is gone from the selected skills list" {
     ! yq -r '.claude.skills[]' "$CLAUDE_YAML" | grep -qx self-eval
+}
+
+@test "runtime agent routing guard is not registered" {
+    ! grep -Fq 'agent-routing-guard' "$DOTFILES_DIR/agents/hooks/registry.yaml"
+    ! grep -Fq 'agent-routing-guard' "$CLAUDE_YAML"
 }

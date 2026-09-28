@@ -122,7 +122,8 @@ class CodexRenderer:
 
     # ─── subagents ──────────────────────────────────────────────────────
     # Each agent lands at .codex/agents/<name>.toml with TOML fields:
-    #   name, description, optional model, developer_instructions (multiline).
+    #   name, description, optional model, optional model_reasoning_effort,
+    #   developer_instructions (multiline).
     # The body is inlined as a tomlkit multiline-basic string — tomlkit owns
     # the escaping that the bash did by hand.
     def _write_agents(
@@ -147,6 +148,9 @@ class CodexRenderer:
             doc["description"] = desc
             if model:
                 doc["model"] = model
+            effort = item.get("effort") or ""
+            if effort:
+                doc["model_reasoning_effort"] = effort
             if shared.agent_is_read_only(item):
                 doc["sandbox_mode"] = "read-only"
             doc["developer_instructions"] = tomlkit.string(body, multiline=True)

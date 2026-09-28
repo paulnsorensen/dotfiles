@@ -36,7 +36,8 @@ payload() {
     local ctx
     ctx="$(jq -r '.hookSpecificOutput.additionalContext' <<<"$output")"
     [[ "$ctx" == *"/wheypoint"* ]]
-    [[ "$ctx" == *"xhigh"* ]]
+    [[ "$ctx" == *"high"* ]]
+    [[ "$ctx" != *"xhigh"* ]]
     # No permission decision — a nudge must not gate the call.
     [ "$(jq -r '.hookSpecificOutput.permissionDecision // "none"' <<<"$output")" = "none" ]
 }
