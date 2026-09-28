@@ -1,0 +1,5 @@
+# Dot-paths that OpenCode owns at runtime in ~/.config/opencode/opencode.json.
+# The guard chezmoi/dot_config/opencode/modify_opencode.json keeps their live
+# values without a warning (prefix semantics: the path and its whole subtree),
+# unless the registry owns the same leaf. Blank lines and "#" comments are
+# ignored. Empty for now.

@@ -1,0 +1,9 @@
+# Dot-paths deleted from ~/.config/opencode/opencode.json before the
+# unknown-key gate runs, in chezmoi/dot_config/opencode/modify_opencode.json
+# (prefix semantics: the path and its whole subtree). A retired path is gone
+# from the repo's desired schema on purpose; deleting it here removes the old
+# live key instead of keeping it as preserved drift. Blank lines and "#"
+# comments are ignored.
+
+# The legacy boolean tool map; `permission` replaced it in OpenCode v1.1.1.
+tools
