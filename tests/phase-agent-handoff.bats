@@ -478,3 +478,56 @@ print(str(agent_is_read_only(explorer)).lower())
 ') || skip "Python ground truth unavailable"
     [[ "$result" == false ]]
 }
+
+@test "completion maps the requested outcome beyond green tests" {
+    local root="$AGENTS_DIR/AGENTS.md"
+    run grep -Fq 'Map outcomes to evidence' "$root"
+    assert_success
+    run grep -Fq 'Green tests do not prove completion' "$root"
+    assert_success
+    run grep -Fq 'For simplification, compare net diff and remaining complexity' "$root"
+    assert_success
+}
+
+@test "verification is proportional and carries reusable evidence" {
+    local root="$REAL_DOTFILES_DIR/AGENTS.md"
+    local coder="$AGENTS_DIR/agent_definitions/coder.md"
+
+    for contract in \
+        'run focused checks for changed scope in foreground' \
+        'The parent owns the integrated final full gates' \
+        'Reuse successful gate evidence only when tested code, configuration, dependencies, and environment are unchanged' \
+        'Carry the command, tree or revision, and result' \
+        'Revalidate changed relevant inputs and failed or incomplete runs' \
+        'Skip code test suites for read-only analysis and unchanged handoffs'; do
+        run grep -Fq "$contract" "$coder"
+        assert_success
+    done
+    run grep -Fq 'Docs-only edits still run relevant lint, deploy checks, and repository-specific gates' "$root"
+    assert_success
+}
+
+@test "parent dispatches carry review mode and coder contract" {
+    for contract in \
+        'Review mode: severity-report' \
+        'Review mode: taste-test' \
+        'Done means' \
+        'Scope fence'; do
+        run grep -Fq "$contract" "$PREAMBLE"
+        assert_success
+    done
+    run grep -Fq 'Do not reopen a completed review on unchanged scope without new concrete evidence' "$PREAMBLE"
+    assert_success
+}
+
+@test "coder reports exact gate results without treating skips as total failure" {
+    local coder="$AGENTS_DIR/agent_definitions/coder.md"
+    run grep -Fq 'Map the requested outcome to evidence; green tests do not prove goal completion' "$coder"
+    assert_success
+    run grep -Fq 'Report exact pass, fail, and skipped results' "$coder"
+    assert_success
+    run grep -Fq 'A skip does not invalidate unrelated passing tests' "$coder"
+    assert_success
+    run grep -Fq '"Tests pass" is false if any test was skipped' "$coder"
+    assert_failure
+}

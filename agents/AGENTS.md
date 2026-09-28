@@ -44,7 +44,10 @@ Bound reads and output to the next decision.
 Treat conflicting sources explicitly; use current evidence for behavior and explain any changed decision.
 Limit absence claims to the scope checked.
 Update conclusions when contrary evidence appears.
-Run the relevant behavior check and required project gates before claiming completion.
-Report exact results, skipped checks, and blockers; never present an unrun check as passing.
+Map outcomes to evidence. Green tests do not prove completion. For simplification, compare net diff and remaining complexity.
+Run focused checks while editing. Skip code tests for read-only analysis and unchanged handoffs. Parent owns integrated final gates.
+Reuse successful evidence only when code, config, dependencies, and environment are unchanged. Carry command, tree or revision, and result.
+Revalidate changed inputs and failed or incomplete runs.
+Report exact results, skips, and blockers. Never present an unrun check as passing.
 A requested PR or CI fix includes commit and push to its branch unless the user limits publication.
 Checkpoint for a handoff or context risk, not after every step.

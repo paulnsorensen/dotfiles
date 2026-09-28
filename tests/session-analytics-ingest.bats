@@ -241,6 +241,108 @@ JSONL
     assert_output_contains '"is_error":"true"'
 }
 
+@test "ingest: codex structured wrappers detect failures without prose false positives" {
+    cat > "$TEST_HOME/.codex/sessions/2026/05/30/rollout-codex-wrappers.jsonl" <<'JSONL'
+{"timestamp":"2026-05-30T12:30:00Z","type":"session_meta","payload":{"id":"x-3","timestamp":"2026-05-30T12:30:00Z","cwd":"/work/codex"}}
+{"timestamp":"2026-05-30T12:30:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"false\"}","call_id":"call-x-3"}}
+{"timestamp":"2026-05-30T12:30:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-3","output":{"exit_code":-1,"output":"failed"}}}
+{"timestamp":"2026-05-30T12:30:03Z","type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{}","call_id":"call-x-4"}}
+{"timestamp":"2026-05-30T12:30:04Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-4","output":{"isError":true,"content":"MCP failed"}}}
+{"timestamp":"2026-05-30T12:30:05Z","type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{}","call_id":"call-x-5"}}
+{"timestamp":"2026-05-30T12:30:06Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-5","output":[{"type":"input_text","text":"Script completed\nWall time 0.0 seconds\nOutput:\n"},{"type":"input_text","text":"diagnostic text"},{"type":"input_text","text":"{\"exit_code\":1,\"output\":\"failed\"}"}]}}
+{"timestamp":"2026-05-30T12:30:07Z","type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{}","call_id":"call-x-6"}}
+{"timestamp":"2026-05-30T12:30:08Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-6","output":{"exit_code":0,"output":"ok"}}}
+{"timestamp":"2026-05-30T12:30:09Z","type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{}","call_id":"call-x-7"}}
+{"timestamp":"2026-05-30T12:30:10Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-7","output":{"status":"pending","session_id":"still-running"}}}
+{"timestamp":"2026-05-30T12:30:11Z","type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{}","call_id":"call-x-8"}}
+{"timestamp":"2026-05-30T12:30:12Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-8","output":"Output:\n{\"exit_code\":1}"}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT count(DISTINCT tool_use_id) AS n FROM tool_results WHERE harness='codex' AND tool_use_id IN ('call-x-3','call-x-4','call-x-5','call-x-6','call-x-7','call-x-8');"
+    assert_output_contains '"n":6'
+    run q "SELECT tool_name, bash_cmd FROM tool_uses WHERE harness='codex' AND tool_use_id='call-x-3';"
+    assert_output_contains '"tool_name":"exec_command"'
+    assert_output_contains '"bash_cmd":"false"'
+    run q "SELECT is_error FROM tool_results WHERE harness='codex' AND tool_use_id='call-x-3';"
+    assert_output_contains '"is_error":"true"'
+    run q "SELECT is_error FROM tool_results WHERE harness='codex' AND tool_use_id='call-x-4';"
+    assert_output_contains '"is_error":"true"'
+    run q "SELECT is_error FROM tool_results WHERE harness='codex' AND tool_use_id='call-x-5';"
+    assert_output_contains '"is_error":"true"'
+    run q "SELECT count(DISTINCT tool_use_id) AS n, sum(CASE WHEN is_error='true' THEN 1 ELSE 0 END) AS errors, sum(CASE WHEN is_error='false' THEN 1 ELSE 0 END) AS successes FROM tool_results WHERE harness='codex' AND tool_use_id IN ('call-x-6','call-x-7','call-x-8');"
+    assert_output_contains '"n":3'
+    assert_output_contains '"errors":"0"'
+    assert_output_contains '"successes":"3"'
+}
+
+@test "ingest: codex oversized numeric outputs preserve content and error classification" {
+    run python3 - "$INGEST" "$DB" "$TEST_HOME" <<'PY'
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+ingest, database, home = sys.argv[1:]
+digits = "9" * 5000
+oversized_json = '{"exit_code":' + digits + '}'
+header = "Script completed\nWall time 0.0 seconds\nOutput:\n"
+blocks = [
+    {"type": "input_text", "text": header},
+    {"type": "input_text", "text": oversized_json},
+    {"type": "input_text", "text": '{"exit_code":1}'},
+]
+cases = {
+    "plain": (oversized_json, "false"),
+    "blocks": (blocks, "true"),
+    "serialized-blocks": (json.dumps(blocks), "true"),
+    "envelope": (header + oversized_json, "false"),
+    "legacy-positive": ("Process exited with code " + digits, "true"),
+    "legacy-negative": ("Process exited with code -" + digits, "true"),
+    "legacy-zero": ("Process exited with code " + "0" * 5000, "false"),
+    "legacy-negative-zero": ("Process exited with code -" + "0" * 5000, "false"),
+    "legacy-padded": ("Process exited with code " + "0" * 5000 + "1", "true"),
+    "legacy-unicode-zero": ("Process exited with code " + "\u0660" * 5000, "false"),
+}
+fixture = Path(home) / ".codex/sessions/2026/05/30/rollout-numeric.jsonl"
+entries = [{
+    "timestamp": "2026-05-30T12:00:00Z",
+    "type": "session_meta",
+    "payload": {"id": "numeric", "cwd": "/work/codex"},
+}]
+for call_id, (output, _) in cases.items():
+    entries.append({
+        "timestamp": "2026-05-30T12:00:01Z",
+        "type": "response_item",
+        "payload": {
+            "type": "function_call_output", "call_id": call_id, "output": output,
+        },
+    })
+fixture.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+result = subprocess.run(
+    [sys.executable, ingest, "--force"],
+    env={**os.environ, "PYTHONINTMAXSTRDIGITS": "4300"},
+    capture_output=True, text=True,
+)
+assert result.returncode == 0, result.stdout + result.stderr
+query = """SELECT message FROM raw_entries
+           WHERE harness='codex' AND type='user';"""
+result = subprocess.run(
+    ["duckdb", database, "-json", "-c", query],
+    check=True, capture_output=True, text=True,
+)
+actual = {}
+for row in json.loads(result.stdout):
+    block = row["message"]["content"][0]
+    actual[block["tool_use_id"]] = (block["content"], block["is_error"])
+assert actual == cases, actual
+print(f"Verified {len(cases)} numeric outputs")
+PY
+    assert_success
+    assert_output_contains "Verified 10 numeric outputs"
+}
+
 
 @test "ingest: a malformed JSONL line is skipped without aborting the run" {
     cat > "$TEST_HOME/.claude/projects/proj/sess-corrupt.jsonl" <<'JSONL'
