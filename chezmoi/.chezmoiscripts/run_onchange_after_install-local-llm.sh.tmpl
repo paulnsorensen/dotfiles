@@ -1,6 +1,7 @@
 #!/bin/bash
 # run_onchange — reload systemd user units for the optional local-LLM stack.
-# The body collapses to a no-op when `.localLLM` is false.
+# When `.localLLM` is false, disable local-llm.target instead of no-op'ing:
+# see the else branch below for why.
 #
 # Hash the systemd units so edits retrigger daemon-reload.
 # sources hash: {{ output "sh" "-c" (printf "cat %q/dot_config/systemd/user/*.service %q/dot_config/systemd/user/*.target 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir .chezmoi.sourceDir) }}
@@ -27,6 +28,22 @@ if command -v systemctl &>/dev/null; then
     done
     if ! systemctl --user daemon-reload; then
         echo "⚠ systemctl --user daemon-reload failed — newly-deployed units may be stale. Re-run 'systemctl --user daemon-reload' once a user session/bus is available." >&2
+    fi
+fi
+{{ else }}
+
+# Flag is off. .chezmoiignore skips the stack tree + unit sources on a
+# false-flag machine, but "ignore" only means chezmoi stops managing the
+# target — it does not remove a unit file or enablement symlink a prior
+# true-flag apply already deployed. `systemctl --user enable` (run once,
+# outside chezmoi, e.g. by hand or an older llm-up) writes a
+# default.target.wants/local-llm.target symlink that survives the flag flip
+# and keeps pulling llama-swap.service (MemoryMax=30G) in at every boot.
+# Disable and stop it here so the flag flip is durable across reboots and
+# syncs, without touching a machine where the stack was never enabled.
+if command -v systemctl &>/dev/null; then
+    if systemctl --user is-enabled local-llm.target &>/dev/null || systemctl --user is-active local-llm.target &>/dev/null; then
+        systemctl --user disable --now local-llm.target 2>/dev/null || true
     fi
 fi
 {{ end }}
