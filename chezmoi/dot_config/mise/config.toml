@@ -77,6 +77,9 @@
 "aqua:astral-sh/uv" = "0.12.19"
 "aqua:rust-lang/rust-analyzer" = "2026-09-21"
 "aqua:taiki-e/cargo-llvm-cov" = "v0.9.1"
+"aqua:EmbarkStudios/cargo-deny" = "0.20.2"
+"aqua:axodotdev/cargo-dist" = "v0.33.0"
+"aqua:rust-lang/mdBook" = "v0.5.4"
 "aqua:anthropics/claude-code" = "v2.1.283"
 "aqua:openai/codex" = "rust-v0.154.0"
 

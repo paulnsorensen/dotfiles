@@ -1,0 +1,27 @@
+#!/bin/bash
+# run_onchange — enable the weekly `bin-doctor clean` job: a systemd user
+# timer on Linux, a launchd agent on macOS. A failure only warns, so a host
+# without a user session bus never blocks `chezmoi apply`.
+#
+# job hash: {{ include "dot_config/systemd/user/bin-doctor-clean.service.tmpl" | sha256sum }} {{ include "dot_config/systemd/user/bin-doctor-clean.timer" | sha256sum }} {{ include "Library/LaunchAgents/com.dotfiles.bin-doctor-clean.plist.tmpl" | sha256sum }} {{ includeTemplate "bin-doctor-path" . | sha256sum }}
+
+set -euo pipefail
+{{ if eq .chezmoi.os "linux" }}
+if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+    # A failed reload leaves systemd on the old unit, so do not enable over it.
+    if ! systemctl --user daemon-reload; then
+        echo "⚠ could not reload systemd user units; run: systemctl --user daemon-reload && systemctl --user enable --now bin-doctor-clean.timer" >&2
+    elif ! systemctl --user enable --now bin-doctor-clean.timer; then
+        echo "⚠ could not enable bin-doctor-clean.timer; run: systemctl --user enable --now bin-doctor-clean.timer" >&2
+    fi
+else
+    echo "⚠ no systemd user session; later run: systemctl --user enable --now bin-doctor-clean.timer" >&2
+fi
+{{ else if eq .chezmoi.os "darwin" }}
+label=com.dotfiles.bin-doctor-clean
+plist="$HOME/Library/LaunchAgents/$label.plist"
+domain="gui/$(id -u)"
+launchctl bootout "$domain/$label" 2>/dev/null || true
+launchctl bootstrap "$domain" "$plist" ||
+    echo "⚠ could not load $label; run: launchctl bootstrap $domain $plist" >&2
+{{ end }}

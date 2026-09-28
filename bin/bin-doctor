@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# bin-doctor — keep binaries on one install path, clean, and current.
+#
+# Usage:
+#   bin-doctor [check]          Report duplicate, stray, and stale installs (exit 1 on findings)
+#   bin-doctor clean [--dry-run] Run each package manager's safe cache cleanup
+#   bin-doctor outdated         Report available updates (read-only)
+#
+# The install contract lives in chezmoi/dot_config/mise/config.toml (mise
+# pins) and packages/packages.yaml (the remainder). packages/bin-doctor.allow
+# lists accepted exceptions. A systemd user timer (Linux) or a launchd agent
+# (macOS) runs `bin-doctor clean` weekly.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+# shellcheck source=bin/lib/bin-doctor.sh
+source "$SCRIPT_DIR/lib/bin-doctor.sh"
+
+PACKAGES_FILE="${BIN_DOCTOR_PACKAGES:-$DOTFILES_DIR/packages/packages.yaml}"
+ALLOW_FILE="${BIN_DOCTOR_ALLOW:-$DOTFILES_DIR/packages/bin-doctor.allow}"
+
+usage() {
+    sed -n '3,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+}
+
+hint_for() {
+    case "$1" in
+        shadow) echo "keep the copy the manifest owns; uninstall the others" ;;
+        conflict) echo "brew uninstall rust  # rustup + the mise rust pin own the toolchain" ;;
+        cargo-stray) echo "declare it in packages.yaml (source: cargo) or: cargo uninstall <name>" ;;
+        cargo-stale) echo "remove the crate's lines from ~/.cargo/.crates.toml and ~/.cargo/.crates2.json" ;;
+        cargo-untracked) echo "delete the file, or reinstall it through its manifest" ;;
+        uv-stray) echo "declare it in packages.yaml (source: uv) or: uv tool uninstall <name>" ;;
+        npm-stray) echo "declare it in packages.yaml (source: npm) or: npm rm -g <name>" ;;
+        brew-stray) echo "declare it in packages.yaml, add it to bin-doctor.allow, or: brew uninstall <name>" ;;
+        unmanaged) echo "move it to mise or packages.yaml, then uninstall the old copy" ;;
+        *) echo "" ;;
+    esac
+}
+
+do_check() {
+    local findings category name detail current="" count=0
+    findings="$(
+        bd_check_shadows "$ALLOW_FILE"
+        bd_check_brew "$PACKAGES_FILE" "$ALLOW_FILE"
+        bd_check_cargo "$PACKAGES_FILE" "$ALLOW_FILE"
+        bd_check_uv "$PACKAGES_FILE" "$ALLOW_FILE"
+        bd_check_npm "$PACKAGES_FILE" "$ALLOW_FILE"
+        bd_check_unmanaged
+    )"
+    if [[ -z "$findings" ]]; then
+        echo "✓ bin-doctor: every binary has one install path"
+        return 0
+    fi
+    while IFS=$'\t' read -r category name detail; do
+        if [[ "$category" != "$current" ]]; then
+            current="$category"
+            printf '\n%s — fix: %s\n' "$category" "$(hint_for "$category")"
+        fi
+        printf '  %-28s %s\n' "$name" "$detail"
+        count=$((count + 1))
+    done <<< "$findings"
+    printf '\n✗ bin-doctor: %d finding(s)\n' "$count"
+    return 1
+}
+
+# run_steps <dry-run> <steps> — run each <manager>\t<command> line; keep
+# going past a failed step and fail at the end.
+run_steps() {
+    local dry_run="$1" steps="$2" manager cmd failed=0
+    [[ -n "$steps" ]] || return 0
+    while IFS=$'\t' read -r manager cmd; do
+        if [[ "$dry_run" == true ]]; then
+            printf 'would run [%s] %s\n' "$manager" "$cmd"
+            continue
+        fi
+        printf '▸ [%s] %s\n' "$manager" "$cmd"
+        # shellcheck disable=SC2086  # steps are fixed, space-separated argv
+        if ! $cmd </dev/null; then
+            printf '✗ [%s] %s failed\n' "$manager" "$cmd" >&2
+            failed=1
+        fi
+    done <<< "$steps"
+    return "$failed"
+}
+
+main() {
+    local cmd="${1:-check}"
+    [[ $# -gt 0 ]] && shift
+    case "$cmd" in
+        check) do_check ;;
+        clean)
+            local dry_run=false
+            if [[ $# -gt 1 ]]; then
+                usage >&2
+                return 2
+            fi
+            case "${1:-}" in
+                "") ;;
+                --dry-run | -n) dry_run=true ;;
+                *)
+                    usage >&2
+                    return 2
+                    ;;
+            esac
+            bd_bootstrap_path
+            run_steps "$dry_run" "$(bd_clean_steps)"
+            ;;
+        outdated)
+            bd_bootstrap_path
+            # Report commands exit non-zero when updates exist; that is data.
+            run_steps false "$(bd_outdated_steps)" || true
+            ;;
+        -h | --help | help) usage ;;
+        *)
+            usage >&2
+            return 2
+            ;;
+    esac
+}
+
+main "$@"
