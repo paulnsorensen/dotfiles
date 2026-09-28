@@ -22,6 +22,7 @@ Run `<skill-dir>/scripts/query.sh <report> [harness]`. Reports: `tools`,
 `python3`, `hooks`, `compound`, `projects`, `heatmap`, `latency` (model
 round-trips, batching, and quota stops per model). The script ingests
 (1-hour TTL) and handles a missing/empty database itself.
+The `latency` report is not a Codex inference-speed measurement. Codex native timing, user, model, and `event_msg` records are outside the canonical schema.
 
 Anything not covered: `scripts/query.sh sql "SELECT ..."` with the canonical
 schema. Chain queries; aim to answer within 5-8, then present intermediate
@@ -35,3 +36,4 @@ SQL gotchas (hand-written queries): `is_error` is VARCHAR `'true'`/`'false'`;
 timestamps are VARCHAR — cast (`timestamp::TIMESTAMP`); `input` is JSON —
 `json_extract_string()`; Cursor has no tool_results — exclude it from
 error-rate queries; `-json` output returns all values as strings.
+An empty latency report or zero errors is not evidence of speed or no failures. Inspect native Codex JSONL read-only when the canonical report lacks signal.
