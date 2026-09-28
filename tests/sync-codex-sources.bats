@@ -67,7 +67,7 @@ EOF
     # An undeclared root scalar owned by another sync leg is preserved.
     [ "$(yq -p=toml -oy -r '.model_instructions_file' "$out")" = "/home/u/.codex/preamble.md" ]
     # Declared routing and protected execution policy stay exact.
-    [ "$(yq -p=toml -oy -r '.model' "$out")" = "gpt-5.6-terra" ]
+    [ "$(yq -p=toml -oy -r '.model' "$out")" = "gpt-5.6-sol" ]
     [ "$(yq -p=toml -oy -r '.model_reasoning_effort' "$out")" = "medium" ]
     [ "$(yq -p=toml -oy -r '.approval_policy' "$out")" = "on-request" ]
     [ "$(yq -p=toml -oy -r '.approvals_reviewer' "$out")" = "guardian_subagent" ]
@@ -298,9 +298,21 @@ for n in sel:
     local expected
     expected=$(yq -oy -r '.agents.whey-drainer.models.codex' "$reg")
     [ "$(yq -p=toml -oy -r '.model' "$TEST_HOME/wd.toml")" = "$expected" ]
+    [ "$(yq -p=toml -oy -r '.model_reasoning_effort' "$TEST_HOME/wd.toml")" = "low" ]
     [ "$(yq -p=toml -oy -r '.name' "$TEST_HOME/wd.toml")" = "whey-drainer" ]
     # The instruction body rides through as a TOML string, escaping intact.
     [ -n "$(yq -p=toml -oy -r '.developer_instructions' "$TEST_HOME/wd.toml")" ]
+}
+
+@test "codex agent omits reasoning effort when registry effort is absent" {
+    source "$REAL_DOTFILES_DIR/.sync-lib.sh"
+    local reg="$TEST_HOME/registry.yaml"
+    cp "$REAL_DOTFILES_DIR/agents/registry.yaml" "$reg"
+    yq -oy 'del(.agents."whey-drainer".effort)' "$reg" >"$reg.tmp"
+    mv "$reg.tmp" "$reg"
+
+    _cz_render_codex_agent "$reg" whey-drainer "$REAL_DOTFILES_DIR" "$TEST_HOME/wd-no-effort.toml"
+    [ "$(yq -p=toml -oy -r 'has("model_reasoning_effort")' "$TEST_HOME/wd-no-effort.toml")" = "false" ]
 }
 
 @test "assembly fails loud when the registry selects an unknown agent" {

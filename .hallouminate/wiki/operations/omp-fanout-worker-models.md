@@ -57,6 +57,13 @@ For a hard no-fanout session, set `tools.approval.task: deny`. To keep specialis
 
 ## Role split
 
+The July example below is historical, not the active configuration.
+September 28 policy uses Sol for medium work, Astra for high-tier work, and Luna for cheap work.
+The managed registry now selects Sol for default and task roles; it no longer selects Terra.[^current-models]
+See [[architecture/omp-agent-model-effort]] for the current role matrix.
+
+[^current-models]: `chezmoi/.chezmoidata/omp.yaml`; September 28, 2026 operator model-tier decision.
+
 Keep parent reasoning and worker execution on different price tiers:
 
 ```yaml

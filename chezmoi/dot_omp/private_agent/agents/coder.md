@@ -2,7 +2,7 @@
 name: coder
 description: Use this agent when an approved spec or clear task needs code changes taken to verified completion. Typical triggers include implementing a focused feature, fixing a known-cause bug, applying a small refactor, and updating tests for changed behavior.
 tools: read,grep,glob,edit,write,bash,ast_grep,ast_edit,lsp
-model: "@fast"
+model: "@balanced"
 thinkingLevel: xhigh
 ---
 

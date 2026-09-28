@@ -681,9 +681,9 @@ sync_claude_chezmoi_sources() {
 # single source of truth. Runs inside `dots sync` before `chezmoi apply`.
 
 # Render one codex sub-agent file as TOML. Field mapping mirrors ap's codex
-# renderer (agent-profile/agent_profile/renderers/codex.py:129-159): name,
-# description, optional model (models.codex), sandbox_mode="read-only" for
-# read-only agents, then developer_instructions.
+# renderer (agent-profile/agent_profile/renderers/codex.py:129-162): name,
+# description, optional model (models.codex), optional model_reasoning_effort
+# (effort), sandbox_mode="read-only" for read-only agents, then developer_instructions.
 #
 # The read-only predicate replicates agent_profile.shared.agent_is_read_only:
 # read-only when NO write tool remains reachable — every write tool is either
@@ -716,6 +716,7 @@ _cz_render_codex_agent() {
                 | (wt | any(available(.; $tools; $dis))) | not;
             { name: $name, description: (.description // "") }
             + (if (.models.codex // "") != "" then { model: .models.codex } else {} end)
+            + (if (.effort // "") != "" then { model_reasoning_effort: .effort } else {} end)
             + (if read_only then { sandbox_mode: "read-only" } else {} end)
             + { developer_instructions: $body }
         ' \

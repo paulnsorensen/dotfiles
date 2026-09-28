@@ -74,15 +74,25 @@ Sixty days of Claude session analytics (609 `Agent` dispatches) showed three age
 - `coder.md` returns `blocked: missing-contract` when **both** `Done means` and `Scope fence` are absent; one missing field still asks. The resume brief's Gates section records the worktree path and base SHA so a resumed coder reuses the worktree (26 cold installs in one session was the trigger).
 - `preamble.md` carries five numbered **Dispatch gates** and two table changes: `coder` is "not under `/age`" (39 of 67 age-span coders were cure work that `/cure` owns) and `whey-drainer` gets a row (1 spawn in 60 days because coders ran gates themselves).
 
-Generic prompts (`preamble.md`, `agent_definitions/*.md`) use the easy-cheese tier vocabulary `cheap | default | powerful` plus effort, never a model name, so one body serves every harness (paulnsorensen/easy-cheese#659 `routing-policy.md`). Each harness binds the tiers where it owns models:
+Agent definitions own model selection. Skills request capability tiers: `cheap | default | powerful`.
+The September 28, 2026 policy replaces Terra with Sol and promotes the high tier to Astra.[^routing-tiers]
 
-| Tier | Claude (`model:` per dispatch) | Codex (`models.codex`, pinned per agent toml) | OMP (`modelRoles` alias, pinned in agent frontmatter) |
+| Tier | Claude | Codex | OMP alias |
 |---|---|---|---|
-| `powerful` | `opus` | `gpt-5.6-sol` — reviewer | `@strong` (Sol) — reviewer, cheese-reviewer |
-| `default` | `sonnet` | `gpt-5.6-terra` — taste-tester, researcher, generalist, ghostbuster | `@balanced` (Terra) — taste-tester |
-| `cheap` | `haiku` | `gpt-5.6-luna` — coder, explorer, whey-drainer, scanners | `@fast` (Luna; `task`, `tiny`, `smol`) — coder |
+| `powerful` | `opus` | `gpt-6-astra` | `@strong` |
+| `default` | `sonnet` | `gpt-5.6-sol` | `@balanced` |
+| `cheap` | `haiku` | `gpt-5.6-luna` | `@fast` |
 
-Only Claude honors a per-dispatch tier. Codex and OMP pin the model in the agent file, so a `default`-tier taste-test needs its own agent: `taste-tester` (easy-cheese `reviewer (taste-test)`) is pinned sonnet / Terra / `@balanced` at `medium` on all three, and the preamble routes every taste-test to it. `reviewer` keeps `Review mode: taste-test` for compatibility only. Bindings live in `preamble.md` (Claude + Codex), `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md` (OMP), and as comments in `codex.yaml` and the registry; `tests/phase-agent-handoff.bats` locks them. A cross-harness `tier:` registry field mapped per renderer was proposed (#952 item 6) and stays deferred; the second agent was the cheaper fix. See [[omp-agent-model-effort]] for the Codex/OMP workload matrix.
+Coder, explorer, researcher, generalist, ghostbuster, and taste-tester use Sol on Codex.
+Reviewer uses Astra. Mechanical specialists retain Luna.
+Claude's existing role-specific model assignments stay unchanged.[^routing-tiers]
+
+Registry `effort` now pins Claude and Codex reasoning.
+Both Codex renderers previously omitted it, despite rendering the model.
+OMP-native `thinkingLevel` remains independent.
+See [[omp-agent-model-effort]] for the complete workload matrix and rationale.
+
+[^routing-tiers]: `agents/registry.yaml`; `chezmoi/.chezmoidata/codex.yaml`; `chezmoi/.chezmoidata/omp.yaml`; `tests/agent-skill-model-effort.bats`
 
 ### Skills — `skills/` tree + `skills/_registry.yaml`
 

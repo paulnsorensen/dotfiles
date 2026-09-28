@@ -264,6 +264,20 @@ def test_codex_agent_renders_gpt_5_6_model_override(tmp_path: Path) -> None:
     assert 'model = "gpt-5.6-sol"' in content
 
 
+def test_codex_agent_renders_explicit_effort_without_inheriting(tmp_path: Path) -> None:
+    CodexRenderer().render(
+        _agent_manifest(tmp_path, effort="high"), tmp_path
+    )
+    content = (tmp_path / ".codex" / "agents" / "ghostbuster.toml").read_text()
+    assert 'model_reasoning_effort = "high"' in content
+
+
+def test_codex_agent_omits_effort_when_absent(tmp_path: Path) -> None:
+    CodexRenderer().render(_agent_manifest(tmp_path), tmp_path)
+    content = (tmp_path / ".codex" / "agents" / "ghostbuster.toml").read_text()
+    assert "model_reasoning_effort" not in content
+
+
 def test_codex_sandbox_read_only_from_whitelist(tmp_path: Path) -> None:
     CodexRenderer().render(
         _agent_manifest(tmp_path, tools=["Read", "Grep"]), tmp_path

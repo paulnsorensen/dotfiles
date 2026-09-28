@@ -173,23 +173,23 @@ omp:
     # promoted to survive the wholesale re-author.
     hideThinkingBlock: true
     # Stable custom tiers keep agent prompts independent of provider model IDs.
-    # Sol handles quality-first judgment/planning, Terra handles broad synthesis,
-    # and Luna handles bounded agentic and high-volume/mechanical work. Native OMP
+    # Astra handles quality-first judgment/planning, Sol handles medium-capability
+    # synthesis and implementation, and Luna handles bounded mechanical work. Native OMP
     # agents assign thinking independently from these role aliases.
     # omp introduced named tier aliases (strong/balanced/fast) + `@alias` refs
     # and a `designer` role (2026-07 upgrade); folded in to match the live
     # canonical form — same models as the previous concrete-value block.
     modelRoles:
-      strong: openai-codex/gpt-5.6-sol
-      balanced: openai-codex/gpt-5.6-terra
+      strong: openai-codex/gpt-6-astra
+      balanced: openai-codex/gpt-5.6-sol
       fast: openai-codex/gpt-5.6-luna
-      default: '@strong:medium'
+      default: '@balanced:medium'
       smol: '@fast'
       plan: '@strong:xhigh'
       advisor: '@strong'
       tiny: '@fast'
       slow: openai-codex/gpt-6-astra:high
-      task: '@fast'
+      task: '@balanced'
       commit: '@fast'
       vision: '@balanced'
       designer: '@balanced'

@@ -668,6 +668,14 @@ STDIN"
     [[ "$output" != *"WARNING"* ]]
 }
 
+@test "modify_settings: retired Fable model is removed while unrelated ignored model settings survive" {
+    run_modify '{"modelSettings":{"claude-fable-5-1":{"effortLevel":"xhigh"},"claude-live-model":{"effortLevel":"low"}}}'
+    [ "$status" -eq 0 ]
+    run jq -e '.modelSettings | has("claude-fable-5-1")' "$OUT"
+    [ "$status" -ne 0 ]
+    [ "$(jq -r '.modelSettings["claude-live-model"].effortLevel' "$OUT")" = "low" ]
+}
+
 # ── auto-memory disable (AC-1, issue #717) ──────────────────────────────────
 # Claude auto-memory is turned off globally via the chezmoi-authoritative
 # settings, so durable project knowledge lands in the repo wiki, not a

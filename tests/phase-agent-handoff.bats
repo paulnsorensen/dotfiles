@@ -90,6 +90,13 @@ block_sha() {
     done
 }
 
+@test "preamble carries named-role and bounded-fork policy" {
+    run grep -Fq 'Use named specialists instead of generic inherited roles' "$PREAMBLE"
+    assert_success
+    run grep -Fq 'Codex dispatches set `fork_turns` to `none` or a positive integer string' "$PREAMBLE"
+    assert_success
+}
+
 @test "coder owns its sizing heuristics and concrete-split blocking rule" {
     local coder="$AGENTS_DIR/agent_definitions/coder.md"
 
@@ -148,9 +155,9 @@ block_sha() {
     local body="$AGENTS_DIR/agent_definitions/taste-tester.md"
     local omp="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/agents/taste-tester.md"
 
-    # Pinned at default / medium: Claude sonnet, Codex Terra, OMP @balanced.
+    # Pinned at default / medium: Claude sonnet, Codex Sol, OMP @balanced.
     [[ "$(yq -r '.agents.taste-tester.models.claude' "$registry")" == sonnet ]]
-    [[ "$(yq -r '.agents.taste-tester.models.codex' "$registry")" == gpt-5.6-terra ]]
+    [[ "$(yq -r '.agents.taste-tester.models.codex' "$registry")" == gpt-5.6-sol ]]
     [[ "$(yq -r '.agents.taste-tester.effort' "$registry")" == medium ]]
     [[ "$(yq --front-matter=extract -r '.model' "$omp")" == '@balanced' ]]
     # Every harness selects it.

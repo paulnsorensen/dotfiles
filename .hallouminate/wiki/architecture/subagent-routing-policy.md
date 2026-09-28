@@ -11,14 +11,57 @@ and reviewer; a 500-line mechanical rename with good tests may not.
 
 ## The five-stage default topology
 
-| Stage | Role | Tier (claude / codex / omp role) | Why |
+| Stage | Role | Tier (Claude / Codex / OMP role) | Why |
 |---|---|---|---|
-| 0 Intake | parent/router | sonnet / terra / `default` | enforce policy without flagship cost per tool call |
-| 1 Scope | read-only scoper | haiku / luna / `tiny` | facts: files, call paths, tests, contracts, risk flags, slices |
-| 2 Plan | planner (only when triggered) | opus–fable high–xhigh / sol xhigh / `plan` | ambiguity, interfaces, sequencing, invariants |
-| 3 Execute | leaf coder(s) | sonnet / terra / `task` | implement precise slices with explicit ownership |
-| 4 Integrate | parent or integrator | sonnet / terra (strong when coupled) | merge, contract drift, cross-slice validation |
-| 5 Review | fresh-context reviewer | opus–fable high–xhigh / sol high–xhigh / `slow` | global bugs, security, missing tests, invalid assumptions |
+| 0 Intake | parent/router | sonnet / Sol / `default` | enforce policy without high-tier cost per tool call |
+| 1 Scope | read-only explorer | sonnet / Sol / `balanced` | inspect contracts, call paths, tests, and risk |
+| 2 Plan | planner, when triggered | opus high / Astra high / `plan` | resolve ambiguity, sequencing, and invariants |
+| 3 Execute | named coder | sonnet medium / Sol medium / `task` | implement precise slices with explicit ownership |
+| 4 Integrate | parent | sonnet / Sol; escalate when coupled | check merges and cross-slice behavior |
+| 5 Review | fresh-context reviewer | opus high / Astra high / `slow` | find global bugs, security gaps, and invalid assumptions |
+
+This table supersedes the original July model names.
+The September 28 policy retires Terra and removes Fable from automatic routing.
+Registry effort pins Claude and Codex; OMP thinking remains independent.[^current-tiers]
+
+Removing Fable from the authoritative JSON alone does not remove its live setting.
+The `modelSettings` ignore overlay preserves live-only entries.
+Retire `modelSettings.claude-fable-5-1` explicitly before that overlay, and test the complete modifier with an existing live value.[^fable-retirement]
+
+[^fable-retirement]: `chezmoi/dot_claude/modify_settings.json:279-284,319-323`; `chezmoi/lib/claude-settings-retired.txt`; `chezmoi/lib/claude-settings-ignore.txt`; September 28 live-deployment check.
+
+[^current-tiers]: `agents/registry.yaml`; `chezmoi/.chezmoidata/codex.yaml`; `chezmoi/.chezmoidata/omp.yaml`; [[omp-agent-model-effort]]
+
+### Dispatch guard
+
+Claude and Codex register `agent-routing-guard` before agent dispatch.
+The guard reads deployed role metadata instead of copying the model matrix into hook code.[^dispatch-guard]
+This prevents generic workers from silently inheriting an expensive parent model.
+The shared preamble carries only named-role and bounded-fork guidance; this page and hook denials carry the detailed policy.
+This split preserves the existing 520-token preamble ceiling rather than increasing every agent's startup cost.[^preamble-budget]
+
+[^preamble-budget]: `agents/instruction-budgets.toml:21-24`; `tests/agent-instruction-budget.bats`; September 28 budget check rejected a longer policy block.
+
+- Claude uses named specialists or `generalist`; generic `general-purpose` and `claude` roles are denied.
+- The built-in Claude `Plan` role requires explicit `opus` selection.
+- Codex named roles retain their configured model and set `fork_turns` to `none` or a positive integer string.
+- Codex `default` and `worker` fallbacks require explicit model, explicit effort, and `fork_turns: none`.
+- Use those fallbacks only when the specialist is unavailable; record that reason in the dispatch.
+- Explicit effort may decrease, but cannot exceed the configured role effort.
+- The guard rejects Fable, Terra, unsupported models, and effort above `high`.
+- Claude model escalation requires the operator environment `DOTFILES_AGENT_MODEL_OVERRIDE` to match the requested model.
+- Codex named models remain fixed; that environment variable cannot override them.[^dispatch-guard]
+
+The override preserves deliberate operator escalation without treating an agent-written prompt as approval.
+Missing or malformed role metadata blocks dispatch and requests deployment repair.
+Restart running harness sessions after deployment so their cached role definitions match the deployed files.[^dispatch-guard]
+
+These hooks are dispatch guardrails, not a security boundary.
+They do not classify task semantics or inspect separate provider calls launched through shell commands.
+Codex also documents that specialized invocation paths can opt out of hook dispatch.[^codex-hooks]
+
+[^dispatch-guard]: `agents/lib/agent-routing-guard.js`; `agents/hooks/agent-routing-guard.sh`; `agents/hooks/registry.yaml`; `agents/preamble.md`; `tests/agent-routing-guard.bats`.
+[^codex-hooks]: [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks), checked September 28, 2026.
 
 ## Discover-then-commit: the route decision
 

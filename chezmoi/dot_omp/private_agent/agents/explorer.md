@@ -2,7 +2,7 @@
 name: explorer
 description: "Use this agent proactively to orient before work touches unfamiliar code. It answers where, how, and what questions; scopes blast radius; traces definitions and callers; and returns a concise read-only findings digest with file:line evidence."
 tools: read,grep,glob,bash,ast_grep,lsp
-model: "@fast"
+model: "@balanced"
 thinkingLevel: high
 ---
 

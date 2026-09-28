@@ -28,7 +28,7 @@ How this dotfiles repo configures AI coding agents: shared registries rendered b
 - [[subagent-routing-policy]] — "discover, then commit": never ask a cheap worker to judge its own capability; gather bounded facts, let a deterministic policy pick the route, and spend frontier tokens only at serial bottlenecks (the shared plan, the fresh-context review).
 - [[fanout-fanin-discipline]] — the *how* to [[subagent-routing-policy]]'s *whether*: the wall-clock-vs-token economics of a fan-out, and why parallelism buys latency rather than lower total spend.
 - [[knowledge-graph-playbook]] — digest of the Anthropic KG/multi-agent playbook, kept for the doctrine that transfers here: stage-tiered model selection, shared memory over an orchestrator bottleneck, grounded evaluation, unattended-loop discipline.
-- [[omp-agent-model-effort]] — the workload→model/effort table for OMP-native agents, and the rule that registry `effort` is Claude-only and must never be mirrored into OMP frontmatter.
+- [[omp-agent-model-effort]] — the workload model and effort table. Registry effort pins Claude and Codex; OMP thinking stays independent.
 
 ## Profiles and workflows
 
