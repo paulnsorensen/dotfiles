@@ -248,6 +248,19 @@ block_sha() {
     done
 }
 
+@test "workers batch reads and trust dispatch-supplied sections" {
+    # Parents hand over what they already read; workers read it once, in parallel.
+    run grep -Fq 'Batch independent calls in one turn.' "$PREAMBLE"
+    assert_success
+    run grep -Fq 'read `path#start-end` sections with key facts.' "$PREAMBLE"
+    assert_success
+    for agent in coder explorer reviewer taste-tester generalist roquefort-wrecker; do
+        for rule in 'Issue independent searches and reads as parallel calls in one turn.' 'Treat sections and facts from the dispatch as already read.' 'Do not read a range again that is already in your context'; do
+            run grep -Fq "$rule" "$AGENTS_DIR/agent_definitions/$agent.md"
+            assert_success
+        done
+    done
+}
 @test "reviewer may write only its own artifact through tilth_write" {
     local registry="$AGENTS_DIR/registry.yaml"
 

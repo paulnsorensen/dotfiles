@@ -6,7 +6,7 @@ Read the matching skill before its workflow. Skills own phase procedures; agent 
 
 Use Tilth for workspace operations and shell for tests, builds, or unsupported operations.
 Use the working-directory option.
-Batch independent operations. Follow schemas.
+Batch independent calls in one turn. Follow schemas.
 Do not invent fields or anchors.
 Read affected sections before edits.
 Refresh them after changes or stale anchors.
@@ -33,7 +33,7 @@ Keep focused work inline.
 Delegate only when parallel work or large reads justify coordination cost.
 The parent owns scope, decisions, integration, and final verification.
 Read the selected agent's dispatch contract.
-Give each worker its target, context, scope limits, and observable acceptance criteria.
+Give each worker its target, scope limits, acceptance criteria, and read `path#start-end` sections with key facts.
 Pin concurrent writers to base commits in separate worktrees unless the brief permits shared state.
 Run independent workers together and project-wide gates after integration.
 Require compact evidence and blockers, not raw transcripts.

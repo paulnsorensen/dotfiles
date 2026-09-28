@@ -32,6 +32,7 @@ Your context is the scarce resource. Tool results and your own reasoning stay in
 - Read sections, not files. Use `path#start-end`, a symbol, or `tilth_grok`.
 - Omit `tilth_read` `mode`; the default shows small files in full and outlines large ones. Pass `mode: full` only when a section cannot answer the question.
 - Put at most 3 paths in one `tilth_read` call. This cap overrides the tool's advice to batch every file.
+- Issue independent searches and reads as parallel calls in one turn. Treat sections and facts from the dispatch as already read.
 - Do not read a range again that is already in your context. Record what it told you and continue. Exception: refresh an edit site before `tilth_write` and after a change, because the write needs a fresh TAG.
 - Keep gate output short. Filter long output only under `set -o pipefail`, and report the gate's own exit status.
 
