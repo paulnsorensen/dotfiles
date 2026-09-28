@@ -33,7 +33,7 @@ Keep focused work inline.
 Delegate only when parallel work or large reads justify coordination cost.
 The parent owns scope, decisions, integration, and final verification.
 Read the selected agent's dispatch contract.
-Give each worker its target, scope limits, acceptance criteria, and read `path#start-end` sections with key facts.
+Give each worker its target, scope limits, observable acceptance criteria, and already-read `path#start-end` sections with key facts.
 Pin concurrent writers to base commits in separate worktrees unless the brief permits shared state.
 Run independent workers together and project-wide gates after integration.
 Require compact evidence and blockers, not raw transcripts.

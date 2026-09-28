@@ -282,9 +282,10 @@ Model turns do not batch.
 Of the Sonnet 5 turns, 84% issue exactly one tool call, with a median of 30 output tokens.
 A turn with little output still costs 2–4 seconds of model latency.
 
-The logs show no throttling.
+The logs show no sustained throttling.
 Claude decode rate stays flat across UTC hours and context sizes: 74 tok/s for Fable 5.1, 80 for Opus 5, 95 for Sonnet 5, and 109 for Opus 5.5.
 Claude logs 6 `rate_limit_error` and 4 `overloaded_error` records in the month.
+These rare errors do not change the flat decode rate.
 Codex never records `rate_limit_reached`.
 Codex decode is about 48 tok/s for GPT-5.6 Luna and Sol, and 29.5 tok/s for GPT-6 Astra at every effort.
 Higher effort adds output tokens, not decode time per token.
