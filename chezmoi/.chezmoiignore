@@ -65,3 +65,13 @@ local-llm/**
 # Zed ships as a macOS-only cask here; keep its config off non-darwin hosts.
 .config/zed/**
 {{- end }}
+
+{{- if ne .chezmoi.os "darwin" }}
+# The weekly bin-doctor clean job: launchd agent on macOS only.
+Library/LaunchAgents/com.dotfiles.bin-doctor-clean.plist
+{{- end }}
+{{- if ne .chezmoi.os "linux" }}
+# The weekly bin-doctor clean job: systemd user timer on Linux only.
+.config/systemd/user/bin-doctor-clean.service
+.config/systemd/user/bin-doctor-clean.timer
+{{- end }}

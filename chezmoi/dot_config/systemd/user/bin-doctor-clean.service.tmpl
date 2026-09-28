@@ -1,0 +1,11 @@
+# Deployed by chezmoi. Source: dotfiles chezmoi/dot_config/systemd/user/.
+# Started weekly by bin-doctor-clean.timer; run now with
+# `systemctl --user start bin-doctor-clean.service`.
+[Unit]
+Description=Package-manager cache cleanup (bin-doctor clean)
+
+[Service]
+Type=oneshot
+ExecStart="{{ joinPath (includeTemplate "bin-doctor-path" .) "bin" "bin-doctor" }}" clean
+Nice=19
+IOSchedulingClass=idle

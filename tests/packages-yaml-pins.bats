@@ -6,7 +6,7 @@
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 PACKAGES_YAML="$DOTFILES_DIR/packages/packages.yaml"
 
-# entry_name:datasource — the 11 pinned entries and their expected Renovate datasource
+# entry_name:datasource — the 12 pinned entries and their expected Renovate datasource
 PINNED_ENTRIES=(
     "vtsls:npm"
     "eslint:npm"
@@ -19,6 +19,7 @@ PINNED_ENTRIES=(
     "tavily-cli:pypi"
     "gh-stack:github-releases"
     "cargo-update:crate"
+    "cargo-cache:crate"
 )
 
 @test "packages.yaml is valid YAML after adding pins" {
@@ -26,7 +27,7 @@ PINNED_ENTRIES=(
     [[ $status -eq 0 ]]
 }
 
-@test "each of the 11 pinned entries has a version or rev key" {
+@test "each of the 12 pinned entries has a version or rev key" {
     for pair in "${PINNED_ENTRIES[@]}"; do
         local name="${pair%%:*}"
         local version rev
@@ -83,7 +84,7 @@ PINNED_ENTRIES=(
     [[ -z "$pkg" ]]
 }
 
-@test "each of the 11 pinned entries has an adjacent renovate annotation with a valid datasource" {
+@test "each of the 12 pinned entries has an adjacent renovate annotation with a valid datasource" {
     for pair in "${PINNED_ENTRIES[@]}"; do
         local name="${pair%%:*}"
         local expected_ds="${pair##*:}"

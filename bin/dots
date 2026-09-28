@@ -309,6 +309,13 @@ do_doctor() {
         issues=$((issues + 1))
     fi
 
+    # One install path per binary: duplicates, strays, stale cargo metadata.
+    echo -e "${BLUE}Checking binaries...${NC}"
+    if [[ -x "$DOTFILES_DIR/bin/bin-doctor" ]] && ! "$DOTFILES_DIR/bin/bin-doctor" check 2>&1 | sed 's/^/  /'; then
+        issues=$((issues + 1))
+        echo -e "    Triage with the ${GREEN}/bin-doctor${NC} skill, or run: ${GREEN}bin-doctor check${NC}"
+    fi
+
     # Harness settings keys the chezmoi guards kept but the repo does not know.
     echo -e "${BLUE}Checking harness settings drift...${NC}"
     local drift_gate="$DOTFILES_DIR/chezmoi/lib/drift-gate.sh"
