@@ -15,8 +15,9 @@ path = "agent-profile/AGENTS.md"
 max_tokens = 600
 
 [[source]]
+# 590: #683 evidence preconditions (absence, build-artifact, capped-output, decision-input rules) (2026-09-28).
 path = "agents/AGENTS.md"
-max_tokens = 550
+max_tokens = 590
 
 [[source]]
 # 520: PR #1051 added section-read and coder re-dispatch rules (2026-09-24).
@@ -108,15 +109,16 @@ max_tokens = 5000
 "skills/xray/SKILL.md" = 5800
 
 # 1060: parallel-call batching and read-section handoff rules (2026-09-28).
+# 1120: #683 evidence preconditions and #880 Tilth precedence line (2026-09-28).
 [[stack]]
 name = "global_codex"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1060
+max_tokens = 1120
 
 [[stack]]
 name = "global_claude"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1060
+max_tokens = 1120
 
 [[stack]]
 name = "repo_codex"

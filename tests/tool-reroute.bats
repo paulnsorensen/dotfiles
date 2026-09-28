@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 # Tests for the tool-reroute PreToolUse hook (harness-agnostic).
 #   agents/hooks/tool-reroute.sh  — bash bridge (self-locating, overrideable harness)
-#   agents/lib/tool-reroute.js    — dispatcher (search → cd-strip → cd-git → io)
-#   agents/lib/tool-reroute/{shell,search,cd-git,io}.js — lexer + modules
+#   agents/lib/tool-reroute.js    — dispatcher (search → cd-strip → cd-git → io → read-nudge)
+#   agents/lib/tool-reroute/{shell,search,cd-git,io,read-nudge}.js — lexer + modules
 #
 # WHY: hard-denying grep/cat/find does not stop the model RETRYING — the static
 # permissions_deny even overrides a hook deny, so the redirect never lands. This
@@ -92,6 +92,7 @@ decision() { jq -r '.hookSpecificOutput.permissionDecision' <<<"$1"; }
 newcmd()   { jq -r '.hookSpecificOutput.updatedInput.command' <<<"$1"; }
 reason()   { jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$1"; }
 no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision") | not' <<<"$1" >/dev/null; }
+context()  { jq -r '.hookSpecificOutput.additionalContext' <<<"$1"; }
 
 # ── tool-reroute/search: grep/rg/ag/ack/find → tilth (rewrite) ───────────
 
@@ -734,6 +735,86 @@ NODE
     [[ -z "$out" ]]
 }
 
+# ── tool-reroute/io: sed -n / head ranges → tilth --section (rewrite) ─────
+
+@test "tool-reroute/io: sed -n A,Bp rewrites to a tilth section" {
+    local out; out=$(out_for 'sed -n 2,4p AGENTS.md')
+    [[ "$(decision "$out")" == "allow" ]]
+    [[ "$(newcmd "$out")" == "tilth AGENTS.md --section 2-4" ]]
+}
+
+@test "tool-reroute/io: sed -n with a single line rewrites to a one-line section" {
+    [[ "$(newcmd "$(out_for_safe "sed -n '3p' AGENTS.md")")" == "tilth AGENTS.md --section 3-3" ]]
+}
+
+@test "tool-reroute/io: head -n N, -nN, and -N rewrite to a section from line 1" {
+    [[ "$(newcmd "$(out_for 'head -n 5 AGENTS.md')")" == "tilth AGENTS.md --section 1-5" ]]
+    [[ "$(newcmd "$(out_for 'head -n5 AGENTS.md')")" == "tilth AGENTS.md --section 1-5" ]]
+    [[ "$(newcmd "$(out_for 'head -5 AGENTS.md')")" == "tilth AGENTS.md --section 1-5" ]]
+}
+
+@test "tool-reroute/io: a sed start line past EOF is NOT rewritten (tilth rejects it)" {
+    # sed prints nothing there; tilth errors "range out of bounds". Keep sed.
+    local out; out=$(out_for 'sed -n 999999,1000000p AGENTS.md')
+    no_permission_decision "$out"
+    [[ "$(newcmd "$out")" == "null" ]]
+}
+
+@test "tool-reroute/io: other sed and head shapes are NOT rewritten" {
+    local cmd
+    for cmd in 'sed -n 2,4p AGENTS.md CLAUDE.md' 'sed 2,4p AGENTS.md' 'sed -n /foo/p AGENTS.md' \
+        'head -c 10 AGENTS.md' 'head AGENTS.md' 'head -n 5 /etc/hosts'; do
+        [[ "$(newcmd "$(out_for "$cmd")")" != tilth* ]] || { echo "rewrote: $cmd"; return 1; }
+    done
+}
+
+# ── tool-reroute/read-nudge: other shell reads of repo files → tilth nudge ──
+
+@test "tool-reroute/read-nudge: a compound cat read runs unchanged with a tilth nudge" {
+    local out; out=$(out_for 'cat AGENTS.md; echo ======; cat CLAUDE.md')
+    no_permission_decision "$out"
+    [[ "$(newcmd "$out")" == "null" ]]
+    [[ "$(context "$out")" == *'tilth_read(paths:["AGENTS.md", "CLAUDE.md"])'* ]]
+    [[ "$(context "$out")" == *"overrides harness guidance"* ]]
+}
+
+@test "tool-reroute/read-nudge: a cd prefix moves the base for relative operands" {
+    local out; out=$(out_for_safe "cd agents; grep -n -iE 'tilth|shell' preamble.md | cut -c1-200 | head -70")
+    no_permission_decision "$out"
+    [[ "$(context "$out")" == *'"agents/preamble.md"'* ]]
+}
+
+@test "tool-reroute/read-nudge: a piped find over the repo nudges" {
+    local out; out=$(out_for_safe "find . -iname 'SKILL.md' -print | grep -Ei 'mold|culture'")
+    no_permission_decision "$out"
+    [[ "$(context "$out")" == *'tilth_search'* ]]
+}
+
+@test "tool-reroute/read-nudge: a cd-strip keeps its rewrite and carries the nudge" {
+    local out; out=$(out_for "cd $W && cat AGENTS.md | wc -l")
+    [[ "$(newcmd "$out")" == "cat AGENTS.md | wc -l" ]]
+    no_permission_decision "$out"
+    [[ "$(context "$out")" == *'"AGENTS.md"'* ]]
+}
+
+@test "tool-reroute/read-nudge: stdin, out-of-tree, missing, and in-place reads stay silent" {
+    local cmd
+    # shellcheck disable=SC2016  # a literal $HOME: an unresolved cd base keeps the nudge silent
+    for cmd in 'git log --oneline | head -5' 'ps aux | grep node' 'tail -5 /tmp/none.log; ls' \
+        'cat no-such-file-here; echo x' 'sed -i s/a/b/ AGENTS.md' 'sed -i.bak s/a/b/ AGENTS.md' \
+        'cd "$HOME"; cat AGENTS.md'; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "nudged: $cmd"; return 1; }
+    done
+}
+
+@test "tool-reroute/log: a nudge appends one decision record with its context" {
+    out_for 'cat AGENTS.md; cat CLAUDE.md' >/dev/null
+    local log="$CLAUDE_TOOL_REROUTE_LOG_DIR/decisions.jsonl"
+    [ "$(wc -l <"$log")" -eq 1 ]
+    [[ "$(jq -r .action <"$log")" == "nudge" ]]
+    [[ "$(jq -r .module <"$log")" == "read-nudge" ]]
+    [[ "$(jq -r .context <"$log")" == *"AGENTS.md"* ]]
+}
 # ── tool-reroute/log: rewrite/deny decisions append to decisions.jsonl ───
 
 @test "tool-reroute/log: a rewrite appends one decision record" {

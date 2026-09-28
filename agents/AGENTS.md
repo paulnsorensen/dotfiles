@@ -19,6 +19,7 @@ Challenge a material risk once; follow the user's decision without repeated deba
 
 Define observable success before editing.
 Resolve questions from project instructions, code, and available evidence before asking the user.
+Verify facts before you offer them as decision inputs.
 Ask when an unresolved choice changes scope, risk, or an external contract.
 Complete authorized work without adding features, shrinking scope, or stopping at a phase boundary.
 Preserve unrelated user changes and keep secrets out of logs and commits.
@@ -41,8 +42,11 @@ Test observable behavior and real failure modes; do not mock the system under te
 
 Compute counts, comparisons, and other deterministic results with tools.
 Bound reads and output to the next decision.
+Read whole files that constrain a design decision.
 Treat conflicting sources explicitly; use current evidence for behavior and explain any changed decision.
-Limit absence claims to the scope checked.
+Support absence claims with a full read or a named exhaustive search.
+Check build claims against built artifacts, not build scripts.
+Treat capped output as a lower bound.
 Update conclusions when contrary evidence appears.
 Map outcomes to evidence. Green tests do not prove completion. For simplification, compare net diff and remaining complexity.
 Run focused checks while editing. Skip code tests for read-only analysis and unchanged handoffs. Parent owns integrated final gates.

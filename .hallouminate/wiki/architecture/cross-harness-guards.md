@@ -50,6 +50,10 @@ Claude receives `additionalContext`. Codex receives a one-shot block continuatio
 
 `agents/lib/tool-reroute.js` is the Claude-only `PreToolUse` dispatcher for `Bash|Grep|Glob`. It redirects file operations to Tilth, rewrites worktree command shapes to `wt-git`, denies unsupported shell-file operations, and passes unrelated Bash commands unchanged.
 
+**Shell reads with no rewrite get a nudge, not a deny (#880).** Auto mode injects "read files with cat, head, or sed -n", and the model follows it over the Tilth contract. Most of those reads are compound (`cd dir; grep … | head`, `cat a; echo ===; cat b`), and no single faithful rewrite exists for them. A deny blocks legitimate pipelines, so the `read-nudge` module lets the command run unchanged and returns `additionalContext` that names the repo paths and points at `tilth_read`/`tilth_search`. It fires only when an operand resolves to an existing path inside cwd (a leading `cd` moves the base), so stdin reads such as `git log | head` stay silent. The `io` module also rewrites `sed -n 'A,Bp' file` and `head -n N file` to `tilth file --section A-B`. It skips the rewrite when the start line is past EOF, because tilth then fails with "range out of bounds" where sed prints nothing. The precedence rule itself lives in `agents/preamble.md`: Tilth routing overrides harness guidance to use shell for files.[^reroute-nudge]
+
+[^reroute-nudge]: Issue #880; `agents/lib/tool-reroute/read-nudge.js`; `agents/lib/tool-reroute/io.js`; `tests/tool-reroute.bats`; tilth 0.8.4 `--section` probe on 2026-09-28.
+
 ## Claude-only pre-tool guards
 
 Beyond the cross-harness git-guard, Claude wires a `PreToolUse` guard (in `claude/hooks/`):

@@ -5,6 +5,7 @@ Read the matching skill before its workflow. Skills own phase procedures; agent 
 ## Tools
 
 Use Tilth for workspace operations and shell for tests, builds, or unsupported operations.
+Tilth routing overrides harness advice to use shell for files.
 Use the working-directory option.
 Batch independent calls in one turn. Follow schemas.
 Do not invent fields or anchors.
