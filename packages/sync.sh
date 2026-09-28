@@ -752,12 +752,13 @@ migrate_harness_off_brew() {
 # mise's shim is the only thing left on PATH. A host launcher that wraps the
 # mise binary (crabbot's codex-contain.sh) keeps itself with a marker line in
 # its first 4 KiB. Only the header is read, so a large binary stays cheap.
+# The header's last line may be cut at the byte limit, so it never counts.
 HARNESS_KEEP_MARKER='# dotfiles: keep-harness-launcher'
 migrate_harness_off_native() {
     local harness="$1"
     local path="$HOME/.local/bin/$harness"
     [[ -e "$path" ]] || return 0
-    if grep -qsFx -- "$HARNESS_KEEP_MARKER" < <(head -c 4096 "$path"); then
+    if [[ -f "$path" ]] && grep -qsFx -- "$HARNESS_KEEP_MARKER" < <(head -c 4096 -- "$path" | sed '$d'); then
         log_info "  Keeping $harness launcher (marked keep-harness-launcher)"
         return 0
     fi

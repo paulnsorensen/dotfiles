@@ -1904,9 +1904,28 @@ MOCKCARGO
 
     run_sync
     assert_success
+    assert_output_contains "Keeping codex launcher"
+    assert_output_contains "Removing native claude binary"
 
     [[ -L "$TEST_HOME/.local/bin/codex" ]]
     [[ ! -e "$TEST_HOME/.local/bin/claude" ]]
+}
+
+@test "migrate_harness_off_native ignores a marker cut off at the 4 KiB header limit" {
+    write_test_yaml
+    mkdir -p "$TEST_HOME/.local/bin"
+    local marker='# dotfiles: keep-harness-launcher'
+    # The marker ends exactly at byte 4096, but its line continues past it.
+    {
+        printf '%*s\n' $((4096 - ${#marker} - 1)) '' | tr ' ' a
+        printf '%sx\n' "$marker"
+    } > "$TEST_HOME/.local/bin/codex"
+
+    run_sync
+    assert_success
+    assert_output_contains "Removing native codex binary"
+
+    [[ ! -e "$TEST_HOME/.local/bin/codex" ]]
 }
 
 @test "retired harness cleanup removes brew, mise, and native installs" {
