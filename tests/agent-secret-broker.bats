@@ -62,7 +62,9 @@ EOF
     chmod 600 "$POLICY" "$CREDENTIAL"
     "$BROKER" --policy "$POLICY" --socket "$SOCKET" --control-socket "$CONTROL" >"$TEST_ROOT/broker.log" 2>&1 &
     export BROKER_PID=$!
-    for _ in {1..50}; do
+    # Python start-up under a parallel `just check` can exceed one second;
+    # wait up to five before declaring the broker dead.
+    for _ in {1..250}; do
         [[ -S "$SOCKET" && -S "$CONTROL" ]] && return
         sleep 0.02
     done

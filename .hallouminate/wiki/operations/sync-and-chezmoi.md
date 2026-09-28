@@ -89,7 +89,7 @@ gone. `tests/packages.bats` checks that each reader returns its installer pin an
 | Brew formulae in `packages/packages.yaml` (now incl. `mise`) | yes | `brew update` + `brew upgrade --formula <declared>` in `sync_brew` |
 | Brew formulae not declared | no | by design; declare a formula to upgrade it |
 | Casks | yes | `upgrade_casks_greedy`; `greedy: false` casks self-update |
-| mise tools, claude, codex (`chezmoi/dot_config/mise/config.toml`) | to the pin | `mise install`; Renovate bumps the pin |
+| mise tools, claude, codex (`chezmoi/dot_config/mise/config.toml`) | yes | `mise install` to the pin, then `mise upgrade --bump` on the live file, mirrored into the tracked manifest; commit the bump |
 | omp (`OMP_PIN`), pi (npm pin) | to the pin | `converge_omp_native`, `sync_npm` |
 | cargo, npm, gh-extension entries | to the pin | unpinned entries install once and never float |
 | uv tools | to the pin | `float: true` moves every sync; unpinned entries move in upgrade mode |
@@ -102,6 +102,10 @@ gone. `tests/packages.bats` checks that each reader returns its installer pin an
 | tmux plugins | yes | `install_plugins`, then `update_plugins all` in upgrade mode |
 | Homebrew itself | yes | `brew update` |
 | macOS, App Store apps, Tailscale | no | `softwareupdate`, `mas upgrade`, and the app; outside `dots` |
+
+### Gotcha: a mise pin bump must go through the live file
+
+`mise upgrade --bump` rewrites the config that defines each tool. Under the proximity rule in [[mise-manifest-precedence]] that is the live `~/.config/mise/config.toml`, never `MISE_GLOBAL_CONFIG_FILE`. `bump_mise_manifest` (`packages/sync.sh`) therefore requires live and source to be byte-identical, bumps the live file from `$HOME` without `MISE_GLOBAL_CONFIG_FILE`, and copies the result into `chezmoi/dot_config/mise/config.toml`. The repo is then dirty; commit the manifest (`dots update` refuses a dirty tree) and Renovate closes the PRs it had open for the same bumps. mise rewrites each value with the version it resolved; the first bump (2026-09-28) kept the `v` tag prefixes and moved 9 pins, including two majors (node 24->26, tokei 14->15) that Renovate would have held for manual review. `sync_npm` and the nightly `run_after` installers then reinstalled the declared npm globals under the new node in the same sync; undeclared globals (`ccusage`, `@govcraft/agent-skills`) did not carry over. Decision 2026-09-28: chosen over report-only drift output.
 
 ### Gotcha: the mise binary was never declared
 

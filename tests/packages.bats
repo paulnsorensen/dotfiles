@@ -1752,6 +1752,67 @@ MOCKBREW
     grep -q "mise install config=$MISE_CONFIG_FILE" "$MISE_LOG"
 }
 
+# mise mock that appends a pin to the live config on `upgrade --bump`, the file
+# mise really rewrites (proximity precedence), so a test can prove sync mirrors
+# the bump back into the tracked manifest.
+write_mock_mise_bumping_live() {
+    local live="$1"
+    rm -f "$MOCK_BIN/mise"
+    cat > "$MOCK_BIN/mise" << MOCKMISE
+#!/bin/bash
+echo "mise \$* config=\${MISE_GLOBAL_CONFIG_FILE:-unset}" >> "\$MISE_LOG"
+if [[ "\$1 \$2" == "upgrade --bump" ]]; then
+    printf '"aqua:example/tool" = "2.0.0"\n' >> "$live"
+fi
+exit 0
+MOCKMISE
+    chmod +x "$MOCK_BIN/mise"
+}
+
+@test "UPGRADE_MODE bumps the live mise config and mirrors it into the tracked manifest" {
+    write_test_yaml
+    local live="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
+    mkdir -p "$(dirname "$live")"
+    cp "$MISE_CONFIG_FILE" "$live"
+    write_mock_mise_bumping_live "$live"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    grep -q "mise install config=$MISE_CONFIG_FILE" "$MISE_LOG"
+    # The bump runs against the live file alone: no MISE_GLOBAL_CONFIG_FILE.
+    grep -q "mise upgrade --bump --yes config=unset" "$MISE_LOG"
+    grep -q 'aqua:example/tool' "$MISE_CONFIG_FILE"
+    cmp -s "$live" "$MISE_CONFIG_FILE"
+    [[ "$output" == *"mise pins bumped in $MISE_CONFIG_FILE"* ]]
+}
+
+@test "UPGRADE_MODE skips the mise bump when the live config differs from the manifest" {
+    write_test_yaml
+    local live="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
+    mkdir -p "$(dirname "$live")"
+    printf '[tools]\nnode = "stale"\n' > "$live"
+    write_mock_mise_bumping_live "$live"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    ! grep -q "upgrade --bump" "$MISE_LOG"
+    [[ "$output" == *"skipping mise upgrade --bump"* ]]
+    [[ "$(cat "$MISE_CONFIG_FILE")" == "[tools]" ]]
+}
+
+@test "non-upgrade sync never bumps mise pins" {
+    write_test_yaml
+    local live="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
+    mkdir -p "$(dirname "$live")"
+    cp "$MISE_CONFIG_FILE" "$live"
+    write_mock_mise_bumping_live "$live"
+
+    run_sync
+    assert_success
+    ! grep -q "upgrade --bump" "$MISE_LOG"
+    [[ "$(cat "$MISE_CONFIG_FILE")" == "[tools]" ]]
+}
+
 @test "a pinned cargo package installs at its exact version, unconditionally" {
     cat > "$PACKAGES_FILE" << 'YAML'
 packages:

@@ -351,6 +351,41 @@ sync_brew() {
 # chezmoi-deployed manifest wins; before first apply, the repo source manifest
 # bootstraps chezmoi and the other exact pins.
 
+# Move the tracked manifest's pins in upgrade mode.
+#
+# `mise upgrade --bump` rewrites the config that defines each tool. mise's
+# proximity rule makes that the LIVE ~/.config/mise/config.toml, never the
+# MISE_GLOBAL_CONFIG_FILE manifest (wiki: operations/mise-manifest-precedence).
+# The manifest is a plain (non-template) chezmoi file, so live and source are
+# byte-identical once the prepare-phase apply has landed. Bump the live file
+# where mise wants to write, then mirror it into the source: the repo stays
+# the source of truth and the final chezmoi apply is a no-op. A live/source
+# mismatch means the prepare apply did not land; skip rather than bump a
+# stale file. Run from $HOME so no project-local mise.toml joins the bump.
+#   bump_mise_manifest <tracked_manifest>
+bump_mise_manifest() {
+    local source="$1"
+    local live="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
+    [[ "${UPGRADE_MODE:-false}" == "true" ]] || return 0
+    [[ -f "$live" && -f "$source" ]] || return 0
+    if ! cmp -s "$live" "$source"; then
+        log_warning "live mise config differs from $source — skipping mise upgrade --bump"
+        return 0
+    fi
+
+    log_info "Bumping mise pins (mise upgrade --bump)..."
+    if ! (cd "$HOME" && env -u MISE_GLOBAL_CONFIG_FILE mise upgrade --bump --yes </dev/null); then
+        log_warning "mise upgrade --bump failed — pins unchanged"
+        return 0
+    fi
+    if cmp -s "$live" "$source"; then
+        echo "  + mise pins already current"
+        return 0
+    fi
+    cp "$live" "$source"
+    log_success "mise pins bumped in $source — commit the manifest (dots update refuses a dirty tree)"
+}
+
 sync_mise() {
     if ! command -v mise &>/dev/null; then
         if ! command -v brew &>/dev/null; then
@@ -403,6 +438,8 @@ sync_mise() {
         FAILED+=("mise-install")
         return 0
     fi
+
+    bump_mise_manifest "$mise_config"
 
     export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims:$PATH"
     hash -r 2>/dev/null || true

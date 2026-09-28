@@ -54,3 +54,7 @@ For the same reason, PR #677 never touched `.sync` at all. Its files were `.sync
 `mise_config_path` (`packages/sync.sh:44-50`) prefers `MISE_CONFIG_FILE` and falls back to `MISE_BOOTSTRAP_CONFIG_FILE`, so a fresh machine with no live config yet resolves against the repo source. Proximity precedence only bites once a live file exists.
 
 Related: [[operations/sync-and-chezmoi]] (the prepare → package-sync → final-apply phase ordering this lives inside), [[operations/mise-aqua-backend-retypes]] (a different mise pin failure — backend retyping, not precedence), [[operations/mise-github-auth]] and [[operations/omp-install-etxtbsy]] (the two sibling failures found in the same investigation).
+
+## Bumping pins obeys the same precedence (2026-09-28)
+
+`MISE_GLOBAL_CONFIG_FILE=<manifest> mise upgrade --bump` does not edit the manifest. mise writes the bump into the config that defines the tool, and the live file wins there too (`mise upgrade --dry-run` prints `(~/.config/mise/config.toml)` beside every bump). `bump_mise_manifest` in `packages/sync.sh` therefore bumps the live file and mirrors it into the tracked manifest, guarded by a byte-for-byte equality check that only holds after `apply_mise_manifest` ran in the prepare phase. See [[sync-and-chezmoi]] § Update vectors.
