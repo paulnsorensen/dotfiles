@@ -58,6 +58,15 @@ EOF
     [ -z "$output" ]
 }
 
+@test "--socket=<path> and --mode=broker forms are parsed" {
+    run asd_stale_brokers <<EOF
+  11 /usr/bin/python3 $LIVE --mode=broker --policy=/etc/a.json --socket=/run/a.sock
+  12 /usr/bin/python3 $LIVE --mode broker --policy /etc/b.json --socket /run/a.sock
+EOF
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf 'duplicate-socket\t11\t/run/a.sock\nduplicate-socket\t12\t/run/a.sock')" ]
+}
+
 @test "no broker processes report nothing" {
     run asd_stale_brokers < /dev/null
     [ "$status" -eq 0 ]

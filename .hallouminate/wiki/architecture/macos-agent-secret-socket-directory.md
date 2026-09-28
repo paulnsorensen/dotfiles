@@ -8,15 +8,17 @@ After deploying a change to the root-owned broker runtime, reprovision via `bin/
 
 ## Broker lifetime and socket ownership
 
-A broker refuses a socket that a live broker still serves. Before it unlinks an existing socket, it connects to it. Only a refused or vanished connection proves that the socket is stale. Before this guard, a second broker silently took over a live socket, and the first broker kept running with nothing to serve (#1100).[^4]
+A broker refuses a socket that a live broker still serves. Before it unlinks an existing socket, it connects to it. Only a refused or vanished connection proves that the socket is stale. Without this guard, a second broker takes over a live socket, and the first broker runs with nothing to serve.[^4]
 
-A broker exits when its parent process exits, and SIGTERM removes both sockets. launchd and systemd start the installed broker under PID 1, so its parent never changes. Other callers, such as a Bats run from a worktree, own the broker's lifetime. Aborted test runs used to leave brokers alive for weeks after their worktree was removed.[^5]
+A broker exits when its parent process exits. launchd and systemd start the installed broker under PID 1, so its parent never changes. Other callers, such as a Bats run from a worktree, own the broker's lifetime. Without this rule, an aborted test run leaves brokers alive after its worktree is gone.[^5]
 
-`dots doctor` reports broker processes whose script path is missing and brokers that share one socket.[^6]
+On SIGTERM, a broker closes its sockets and then dies by the signal, not with exit 0. launchd restarts a `KeepAlive` job only after an unsuccessful exit. An unprivileged broker removes both socket files. The installed broker drops root after it binds, so it cannot delete them from the root-owned `0710` directory. The next start finds them stale and replaces them.[^5]
+
+`dots doctor` reports broker processes whose script path is missing and brokers that share one socket. It does not compare the installed broker with the repository copy; #643 owns that check.[^6]
 
 [^1]: scripts/agent-secret-broker.py:215-234; services/agent-secret/com.dotfiles.agent-secret.plist:9-24
 [^2]: services/agent-secret/agent-secret-broker@.service:11-14
 [^3]: bin/vault-provision:72-87; architecture/mcp-secret-handling.md
-[^4]: scripts/agent-secret-broker.py:761-796; tests/agent-secret-broker.bats "a second broker refuses a socket that a live broker still serves"
-[^5]: scripts/agent-secret-broker.py:927-942; tests/agent-secret-broker.bats "a broker exits when the process that started it exits"
-[^6]: bin/lib/agent-secret-doctor.sh; tests/agent-secret-doctor.bats
+[^4]: scripts/agent-secret-broker.py:761-796; tests/agent-secret-broker.bats:531-548
+[^5]: scripts/agent-secret-broker.py:927-961; tests/agent-secret-broker.bats:568-596
+[^6]: bin/lib/agent-secret-doctor.sh:18-56; tests/agent-secret-doctor.bats

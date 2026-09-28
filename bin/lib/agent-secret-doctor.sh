@@ -16,17 +16,24 @@
 # bash 3.2 (macOS /bin/bash): no associative arrays, no mapfile.
 
 # asd_broker_rows — print <pid>\t<script>\t<socket key> for each broker-mode
-# process on stdin. A broker without --socket keys on its --policy path,
-# because the broker derives its default socket from the policy.
+# process on stdin. Both `--flag value` and `--flag=value` forms parse. A
+# broker without --socket keys on its --policy path; the broker derives the
+# default socket from the policy consumer, so two policy files for one
+# consumer are not caught. Arguments that contain spaces are not supported.
 asd_broker_rows() {
     awk '
+        function opt(name,    v) {
+            if ($i == name) return $(i + 1)
+            if (index($i, name "=") == 1) return substr($i, length(name) + 2)
+            return ""
+        }
         {
             script = ""; sock = ""; policy = ""; broker = 0
             for (i = 2; i <= NF; i++) {
                 if ($i ~ /agent-secret-broker\.py$/) script = $i
-                if ($i == "--mode" && $(i + 1) == "broker") broker = 1
-                if ($i == "--socket") sock = $(i + 1)
-                if ($i == "--policy") policy = $(i + 1)
+                if (opt("--mode") == "broker") broker = 1
+                if (opt("--socket") != "") sock = opt("--socket")
+                if (opt("--policy") != "") policy = opt("--policy")
             }
             if (!broker || script == "") next
             if (sock == "") sock = "policy:" policy

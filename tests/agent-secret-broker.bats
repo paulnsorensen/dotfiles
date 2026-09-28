@@ -75,6 +75,10 @@ teardown() {
         kill "$BROKER_PID" 2>/dev/null || true
         wait "$BROKER_PID" 2>/dev/null || true
     fi
+    # The orphan test's broker is not a child of this shell; reap it by pid.
+    if [[ -s "$TEST_ROOT/orphan.pid" ]]; then
+        kill "$(<"$TEST_ROOT/orphan.pid")" 2>/dev/null || true
+    fi
     teardown_test_env
 }
 
@@ -550,21 +554,27 @@ wait_exit() {
 
     "$BROKER" --policy "$POLICY" --socket "$SOCKET" --control-socket "$CONTROL" >"$TEST_ROOT/next.log" 2>&1 &
     export BROKER_PID=$!
+    # The stale socket files already exist, so wait until the new broker answers.
     local _
-    for _ in {1..50}; do
-        [[ -S "$SOCKET" && -S "$CONTROL" ]] && kill -0 "$BROKER_PID" 2>/dev/null && break
-        sleep 0.02
+    for _ in {1..100}; do
+        run proxy_call '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+        [[ "$status" -eq 0 && "$output" == *protocolVersion* ]] && break
+        sleep 0.05
     done
-    run proxy_call '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
     assert_success
     [[ "$output" == *'"protocolVersion":"2025-06-18"'* ]]
 }
 
-@test "SIGTERM stops the broker and removes both sockets" {
+@test "SIGTERM stops the broker, removes both sockets, and still dies by the signal" {
+    local rc=0
     kill -TERM "$BROKER_PID"
     wait_exit "$BROKER_PID"
+    wait "$BROKER_PID" || rc=$?
     unset BROKER_PID
     [[ ! -e "$SOCKET" && ! -e "$CONTROL" ]]
+    # launchd restarts a KeepAlive job only after an unsuccessful exit. A
+    # broker that exits 0 on SIGTERM stays down until the next reboot.
+    [[ "$rc" -eq 143 ]]
 }
 
 @test "a broker exits when the process that started it exits" {

@@ -924,22 +924,41 @@ class Broker:
             except OSError:
                 pass
 
-    def run(self) -> int:
+    def run(self, parent: int | None = None) -> int:
         # launchd and systemd start the installed broker under PID 1, so its
         # parent never changes. Any other parent (a test run, an agent session)
         # owns the broker's lifetime: once it exits, the broker exits too.
-        parent = os.getppid()
-        signal.signal(signal.SIGTERM, lambda _signum, _frame: self._stop.set())
+        if parent is None:
+            parent = os.getppid()
         self.start()
+        # Raise from the handler: Event.set() takes a non-reentrant lock that
+        # the main thread can hold inside _stop.wait(), which deadlocks.
+        signal.signal(signal.SIGTERM, _raise_terminated)
+        terminated = False
         try:
             while not self._stop.wait(1):
                 if os.getppid() != parent:
                     break
         except KeyboardInterrupt:
             return 0
+        except _Terminated:
+            terminated = True
         finally:
             self.close()
+        if terminated:
+            # Die by the signal after cleanup. launchd restarts a KeepAlive
+            # job only after an unsuccessful exit; exit 0 keeps it down.
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            os.kill(os.getpid(), signal.SIGTERM)
         return 0
+
+
+class _Terminated(Exception):
+    """SIGTERM arrived; unwind to Broker.run so close() runs."""
+
+
+def _raise_terminated(_signum: int, _frame: object) -> NoReturn:
+    raise _Terminated
 
 
 def _proxy_socket(args: argparse.Namespace) -> pathlib.Path:
@@ -1118,6 +1137,9 @@ def _normalize_nonce_argv(argv: list[str] | None) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Read the parent first: a launcher that exits during policy load would
+    # otherwise leave PID 1 recorded, and the broker would never exit.
+    parent = os.getppid()
     argv = _normalize_nonce_argv(argv)
     mode = _requested_mode(_mode_from_argv0(), argv)
     parser = _build_parser(mode)
@@ -1148,7 +1170,7 @@ def main(argv: list[str] | None = None) -> int:
             run_user,
             upstream_home,
         )
-        return broker.run()
+        return broker.run(parent)
     if mode == "proxy":
         return run_proxy(args)
     if mode == "control":

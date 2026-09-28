@@ -325,13 +325,13 @@ do_doctor() {
         local broker_findings category pid detail
         broker_findings=$(ps -axo pid=,command= | asd_stale_brokers)
         if [[ -z "$broker_findings" ]]; then
-            echo -e "  ${GREEN}✓ No stale or duplicate brokers${NC}"
+            echo -e "  ${GREEN}✓ No orphaned or duplicate brokers${NC}"
         else
             while IFS=$'\t' read -r category pid detail; do
                 echo -e "  ${RED}✗ ${category}: pid ${pid} (${detail})${NC}"
                 issues=$((issues + 1))
             done <<< "$broker_findings"
-            echo -e "    Stop each listed pid: ${GREEN}kill <pid>${NC} (sudo for root-owned brokers)"
+            echo -e "    Stop each missing-script pid, and keep one broker per socket: ${GREEN}kill <pid>${NC} (sudo for root-owned brokers)"
         fi
     fi
 
