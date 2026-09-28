@@ -1894,6 +1894,21 @@ MOCKCARGO
     [[ ! -e "$TEST_HOME/.local/bin/claude" ]]
 }
 
+@test "migrate_harness_off_native keeps a marked host launcher symlink" {
+    write_test_yaml
+    mkdir -p "$TEST_HOME/.local/bin" "$TEST_HOME/launchers"
+    printf '#!/bin/sh\n# dotfiles: keep-harness-launcher\nexec true\n' > "$TEST_HOME/launchers/codex-contain.sh"
+    chmod +x "$TEST_HOME/launchers/codex-contain.sh"
+    ln -s "$TEST_HOME/launchers/codex-contain.sh" "$TEST_HOME/.local/bin/codex"
+    touch "$TEST_HOME/.local/bin/claude"
+
+    run_sync
+    assert_success
+
+    [[ -L "$TEST_HOME/.local/bin/codex" ]]
+    [[ ! -e "$TEST_HOME/.local/bin/claude" ]]
+}
+
 @test "retired harness cleanup removes brew, mise, and native installs" {
     write_test_yaml
     write_mock_brew $'opencode\ncrush'

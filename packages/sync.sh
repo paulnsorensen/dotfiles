@@ -749,11 +749,18 @@ migrate_harness_off_brew() {
 }
 
 # Remove a stale native-installed binary for a mise-migrated harness so
-# mise's shim is the only thing left on PATH.
+# mise's shim is the only thing left on PATH. A host launcher that wraps the
+# mise binary (crabbot's codex-contain.sh) keeps itself with a marker line in
+# its first 4 KiB. Only the header is read, so a large binary stays cheap.
+HARNESS_KEEP_MARKER='# dotfiles: keep-harness-launcher'
 migrate_harness_off_native() {
     local harness="$1"
     local path="$HOME/.local/bin/$harness"
     [[ -e "$path" ]] || return 0
+    if grep -qsFx -- "$HARNESS_KEEP_MARKER" < <(head -c 4096 "$path"); then
+        log_info "  Keeping $harness launcher (marked keep-harness-launcher)"
+        return 0
+    fi
     log_info "  Removing native $harness binary (now mise-managed)..."
     rm -f "$path"
 }
