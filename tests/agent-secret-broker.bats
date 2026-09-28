@@ -75,6 +75,10 @@ teardown() {
         kill "$BROKER_PID" 2>/dev/null || true
         wait "$BROKER_PID" 2>/dev/null || true
     fi
+    # The orphan test's broker is not a child of this shell; reap it by pid.
+    if [[ -s "$TEST_ROOT/orphan.pid" ]]; then
+        kill "$(<"$TEST_ROOT/orphan.pid")" 2>/dev/null || true
+    fi
     teardown_test_env
 }
 
@@ -512,4 +516,88 @@ PY
     # A genuinely missing nonce value must still error, not swallow --consumer.
     run "$CTL" approve --socket "$TEST_ROOT/no-such.sock" --nonce --consumer fixture
     [[ "$output" == *"expected one argument"* ]]
+}
+
+# wait_exit <pid> — succeed once <pid> exits, fail if it is still alive after 5 s.
+wait_exit() {
+    local _
+    for _ in {1..100}; do
+        kill -0 "$1" 2>/dev/null || return 0
+        sleep 0.05
+    done
+    return 1
+}
+
+@test "a second broker refuses a socket that a live broker still serves" {
+    "$BROKER" --policy "$POLICY" --socket "$SOCKET" --control-socket "$TEST_ROOT/second-control.sock" \
+        >"$TEST_ROOT/second.log" 2>&1 &
+    local second=$! rc=0
+    if ! wait_exit "$second"; then
+        kill "$second" 2>/dev/null || true
+        echo "second broker kept running and took over the live socket" >&2
+        return 1
+    fi
+    wait "$second" || rc=$?
+    [[ "$rc" -eq 2 ]]
+    grep -q "already served" "$TEST_ROOT/second.log"
+    [[ ! -e "$TEST_ROOT/second-control.sock" ]]
+
+    run proxy_call '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    assert_success
+    [[ "$output" == *'"protocolVersion":"2025-06-18"'* ]]
+}
+
+@test "a broker replaces a stale socket left by a killed predecessor" {
+    kill -KILL "$BROKER_PID"
+    wait "$BROKER_PID" 2>/dev/null || true
+    [[ -S "$SOCKET" && -S "$CONTROL" ]]
+
+    "$BROKER" --policy "$POLICY" --socket "$SOCKET" --control-socket "$CONTROL" >"$TEST_ROOT/next.log" 2>&1 &
+    export BROKER_PID=$!
+    # The stale socket files already exist, so wait until the new broker answers.
+    local _
+    for _ in {1..100}; do
+        run proxy_call '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+        [[ "$status" -eq 0 && "$output" == *protocolVersion* ]] && break
+        sleep 0.05
+    done
+    assert_success
+    [[ "$output" == *'"protocolVersion":"2025-06-18"'* ]]
+}
+
+@test "SIGTERM stops the broker, removes both sockets, and still dies by the signal" {
+    local rc=0
+    kill -TERM "$BROKER_PID"
+    wait_exit "$BROKER_PID"
+    wait "$BROKER_PID" || rc=$?
+    unset BROKER_PID
+    [[ ! -e "$SOCKET" && ! -e "$CONTROL" ]]
+    # launchd restarts a KeepAlive job only after an unsuccessful exit. A
+    # broker that exits 0 on SIGTERM stays down until the next reboot.
+    [[ "$rc" -eq 143 ]]
+    # A client can no longer reach the stopped broker.
+    run proxy_call '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    assert_failure
+    [[ "$output" != *protocolVersion* ]]
+}
+
+@test "a broker exits when the process that started it exits" {
+    local orphan_socket="$TEST_ROOT/orphan.sock" orphan_control="$TEST_ROOT/orphan-control.sock"
+    # The parent shell backgrounds the broker, waits for its socket, then
+    # exits: the same shape as an aborted test run or a closed agent session.
+    bash -c '"$0" --policy "$1" --socket "$2" --control-socket "$3" >/dev/null 2>&1 &
+        echo $! > "$4"
+        for _ in {1..100}; do [[ -S "$2" ]] && exit 0; sleep 0.02; done
+        exit 1' "$BROKER" "$POLICY" "$orphan_socket" "$orphan_control" "$TEST_ROOT/orphan.pid"
+    local orphan
+    orphan=$(<"$TEST_ROOT/orphan.pid")
+    if ! wait_exit "$orphan"; then
+        kill "$orphan" 2>/dev/null || true
+        echo "orphaned broker $orphan kept running after its parent exited" >&2
+        return 1
+    fi
+    [[ ! -e "$orphan_socket" && ! -e "$orphan_control" ]]
+    run "$PROXY" --socket "$orphan_socket" <<< '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    assert_failure
+    [[ "$output" != *protocolVersion* ]]
 }

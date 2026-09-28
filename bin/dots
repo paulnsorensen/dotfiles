@@ -316,6 +316,28 @@ do_doctor() {
         echo -e "    Triage with the ${GREEN}/bin-doctor${NC} skill, or run: ${GREEN}bin-doctor check${NC}"
     fi
 
+    # Secret brokers that outlived their worktree or share one socket.
+    echo -e "${BLUE}Checking agent secret brokers...${NC}"
+    local broker_lib="$DOTFILES_DIR/bin/lib/agent-secret-doctor.sh"
+    if [[ -f "$broker_lib" ]]; then
+        # shellcheck source=bin/lib/agent-secret-doctor.sh
+        source "$broker_lib"
+        local broker_findings category pid detail
+        # Under set -e and pipefail, a failed ps would end do_doctor here.
+        if ! broker_findings=$(ps -axo pid=,command= | asd_stale_brokers); then
+            echo -e "  ${RED}✗ Unable to list processes for the broker check${NC}"
+            issues=$((issues + 1))
+        elif [[ -z "$broker_findings" ]]; then
+            echo -e "  ${GREEN}✓ No orphaned or duplicate brokers${NC}"
+        else
+            while IFS=$'\t' read -r category pid detail; do
+                echo -e "  ${RED}✗ ${category}: pid ${pid} (${detail})${NC}"
+                issues=$((issues + 1))
+            done <<< "$broker_findings"
+            echo -e "    Stop each missing-script pid, and keep one broker per socket: ${GREEN}kill <pid>${NC} (sudo for root-owned brokers)"
+        fi
+    fi
+
     # Harness settings keys the chezmoi guards kept but the repo does not know.
     echo -e "${BLUE}Checking harness settings drift...${NC}"
     local drift_gate="$DOTFILES_DIR/chezmoi/lib/drift-gate.sh"
