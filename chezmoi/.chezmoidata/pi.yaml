@@ -20,6 +20,19 @@ pi:
     treeFilterMode: default
     tuiMode: regular
     fullscreenExitOutput: transcript
+    defaultProjectTrust: ask
+    hideThinkingBlock: true
+    quietStartup: true
+    compaction:
+      enabled: true
+      reserveTokens: 16384
+      keepRecentTokens: 20000
+    retry:
+      enabled: true
+      maxRetries: 3
+      provider:
+        maxRetries: 0
+        maxRetryDelayMs: 60000
     packages:
       # renovate: datasource=npm depName=pi-mcp-adapter
       - npm:pi-mcp-adapter@2.38.0
