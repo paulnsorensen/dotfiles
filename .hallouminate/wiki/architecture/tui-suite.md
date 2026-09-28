@@ -25,6 +25,7 @@ The suite uses two different capture tools for two different jobs, not one tool 
 - agent-tty's render profiles are only `reference-dark` / `reference-light`, each with a fixed background/foreground pair. ANSI-256 colors paint in the renderer's own palette, not the terminal's configured scheme, so an agent-tty screenshot proves layout correctness, not palette correctness. VHS is the tool that proves palette.
 - `run` returns no child exit status. A test invoked through `agent-tty run` cannot report pass/fail through its own exit code; run tests through the normal shell instead.
 - `wait` takes a `--timeout <ms>` flag, and a screenshot response's artifact path is at the JSON key `result.artifactPath`.
+- A session does not end when the agent that created it exits. Its `_host` process and every child it starts keep running.[^teardown] Create every session with `--idle-timeout-ms`. Destroy every session explicitly. Use an EXIT trap only in a script that runs in one shell. Each agent Bash call is a new shell, so a trap there ends the session too early. `agent-tty gc` does not reach these sessions: it works on one `--home` at a time, and the home registry does not list them.
 
 ## Upstream skills loaded at run time, not vendored
 
@@ -58,6 +59,7 @@ The trial destroys the session explicitly and makes no terminal-restoration clai
 Future checks must observe a shell marker after exit instead of equating a stable screen with success.[^cleanup]
 
 [^cleanup]: `agent-tty skills get dogfood-tui`, evidence checklist and alt-screen taxonomy; recovery runtime trial on 2026-09-06.
+[^teardown]: Issue #1101. On 2026-09-28, 12 `agent-tty _host` processes ran 18 to 21 hours after their agents and kept TUI fixtures and headless Chromium alive. Every `_host` daemonizes to ppid 1, so find orphans by `etime`, not ppid.
 
 See also: [[agent-profile]], [[agents-dir]].
 

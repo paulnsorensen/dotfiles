@@ -38,7 +38,7 @@ Defined in `profile.yaml` (closed world — `--strict-mcp-config`):
 - Test at three sizes: 80x24, 120x40, 40x15.
 - Run once with `NO_COLOR=1` to catch color-only signaling.
 - Put verification artifacts under `.cheese/tui-verify/`. Do not commit them unless asked.
-- Create agent-tty homes under `mktemp`. Destroy them at the end of the session.
+- Create agent-tty homes under `mktemp` and sessions with `--idle-timeout-ms`. Destroy them at the end of the session.
 - Recordings may hold secrets visible on screen. Treat them as sensitive until reviewed.
 
 ## Verify-before-done checklist
