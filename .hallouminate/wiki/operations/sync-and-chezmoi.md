@@ -33,8 +33,9 @@ Combine it with `refresh` to bypass the package cache without enabling upgrade m
 
 The prepare exception prevents stale live mise pins from blocking their own replacement.
 See [[mise-manifest-precedence]].
-Upgrades preserve declared version pins and existing package exclusions.
-They do not replace pinned tools with arbitrary latest releases.
+Upgrades preserve existing package exclusions.
+Brew, cargo, npm, uv, and gh-extension pins never float to arbitrary latest releases.
+mise pins are the exception since 2026-09-28: upgrade mode bumps them through `bump_mise_manifest` and writes the result back into the tracked manifest (see Update vectors).
 
 A package process failure stops configuration dispatch.
 A failed final apply retains installed packages and records a sync failure.
@@ -79,6 +80,41 @@ gone. `tests/packages.bats` checks that each reader returns its installer pin an
 **Now**: `converge_omp_native` downloads `https://github.com/can1357/oh-my-pi/releases/download/$OMP_PIN/omp-<os>[-musl]-<arch>` with `curl` directly (`packages/sync.sh`). Release downloads carry no API budget, so the pinned URL needs no API call and no token. `omp_release_asset` maps the host onto the asset name: `uname` for the OS, `sysctl -in hw.optional.arm64` for Darwin (NOT `uname -m`, which reports x86_64 under Rosetta and would pin an Apple Silicon Mac to the translated build), `uname -m` on Linux, plus musl detection.
 
 **Order of operations**: download into `~/.local/bin/.omp-stage` → `chmod +x` → ad-hoc `codesign` on Darwin (an unsigned binary is killed on first exec, so signing must precede the probe) → probe `--version` against `OMP_PIN` → `mv` over `~/.local/bin/omp`. The staged rename swaps the directory entry, so a live omp session cannot cause ETXTBSY, and a truncated or unstartable download never reaches the live path. `tests/packages.bats` asserts the pinned asset URL, the absence of any `api.github.com` call, the event order, and both failure legs. Recorded 2026-09-02.
+
+## Update vectors (2026-09-28)
+
+`dots sync` runs in upgrade mode by default (`parse_sync_args` in `.sync-lib.sh`). `dots update` and `dots up` add a Git pull in front of the same sync. Renovate moves every pin; the pull delivers it. The table names each channel, whether one sync moves it, and the mechanism.
+
+| Channel | Moves on `dots sync` | Mechanism |
+|---|---|---|
+| Brew formulae in `packages/packages.yaml` (now incl. `mise`) | yes | `brew update` + `brew upgrade --formula <declared>` in `sync_brew` |
+| Brew formulae not declared | no | by design; declare a formula to upgrade it |
+| Casks | yes | `upgrade_casks_greedy`; `greedy: false` casks self-update |
+| mise tools, claude, codex (`chezmoi/dot_config/mise/config.toml`) | yes | `mise install` to the pin, then `mise upgrade --bump` on the live file, mirrored into the tracked manifest; commit the bump |
+| omp (`OMP_PIN`), pi (npm pin) | to the pin | `converge_omp_native`, `sync_npm` |
+| cargo, npm, gh-extension entries | to the pin | unpinned entries install once and never float |
+| uv tools | to the pin | `float: true` moves every sync; unpinned entries move in upgrade mode |
+| tilth, hallouminate | yes | `run_after_install-*.sh.tmpl` nightly channel |
+| Claude skills (`~/.claude/skills`) | yes | chezmoi vendoring; unpinned sources float to the default branch |
+| Codex, Cursor, Copilot skills (`~/.agents/skills`) | yes | `install-external.sh --force` (`npx skills add --copy`) |
+| Claude MCP entries, plugin membership | yes | `reconcile_claude_mcps`; plugin reconcile on registry change |
+| Claude plugin versions | no | `claude plugin update <name>`; the CLI owns this |
+| OMP plugins, Pi extensions | yes | `sync_omp_plugins`, `pi update --extensions` |
+| tmux plugins | yes | `install_plugins`, then `update_plugins all` in upgrade mode |
+| Homebrew itself | yes | `brew update` |
+| macOS, App Store apps, Tailscale | no | `softwareupdate`, `mas upgrade`, and the app; outside `dots` |
+
+### Gotcha: a mise pin bump must go through the live file
+
+`mise upgrade --bump` rewrites the config that defines each tool. Under the proximity rule in [[mise-manifest-precedence]] that is the live `~/.config/mise/config.toml`, never `MISE_GLOBAL_CONFIG_FILE`. `bump_mise_manifest` (`packages/sync.sh`) therefore requires live and source to be byte-identical, bumps the live file from `$HOME` without `MISE_GLOBAL_CONFIG_FILE`, and copies the result into `chezmoi/dot_config/mise/config.toml`. The repo is then dirty; commit the manifest (`dots update` refuses a dirty tree) and Renovate closes the PRs it had open for the same bumps. mise rewrites each value with the version it resolved; the first bump (2026-09-28) kept the `v` tag prefixes and moved 9 pins, including two majors (node 24->26, tokei 14->15) that Renovate would have held for manual review. `sync_npm` and the nightly `run_after` installers then reinstalled the declared npm globals under the new node in the same sync; undeclared globals (`ccusage`, `@govcraft/agent-skills`) did not carry over. Decision 2026-09-28: chosen over report-only drift output.
+
+### Gotcha: the mise binary was never declared
+
+`sync_mise` bootstrapped `mise` with `brew install`, but `brew upgrade --formula <declared>` only moves declared formulae. `mise` is now a declared formula in `packages/packages.yaml`.
+
+### Gotcha: stale native skill copies shadow `~/.agents/skills`
+
+Older `skills` CLI releases copied Cursor skills into `~/.cursor/skills`, and a retired leg copied a tree into `~/.pi/agent/skills`. Both harnesses read `~/.agents/skills` now, so those copies froze in June and August while the shared tree kept moving. `install-external.sh` evicts a copy when the same name exists in `~/.agents/skills` and no `.dotfiles-managed*` manifest in that root owns it. Manifest-owned and harness-only skills stay.
 
 ## Chezmoi-managed subset
 

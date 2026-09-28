@@ -109,6 +109,14 @@ STDIN"
     jq -e '.permissions.allow | length > 3' "$OUT" >/dev/null
 }
 
+@test "modify_settings: \${HOME} in registry permission rules is expanded" {
+    run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
+    [ "$status" -eq 0 ]
+    jq -e --arg rule "Bash(cd $HOME/Dev/*)" '.permissions.allow | index($rule)' "$OUT" >/dev/null
+    run jq -e '.permissions | tostring | contains("${HOME}")' "$OUT"
+    [ "$status" -ne 0 ]
+}
+
 @test "modify_settings: unknown top-level key is kept, warned on stderr, and recorded" {
     run_modify '{"model":"drifted","someNewClaudeKey":"x"}'
     [ "$status" -eq 0 ]

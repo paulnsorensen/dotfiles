@@ -50,6 +50,14 @@ AGENTS_SKILLS_DIR="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
 LEGACY_CODEX_SKILLS_DIR="${LEGACY_CODEX_SKILLS_DIR:-$HOME/.codex/skills}"
 LOCAL_MANIFEST_NAME=".dotfiles-local-managed"
 
+# Native per-harness skill roots that older `skills` CLI releases populated by
+# copy. Cursor and Pi now read the shared ~/.agents/skills, so a same-name
+# copy in these roots is a frozen duplicate that can shadow the fresh one.
+# Sync evicts only those duplicates; manifest-owned and harness-only skills
+# stay. Overridable so the Bats suite can point them at a sandbox HOME.
+LEGACY_CURSOR_SKILLS_DIR="${LEGACY_CURSOR_SKILLS_DIR:-$HOME/.cursor/skills}"
+LEGACY_PI_SKILLS_DIR="${LEGACY_PI_SKILLS_DIR:-$HOME/.pi/agent/skills}"
+
 # Skill sync needs npx (Node) + yq + jq. `npx skills add` clones each source and
 # places skills into each agent's skill dir; npx fetches the `skills` CLI itself
 # (float-to-latest, no pin).
@@ -416,6 +424,45 @@ evict_legacy_codex_skills() {
     echo -e "  ${GREEN}✓${NC} Removed legacy Codex skill mirror: $LEGACY_CODEX_SKILLS_DIR"
 }
 
+# Remove skill copies in a native harness root that the shared
+# $AGENTS_SKILLS_DIR supersedes: the same name exists there and no
+# .dotfiles-managed* manifest in the root owns the copy.
+#   evict_superseded_skill_copies <label> <root>
+evict_superseded_skill_copies() {
+    local label="$1" root="$2"
+    [[ -d "$root" ]] || return 0
+    # An unreadable manifest is not an empty one: it may own a copy we would
+    # otherwise delete, so a read failure skips this root entirely.
+    local manifests="" manifest content
+    for manifest in "$root"/.dotfiles-managed*; do
+        [[ -e "$manifest" ]] || continue
+        if ! content=$(cat "$manifest"); then
+            echo -e "  ${YELLOW}Cannot read $manifest — skipping superseded-copy eviction for $root${NC}" >&2
+            return 0
+        fi
+        manifests+="$content"$'\n'
+    done
+    local d name
+    local -a removed=()
+    for d in "$root"/*/; do
+        [[ -f "$d/SKILL.md" ]] || continue
+        name=$(basename "$d")
+        [[ -f "$AGENTS_SKILLS_DIR/$name/SKILL.md" ]] || continue
+        if grep -Fxq "$name" <<<"$manifests"; then
+            continue
+        fi
+        if $DRY_RUN; then
+            echo -e "  ${BLUE}[dry-run]${NC} rm -rf $root/$name (superseded by $AGENTS_SKILLS_DIR/$name)"
+            continue
+        fi
+        rm -rf -- "${root:?}/${name:?}"
+        removed+=("$name")
+    done
+    if ((${#removed[@]})); then
+        echo -e "  ${GREEN}✓${NC} Removed superseded $label skill copies: ${removed[*]}"
+    fi
+}
+
 # Install the repo's own skills/<name>/SKILL.md tree into every harness that
 # isn't excluded. Unlike install_source, there is no per-source `harnesses:`
 # restriction to honor here, so this reuses the same AGENT_FLAGS/
@@ -471,6 +518,11 @@ echo
 
 echo -e "${BLUE}Legacy Codex skill mirror${NC}"
 evict_legacy_codex_skills
+echo
+
+echo -e "${BLUE}Superseded native skill copies${NC}"
+evict_superseded_skill_copies cursor "$LEGACY_CURSOR_SKILLS_DIR"
+evict_superseded_skill_copies pi "$LEGACY_PI_SKILLS_DIR"
 echo
 
 fail_count=0

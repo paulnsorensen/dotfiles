@@ -22,6 +22,7 @@ packages:
   - parallel                                  # GNU parallel — run shell jobs concurrently
   - gettext
   - taf2/tap/mdvi
+  - mise                                      # tool-version manager; declared so upgrade mode moves the binary too
 
   # Remote access (Tailscale mesh VPN → SSH bootstrap → mosh)
   - mosh                                      # resilient mobile shell (UDP 60000-61000); survives roaming/sleep

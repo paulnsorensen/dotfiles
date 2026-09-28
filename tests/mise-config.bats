@@ -60,24 +60,36 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     done
 }
 
-@test "non-semver tag shapes are kept raw (rust-analyzer date-stamp, tmux v3.7b)" {
-    [[ "$(yq -p=toml '.tools."aqua:rust-lang/rust-analyzer"' "$CONFIG")" == "2026-07-20" ]]
-    [[ "$(yq -p=toml '.tools."aqua:tmux/tmux-builds"' "$CONFIG")" == "v3.7b" ]]
+# Pin values move on every `dots sync` bump (bump_mise_manifest) and every
+# Renovate PR, so these tests assert the version-string SHAPE of each
+# backend, never a literal pin.
+tool_version() {
+    yq -p=toml -o=json '.tools' "$CONFIG" | jq -r --arg tool "$1" '.[$tool]'
+}
+
+@test "non-semver tag shapes are kept raw (rust-analyzer date-stamp, tmux v3.7x)" {
+    [[ "$(tool_version 'aqua:rust-lang/rust-analyzer')" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+    [[ "$(tool_version 'aqua:tmux/tmux-builds')" =~ ^v3\.[0-9]+[a-z]?$ ]]
 }
 
 @test "core-plugin tools (node, bun, rust) are stripped of git-tag prefixes" {
-    [[ "$(yq -p=toml '.tools.node' "$CONFIG")" == "24.18.1" ]]
-    [[ "$(yq -p=toml '.tools.bun' "$CONFIG")" == "1.4.2" ]]
-    [[ "$(yq -p=toml '.tools.rust' "$CONFIG")" == "1.98.1" ]]
+    local tool
+    for tool in node bun rust; do
+        [[ "$(tool_version "$tool")" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+    done
 }
 
 @test "backend-managed tools use their backend prefix syntax" {
-    [[ "$(yq -p=toml '.tools."npm:bash-language-server"' "$CONFIG")" == "5.8.1" ]]
-    [[ "$(yq -p=toml '.tools."npm:yaml-language-server"' "$CONFIG")" == "1.24.0" ]]
-    [[ "$(yq -p=toml '.tools."npm:basedpyright"' "$CONFIG")" == "1.40.1" ]]
-    [[ "$(yq -p=toml '.tools."npm:t3"' "$CONFIG")" == "0.0.42" ]]
-    [[ "$(yq -p=toml '.tools."cargo:eza"' "$CONFIG")" == "0.23.5" ]]
-    [[ "$(yq -p=toml '.tools."cargo:tokei"' "$CONFIG")" == "14.0.0" ]]
+    local tool
+    for tool in \
+        'npm:bash-language-server' \
+        'npm:yaml-language-server' \
+        'npm:basedpyright' \
+        'npm:t3' \
+        'cargo:eza' \
+        'cargo:tokei'; do
+        [[ "$(tool_version "$tool")" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+    done
 }
 
 @test "gopls stays dropped (needs a Go toolchain; aqua entry is go_install-type)" {

@@ -12,6 +12,12 @@
 #     aqua-pinned until the aqua registry retyped them as `cargo`-type
 #     packages (no prebuilt binaries), which mise's aqua backend refuses.
 #
+# `dots sync` (upgrade mode) runs `mise upgrade --bump` against the live copy
+# of this file and mirrors the result back here (packages/sync.sh,
+# bump_mise_manifest). mise rewrites each value with the version it resolved;
+# the 2026-09-28 bump kept the `v` tag prefixes. Majors move too (node 24->26).
+# Commit the bumped manifest; Renovate closes its matching PRs.
+#
 # gopls was dropped 2026-07-27: the aqua registry types it `go_install`
 # (unsupported by mise's aqua backend) and the go backend needs a full Go
 # toolchain — no Go work on this machine. Re-add alongside a pinned `go`
@@ -46,10 +52,10 @@
 "aqua:ast-grep/ast-grep" = "0.45.3"
 "aqua:dandavison/delta" = "0.19.2"
 "aqua:git-lfs/git-lfs" = "v3.8.0"
-"aqua:tmux/tmux-builds" = "v3.7b"
+"aqua:tmux/tmux-builds" = "v3.7c"
 "aqua:j178/prek" = "v0.5.3"
 "aqua:ajeetdsouza/zoxide" = "v0.10.0"
-"aqua:atuinsh/atuin" = "v18.22.0"
+"aqua:atuinsh/atuin" = "v18.23.0"
 "aqua:ClementTsang/bottom" = "0.14.9"
 "aqua:bootandy/dust" = "v1.2.6"
 "aqua:dalance/procs" = "v0.14.12"
@@ -57,19 +63,19 @@
 "aqua:Wilfred/difftastic" = "0.71.0"
 "aqua:codeberg.org/mergiraf/mergiraf" = "v0.18.0"
 "aqua:jesseduffield/lazygit" = "v0.65.1"
-"aqua:git-town/git-town" = "v24.0.0"
+"aqua:git-town/git-town" = "v24.1.0"
 "aqua:joshmedeski/sesh" = "v2.31.0"
 "aqua:casey/just" = "1.58.0"
 "aqua:twpayne/chezmoi" = "v2.72.2"
 "aqua:duckdb/duckdb" = "v1.5.5"
 "aqua:chmln/sd" = "v1.1.0"
-"aqua:charmbracelet/vhs" = "v0.12.0"
+"aqua:charmbracelet/vhs" = "v0.12.1"
 
 "aqua:mozilla/sccache" = "v0.18.0"
 "aqua:nextest-rs/nextest/cargo-nextest" = "cargo-nextest-0.9.140"
 "aqua:protocolbuffers/protobuf/protoc" = "v36.2"
-"aqua:astral-sh/uv" = "0.12.17"
-"aqua:rust-lang/rust-analyzer" = "2026-07-20"
+"aqua:astral-sh/uv" = "0.12.19"
+"aqua:rust-lang/rust-analyzer" = "2026-09-21"
 "aqua:taiki-e/cargo-llvm-cov" = "v0.9.1"
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 "aqua:axodotdev/cargo-dist" = "v0.33.0"
@@ -77,7 +83,7 @@
 "aqua:anthropics/claude-code" = "v2.1.283"
 "aqua:openai/codex" = "rust-v0.154.0"
 
-node = "24.18.1"
+node = "26.10.0"
 bun = "1.4.2"
 rust = "1.98.1"
 
@@ -86,4 +92,4 @@ rust = "1.98.1"
 "npm:yaml-language-server" = "1.24.0"
 "npm:basedpyright" = "1.40.1"
 "cargo:eza" = "0.23.5"
-"cargo:tokei" = "14.0.0"
+"cargo:tokei" = "15.0.0"

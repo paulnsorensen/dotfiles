@@ -227,7 +227,8 @@ else
 fi
 
 # Compose the desired document: static authoritative keys + registry-authored
-# keys. permissions merges defaultMode (static) with the registry lists.
+# keys. permissions merges defaultMode (static) with the registry lists;
+# ${HOME} in a rule expands so one rule serves macOS and Linux homes.
 # enabledPlugins / extraKnownMarketplaces are claude.yaml base + the
 # gate-filtered plugin-registry overlay (registry wins on key collision).
 desired=$(
@@ -243,11 +244,11 @@ desired=$(
         + { hooks:                  (($reg.hooks // {}) | expand),
             enabledPlugins:         (($reg.enabledPlugins // {}) + $reg_enabled + $native_enabled),
             extraKnownMarketplaces: ((($reg.extraKnownMarketplaces // {}) | expand) + $reg_marketplaces + $native_marketplaces),
-            permissions: ( ($a.permissions // {}) + {
+            permissions: ( ($a.permissions // {}) + ({
                 allow:                 ($reg.permissions.allow // []),
                 deny:                  ($reg.permissions.deny // []),
                 ask:                   ($reg.permissions.ask // []),
-                additionalDirectories: ($reg.permissions.additionalDirectories // []) } ) }
+                additionalDirectories: ($reg.permissions.additionalDirectories // []) } | expand) ) }
     '
 )
 

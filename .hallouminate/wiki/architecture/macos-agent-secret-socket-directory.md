@@ -22,3 +22,7 @@ On SIGTERM, a broker closes its sockets and then dies by the signal, not with ex
 [^4]: scripts/agent-secret-broker.py:761-796; tests/agent-secret-broker.bats:531-548
 [^5]: scripts/agent-secret-broker.py:927-961; tests/agent-secret-broker.bats:568-596
 [^6]: bin/lib/agent-secret-doctor.sh:18-56; tests/agent-secret-doctor.bats
+
+## ProcessType must stay `Standard` (2026-09-28)
+
+The launchd template shipped `ProcessType: Background`. launchd runs a Background daemon and every child it spawns at the lowest CPU and I/O class (`ps -o pri` shows 4, against 31 for a normal process). The broker spawns `npx ... context7-mcp` per MCP session, so on a loaded Mac the upstream needed 10-23 s to answer `initialize`; the same command at normal priority took 2-3 s. Claude Code aborts an MCP connect after 30 s, so context7 and tavily reported `CONNECT_TIMEOUT`. The template now sets `Standard`, and `tests/agent-secret-install.bats` asserts it. Deploying the change needs the reprovision step above.

@@ -2,7 +2,7 @@
 
 Pointing `mise install` at the tracked manifest does **not** make it install what the manifest says. The live `~/.config/mise/config.toml` still wins. In August 2026 that single fact wedged `dots sync` on one machine for eight days, and every re-run reproduced the wedge exactly.
 
-If you read one thing here: **the manifest is an input to package convergence, not an output of it.** The live config has to be correct *before* `mise install` runs, because nothing downstream can fix it.
+If you read one thing here: **the manifest is an input to `mise install`, never an output of it.** The live config has to be correct *before* `mise install` runs, because nothing downstream can fix it. The one write-back, `bump_mise_manifest` in upgrade mode (2026-09-28), goes through the live file first and mirrors it into the manifest afterwards; see the last section.
 
 ## Why the live file wins
 
@@ -54,3 +54,7 @@ For the same reason, PR #677 never touched `.sync` at all. Its files were `.sync
 `mise_config_path` (`packages/sync.sh:44-50`) prefers `MISE_CONFIG_FILE` and falls back to `MISE_BOOTSTRAP_CONFIG_FILE`, so a fresh machine with no live config yet resolves against the repo source. Proximity precedence only bites once a live file exists.
 
 Related: [[operations/sync-and-chezmoi]] (the prepare → package-sync → final-apply phase ordering this lives inside), [[operations/mise-aqua-backend-retypes]] (a different mise pin failure — backend retyping, not precedence), [[operations/mise-github-auth]] and [[operations/omp-install-etxtbsy]] (the two sibling failures found in the same investigation).
+
+## Bumping pins obeys the same precedence (2026-09-28)
+
+`MISE_GLOBAL_CONFIG_FILE=<manifest> mise upgrade --bump` does not edit the manifest. mise writes the bump into the config that defines the tool, and the live file wins there too (`mise upgrade --dry-run` prints `(~/.config/mise/config.toml)` beside every bump). `bump_mise_manifest` in `packages/sync.sh` therefore bumps the live file and mirrors it into the tracked manifest, guarded by a byte-for-byte equality check that only holds after `apply_mise_manifest` ran in the prepare phase. See [[sync-and-chezmoi]] § Update vectors.

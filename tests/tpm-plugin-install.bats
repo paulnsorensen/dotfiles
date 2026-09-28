@@ -14,6 +14,7 @@ setup() {
     export TPM_DIR="$TEST_HOME/.tmux/plugins/tpm"
     export INSTALL_CALLS="$TEST_HOME/install-plugins-calls.log"
     export CLONE_CALLS="$TEST_HOME/git-clone-calls.log"
+    export UPDATE_CALLS="$TEST_HOME/update-plugins-calls.log"
 }
 
 teardown() { teardown_test_env; }
@@ -33,6 +34,18 @@ write_install_plugins_stub() {
     cat > "$dest" <<SH
 #!/bin/bash
 printf 'ran\n' >> "$INSTALL_CALLS"
+exit 0
+SH
+    chmod +x "$dest"
+}
+
+# update_plugins stub that records its arguments.
+write_update_plugins_stub() {
+    local dest="$1"
+    mkdir -p "$(dirname "$dest")"
+    cat > "$dest" <<SH
+#!/bin/bash
+printf '%s\n' "\$*" >> "$UPDATE_CALLS"
 exit 0
 SH
     chmod +x "$dest"
@@ -105,4 +118,29 @@ run_install_tpm() {
     assert_success
     [[ ! -f "$CLONE_CALLS" ]]
     [[ ! -f "$INSTALL_CALLS" ]]
+}
+
+@test "install_tpm updates every plugin in upgrade mode" {
+    mock_tmux
+    write_install_plugins_stub "$TPM_DIR/bin/install_plugins"
+    write_update_plugins_stub "$TPM_DIR/bin/update_plugins"
+
+    export UPGRADE_MODE=true
+    run_install_tpm
+    assert_success
+    [[ "$(cat "$INSTALL_CALLS")" == "ran" ]]
+    assert_file_exists "$UPDATE_CALLS"
+    [[ "$(cat "$UPDATE_CALLS")" == "all" ]]
+}
+
+@test "install_tpm leaves installed plugins alone outside upgrade mode" {
+    mock_tmux
+    write_install_plugins_stub "$TPM_DIR/bin/install_plugins"
+    write_update_plugins_stub "$TPM_DIR/bin/update_plugins"
+
+    export UPGRADE_MODE=false
+    run_install_tpm
+    assert_success
+    [[ "$(cat "$INSTALL_CALLS")" == "ran" ]]
+    [[ ! -f "$UPDATE_CALLS" ]]
 }
