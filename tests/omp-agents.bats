@@ -38,8 +38,8 @@ body() {
 expected_omp_model() {
     case "$1" in
         gpt-6-astra) printf '%s\n' '@strong' ;;
-        gpt-5.6-sol) printf '%s\n' '@balanced' ;;
-        gpt-5.6-luna|gpt-5.4-mini) printf '%s\n' '@fast' ;;
+        gpt-6-sol) printf '%s\n' '@balanced' ;;
+        gpt-6-luna|gpt-5.4-mini) printf '%s\n' '@fast' ;;
         *) return 1 ;;
     esac
 }
@@ -175,8 +175,8 @@ expected_omp_thinking() {
 
 @test "OMP custom model tiers resolve to the intended OpenAI families" {
     [[ "$(yq -oy -r '.omp.config.modelRoles.strong' "$OMP_CONFIG")" == "openai-codex/gpt-6-astra" ]]
-    [[ "$(yq -oy -r '.omp.config.modelRoles.balanced' "$OMP_CONFIG")" == "openai-codex/gpt-5.6-sol" ]]
-    [[ "$(yq -oy -r '.omp.config.modelRoles.fast' "$OMP_CONFIG")" == "openai-codex/gpt-5.6-luna" ]]
+    [[ "$(yq -oy -r '.omp.config.modelRoles.balanced' "$OMP_CONFIG")" == "openai-codex/gpt-6-sol" ]]
+    [[ "$(yq -oy -r '.omp.config.modelRoles.fast' "$OMP_CONFIG")" == "openai-codex/gpt-6-luna" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.default' "$OMP_CONFIG")" == "@balanced:medium" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.plan' "$OMP_CONFIG")" == "@strong:xhigh" ]]
     [[ "$(yq -oy -r '.omp.config.modelRoles.task' "$OMP_CONFIG")" == "@balanced" ]]

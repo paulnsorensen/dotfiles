@@ -157,7 +157,7 @@ block_sha() {
 
     # Pinned at default / medium: Claude sonnet, Codex Sol, OMP @balanced.
     [[ "$(yq -r '.agents.taste-tester.models.claude' "$registry")" == sonnet ]]
-    [[ "$(yq -r '.agents.taste-tester.models.codex' "$registry")" == gpt-5.6-sol ]]
+    [[ "$(yq -r '.agents.taste-tester.models.codex' "$registry")" == gpt-6-sol ]]
     [[ "$(yq -r '.agents.taste-tester.effort' "$registry")" == medium ]]
     [[ "$(yq --front-matter=extract -r '.model' "$omp")" == '@balanced' ]]
     # Every harness selects it.

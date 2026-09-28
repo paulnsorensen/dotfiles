@@ -9,13 +9,13 @@ This policy records the user's September 28, 2026 decision, not a permanent vend
 | Canonical agents | Codex model | Codex effort | OMP thinking |
 |---|---|---|---|
 | `reviewer` | GPT-6 Astra | `high` | `xhigh` |
-| `ghostbuster`, `researcher` | GPT-5.6 Sol | `medium` | `high` |
-| `taste-tester` | GPT-5.6 Sol | `medium` | `medium` |
-| `generalist`, `coder` | GPT-5.6 Sol | `medium` | `xhigh` |
-| `explorer` | GPT-5.6 Sol | `medium` | `high` |
-| `roquefort-wrecker` | GPT-5.6 Luna | `medium` | `xhigh` |
-| `nih-scanner` | GPT-5.6 Luna | `medium` | `medium` |
-| `duckdb-expert`, `whey-drainer`, `worktree-content-digest` | GPT-5.6 Luna | `low` | `low` |
+| `ghostbuster`, `researcher` | GPT-6 Sol | `medium` | `high` |
+| `taste-tester` | GPT-6 Sol | `medium` | `medium` |
+| `generalist`, `coder` | GPT-6 Sol | `medium` | `xhigh` |
+| `explorer` | GPT-6 Sol | `medium` | `high` |
+| `roquefort-wrecker` | GPT-6 Luna | `medium` | `xhigh` |
+| `nih-scanner` | GPT-6 Luna | `medium` | `medium` |
+| `duckdb-expert`, `whey-drainer`, `worktree-content-digest` | GPT-6 Luna | `low` | `low` |
 
 Coder and explorer use Sol because their role contracts require medium capability.
 Mechanical test execution and structural scans retain Luna.

@@ -85,11 +85,6 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/turn-budget-guard.sh"'
             timeout: 5
-      - matcher: "Agent|Task|spawn_agent"
-        hooks:
-          - type: command
-            command: 'DOTFILES_HARNESS=claude "$HOME/.claude/hooks/agent-routing-guard.sh"'
-            timeout: 5
     Notification:
       - matcher: "permission_prompt"
         hooks:

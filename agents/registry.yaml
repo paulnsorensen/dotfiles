@@ -25,7 +25,7 @@ agents:
     description: Forensic examination of expired cheese — finds code that's gone off, specs pointing at empty shelves, and curds that never set. Dead code detector + spec cross-referencer. Categorizes findings as DEAD, ZOMBIE, GHOST, or DORMANT with severity-tier scoring. Read-only — never modifies code. Returns a categorized findings digest (~2 KB). Dispatched by the /ghostbuster skill; referenced by /nih-audit and /steel-thread.
     models:
       claude: sonnet
-      codex: gpt-5.6-sol
+      codex: gpt-6-sol
       cursor: auto
     effort: medium
     disallowedTools:
@@ -47,7 +47,7 @@ agents:
     description: Structural NIH pattern scanner. Uses AST search and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Dispatched by the /nih-audit skill's structural-scan phase.
     models:
       claude: sonnet
-      codex: gpt-5.6-luna
+      codex: gpt-6-luna
       cursor: auto
     effort: medium
     disallowedTools:
@@ -70,7 +70,7 @@ agents:
     description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with severity-tier scoring per finding.
     models:
       claude: sonnet
-      codex: gpt-5.6-luna
+      codex: gpt-6-luna
       cursor: claude-haiku
     effort: medium
     # Body directs symbol/caller queries through tilth, which the allowlist did
@@ -88,7 +88,7 @@ agents:
     description: Read-only DuckDB analyst for the coding-agent session-analytics database. Spawned with ONE analytics pack pointer plus a target, a harness filter, and absolute paths for pack, schema, conventions, ingest script, and database — the caller resolves every path; the agent applies no defaults. Runs that single domain's queries and returns one structured ~2 KB digest. Built for context isolation — consumer skills fan out one parallel spawn per owned domain. Used by skillz, tool-efficiency, prompt-analytics, and work-recovery.
     models:
       claude: haiku
-      codex: gpt-5.6-luna
+      codex: gpt-6-luna
       cursor: claude-haiku
     effort: low
     tools:
@@ -111,7 +111,7 @@ agents:
     description: Runs existing tests and returns only failures and summary counts (~2 KB digest). Use this agent to validate code without flooding the parent context with verbose test output. Fits easy-cheese's small/fast read-only sub-agent contract — dispatched by /xray, and callable from any skill that needs a test gate without the log. Does NOT write tests.
     models:
       claude: haiku
-      codex: gpt-5.6-luna
+      codex: gpt-6-luna
       cursor: claude-haiku
     effort: low
     tools:
@@ -124,7 +124,7 @@ agents:
     description: Read-only worktree inspector. Given one worktree path, runs git log/diff/ls-files and returns a 2-3 line digest — unique commits, uncommitted diff summary, and whether untracked files look throwaway vs. worth keeping. Fanned out one-per-worktree (in parallel) by the worktree-triage skill so diff bodies stay in the sub-agent's window.
     models:
       claude: haiku
-      codex: gpt-5.6-luna
+      codex: gpt-6-luna
       cursor: claude-haiku
     effort: low
     tools:
@@ -148,7 +148,7 @@ agents:
       Mutable tool access means permission_enforcement: prompt-only and degraded: true for no-write requests, not OS enforcement; never modifies source or the parent canonical report. Models the easy-cheese explore phase. Use PROACTIVELY to orient before any task touches unfamiliar code — blast-radius scoping, "find me X" sweeps, "how does Y work" — whether the active skill is /mold, /cook, /age, or any user-installed skill that needs grounding before it acts.
     models:
       claude: sonnet
-      codex: gpt-5.6-sol
+      codex: gpt-6-sol
     disallowedTools:
     - Edit
     - Write
@@ -167,7 +167,7 @@ agents:
     description: External-research agent. Answers questions outside the codebase — library/API docs, current web facts, version/changelog checks, best-practice comparisons, GitHub examples — via Context7, Tavily, web fetch, and gh, then writes a durable cited research slug under .cheese/research/. Read-only against code. Returns a condensed claim-level digest (the heavy fetch bodies stay on disk, out of the parent's context). Models the easy-cheese research phase. Use PROACTIVELY before implementing against an unfamiliar library or API, when a claim needs a current source instead of a guess, or whenever a skill (/mold, /cook, /briesearch, or any user-installed skill) would otherwise rely on stale training data.
     models:
       claude: sonnet
-      codex: gpt-5.6-sol
+      codex: gpt-6-sol
     # briesearch is preloaded rather than reached through the Skill tool: the
     # tool costs 11,355 tokens (it injects the whole skill listing) against
     # ~3,400 to preload this one skill, for the same capability. reviewer makes
@@ -213,7 +213,7 @@ agents:
     description: Fresh-context taste-tester. Runs the seven handoff lenses (Drift, Readability, Scope, Simplify, Production path, Wired callers, Locked decision) over one diff or draft against its contract and returns one pass/revise verdict per lens. Source-read-only — never fixes; never runs the ten-dimension /age review — dispatch `reviewer` for that. Models the easy-cheese `reviewer (taste-test)` role after /cook, /cure, and the /mold fork test. Two rounds per artifact; round 3 blocks.
     models:
       claude: sonnet
-      codex: gpt-5.6-sol
+      codex: gpt-6-sol
     disallowedTools:
     - Edit
     - Write
@@ -244,7 +244,7 @@ agents:
     description: TDD-disciplined implementer. Takes an approved spec or unambiguous task and drives the contract → cut → implement → taste-test loop through tilth MCP tools. Runs the project's test/lint/build gates and applies review fixes. Models the easy-cheese code phase (/cook, /press, /cure). Mutates the tree exclusively through tilth_write — the one phase agent that changes code. Use PROACTIVELY whenever a task requires writing or changing code — implementing a spec, fixing a bug, applying review findings — under /cook, /press, /cure, or any user-installed skill that needs a code change made.
     models:
       claude: sonnet
-      codex: gpt-5.6-sol
+      codex: gpt-6-sol
     tools:
     - Bash
     - Read
@@ -275,7 +275,7 @@ agents:
     description: General-purpose catch-all for an open-ended, multi-step task that does not fit a specialist phase agent — mixed research, code reading, and synthesis in one dispatch. The capped stand-in for the built-in general-purpose agent. Prefer a specialist when the task is cleanly one shape — explorer for "where/how/what" code questions, researcher for external/library/web facts, reviewer for checking a diff before it lands, coder for writing or changing code. Use this only as the fallback when no single specialist owns the task. Routes file I/O through the tilth MCP tools.
     models:
       claude: sonnet
-      codex: gpt-5.6-sol
+      codex: gpt-6-sol
     disallowedTools:
     - Agent
     - Grep

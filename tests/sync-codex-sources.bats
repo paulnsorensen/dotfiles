@@ -67,7 +67,7 @@ EOF
     # An undeclared root scalar owned by another sync leg is preserved.
     [ "$(yq -p=toml -oy -r '.model_instructions_file' "$out")" = "/home/u/.codex/preamble.md" ]
     # Declared routing and protected execution policy stay exact.
-    [ "$(yq -p=toml -oy -r '.model' "$out")" = "gpt-5.6-sol" ]
+    [ "$(yq -p=toml -oy -r '.model' "$out")" = "gpt-6-sol" ]
     [ "$(yq -p=toml -oy -r '.model_reasoning_effort' "$out")" = "medium" ]
     [ "$(yq -p=toml -oy -r '.approval_policy' "$out")" = "on-request" ]
     [ "$(yq -p=toml -oy -r '.approvals_reviewer' "$out")" = "guardian_subagent" ]

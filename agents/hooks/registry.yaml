@@ -292,18 +292,3 @@ hooks:
     harnesses: [claude, codex]
     timeout: 5
     description: After a commit omits knowledge changes, remind the agent to include wiki and corpus files
-
-
-  # ─── Agent dispatch routing ──────────────────────────────────────────
-  # Denies generic or inherited sub-agent dispatches and validates named-role
-  # model, effort, and Codex fork settings before provider spend. The shared
-  # Node logic reads deployed role definitions with yq.
-  agent-routing-guard:
-    event: PreToolUse
-    script: agents/hooks/agent-routing-guard.sh
-    shared_assets:
-      - agents/lib/agent-routing-guard.js
-    harnesses: [claude, codex]
-    matcher: "Agent|Task|spawn_agent"
-    timeout: 5
-    description: Enforce named sub-agent roles and cross-harness model routing

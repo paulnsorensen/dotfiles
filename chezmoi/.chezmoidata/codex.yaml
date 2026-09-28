@@ -23,7 +23,7 @@ codex:
   # with an absolute path (TOML cannot expand `~`). Omitting it here means the
   # merge preserves whatever that script set.
   config:
-    model: "gpt-5.6-sol"
+    model: "gpt-6-sol"
     model_reasoning_effort: "medium"
     approval_policy: "on-request"
     approvals_reviewer: "guardian_subagent"

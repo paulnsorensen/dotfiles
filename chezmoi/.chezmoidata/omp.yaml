@@ -181,8 +181,8 @@ omp:
     # canonical form — same models as the previous concrete-value block.
     modelRoles:
       strong: openai-codex/gpt-6-astra
-      balanced: openai-codex/gpt-5.6-sol
-      fast: openai-codex/gpt-5.6-luna
+      balanced: openai-codex/gpt-6-sol
+      fast: openai-codex/gpt-6-luna
       default: '@balanced:medium'
       smol: '@fast'
       plan: '@strong:xhigh'

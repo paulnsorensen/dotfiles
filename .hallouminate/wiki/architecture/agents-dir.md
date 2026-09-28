@@ -80,8 +80,8 @@ The September 28, 2026 policy replaces Terra with Sol and promotes the high tier
 | Tier | Claude | Codex | OMP alias |
 |---|---|---|---|
 | `powerful` | `opus` | `gpt-6-astra` | `@strong` |
-| `default` | `sonnet` | `gpt-5.6-sol` | `@balanced` |
-| `cheap` | `haiku` | `gpt-5.6-luna` | `@fast` |
+| `default` | `sonnet` | `gpt-6-sol` | `@balanced` |
+| `cheap` | `haiku` | `gpt-6-luna` | `@fast` |
 
 Coder, explorer, researcher, generalist, ghostbuster, and taste-tester use Sol on Codex.
 Reviewer uses Astra. Mechanical specialists retain Luna.

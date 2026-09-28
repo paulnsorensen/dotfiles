@@ -32,36 +32,24 @@ Retire `modelSettings.claude-fable-5-1` explicitly before that overlay, and test
 
 [^current-tiers]: `agents/registry.yaml`; `chezmoi/.chezmoidata/codex.yaml`; `chezmoi/.chezmoidata/omp.yaml`; [[omp-agent-model-effort]]
 
-### Dispatch guard
+### Configuration, not a runtime dispatch guard
 
-Claude and Codex register `agent-routing-guard` before agent dispatch.
-The guard reads deployed role metadata instead of copying the model matrix into hook code.[^dispatch-guard]
-This prevents generic workers from silently inheriting an expensive parent model.
-The shared preamble carries only named-role and bounded-fork guidance; this page and hook denials carry the detailed policy.
-This split preserves the existing 520-token preamble ceiling rather than increasing every agent's startup cost.[^preamble-budget]
+Use GPT-6 Luna for cheap work, GPT-6 Sol for medium work, and GPT-6 Astra for high-tier work.
+The September 28 correction uses `gpt-6-luna` and `gpt-6-sol`, not the earlier GPT-5.6 identifiers.[^model-correction]
 
-[^preamble-budget]: `agents/instruction-budgets.toml:21-24`; `tests/agent-instruction-budget.bats`; September 28 budget check rejected a longer policy block.
+The user rejects the runtime dispatch guard proposed in PR #1090.
+The guard checked requested dispatch arguments against deployed role files; it did not verify provider execution.
+Its generic-role bans and override rules could block legitimate built-in workflows.
+Model pins, explicit effort rendering, Fable retirement, and regression tests address the configuration defects without that extra runtime restriction.[^guard-decision]
 
-- Claude uses named specialists or `generalist`; generic `general-purpose` and `claude` roles are denied.
-- The built-in Claude `Plan` role requires explicit `opus` selection.
-- Codex named roles retain their configured model and set `fork_turns` to `none` or a positive integer string.
-- Codex `default` and `worker` fallbacks require explicit model, explicit effort, and `fork_turns: none`.
-- Use those fallbacks only when the specialist is unavailable; record that reason in the dispatch.
-- Explicit effort may decrease, but cannot exceed the configured role effort.
-- The guard rejects Fable, Terra, unsupported models, and effort above `high`.
-- Claude model escalation requires the operator environment `DOTFILES_AGENT_MODEL_OVERRIDE` to match the requested model.
-- Codex named models remain fixed; that environment variable cannot override them.[^dispatch-guard]
+Named-specialist and bounded-fork guidance stays in the shared preamble.
+This is prompt guidance, not a hook-enforced ban.
+Restart running harness sessions after deployment so their cached role definitions match the deployed files.
+The Codex analytics adapter still cannot prove each child's executed model or effort.[^routing-verification]
 
-The override preserves deliberate operator escalation without treating an agent-written prompt as approval.
-Missing or malformed role metadata blocks dispatch and requests deployment repair.
-Restart running harness sessions after deployment so their cached role definitions match the deployed files.[^dispatch-guard]
-
-These hooks are dispatch guardrails, not a security boundary.
-They do not classify task semantics or inspect separate provider calls launched through shell commands.
-Codex also documents that specialized invocation paths can opt out of hook dispatch.[^codex-hooks]
-
-[^dispatch-guard]: `agents/lib/agent-routing-guard.js`; `agents/hooks/agent-routing-guard.sh`; `agents/hooks/registry.yaml`; `agents/preamble.md`; `tests/agent-routing-guard.bats`.
-[^codex-hooks]: [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks), checked September 28, 2026.
+[^model-correction]: September 28, 2026 operator correction; `agents/registry.yaml`; `chezmoi/.chezmoidata/codex.yaml`; `chezmoi/.chezmoidata/omp.yaml`; `chezmoi/.chezmoidata/pi.yaml`.
+[^guard-decision]: September 28, 2026 operator decision to remove the runtime guard from PR #1090; supersedes the earlier guard proposal.
+[^routing-verification]: `agents/preamble.md`; `tests/agent-skill-model-effort.bats`; `tests/sync-codex-sources.bats`; [[operations/subagent-dispatch-analytics]].
 
 ## Discover-then-commit: the route decision
 
