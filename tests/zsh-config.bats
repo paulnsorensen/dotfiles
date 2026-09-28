@@ -348,25 +348,32 @@ _cred_gh_path() {
 
 @test "core.zsh hands mise a gh-backed GitHub credential command naming a real, absolute gh" {
     command -v zsh &>/dev/null || skip "zsh not installed"
-    command -v gh &>/dev/null || skip "gh not installed"
     local zsh_bin
     zsh_bin="$(command -v zsh)"
-    # Supply mise so this test checks the credential branch on minimal CI hosts.
     local mock_bin="$BATS_TEST_TMPDIR/bin"
-    mkdir -p "$mock_bin"
-    printf '#!/bin/sh\nexit 0\n' > "$mock_bin/mise"
+    local real_dir="$BATS_TEST_TMPDIR/real"
+    local toolbox="$BATS_TEST_TMPDIR/toolbox"
+    local after_dir="$BATS_TEST_TMPDIR/after"
+    mkdir -p "$mock_bin" "$real_dir" "$toolbox" "$after_dir"
+    ln -s "$(command -v rm)" "$toolbox/rm"
+    real_dir="$(cd "$real_dir" && pwd -P)"
+    printf '#!/bin/sh
+exit 0
+' > "$mock_bin/mise"
     chmod +x "$mock_bin/mise"
+    cat > "$real_dir/gh" <<'EOF'
+#!/bin/sh
+[ "$1" = auth ] && [ "$2" = token ] || exit 64
+echo real-gh
+EOF
+    chmod +x "$real_dir/gh"
 
-    run env PATH="$mock_bin:$PATH" "$zsh_bin" --no-rcs -c "unset MISE_GITHUB_CREDENTIAL_COMMAND; source '$REAL_DOTFILES_DIR/zsh/core.zsh'; printf 'CRED=[%s]' \"\$MISE_GITHUB_CREDENTIAL_COMMAND\""
+    run env PATH="$mock_bin:$real_dir:$toolbox" "$zsh_bin" --no-rcs -c "OSTYPE=test; unset MISE_GITHUB_CREDENTIAL_COMMAND; source '$REAL_DOTFILES_DIR/zsh/core.zsh'; cred=\"\$MISE_GITHUB_CREDENTIAL_COMMAND\"; cd '$after_dir'; printf 'CRED=[%s]' \"\$cred\"; /bin/sh -c \"\$cred\""
     assert_success
-
-    # Regression: the old code exported the bare, unqualified "gh", which mise
-    # shims/gh resolves to itself — the fork-recursion root cause.
-    assert_output_not_contains "CRED=[gh auth token]"
-
+    [[ "$output" == "CRED=[$real_dir/gh auth token]real-gh" ]]
     local gh_path
     gh_path="$(_cred_gh_path "$output")"
-    [[ "$gh_path" == /* ]]
+    [[ "$gh_path" == "$real_dir/gh" ]]
     [[ -x "$gh_path" ]]
     [[ "$(basename "$(readlink -f "$gh_path")")" != "mise" ]]
 }
@@ -377,28 +384,59 @@ _cred_gh_path() {
     zsh_bin="$(command -v zsh)"
     local shim_dir="$BATS_TEST_TMPDIR/shim"
     local real_dir="$BATS_TEST_TMPDIR/real"
-    mkdir -p "$shim_dir" "$real_dir"
+    local toolbox="$BATS_TEST_TMPDIR/toolbox"
+    local after_dir="$BATS_TEST_TMPDIR/after"
+    mkdir -p "$shim_dir" "$real_dir" "$toolbox" "$after_dir"
+    ln -s "$(command -v rm)" "$toolbox/rm"
+    real_dir="$(cd "$real_dir" && pwd -P)"
 
-    # A fake mise binary, and a gh symlink resolving to it — mirrors
-    # ~/.local/share/mise/shims/gh -> mise.
+    # A fake mise binary and a gh symlink mirror mise's shim.
     printf '#!/bin/sh\nexit 0\n' > "$shim_dir/mise"
     chmod +x "$shim_dir/mise"
     ln -s "$shim_dir/mise" "$shim_dir/gh"
 
-    printf '#!/bin/sh\necho real-gh\n' > "$real_dir/gh"
+    cat > "$real_dir/gh" <<'EOF'
+#!/bin/sh
+[ "$1" = auth ] && [ "$2" = token ] || exit 64
+echo real-gh
+EOF
     chmod +x "$real_dir/gh"
 
-    run env PATH="$shim_dir:$real_dir:$PATH" "$zsh_bin" --no-rcs -c "unset MISE_GITHUB_CREDENTIAL_COMMAND; source '$REAL_DOTFILES_DIR/zsh/core.zsh'; printf 'CRED=[%s]' \"\$MISE_GITHUB_CREDENTIAL_COMMAND\""
+    run env PATH="$shim_dir:$real_dir:$toolbox" "$zsh_bin" --no-rcs -c "OSTYPE=test; unset MISE_GITHUB_CREDENTIAL_COMMAND; source '$REAL_DOTFILES_DIR/zsh/core.zsh'; cred=\"\$MISE_GITHUB_CREDENTIAL_COMMAND\"; cd '$after_dir'; printf 'CRED=[%s]' \"\$cred\"; /bin/sh -c \"\$cred\""
     assert_success
 
     local gh_path
     gh_path="$(_cred_gh_path "$output")"
-    # A real, executable gh that is not the shim itself — whichever real gh
-    # the resolver reached first, it must have skipped shim_dir/gh.
+    # The resolver must skip the shim and return a real executable.
     [[ -n "$gh_path" ]]
     [[ -x "$gh_path" ]]
     [[ "$gh_path" != "$shim_dir/gh" ]]
     [[ "$(basename "$(readlink -f "$gh_path")")" != "mise" ]]
+    [[ "$output" == "CRED=[$real_dir/gh auth token]real-gh" ]]
+}
+
+@test "core.zsh resolves a relative gh candidate to an absolute path" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local zsh_bin
+    zsh_bin="$(command -v zsh)"
+    local fixture="$BATS_TEST_TMPDIR/relative"
+    mkdir -p "$fixture/shim" "$fixture/real" "$fixture/after" "$fixture/toolbox"
+    ln -s "$(command -v rm)" "$fixture/toolbox/rm"
+    fixture="$(cd "$fixture" && pwd -P)"
+    local toolbox="$fixture/toolbox"
+    printf '#!/bin/sh\nexit 0\n' > "$fixture/shim/mise"
+    chmod +x "$fixture/shim/mise"
+    ln -s "$fixture/shim/mise" "$fixture/shim/gh"
+    cat > "$fixture/real/gh" <<'EOF'
+#!/bin/sh
+[ "$1" = auth ] && [ "$2" = token ] || exit 64
+echo real-gh
+EOF
+    chmod +x "$fixture/real/gh"
+
+    run env PATH="$toolbox" "$zsh_bin" --no-rcs -c "cd '$fixture'; path=(./shim ./real ./toolbox); export PATH; OSTYPE=test; source '$REAL_DOTFILES_DIR/zsh/core.zsh'; cred=\"\$MISE_GITHUB_CREDENTIAL_COMMAND\"; cd '$fixture/after'; printf 'CRED=[%s]' \"\$cred\"; /bin/sh -c \"\$cred\""
+    assert_success
+    [[ "$output" == "CRED=[$fixture/real/gh auth token]real-gh" ]]
 }
 
 @test "core.zsh does not export a credential command when only a mise gh shim is on PATH" {
@@ -406,13 +444,15 @@ _cred_gh_path() {
     local zsh_bin
     zsh_bin="$(command -v zsh)"
     local shim_dir="$BATS_TEST_TMPDIR/shim-only"
-    mkdir -p "$shim_dir"
+    local toolbox="$BATS_TEST_TMPDIR/shim-toolbox"
+    mkdir -p "$shim_dir" "$toolbox"
+    ln -s "$(command -v rm)" "$toolbox/rm"
     printf '#!/bin/sh\nexit 0\n' > "$shim_dir/mise"
     chmod +x "$shim_dir/mise"
     ln -s "$shim_dir/mise" "$shim_dir/gh"
 
     # PATH holds only the shim dir, so no real gh exists anywhere on it.
-    run env PATH="$shim_dir" "$zsh_bin" --no-rcs -c "unset MISE_GITHUB_CREDENTIAL_COMMAND; source '$REAL_DOTFILES_DIR/zsh/core.zsh'; printf 'CRED=[%s]' \"\${MISE_GITHUB_CREDENTIAL_COMMAND-unset}\""
+    run env PATH="$shim_dir:$toolbox" "$zsh_bin" --no-rcs -c "OSTYPE=test; MISE_GITHUB_CREDENTIAL_COMMAND='stale auth token'; source '$REAL_DOTFILES_DIR/zsh/core.zsh'; printf 'CRED=[%s]' \"\${MISE_GITHUB_CREDENTIAL_COMMAND-unset}\""
     assert_success
     [[ "$output" == *"CRED=[unset]"* ]]
 }

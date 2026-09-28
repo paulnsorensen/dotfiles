@@ -8,10 +8,15 @@ The trap is that `gh auth login` looks like it should already have solved this.
 
 mise's default token reader is `github.gh_cli_tokens`, which looks for an `oauth_token` field in `~/.config/gh/hosts.yml`. On macOS, `gh` stores its token in the **keychain**, so that field does not exist. mise finds nothing and falls back to anonymous. Nothing errors; the reads just quietly go unauthenticated.
 
-The fix is to hand mise the token explicitly:
+The fix is to resolve a real, absolute `gh` path before handing mise the token:
 
 ```sh
-export MISE_GITHUB_CREDENTIAL_COMMAND="gh auth token"
+source packages/lib-gh-resolve.sh
+if real_gh="$(resolve_real_gh)"; then
+  export MISE_GITHUB_CREDENTIAL_COMMAND="$(printf '%q' "$real_gh") auth token"
+else
+  unset MISE_GITHUB_CREDENTIAL_COMMAND
+fi
 ```
 
 Landed in #676.
@@ -39,7 +44,7 @@ The duplication is intentional. Removing either one leaves a real path unauthent
 
 A bare `gh auth token` is a fork bomb when `gh` is itself a mise shim. `zshenv` puts `~/.local/share/mise/shims` first on PATH, and non-interactive shells never run the `mise activate` hook that moves install dirs ahead of it. So `gh` resolves to `shims/gh -> mise`. When mise needs a token, it runs `sh -c 'gh auth token'`, which runs the shim, which runs mise, which runs the credential command again. On 2026-09-28 a `just test` in a Codex agent built a 1,810-deep chain and wedged crabbot (crabbot wiki `wedge-2026-09-28-mise-gh-fork-recursion`).
 
-Both sites now skip every PATH candidate whose resolved target is `mise`, and embed the first real binary's absolute path. If only the shim exists, they leave the variable unset. The token is the same from any real `gh`, because all of them read the same `gh` auth store.
+Both sites skip every PATH candidate whose resolved target is `mise` and embed the first real binary's absolute path. Failed resolution clears any inherited credential command. The token is the same from any real `gh`, because all read the same auth store.
 
 ## Which pins actually hit the network
 

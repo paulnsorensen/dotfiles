@@ -1,26 +1,41 @@
 #!/bin/bash
 ############################
 # packages/lib-gh-resolve.sh
-# Resolve a real `gh` binary for MISE_GITHUB_CREDENTIAL_COMMAND, skipping the
-# mise shim.
+# Resolve a real `gh` for MISE_GITHUB_CREDENTIAL_COMMAND.
+# Skip the mise shim.
 #
-# mise's shims dir puts a `gh` shim ahead of any real gh on PATH. Naming a
-# bare `gh` in the credential command makes mise's `sh -c 'gh auth token'`
-# re-enter the shim, which re-enters mise, forever — the fork chain that
-# wedged crabbot on 2026-09-28 (1,810-deep). The credential command must name
-# an absolute, non-shim gh instead.
+# The mise shim can precede every real `gh` on PATH.
+# A bare `gh` credential command re-enters that shim forever.
+# The credential command must name an absolute, non-shim path.
 ############################
 
-# Print the absolute path of the first non-mise-shim `gh` on PATH (`type -ap`
-# order, so it agrees with what a bare `gh` invocation would resolve to,
-# minus the shim), or fail with no output if only mise shims are found.
+# Print the first non-mise-shim `gh` in `type -ap` order.
+# Return an absolute path, or no output when only shims exist.
 resolve_real_gh() {
-    local candidate resolved
+    local candidate absolute directory name resolved target
     while IFS= read -r candidate; do
         [[ -x "$candidate" ]] || continue
-        resolved="$(readlink -f "$candidate" 2>/dev/null || printf '%s' "$candidate")"
-        [[ "$(basename "$resolved")" == "mise" ]] && continue
-        printf '%s\n' "$candidate"
+        if [[ "$candidate" == /* ]]; then
+            absolute="$candidate"
+        else
+            directory="${candidate%/*}"
+            [[ "$directory" == "$candidate" ]] && directory=.
+            name="${candidate##*/}"
+            absolute="$(cd -P -- "$directory" && printf '%s/%s' "$PWD" "$name")" || continue
+        fi
+        resolved="$absolute"
+        while [[ -L "$resolved" ]]; do
+            target="$(readlink "$resolved")" || break
+            if [[ "$target" == /* ]]; then
+                resolved="$target"
+            else
+                directory="${resolved%/*}"
+                [[ "$directory" == "$resolved" ]] && directory=.
+                resolved="$(cd -P -- "$directory" && printf '%s/%s' "$PWD" "$target")" || break
+            fi
+        done
+        [[ "${resolved##*/}" == "mise" ]] && continue
+        printf '%s\n' "$absolute"
         return 0
     done < <(type -ap gh 2>/dev/null)
     return 1
