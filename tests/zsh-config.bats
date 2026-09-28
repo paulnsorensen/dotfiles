@@ -530,8 +530,29 @@ SH
     [[ "$darwin_branch" != *"/home/linuxbrew"* ]]
 }
 
+@test "zshenv on Linux moves an inherited rustup entry ahead of brew's bin" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    [[ -d /home/linuxbrew/.linuxbrew/opt/rustup/bin ]] && skip "host linuxbrew rustup wins over the fake HOME"
+    local fake_home="$BATS_TEST_TMPDIR/linux-inherit-home"
+    local brew_bin="$fake_home/.linuxbrew/bin" rustup_bin="$fake_home/.linuxbrew/opt/rustup/bin"
+    mkdir -p "$brew_bin" "$rustup_bin"
+
+    run zsh -c "OSTYPE=linux-gnu; HOME='$fake_home'; PATH='/usr/bin:$brew_bin:$rustup_bin:/bin'; source '$REAL_DOTFILES_DIR/zshenv'; print -r -- \$PATH"
+
+    assert_success
+    local idx_rustup idx_brew
+    idx_rustup=$(tr ':' '\n' <<< "$output" | grep -nxF "$rustup_bin" | head -1 | cut -d: -f1)
+    idx_brew=$(tr ':' '\n' <<< "$output" | grep -nxF "$brew_bin" | head -1 | cut -d: -f1)
+    [[ -n "$idx_rustup" && -n "$idx_brew" ]]
+    [[ "$idx_rustup" -lt "$idx_brew" ]]
+    [[ "$(tr ':' '\n' <<< "$output" | grep -cxF "$rustup_bin")" == 1 ]]
+}
+
 @test "core.zsh on Linux puts brew's rustup proxies ahead of brew's own bin dir" {
     command -v zsh &>/dev/null || skip "zsh not installed"
+    # core.zsh tries /home/linuxbrew first; GitHub's ubuntu runners ship brew
+    # there, so it would win over the fake HOME brew below.
+    [[ -x /home/linuxbrew/.linuxbrew/bin/brew ]] && skip "host linuxbrew wins over the fake HOME brew"
     local fake_home="$BATS_TEST_TMPDIR/linux-brew-home"
     mkdir -p "$fake_home/.linuxbrew/bin" "$fake_home/.linuxbrew/opt/rustup/bin"
     cat > "$fake_home/.linuxbrew/bin/brew" <<SH

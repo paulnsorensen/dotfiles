@@ -284,6 +284,15 @@ esac'
     [[ ! -s "$LOG" ]]
 }
 
+@test "bin-doctor clean rejects an extra argument after --dry-run and runs nothing" {
+    stub uv "echo \"uv \$*\" >> '$LOG'"
+
+    run "$REAL_DOTFILES_DIR/bin/bin-doctor" clean --dry-run unexpected
+    [[ $status -eq 2 ]]
+    [[ "$output" != *"would run"* ]]
+    [[ ! -s "$LOG" ]]
+}
+
 @test "bin-doctor clean runs every step and fails when one step fails" {
     stub uv "echo \"uv \$*\" >> '$LOG'; exit 1"
     stub npm "echo \"npm \$*\" >> '$LOG'"

@@ -93,6 +93,10 @@ main() {
         check) do_check ;;
         clean)
             local dry_run=false
+            if [[ $# -gt 1 ]]; then
+                usage >&2
+                return 2
+            fi
             case "${1:-}" in
                 "") ;;
                 --dry-run | -n) dry_run=true ;;

@@ -8,9 +8,12 @@
 set -euo pipefail
 {{ if eq .chezmoi.os "linux" }}
 if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
-    systemctl --user daemon-reload || true
-    systemctl --user enable --now bin-doctor-clean.timer ||
+    # A failed reload leaves systemd on the old unit, so do not enable over it.
+    if ! systemctl --user daemon-reload; then
+        echo "⚠ could not reload systemd user units; run: systemctl --user daemon-reload && systemctl --user enable --now bin-doctor-clean.timer" >&2
+    elif ! systemctl --user enable --now bin-doctor-clean.timer; then
         echo "⚠ could not enable bin-doctor-clean.timer; run: systemctl --user enable --now bin-doctor-clean.timer" >&2
+    fi
 else
     echo "⚠ no systemd user session; later run: systemctl --user enable --now bin-doctor-clean.timer" >&2
 fi

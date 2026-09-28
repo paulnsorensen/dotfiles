@@ -2,14 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Deployed by chezmoi. Runs `bin-doctor clean` every Sunday at 10:00.
      launchd runs a job missed during sleep at wake; bin-doctor builds its
-     own PATH because launchd never reads shell rc files. -->
+     own PATH because launchd never reads shell rc files. Paths are
+     XML-escaped, so a path with & or < still gives a valid plist. -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
   <string>com.dotfiles.bin-doctor-clean</string>
   <key>ProgramArguments</key>
   <array>
-    <string>{{ joinPath (includeTemplate "bin-doctor-path" .) "bin" "bin-doctor" }}</string>
+    <string>{{ joinPath (includeTemplate "bin-doctor-path" .) "bin" "bin-doctor" | replace "&" "&amp;" | replace "<" "&lt;" | replace ">" "&gt;" }}</string>
     <string>clean</string>
   </array>
   <key>StartCalendarInterval</key>
@@ -28,8 +29,8 @@
   <key>Nice</key>
   <integer>19</integer>
   <key>StandardOutPath</key>
-  <string>{{ .chezmoi.homeDir }}/Library/Logs/bin-doctor-clean.log</string>
+  <string>{{ joinPath .chezmoi.homeDir "Library/Logs/bin-doctor-clean.log" | replace "&" "&amp;" | replace "<" "&lt;" | replace ">" "&gt;" }}</string>
   <key>StandardErrorPath</key>
-  <string>{{ .chezmoi.homeDir }}/Library/Logs/bin-doctor-clean.log</string>
+  <string>{{ joinPath .chezmoi.homeDir "Library/Logs/bin-doctor-clean.log" | replace "&" "&amp;" | replace "<" "&lt;" | replace ">" "&gt;" }}</string>
 </dict>
 </plist>
