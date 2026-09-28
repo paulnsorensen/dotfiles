@@ -349,6 +349,48 @@ teardown() {
     done
 }
 
+@test "run_onchange disables local-llm.target when localLLM is false (enable symlink outlives the flag)" {
+    local t="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-local-llm.sh.tmpl"
+    grep -q '{{ else }}' "$t"
+    grep -q 'systemctl --user disable --now local-llm.target' "$t"
+    grep -q 'default.target.wants' "$t"
+}
+
+@test "run_onchange render: localLLM=false disables the target, localLLM=true only reloads" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-local-llm.sh.tmpl"
+    local cfg="$HOME/.config/chezmoi/chezmoi.toml"
+    mkdir -p "$(dirname "$cfg")"
+
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+localLLM = false
+TOML
+    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" \
+        execute-template < "$tmpl"
+    assert_success
+    assert_output_contains 'systemctl --user disable --now local-llm.target'
+    run grep -F 'systemctl --user daemon-reload' <<< "$output"
+    assert_failure
+
+    cat > "$cfg" <<TOML
+sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
+
+[data]
+email = "test@example.com"
+localLLM = true
+TOML
+    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" \
+        execute-template < "$tmpl"
+    assert_success
+    assert_output_contains 'daemon-reload'
+    run grep -F 'disable --now local-llm.target' <<< "$output"
+    assert_failure
+}
+
 @test "aliases.sh references no retired worker units and pings the llama-swap port" {
     run grep -E 'worker-(igpu|cpu|coder|vision|opus)' "$ALIASES"
     assert_failure
