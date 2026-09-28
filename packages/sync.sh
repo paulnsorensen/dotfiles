@@ -33,6 +33,8 @@ log_error()   { echo -e "${RED}[packages]${NC} $1" >&2; }
 # Linux Homebrew/yq bootstrap helpers (also reused by bootstrap-linux.sh).
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib-linux-bootstrap.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-gh-resolve.sh"
 
 if [[ ! -f "$PACKAGES_FILE" ]]; then
     log_warning "packages.yaml not found"
@@ -379,17 +381,20 @@ sync_mise() {
         return 0
     fi
 
-    # Authenticate mise's GitHub reads. gh stores its token in the macOS
-    # keychain, so ~/.config/gh/hosts.yml carries no `oauth_token` and mise's
-    # default gh_cli_tokens reader finds nothing — leaving the aqua release
-    # lookups anonymous against the 60/hr per-IP cap, which they exhaust and
-    # then re-request every run (a 403 caches nothing). Must be the env var:
-    # MISE_GLOBAL_CONFIG_FILE below demotes ~/.config/mise/config.toml to a
-    # non-global config, where mise ignores a `credential_command` setting and
-    # rejects the file as untrusted. zsh/core.zsh exports this for interactive
-    # shells; repeated here so bootstrap and non-interactive runs are covered.
-    if command -v gh &>/dev/null; then
-        export MISE_GITHUB_CREDENTIAL_COMMAND="gh auth token"
+    # Authenticate mise's GitHub reads with a real `gh` path.
+    # gh stores its token in the macOS keychain, not hosts.yml.
+    # mise's default reader finds nothing, so aqua requests hit the rate cap.
+    # Use the env var because MISE_GLOBAL_CONFIG_FILE makes config non-global.
+    # Repeat this setup for bootstrap and non-interactive runs.
+    #
+    # A bare `gh` re-enters mise through its shim.
+    # resolve_real_gh returns an absolute, non-shim path.
+    local real_gh
+    if real_gh="$(resolve_real_gh)"; then
+        MISE_GITHUB_CREDENTIAL_COMMAND="$(printf '%q' "$real_gh") auth token"
+        export MISE_GITHUB_CREDENTIAL_COMMAND
+    else
+        unset MISE_GITHUB_CREDENTIAL_COMMAND
     fi
 
     log_info "Converging mise-managed tool versions from $mise_config..."
