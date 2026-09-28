@@ -65,6 +65,10 @@ Rollout JSONL. Each line is `{timestamp, type, payload}`:
 Codex has no `Skill` / `Agent` tool primitives, so `skill_invocations` and
 `agent_spawns` stay claude-centric. `reasoning` items (encrypted) are dropped.
 
+- Structured `exit_code` (including negative values), failed status, `isError`/`is_error` true, and legacy `Process exited with code N` markers set `is_error`. Pending and successful session outputs remain non-errors. Wrapper parsing trusts complete JSON or an `Output:` JSON envelope, not arbitrary prose. Content-block arrays require an execution header in the first `input_text` block; later JSON blocks are parsed independently.
+- Wrapper-level errors are lower bounds. Nested function or MCP calls can produce different counts. Native Codex timing, user, model, and `event_msg` records are not loaded into canonical tables.
+- Codex `is_error` values are adapter-derived. `explicit_error_flag_pct` does not establish source evidence for inferred wrapper, status, or exit-code signals.
+
 ### omp and pi
 
 Both harnesses use Pi-family session JSONL, one file per session under a flattened-path project dir
@@ -172,3 +176,4 @@ error rates for that harness are floors, not estimates) and
 `explicit_error_flag_pct` (results whose error flag came from the source
 rather than the `'false'` backfill). Read it before quoting cross-harness
 error-rate comparisons.
+An empty latency report or zero errors is not evidence of speed or no failures. Unsupported native events and missing result joins can produce both outcomes. Inspect native Codex JSONL read-only before making either claim.

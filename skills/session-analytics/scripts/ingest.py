@@ -138,25 +138,98 @@ def codex_discover():
     return out
 
 
-def _codex_output_is_error(out):
-    """Detect failure in a codex ``function_call_output`` payload.
+def _codex_payload_is_error(payload):
+    if not isinstance(payload, dict):
+        return False
+    status = payload.get("status")
+    if isinstance(status, str) and status.casefold() in ("error", "failed", "failure"):
+        return True
+    for key in ("isError", "is_error"):
+        value = payload.get(key)
+        if value is True or (isinstance(value, str) and value.casefold() == "true"):
+            return True
+    code = payload.get("exit_code")
+    return isinstance(code, int) and not isinstance(code, bool) and code != 0
 
-    Shell tool outputs embed a ``Process exited with code N`` line; a non-zero
-    code is a failure. Dict payloads may carry an explicit status / exit_code.
-    Returns the canonical "true"/"false" string, defaulting to "false" when no
-    error signal is present (non-shell tools that emit no exit marker).
-    """
+
+def _codex_content_block_payloads(blocks):
+    if not blocks or any(
+        not isinstance(block, dict)
+        or block.get("type") != "input_text"
+        or not isinstance(block.get("text"), str)
+        for block in blocks
+    ):
+        return
+    header = blocks[0]["text"]
+    if not re.fullmatch(
+        r"Script completed\nWall time(?:\s*:\s*|\s+)[^\n]*\nOutput:\n",
+        header,
+    ):
+        return
+    for block in blocks[1:]:
+        try:
+            payload = json.loads(block["text"].strip())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            yield payload
+
+
+def _codex_structured_payloads(out):
     if isinstance(out, dict):
-        status = out.get("status")
-        if isinstance(status, str) and status.lower() in ("error", "failed", "failure"):
-            return "true"
-        code = out.get("exit_code")
-        if isinstance(code, int) and code != 0:
-            return "true"
-        return "false"
+        yield out
+        return
+    if isinstance(out, list):
+        yield from _codex_content_block_payloads(out)
+        return
+    if not isinstance(out, str):
+        return
+    text = out.strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, dict):
+        yield parsed
+        return
+    if isinstance(parsed, list):
+        yield from _codex_content_block_payloads(parsed)
+        return
+    marker = re.search(
+        r"^Script completed\n(?:Wall time(?:\s*:\s*|\s+)[^\n]*\n)?Output:\s*(.+)\s*\Z",
+        out,
+        re.DOTALL,
+    )
+    if not marker:
+        return
+    decoder = json.JSONDecoder()
+    text = marker.group(1)
+    position = 0
+    while position < len(text):
+        while position < len(text) and text[position].isspace():
+            position += 1
+        if position == len(text):
+            return
+        try:
+            parsed, end = decoder.raw_decode(text, position)
+        except json.JSONDecodeError:
+            return
+        if isinstance(parsed, dict):
+            yield parsed
+        elif isinstance(parsed, list):
+            yield from (item for item in parsed if isinstance(item, dict))
+        position = end
+
+
+def _codex_output_is_error(out):
+    """Detect structured or legacy failure signals in a Codex tool output."""
+    if any(
+        _codex_payload_is_error(payload) for payload in _codex_structured_payloads(out)
+    ):
+        return "true"
     if isinstance(out, str):
-        m = re.search(r"Process exited with code (\d+)", out)
-        if m and m.group(1) != "0":
+        match = re.search(r"Process exited with code (-?\d+)\b", out)
+        if match and int(match.group(1)) != 0:
             return "true"
     return "false"
 

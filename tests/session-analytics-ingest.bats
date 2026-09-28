@@ -241,6 +241,41 @@ JSONL
     assert_output_contains '"is_error":"true"'
 }
 
+@test "ingest: codex structured wrappers detect failures without prose false positives" {
+    cat > "$TEST_HOME/.codex/sessions/2026/05/30/rollout-codex-wrappers.jsonl" <<'JSONL'
+{"timestamp":"2026-05-30T12:30:00Z","type":"session_meta","payload":{"id":"x-3","timestamp":"2026-05-30T12:30:00Z","cwd":"/work/codex"}}
+{"timestamp":"2026-05-30T12:30:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"false\"}","call_id":"call-x-3"}}
+{"timestamp":"2026-05-30T12:30:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-3","output":{"exit_code":-1,"output":"failed"}}}
+{"timestamp":"2026-05-30T12:30:03Z","type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{}","call_id":"call-x-4"}}
+{"timestamp":"2026-05-30T12:30:04Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-4","output":{"isError":true,"content":"MCP failed"}}}
+{"timestamp":"2026-05-30T12:30:05Z","type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{}","call_id":"call-x-5"}}
+{"timestamp":"2026-05-30T12:30:06Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-5","output":[{"type":"input_text","text":"Script completed\nWall time 0.0 seconds\nOutput:\n"},{"type":"input_text","text":"diagnostic text"},{"type":"input_text","text":"{\"exit_code\":1,\"output\":\"failed\"}"}]}}
+{"timestamp":"2026-05-30T12:30:07Z","type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{}","call_id":"call-x-6"}}
+{"timestamp":"2026-05-30T12:30:08Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-6","output":{"exit_code":0,"output":"ok"}}}
+{"timestamp":"2026-05-30T12:30:09Z","type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{}","call_id":"call-x-7"}}
+{"timestamp":"2026-05-30T12:30:10Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-7","output":{"status":"pending","session_id":"still-running"}}}
+{"timestamp":"2026-05-30T12:30:11Z","type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"{}","call_id":"call-x-8"}}
+{"timestamp":"2026-05-30T12:30:12Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-x-8","output":"Output:\n{\"exit_code\":1}"}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT count(DISTINCT tool_use_id) AS n FROM tool_results WHERE harness='codex' AND tool_use_id IN ('call-x-3','call-x-4','call-x-5','call-x-6','call-x-7','call-x-8');"
+    assert_output_contains '"n":6'
+    run q "SELECT tool_name, bash_cmd FROM tool_uses WHERE harness='codex' AND tool_use_id='call-x-3';"
+    assert_output_contains '"tool_name":"exec_command"'
+    assert_output_contains '"bash_cmd":"false"'
+    run q "SELECT is_error FROM tool_results WHERE harness='codex' AND tool_use_id='call-x-3';"
+    assert_output_contains '"is_error":"true"'
+    run q "SELECT is_error FROM tool_results WHERE harness='codex' AND tool_use_id='call-x-4';"
+    assert_output_contains '"is_error":"true"'
+    run q "SELECT is_error FROM tool_results WHERE harness='codex' AND tool_use_id='call-x-5';"
+    assert_output_contains '"is_error":"true"'
+    run q "SELECT count(DISTINCT tool_use_id) AS n, sum(CASE WHEN is_error='true' THEN 1 ELSE 0 END) AS errors, sum(CASE WHEN is_error='false' THEN 1 ELSE 0 END) AS successes FROM tool_results WHERE harness='codex' AND tool_use_id IN ('call-x-6','call-x-7','call-x-8');"
+    assert_output_contains '"n":3'
+    assert_output_contains '"errors":"0"'
+    assert_output_contains '"successes":"3"'
+}
+
 
 @test "ingest: a malformed JSONL line is skipped without aborting the run" {
     cat > "$TEST_HOME/.claude/projects/proj/sess-corrupt.jsonl" <<'JSONL'
