@@ -34,7 +34,8 @@ A tool name narrows `check` to the findings for that tool.
 
 ## Flow
 
-1. **Detect.** Run `bin-doctor check` from an interactive login shell (`zsh -ic 'bin-doctor check'`), then from a plain shell.
+1. **Detect.** Run `bin-doctor check` from an interactive login shell (`zsh -ic 'bin-doctor check'`).
+   Run it again from a plain shell.
    Both PATHs matter: agents and timers use the non-interactive one.
    Done when you have both finding lists.
 2. **Classify each finding.** Pick one fix per finding with the table below. Read `references/managers.md` for the exact per-manager command.
@@ -45,7 +46,8 @@ A tool name narrows `check` to the findings for that tool.
    Edit manifests at their source (`chezmoi/dot_config/mise/config.toml`, `packages/packages.yaml`, `packages/bin-doctor.allow`), never the rendered `~/.config/mise/config.toml`.
    Run `dots sync` after a manifest edit.
    Done when `bin-doctor check` shows no findings except any the user declined.
-5. **Clean** (mode `clean`, or after apply). Run `bin-doctor clean --dry-run`, show the plan, then run `bin-doctor clean`.
+5. **Clean** (mode `clean`, or after apply). Run `bin-doctor clean --dry-run` and show the plan.
+   Then run `bin-doctor clean`.
    Confirm the weekly job: `systemctl --user list-timers bin-doctor-clean.timer` on Linux, `launchctl print gui/$(id -u)/com.dotfiles.bin-doctor-clean` on macOS.
 6. **Currency** (mode `outdated`). Run `bin-doctor outdated`.
    Pinned tools move only through merged Renovate PRs. List the open ones (`gh pr list --search "renovate"`) instead of upgrading in place.
@@ -88,4 +90,5 @@ Outdated: <N pins behind; open Renovate PRs: #…>
 
 ## References
 
-- `references/managers.md` — read when you choose the exact inventory, uninstall, cleanup, or update command for one manager, or when the user asks why a tool such as topgrade is not used.
+- `references/managers.md` — read when you choose the exact inventory, uninstall, cleanup, or update command for one manager.
+  Also read it when the user asks why a tool such as topgrade is not used.

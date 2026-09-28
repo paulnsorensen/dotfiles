@@ -513,6 +513,44 @@ SH
     [ "${lines[1]}" = "shimmed" ]
 }
 
+@test "zshenv picks Linux rustup dirs, first existing wins, and never probes /home on darwin" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fake_home="$BATS_TEST_TMPDIR/linux-home"
+    mkdir -p "$fake_home/.linuxbrew/opt/rustup/bin"
+
+    run zsh -c "OSTYPE=linux-gnu; HOME='$fake_home'; PATH=/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zshenv'; print -r -- \$PATH"
+
+    assert_success
+    [[ "$output" == *"$fake_home/.linuxbrew/opt/rustup/bin"* ]]
+
+    # Darwin never probes /home/linuxbrew: only /opt/homebrew is a candidate.
+    local darwin_branch
+    darwin_branch=$(sed -n '/_rustup_bin=\/opt\/homebrew/,/elif.*OSTYPE.*linux\*/p' "$REAL_DOTFILES_DIR/zshenv")
+    [[ "$darwin_branch" == *"/opt/homebrew/opt/rustup/bin"* ]]
+    [[ "$darwin_branch" != *"/home/linuxbrew"* ]]
+}
+
+@test "core.zsh on Linux puts brew's rustup proxies ahead of brew's own bin dir" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local fake_home="$BATS_TEST_TMPDIR/linux-brew-home"
+    mkdir -p "$fake_home/.linuxbrew/bin" "$fake_home/.linuxbrew/opt/rustup/bin"
+    cat > "$fake_home/.linuxbrew/bin/brew" <<SH
+#!/bin/sh
+printf 'export HOMEBREW_PREFIX="%s/.linuxbrew"\n' '$fake_home'
+printf 'export PATH="%s/.linuxbrew/bin:\$PATH"\n' '$fake_home'
+SH
+    chmod +x "$fake_home/.linuxbrew/bin/brew"
+
+    run zsh -c "OSTYPE=linux-gnu; HOME='$fake_home'; PATH=/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zsh/core.zsh' 2>/dev/null; print -r -- \$PATH"
+
+    assert_success
+    local idx_rustup idx_brew
+    idx_rustup=$(tr ':' '\n' <<< "$output" | grep -nxF "$fake_home/.linuxbrew/opt/rustup/bin" | head -1 | cut -d: -f1)
+    idx_brew=$(tr ':' '\n' <<< "$output" | grep -nxF "$fake_home/.linuxbrew/bin" | head -1 | cut -d: -f1)
+    [[ -n "$idx_rustup" && -n "$idx_brew" ]]
+    [[ "$idx_rustup" -lt "$idx_brew" ]]
+}
+
 @test "zshenv sources cleanly with no XDG_DATA_HOME and no mise shims dir present" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     run zsh -c "unset XDG_DATA_HOME; HOME='$TEST_HOME'; PATH=/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zshenv'" 2>&1

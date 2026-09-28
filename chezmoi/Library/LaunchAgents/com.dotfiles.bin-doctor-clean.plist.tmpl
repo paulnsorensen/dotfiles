@@ -9,7 +9,7 @@
   <string>com.dotfiles.bin-doctor-clean</string>
   <key>ProgramArguments</key>
   <array>
-    <string>{{ joinPath (dir .chezmoi.sourceDir) "bin" "bin-doctor" }}</string>
+    <string>{{ joinPath (includeTemplate "bin-doctor-path" .) "bin" "bin-doctor" }}</string>
     <string>clean</string>
   </array>
   <key>StartCalendarInterval</key>

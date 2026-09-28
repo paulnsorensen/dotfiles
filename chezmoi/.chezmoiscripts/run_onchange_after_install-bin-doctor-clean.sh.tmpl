@@ -3,7 +3,7 @@
 # timer on Linux, a launchd agent on macOS. A failure only warns, so a host
 # without a user session bus never blocks `chezmoi apply`.
 #
-# job hash: {{ include "dot_config/systemd/user/bin-doctor-clean.service.tmpl" | sha256sum }} {{ include "dot_config/systemd/user/bin-doctor-clean.timer" | sha256sum }} {{ include "Library/LaunchAgents/com.dotfiles.bin-doctor-clean.plist.tmpl" | sha256sum }}
+# job hash: {{ include "dot_config/systemd/user/bin-doctor-clean.service.tmpl" | sha256sum }} {{ include "dot_config/systemd/user/bin-doctor-clean.timer" | sha256sum }} {{ include "Library/LaunchAgents/com.dotfiles.bin-doctor-clean.plist.tmpl" | sha256sum }} {{ includeTemplate "bin-doctor-path" . | sha256sum }}
 
 set -euo pipefail
 {{ if eq .chezmoi.os "linux" }}

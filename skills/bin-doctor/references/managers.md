@@ -8,8 +8,8 @@ Checked: 2026-09-27. Sources: the research report `research/binary-manager-clean
 
 | Manager | Inventory | Uninstall | Cache cleanup (unattended) | Update report (read-only) |
 |---|---|---|---|---|
-| mise | `mise ls --current`, `mise bin-paths`, `mise which <bin>` | remove the pin from the chezmoi source, then `mise prune --yes` | `mise prune --yes` (versions no tracked config names), `mise cache prune` | `mise outdated` |
-| Homebrew | `brew leaves`, `brew list --formula` | `brew uninstall <name>` | `brew cleanup --prune=30`, `brew autoremove` (orphaned dependencies) | `brew outdated` |
+| mise | `mise ls --current`, `mise bin-paths`, `mise which <bin>` | remove the pin from the chezmoi source, then `mise prune --yes` (manual only, needs approval) | `mise cache prune` | `mise outdated` |
+| Homebrew | `brew leaves`, `brew list --formula` | `brew uninstall <name>`; `brew autoremove` removes orphaned dependencies (manual only, needs approval) | `brew cleanup --prune=30` | `brew outdated` |
 | cargo | `cargo install --list` | `cargo uninstall <crate>` | `cargo cache --autoclean` (extracted sources and git checkouts; archives stay) | `cargo install-update --list` |
 | rustup | `rustup toolchain list` | `rustup toolchain uninstall <tc>` | none needed | pins move with the mise `rust` entry |
 | uv | `uv tool list` | `uv tool uninstall <name>` | `uv cache prune` (dangling entries) | `uv tool list --outdated` |

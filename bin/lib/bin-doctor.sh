@@ -100,8 +100,8 @@ bd_check_shadows() {
     hits="$(
         bd_path_dirs | while IFS= read -r dir; do
             case "$dir" in
-                /usr/* | /bin | /sbin | /System/* | /snap/*) continue ;;
-                "${DOTFILES_DIR:-$HOME/Dev/dotfiles}"/bin) continue ;;
+                (/usr/* | /bin | /sbin | /System/* | /snap/*) continue ;;
+                ("${DOTFILES_DIR:-$HOME/Dev/dotfiles}"/bin) continue ;;
             esac
             for entry in "$dir"/*; do
                 [[ -f "$entry" && -x "$entry" ]] || continue
@@ -302,10 +302,8 @@ bd_clean_steps() {
     fi
     if command -v brew >/dev/null 2>&1; then
         printf 'brew\tbrew cleanup --prune=30\n'
-        printf 'brew\tbrew autoremove\n'
     fi
     if command -v mise >/dev/null 2>&1; then
-        printf 'mise\tmise prune --yes\n'
         printf 'mise\tmise cache prune\n'
     fi
     command -v uv >/dev/null 2>&1 && printf 'uv\tuv cache prune\n'
@@ -342,6 +340,8 @@ bd_bootstrap_path() {
         "${CARGO_HOME:-$HOME/.cargo}/bin" \
         /home/linuxbrew/.linuxbrew/bin \
         /home/linuxbrew/.linuxbrew/opt/rustup/bin \
+        "$HOME/.linuxbrew/bin" \
+        "$HOME/.linuxbrew/opt/rustup/bin" \
         /usr/local/bin \
         /opt/homebrew/bin \
         /opt/homebrew/opt/rustup/bin \

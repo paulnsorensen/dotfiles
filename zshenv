@@ -42,11 +42,21 @@ unset MISE_SHIMS_DIR
 # non-interactive bootstrap.
 # Both platforms use brew's rustup proxies, so a brew `rust` formula never
 # owns cargo/rustc (bin-doctor flags that formula as a conflict).
-for _rustup_bin in /opt/homebrew/opt/rustup/bin /home/linuxbrew/.linuxbrew/opt/rustup/bin "$HOME/.linuxbrew/opt/rustup/bin"; do
+if [[ "$OSTYPE" == darwin* ]]; then
+  _rustup_bin=/opt/homebrew/opt/rustup/bin
   if [[ -d "$_rustup_bin" && ":$PATH:" != *":$_rustup_bin:"* ]]; then
     export PATH="$_rustup_bin:$PATH"
   fi
-done
+elif [[ "$OSTYPE" == linux* ]]; then
+  # /home is autofs on macOS (~40ms per stat), so this branch never runs
+  # there. First existing dir wins; stop probing once one is found.
+  for _rustup_bin in /home/linuxbrew/.linuxbrew/opt/rustup/bin "$HOME/.linuxbrew/opt/rustup/bin"; do
+    if [[ -d "$_rustup_bin" ]]; then
+      [[ ":$PATH:" != *":$_rustup_bin:"* ]] && export PATH="$_rustup_bin:$PATH"
+      break
+    fi
+  done
+fi
 unset _rustup_bin
 if [[ -d "$HOME/.cargo/bin" && ":$PATH:" != *":$HOME/.cargo/bin:"* ]]; then
   export PATH="$HOME/.cargo/bin:$PATH"

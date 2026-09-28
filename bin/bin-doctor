@@ -93,7 +93,14 @@ main() {
         check) do_check ;;
         clean)
             local dry_run=false
-            [[ "${1:-}" == --dry-run || "${1:-}" == -n ]] && dry_run=true
+            case "${1:-}" in
+                "") ;;
+                --dry-run | -n) dry_run=true ;;
+                *)
+                    usage >&2
+                    return 2
+                    ;;
+            esac
             bd_bootstrap_path
             run_steps "$dry_run" "$(bd_clean_steps)"
             ;;

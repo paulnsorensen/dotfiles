@@ -1,0 +1,23 @@
+{{- /*
+Resolves the primary clone's repo root, so a `dots sync` from a linked
+worktree never points a scheduled job at a throwaway checkout.
+A linked worktree has a `.git` file that holds `gitdir: <main>/.git/worktrees/<name>`.
+The primary clone is three levels above that path.
+A primary clone has a `.git` directory, and a copy without `.git` uses its own root.
+This template runs no subprocess, so a missing or stubbed git cannot fail `chezmoi apply`.
+Usage: {{ joinPath (includeTemplate "bin-doctor-path" .) "bin" "bin-doctor" }}
+*/ -}}
+{{- $root := dir .chezmoi.sourceDir -}}
+{{- $dotgit := joinPath $root ".git" -}}
+{{- $st := stat $dotgit -}}
+{{- if and $st (not $st.isDir) -}}
+{{-   $line := include $dotgit | trim -}}
+{{-   if hasPrefix "gitdir: " $line -}}
+{{-     $gitdir := trimPrefix "gitdir: " $line -}}
+{{-     if not (isAbs $gitdir) }}{{ $gitdir = joinPath $root $gitdir }}{{ end -}}
+{{-     if eq (base (dir $gitdir)) "worktrees" -}}
+{{-       $root = dir (dir (dir $gitdir)) -}}
+{{-     end -}}
+{{-   end -}}
+{{- end -}}
+{{- $root -}}

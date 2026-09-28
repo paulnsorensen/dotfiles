@@ -7,6 +7,7 @@
 # Bootstrap trust roots (see [[operations/brew-machine-prune]]).
 brew:mise                                # brew installs mise before sync_mise runs
 brew:rustup                              # mise's rust entry delegates toolchains to rustup
+brew:yq                                  # macOS bootstrap installs brew yq before mise (packages/sync.sh)
 
 # Own-authored nightly channels, installed by chezmoi run_after scripts (ADR-006).
 npm:@paulnsorensen/tilth-nightly

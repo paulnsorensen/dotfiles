@@ -191,6 +191,13 @@ stub() {
     [[ "$output" == *"cargo-untracked"$'\t'"yazi"* ]]
     [[ "$output" != *"cargo-stray"$'\t'"cargo-cache"* ]]
     [[ "$output" != *"rustc"* ]]
+    # exact finding set: mdbook and cargo-cache have real binaries, so
+    # neither is stale or untracked even though mdbook is a stray.
+    [[ "$output" != *"cargo-stale"$'\t'"cargo-cache"* ]]
+    [[ "$output" != *"cargo-stale"$'\t'"mdbook"* ]]
+    [[ "$output" != *"cargo-untracked"$'\t'"cargo-cache"* ]]
+    [[ "$output" != *"cargo-untracked"$'\t'"mdbook"* ]]
+    [[ "${#lines[@]}" -eq 4 ]]
 }
 
 # ── brew ─────────────────────────────────────────────────────────────
@@ -248,14 +255,32 @@ esac'
     [[ "${lines[0]}" == "cargo"$'\t'"cargo cache --autoclean" ]]
 }
 
+@test "clean steps never uninstall software unattended" {
+    stub brew 'exit 0'
+    stub mise 'exit 0'
+    run bd_clean_steps
+    [[ "$output" != *"brew autoremove"* ]]
+    [[ "$output" != *"mise prune"* ]]
+}
+
 @test "bin-doctor clean --dry-run prints the plan and runs nothing" {
     stub uv "echo \"uv \$*\" >> '$LOG'"
     stub mise "echo \"mise \$*\" >> '$LOG'"
 
     run "$REAL_DOTFILES_DIR/bin/bin-doctor" clean --dry-run
     [[ $status -eq 0 ]]
-    [[ "$output" == *"would run [mise] mise prune --yes"* ]]
+    [[ "$output" == *"would run [mise] mise cache prune"* ]]
     [[ "$output" == *"would run [uv] uv cache prune"* ]]
+    [[ "$output" != *"brew autoremove"* ]]
+    [[ "$output" != *"mise prune"* ]]
+    [[ ! -s "$LOG" ]]
+}
+
+@test "bin-doctor clean rejects an unknown flag and runs nothing" {
+    stub uv "echo \"uv \$*\" >> '$LOG'"
+
+    run "$REAL_DOTFILES_DIR/bin/bin-doctor" clean --dryrun
+    [[ $status -eq 2 ]]
     [[ ! -s "$LOG" ]]
 }
 
@@ -267,6 +292,25 @@ esac'
     [[ $status -eq 1 ]]
     grep -qx "uv cache prune" "$LOG"
     grep -qx "npm cache verify" "$LOG"
+}
+
+# ── bd_bootstrap_path ───────────────────────────────────────────────
+
+@test "bd_bootstrap_path puts mise shims first and linuxbrew HOME rustup ahead of linuxbrew HOME bin" {
+    unset BIN_DOCTOR_KEEP_PATH
+    mkdir -p "$HOME/.linuxbrew/bin" "$HOME/.linuxbrew/opt/rustup/bin" "$XDG_DATA_HOME/mise/shims"
+    export PATH="$BASE_PATH"
+
+    bd_bootstrap_path
+
+    local idx_shims idx_rustup idx_brew
+    idx_shims=$(tr ':' '\n' <<< "$PATH" | grep -nxF "$XDG_DATA_HOME/mise/shims" | head -1 | cut -d: -f1)
+    idx_rustup=$(tr ':' '\n' <<< "$PATH" | grep -nxF "$HOME/.linuxbrew/opt/rustup/bin" | head -1 | cut -d: -f1)
+    idx_brew=$(tr ':' '\n' <<< "$PATH" | grep -nxF "$HOME/.linuxbrew/bin" | head -1 | cut -d: -f1)
+
+    [[ -n "$idx_shims" && -n "$idx_rustup" && -n "$idx_brew" ]]
+    [[ "$idx_shims" -lt "$idx_rustup" ]]
+    [[ "$idx_rustup" -lt "$idx_brew" ]]
 }
 
 # ── CLI check ────────────────────────────────────────────────────────
@@ -303,16 +347,22 @@ esac'
     done < "$REAL_DOTFILES_DIR/packages/bin-doctor.allow"
 }
 
-@test "the weekly job runs bin-doctor clean on both platforms" {
+@test "the weekly job runs bin-doctor clean on both platforms, resolved to the primary clone" {
     [[ -n "$CHEZMOI" ]] || skip "chezmoi not installed"
-    local src="$REAL_DOTFILES_DIR/chezmoi" rendered
+    local src="$REAL_DOTFILES_DIR/chezmoi" rendered primary_root
     export HOME="$REAL_HOME"
+    export PATH="$REAL_PATH"
+    command -v git >/dev/null 2>&1 || skip "git not installed"
+    # A worktree's git-common-dir points at the main repo's .git, so its
+    # parent is the primary clone — not this worktree, even though the
+    # template renders from this worktree's chezmoi source.
+    primary_root="$(dirname "$(git -C "$REAL_DOTFILES_DIR" rev-parse --path-format=absolute --git-common-dir)")"
     rendered=$("$CHEZMOI" --source "$src" execute-template < "$src/dot_config/systemd/user/bin-doctor-clean.service.tmpl")
-    [[ "$rendered" == *"ExecStart=$REAL_DOTFILES_DIR/bin/bin-doctor clean"* ]]
+    [[ "$rendered" == *"ExecStart=\"$primary_root/bin/bin-doctor\" clean"* ]]
     grep -qx "OnCalendar=weekly" "$src/dot_config/systemd/user/bin-doctor-clean.timer"
     grep -qx "Persistent=true" "$src/dot_config/systemd/user/bin-doctor-clean.timer"
     rendered=$("$CHEZMOI" --source "$src" execute-template < "$src/Library/LaunchAgents/com.dotfiles.bin-doctor-clean.plist.tmpl")
-    [[ "$rendered" == *"<string>$REAL_DOTFILES_DIR/bin/bin-doctor</string>"* ]]
+    [[ "$rendered" == *"<string>$primary_root/bin/bin-doctor</string>"* ]]
     [[ "$rendered" == *"<string>clean</string>"* ]]
 }
 

@@ -6,6 +6,6 @@ Description=Package-manager cache cleanup (bin-doctor clean)
 
 [Service]
 Type=oneshot
-ExecStart={{ joinPath (dir .chezmoi.sourceDir) "bin" "bin-doctor" }} clean
+ExecStart="{{ joinPath (includeTemplate "bin-doctor-path" .) "bin" "bin-doctor" }}" clean
 Nice=19
 IOSchedulingClass=idle

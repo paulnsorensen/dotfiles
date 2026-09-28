@@ -1,10 +1,10 @@
 # bin-doctor — one install path per binary
 
-`bin/bin-doctor` enforces the install contract from [[adr/manifest-pinned-packages]]: mise pins every tool it can install, `packages/packages.yaml` owns the remainder, and `packages/bin-doctor.allow` lists accepted exceptions with a reason. The `/bin-doctor` skill does the triage and asks before any uninstall. `dots doctor` runs `bin-doctor check`.
+`bin/bin-doctor` enforces the install contract from [[adr/manifest-pinned-packages]]. mise pins every tool it can install, `packages/packages.yaml` owns the remainder, and `packages/bin-doctor.allow` lists accepted exceptions with a reason. The `/bin-doctor` skill does the triage and asks before any uninstall. `dots doctor` runs `bin-doctor check`.
 
 ## Why a detector exists
 
-`sync_brew`, `sync_cargo`, and the other installers only install and upgrade. They never remove a copy that another manager also provides. On 2026-09-27 the Linux box had 51 commands with two or more installed copies. The worst was the brew `rust` formula: brew's bin sat ahead of the rustup proxies, so `cargo` ran 1.97.1 (Homebrew) while the mise `rust` pin said 1.98.1. No maintained tool detects shadowing across managers (researched 2026-09-27; `mise doctor` and `brew doctor` check only their own domain).
+`sync_brew`, `sync_cargo`, and the other installers only install and upgrade. They never remove a copy that another manager also provides. On 2026-09-27 the Linux box had 51 commands with two or more installed copies. The worst was the brew `rust` formula: brew's bin sat ahead of the rustup proxies. `cargo` ran 1.97.1 (Homebrew) while the mise `rust` pin said 1.98.1. No maintained tool detects shadowing across managers (researched 2026-09-27; `mise doctor` and `brew doctor` check only their own domain).
 
 ## Decisions
 

@@ -33,7 +33,7 @@ elif [[ $OSTYPE == linux* ]]; then
   unset _brew_bin
   # rustup proxies ahead of brew's bin, matching macOS, so a brew `rust`
   # formula never owns cargo/rustc.
-  [[ -n $HOMEBREW_PREFIX && -d "$HOMEBREW_PREFIX/opt/rustup/bin" ]] && export PATH="$HOMEBREW_PREFIX/opt/rustup/bin:$PATH"
+  [[ -n $HOMEBREW_PREFIX && -d "$HOMEBREW_PREFIX/opt/rustup/bin" ]] && path=("$HOMEBREW_PREFIX/opt/rustup/bin" $path)
 fi
 
 # Add dotfiles bin to PATH
