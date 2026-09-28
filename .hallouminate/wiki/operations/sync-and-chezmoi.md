@@ -33,8 +33,9 @@ Combine it with `refresh` to bypass the package cache without enabling upgrade m
 
 The prepare exception prevents stale live mise pins from blocking their own replacement.
 See [[mise-manifest-precedence]].
-Upgrades preserve declared version pins and existing package exclusions.
-They do not replace pinned tools with arbitrary latest releases.
+Upgrades preserve existing package exclusions.
+Brew, cargo, npm, uv, and gh-extension pins never float to arbitrary latest releases.
+mise pins are the exception since 2026-09-28: upgrade mode bumps them through `bump_mise_manifest` and writes the result back into the tracked manifest (see Update vectors).
 
 A package process failure stops configuration dispatch.
 A failed final apply retains installed packages and records a sync failure.

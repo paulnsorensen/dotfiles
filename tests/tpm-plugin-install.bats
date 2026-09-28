@@ -128,7 +128,7 @@ run_install_tpm() {
     export UPGRADE_MODE=true
     run_install_tpm
     assert_success
-    assert_file_exists "$INSTALL_CALLS"
+    [[ "$(cat "$INSTALL_CALLS")" == "ran" ]]
     assert_file_exists "$UPDATE_CALLS"
     [[ "$(cat "$UPDATE_CALLS")" == "all" ]]
 }
@@ -141,6 +141,6 @@ run_install_tpm() {
     export UPGRADE_MODE=false
     run_install_tpm
     assert_success
-    assert_file_exists "$INSTALL_CALLS"
+    [[ "$(cat "$INSTALL_CALLS")" == "ran" ]]
     [[ ! -f "$UPDATE_CALLS" ]]
 }

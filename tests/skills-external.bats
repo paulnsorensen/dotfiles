@@ -486,6 +486,26 @@ EOF
     assert_output_contains "superseded by"
 }
 
+@test "skill sync: an unreadable manifest skips eviction for that root" {
+    [[ $EUID -ne 0 ]] || skip "root ignores file modes"
+    cat > "$MOCK_REGISTRY_FILE" <<'EOF'
+sources: {}
+EOF
+    write_env "cursor"
+
+    mkdir -p "$HOME/.agents/skills/cook" "$HOME/.cursor/skills/cook"
+    printf '# fresh\n' > "$HOME/.agents/skills/cook/SKILL.md"
+    printf '# stale\n' > "$HOME/.cursor/skills/cook/SKILL.md"
+    printf 'cook\n' > "$HOME/.cursor/skills/.dotfiles-managed"
+    chmod 000 "$HOME/.cursor/skills/.dotfiles-managed"
+
+    run_sync
+    chmod 644 "$HOME/.cursor/skills/.dotfiles-managed"
+    assert_success
+    [[ -f "$HOME/.cursor/skills/cook/SKILL.md" ]]
+    assert_output_contains "Cannot read"
+}
+
 # ─── retired local-skill reconciliation ────────────────────────────────
 # install_local_tree copies the repo's skills/ tree into the shared agents
 # root. The CLI never removes a name dropped from that source, so a manifest

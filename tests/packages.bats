@@ -1761,7 +1761,7 @@ write_mock_mise_bumping_live() {
     cat > "$MOCK_BIN/mise" << MOCKMISE
 #!/bin/bash
 echo "mise \$* config=\${MISE_GLOBAL_CONFIG_FILE:-unset}" >> "\$MISE_LOG"
-if [[ "\$1 \$2" == "upgrade --bump" ]]; then
+if [[ "\$*" == *"upgrade --bump"* ]]; then
     printf '"aqua:example/tool" = "2.0.0"\n' >> "$live"
 fi
 exit 0
@@ -1780,7 +1780,7 @@ MOCKMISE
     assert_success
     grep -q "mise install config=$MISE_CONFIG_FILE" "$MISE_LOG"
     # The bump runs against the live file alone: no MISE_GLOBAL_CONFIG_FILE.
-    grep -q "mise upgrade --bump --yes config=unset" "$MISE_LOG"
+    grep -q "mise -C $HOME upgrade --bump --yes config=unset" "$MISE_LOG"
     grep -q 'aqua:example/tool' "$MISE_CONFIG_FILE"
     cmp -s "$live" "$MISE_CONFIG_FILE"
     [[ "$output" == *"mise pins bumped in $MISE_CONFIG_FILE"* ]]
@@ -1811,6 +1811,26 @@ MOCKMISE
     assert_success
     ! grep -q "upgrade --bump" "$MISE_LOG"
     [[ "$(cat "$MISE_CONFIG_FILE")" == "[tools]" ]]
+}
+
+@test "a direct run mirrors the mise bump into the repo manifest, not the live file onto itself" {
+    write_test_yaml
+    # No MISE_CONFIG_FILE: sync.sh defaults it to the live file, which
+    # mise_config_path then selects. The tracked copy is the bootstrap path.
+    local live="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
+    mkdir -p "$(dirname "$live")"
+    printf '[tools]\n' > "$live"
+    export MISE_BOOTSTRAP_CONFIG_FILE="$TEST_HOME/tracked-config.toml"
+    printf '[tools]\n' > "$MISE_BOOTSTRAP_CONFIG_FILE"
+    write_mock_mise_bumping_live "$live"
+
+    UPGRADE_MODE=true run env -u MISE_CONFIG_FILE bash "$SYNC_SCRIPT"
+    assert_success
+    grep -q "mise install config=$live" "$MISE_LOG"
+    grep -q "mise -C $HOME upgrade --bump --yes config=unset" "$MISE_LOG"
+    grep -q 'aqua:example/tool' "$MISE_BOOTSTRAP_CONFIG_FILE"
+    cmp -s "$live" "$MISE_BOOTSTRAP_CONFIG_FILE"
+    [[ "$output" == *"mise pins bumped in $MISE_BOOTSTRAP_CONFIG_FILE"* ]]
 }
 
 @test "a pinned cargo package installs at its exact version, unconditionally" {

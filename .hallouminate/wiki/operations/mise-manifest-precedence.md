@@ -2,7 +2,7 @@
 
 Pointing `mise install` at the tracked manifest does **not** make it install what the manifest says. The live `~/.config/mise/config.toml` still wins. In August 2026 that single fact wedged `dots sync` on one machine for eight days, and every re-run reproduced the wedge exactly.
 
-If you read one thing here: **the manifest is an input to package convergence, not an output of it.** The live config has to be correct *before* `mise install` runs, because nothing downstream can fix it.
+If you read one thing here: **the manifest is an input to `mise install`, never an output of it.** The live config has to be correct *before* `mise install` runs, because nothing downstream can fix it. The one write-back, `bump_mise_manifest` in upgrade mode (2026-09-28), goes through the live file first and mirrors it into the manifest afterwards; see the last section.
 
 ## Why the live file wins
 

@@ -431,8 +431,17 @@ evict_legacy_codex_skills() {
 evict_superseded_skill_copies() {
     local label="$1" root="$2"
     [[ -d "$root" ]] || return 0
-    local manifests
-    manifests=$(cat "$root"/.dotfiles-managed* 2>/dev/null || true)
+    # An unreadable manifest is not an empty one: it may own a copy we would
+    # otherwise delete, so a read failure skips this root entirely.
+    local manifests="" manifest content
+    for manifest in "$root"/.dotfiles-managed*; do
+        [[ -e "$manifest" ]] || continue
+        if ! content=$(cat "$manifest"); then
+            echo -e "  ${YELLOW}Cannot read $manifest — skipping superseded-copy eviction for $root${NC}" >&2
+            return 0
+        fi
+        manifests+="$content"$'\n'
+    done
     local d name
     local -a removed=()
     for d in "$root"/*/; do

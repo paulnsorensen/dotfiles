@@ -361,20 +361,31 @@ sync_brew() {
 # where mise wants to write, then mirror it into the source: the repo stays
 # the source of truth and the final chezmoi apply is a no-op. A live/source
 # mismatch means the prepare apply did not land; skip rather than bump a
-# stale file. Run from $HOME so no project-local mise.toml joins the bump.
-#   bump_mise_manifest <tracked_manifest>
+# stale file. `mise -C $HOME` keeps a project-local mise.toml out of the bump.
+#
+# `.sync` passes the tracked manifest as MISE_CONFIG_FILE. A direct run leaves
+# the default, which is the live file itself, so fall back to the repo copy
+# (MISE_BOOTSTRAP_CONFIG_FILE) instead of mirroring the live file onto itself.
+#   bump_mise_manifest <install_config>
 bump_mise_manifest() {
     local source="$1"
     local live="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
     [[ "${UPGRADE_MODE:-false}" == "true" ]] || return 0
-    [[ -f "$live" && -f "$source" ]] || return 0
+    [[ -f "$live" ]] || return 0
+    if [[ "$source" -ef "$live" ]]; then
+        source="$MISE_BOOTSTRAP_CONFIG_FILE"
+    fi
+    if [[ ! -f "$source" ]]; then
+        log_warning "no tracked mise manifest to mirror into ($source) — skipping mise upgrade --bump"
+        return 0
+    fi
     if ! cmp -s "$live" "$source"; then
         log_warning "live mise config differs from $source — skipping mise upgrade --bump"
         return 0
     fi
 
     log_info "Bumping mise pins (mise upgrade --bump)..."
-    if ! (cd "$HOME" && env -u MISE_GLOBAL_CONFIG_FILE mise upgrade --bump --yes </dev/null); then
+    if ! env -u MISE_GLOBAL_CONFIG_FILE mise -C "$HOME" upgrade --bump --yes </dev/null; then
         log_warning "mise upgrade --bump failed — pins unchanged"
         return 0
     fi
@@ -382,7 +393,20 @@ bump_mise_manifest() {
         echo "  + mise pins already current"
         return 0
     fi
-    cp "$live" "$source"
+
+    # Stage beside the manifest and rename over it, so an interrupted or
+    # out-of-space copy can never leave a truncated tracked manifest.
+    local staged mode
+    mode="$(stat -f '%Lp' "$source" 2>/dev/null || stat -c '%a' "$source")"
+    if ! staged=$(mktemp "$source.XXXXXX") \
+        || ! cp "$live" "$staged" \
+        || ! cmp -s "$live" "$staged" \
+        || ! chmod "${mode:-644}" "$staged" \
+        || ! mv -f "$staged" "$source"; then
+        [[ -n "${staged:-}" ]] && rm -f "$staged"
+        log_error "mise pins bumped in $live but the mirror into $source failed — the final chezmoi apply reverts the live file; re-run dots sync"
+        return 0
+    fi
     log_success "mise pins bumped in $source — commit the manifest (dots update refuses a dirty tree)"
 }
 
