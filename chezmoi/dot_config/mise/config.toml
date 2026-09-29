@@ -11,6 +11,9 @@
 #   - cargo-backend entries (eza, tokei): bare crates.io semver. Both were
 #     aqua-pinned until the aqua registry retyped them as `cargo`-type
 #     packages (no prebuilt binaries), which mise's aqua backend refuses.
+#     eza builds with `vendored-libgit2`. Without it, libgit2-sys links the
+#     Homebrew libgit2 that pkg-config finds on Linux, with no RUNPATH, so
+#     eza fails at load time ("libgit2.so.1.9: cannot open shared object").
 #
 # `dots sync` (upgrade mode) runs `mise upgrade --bump` against the live copy
 # of this file and mirrors the result back here (packages/sync.sh,
@@ -53,7 +56,7 @@
 "aqua:dandavison/delta" = "0.19.2"
 "aqua:git-lfs/git-lfs" = "v3.8.0"
 "aqua:tmux/tmux-builds" = "v3.7c"
-"aqua:j178/prek" = "v0.5.3"
+"aqua:j178/prek" = "v0.5.4"
 "aqua:ajeetdsouza/zoxide" = "v0.10.0"
 "aqua:atuinsh/atuin" = "v18.23.0"
 "aqua:ClementTsang/bottom" = "0.14.9"
@@ -75,7 +78,7 @@
 "aqua:nextest-rs/nextest/cargo-nextest" = "cargo-nextest-0.9.140"
 "aqua:protocolbuffers/protobuf/protoc" = "v36.2"
 "aqua:astral-sh/uv" = "0.12.19"
-"aqua:rust-lang/rust-analyzer" = "2026-09-21"
+"aqua:rust-lang/rust-analyzer" = "2026-09-28"
 "aqua:taiki-e/cargo-llvm-cov" = "v0.9.1"
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 "aqua:axodotdev/cargo-dist" = "v0.33.0"
@@ -91,5 +94,5 @@ rust = "1.98.1"
 "npm:bash-language-server" = "5.8.1"
 "npm:yaml-language-server" = "1.24.0"
 "npm:basedpyright" = "1.40.1"
-"cargo:eza" = "0.23.5"
+"cargo:eza" = { version = "0.23.5", features = "vendored-libgit2" }
 "cargo:tokei" = "15.0.0"
