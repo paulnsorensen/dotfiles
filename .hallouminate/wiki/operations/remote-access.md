@@ -142,6 +142,7 @@ The audit checks each `tmux.conf` option against tmux 3.7b source and mosh 1.4.0
 **Decision (2026-09-29):** `tmux.conf` sets `default-shell /bin/zsh` when `default-shell` is not a zsh and `/bin/zsh` is executable. A zsh login shell keeps its own path. `tests/tmux-default-shell.bats` covers both cases.
 
 **Gotcha:** `if-shell` expands tmux formats in its command, so a shell `${SHELL##*/}` becomes `${SHELL#*/}`. Use an `if -F` format match (`#{m:*/zsh,#{default-shell}}`) instead of shell parameter expansion.
+
 ## Related
 
 - [[sync-and-chezmoi]] — how `packages/packages.yaml` and `dots sync` deploy brew formulae.
