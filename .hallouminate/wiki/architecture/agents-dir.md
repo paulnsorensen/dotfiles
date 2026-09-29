@@ -40,6 +40,19 @@ The mechanism is live but **currently unexercised** — its only real user was s
 
 Note: the bash-style `${VAR}` env refs (resolved from `$DOTFILES_DIR/.env`) are a *separate* pass from the Go-template pass and are untouched by it.
 
+#### Milknado fleet workers load a three-server MCP file (2026-09-29)
+
+Milknado fleet workers run bare `claude ... -p`. Each worker inherited the global install: 15 MCP servers, 7 of them local child processes. On 2026-09-29 eight workers exhausted a 31 GiB devbox and the container restarted.
+
+The worker command now adds `--strict-mcp-config --mcp-config ~/.config/milknado/worker-mcp.json`. chezmoi deploys the file from `chezmoi/dot_config/milknado/worker-mcp.json` on every OS. It lists `tilth`, `milknado`, and `hallouminate`. A one-turn `claude -p --output-format stream-json --verbose` call confirmed the result: 3 servers load instead of 15, and plugins and skills stay available. Milknado appends the project `.mcp.json` as a fourth `--mcp-config`, so project servers still load.
+
+Two alternatives were rejected:
+
+- An `ap` profile. Milknado's Claude adapter detects Claude by `argv[0] == claude`, so a wrapper with another name breaks worker detection.
+- `--setting-sources ""`. It is not needed to drop the MCP servers, and it removes skills.
+
+`tests/config-validation.bats` locks the file to the three servers and compares `tilth` with `agents/mcp/registry.yaml`. `milknado` and `hallouminate` are plugin entries without command fields, so the test pins their launchers as literals.
+
 ### Hook registry — `agents/hooks/registry.yaml`
 
 A mapping of `name → {event, script|command, shared_assets, harnesses, matcher, timeout, async, description}`. Key design points:
