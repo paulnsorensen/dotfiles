@@ -779,8 +779,9 @@ sync_gh_extensions() {
 # Brew package to migrate off, per harness ("" = none; "cask:NAME" = cask).
 native_harness_brew_pkg() {
     case "$1" in
-        claude) echo "cask:claude-code" ;;
-        omp)    echo "omp" ;;
+        claude)   echo "cask:claude-code" ;;
+        omp)      echo "omp" ;;
+        opencode) echo "opencode" ;;
         *)      echo "" ;;
     esac
 }
@@ -974,33 +975,25 @@ converge_omp_native() {
 
 # Remove every package-manager and native binary left by retired harnesses.
 retire_harnesses() {
-    local harness installed
-
-    if command -v brew &>/dev/null; then
-        installed=$(brew list --formulae 2>/dev/null || true)
-        for harness in opencode crush; do
-            if grep -qxF "$harness" <<<"$installed"; then
-                log_info "  Removing retired Homebrew $harness..."
-                brew uninstall "$harness" </dev/null || FAILED+=("retired-$harness-brew")
-            fi
-        done
+    if command -v brew &>/dev/null && grep -qxF crush <<<"$(brew list --formulae 2>/dev/null || true)"; then
+        log_info "  Removing retired Homebrew crush..."
+        brew uninstall crush </dev/null || FAILED+=("retired-crush-brew")
     fi
 
     if command -v mise &>/dev/null && ! MISE_GLOBAL_CONFIG_FILE="$MISE_BOOTSTRAP_CONFIG_FILE" \
-        mise uninstall --yes --all \
-        aqua:anomalyco/opencode aqua:charmbracelet/crush </dev/null; then
-        log_error "failed to uninstall retired OpenCode/Crush mise packages"
+        mise uninstall --yes --all aqua:charmbracelet/crush </dev/null; then
+        log_error "failed to uninstall the retired Crush mise package"
         FAILED+=("retired-harnesses")
     fi
 
-    rm -f "$HOME/.local/bin/opencode" "$HOME/.local/bin/crush"
+    rm -f "$HOME/.local/bin/crush"
 }
 
 sync_native_harnesses() {
     log_info "Syncing native AI-harness CLIs..."
 
     local harness
-    for harness in claude codex; do
+    for harness in claude codex opencode; do
         migrate_harness_off_brew "$harness"
         migrate_harness_off_native "$harness"
     done

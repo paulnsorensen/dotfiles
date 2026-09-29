@@ -85,7 +85,7 @@ teardown() { teardown_test_env; }
     assert_file_exists "$target"
 }
 
-@test "rendered run-on-change installs shared instructions for Pi" {
+@test "rendered run-on-change installs shared instructions for Pi and OpenCode" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
     local cfg="$TEST_HOME/chezmoi.toml"
     local destination="$TEST_HOME/home"
@@ -101,6 +101,7 @@ TOML
     run env HOME="$destination" bash "$rendered"
     assert_success
     cmp -s "$REAL_DOTFILES_DIR/agents/AGENTS.md" "$destination/.pi/agent/AGENTS.md"
+    cmp -s "$REAL_DOTFILES_DIR/agents/AGENTS.md" "$destination/.config/opencode/AGENTS.md"
 }
 
 @test "run-on-change installs the shared Sliced Bread reference" {

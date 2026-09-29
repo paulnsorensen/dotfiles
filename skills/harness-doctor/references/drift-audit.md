@@ -26,6 +26,7 @@ retired file-reader names. Never print live values or raw file differences.
 | Copilot | Chezmoi templates and declared profile projections | ~/.copilot/mcp-config.json, ~/.copilot/hooks/ |
 | OMP | chezmoi/.chezmoidata/omp.yaml and dot_omp/private_agent/modify_config.yml | ~/.omp/agent/config.yml, when OMP is in scope |
 | Pi | chezmoi/.chezmoidata/pi.yaml and dot_pi/private_agent/modify_settings.json | ~/.pi/agent/settings.json |
+| OpenCode | chezmoi/.chezmoidata/opencode.yaml and dot_config/opencode/modify_opencode.json | ~/.config/opencode/opencode.json |
 | T3 Code | chezmoi/.chezmoidata/t3.yaml, dot_t3/userdata/modify_settings.json, and dot_t3/userdata/claude-settings.json | ~/.t3/userdata/settings.json (providers.claudeAgent.launchArgs only) |
 
 Claude settings ownership includes static settings, Claude registry keys, and
@@ -185,7 +186,7 @@ Copilot's chezmoi template can render into TMP without applying it:
 Cursor and Copilot extras remain user-owned. Compare only declared plugin names,
 MCP names, hook names, and counts. Do not classify every live-only entry as stale.
 
-Pi follows the same modify-script comparison pattern. Compare only the settings paths that the registry manages:
+Pi and OpenCode follow the same modify-script comparison pattern. For OpenCode, use `.opencode.config`, `opencode.yaml`, `dot_config/opencode/modify_opencode.json`, and `~/.config/opencode/opencode.json` in place of the Pi paths. Compare only the settings paths that the registry manages:
 
     yq -o=json '.pi.settings' "$DOTFILES_DIR/chezmoi/.chezmoidata/pi.yaml" |
       jq -S '.' > "$TMP/pi-desired.json"

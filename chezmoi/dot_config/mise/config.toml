@@ -85,6 +85,7 @@
 "aqua:rust-lang/mdBook" = "v0.5.4"
 "aqua:anthropics/claude-code" = "v2.1.284"
 "aqua:openai/codex" = "rust-v0.154.0"
+"aqua:anomalyco/opencode" = "v1.18.33"
 
 node = "26.10.0"
 bun = "1.4.2"

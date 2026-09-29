@@ -79,6 +79,7 @@
       "matchDepNames": [
         "aqua:anthropics/claude-code",
         "aqua:openai/codex",
+        "aqua:anomalyco/opencode",
         "npm:t3",
         "can1357/oh-my-pi",
         "@earendil-works/pi-coding-agent",
