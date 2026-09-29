@@ -521,7 +521,14 @@ SH
     run zsh -c "OSTYPE=linux-gnu; HOME='$fake_home'; PATH=/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zshenv'; print -r -- \$PATH"
 
     assert_success
-    [[ "$output" == *"$fake_home/.linuxbrew/opt/rustup/bin"* ]]
+    # First existing wins: a host linuxbrew rustup precedes the fake HOME.
+    local host_rustup=/home/linuxbrew/.linuxbrew/opt/rustup/bin
+    if [[ -d "$host_rustup" ]]; then
+        [[ "$output" == *"$host_rustup"* ]]
+        [[ "$output" != *"$fake_home/.linuxbrew/opt/rustup/bin"* ]]
+    else
+        [[ "$output" == *"$fake_home/.linuxbrew/opt/rustup/bin"* ]]
+    fi
 
     # Darwin never probes /home/linuxbrew: only /opt/homebrew is a candidate.
     local darwin_branch
