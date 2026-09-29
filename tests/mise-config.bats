@@ -64,7 +64,13 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
 # Renovate PR, so these tests assert the version-string SHAPE of each
 # backend, never a literal pin.
 tool_version() {
-    yq -p=toml -o=json '.tools' "$CONFIG" | jq -r --arg tool "$1" '.[$tool]'
+    yq -p=toml -o=json '.tools' "$CONFIG" |
+        jq -r --arg tool "$1" '.[$tool] | if type == "object" then .version else . end'
+}
+
+@test "eza vendors libgit2 (a host libgit2 link has no RUNPATH on Linux)" {
+    run bash -c "yq -p=toml -o=json '.tools' '$CONFIG' | jq -r '.[\"cargo:eza\"].features'"
+    [[ "$output" == *vendored-libgit2* ]]
 }
 
 @test "non-semver tag shapes are kept raw (rust-analyzer date-stamp, tmux v3.7x)" {
