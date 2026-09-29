@@ -14,8 +14,8 @@ export const meta = {
 }
 
 // Tracked source: claude/workflows/milknado-fleet.js in the dotfiles repo.
-// Deployed to ~/.claude/workflows/ as a symlink by claude/.sync (the `configs`
-// array). Invoked as `/milknado-fleet <roadmap-slug>`; `args` is the slug.
+// chezmoi deploys it to ~/.claude/workflows/ (exact_workflows, via `dots sync`).
+// Invoked as `/milknado-fleet <roadmap-slug>`; `args` is the slug.
 //
 // Architecture (spec: milknado-fleet):
 //   - MCP calls (milknado MCP tools) live INSIDE agent() calls — MCP is
@@ -152,12 +152,13 @@ function partitionPrompt(goal, roadmapSlug, projectRoot, mainBranch) {
     `   git -C ${projectRoot} worktree add -b ${branch} ${wt} ${mainBranch}`,
     '   If the worktree already exists (branch already exists or path exists), skip creation.',
     '',
-    '2. Copy the milknado.toml worker config into the partition worktree:',
-    `   cp ${projectRoot}/claude/workflows/milknado-fleet-worker.toml ${wt}/milknado.toml`,
+    '2. Copy the milknado.toml worker config into the partition worktree.',
+    '   The toml is a deployed ~/.claude asset; the target repo does not carry it:',
+    `   cp "$HOME/.claude/workflows/milknado-fleet-worker.toml" ${wt}/milknado.toml`,
     '   (This sets execution_agent and quality_gates for the partition.)',
     '',
-    '3. Initialize milknado db in the partition worktree:',
-    `   milknado init --project-root ${wt}`,
+    '3. Initialize milknado db in the partition worktree (project root is positional):',
+    `   milknado init ${wt}`,
     '   If .milknado/milknado.db already exists, this is a no-op.',
     '',
     '4. Import the roadmap into the PARTITION db (explicit project_root for isolation):',
@@ -318,9 +319,9 @@ if (!roadmapSlug) {
   return { error: 'No roadmap slug provided. Usage: /milknado-fleet <roadmap-slug>' }
 }
 
-// Resolve project root: this workflow runs in the primary checkout.
-// The PRIMARY clone is the one that has .claude/workflows/ symlinked.
-// We detect it by finding the git toplevel from the current working directory.
+// Resolve project root: this workflow runs in the primary checkout of the
+// TARGET repo. We detect it by finding the git toplevel from the current
+// working directory.
 const projectRoot = await agent(
   [
     'Find the primary git checkout root for this project.',

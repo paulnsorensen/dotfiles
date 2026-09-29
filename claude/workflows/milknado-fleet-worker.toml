@@ -17,7 +17,9 @@
 
 [milknado]
 agent_family = "claude"
-execution_agent = "claude --dangerously-skip-permissions -p"
+# Pin the phase orchestrator to opus so a settings.json default change cannot
+# silently downgrade a fleet run. Phase agents (coder, reviewer) keep their own tiers.
+execution_agent = "claude --model opus --dangerously-skip-permissions -p"
 quality_gates = []
 worktree_pattern = "uf-worker-{node_id}-{slug}"
 concurrency_limit = 1
