@@ -32,3 +32,7 @@ local-llm/configs/lean.json
 .local/share/crush
 .local/state/crush
 .cache/crush
+
+# Retired 2026-09-29: the milknado-fleet workflow and its worker MCP file. The
+# ~/.claude/workflows copies leave through exact_workflows; this target does not.
+.config/milknado/worker-mcp.json

@@ -75,3 +75,5 @@
 2026-09-19 · 3481e45760db7ca6 · merged · operations/subagent-dispatch-analytics.md · Records soft-stop evidence, full-file write responses, checkpoint failures, and uncapped parent takeover. Historical samples remain unchanged.
 
 2026-09-29 · milknado-worker-mcp-20260929 · merged · architecture/agents-dir.md · Recorded the milknado fleet worker MCP file: bare claude with `--strict-mcp-config --mcp-config ~/.config/milknado/worker-mcp.json` loads 3 servers instead of 15 after eight workers exhausted a 31 GiB devbox; an `ap` profile (adapter keys on argv[0]) and `--setting-sources ""` (drops skills) were rejected; milknado appends the project `.mcp.json` as a fourth config.
+
+2026-09-29 · milknado-fleet-retire-20260929 · merged · architecture/agents-dir.md · Retired the milknado-fleet workflow, worker TOML, and worker MCP file; `.chezmoiremove` drops `~/.config/milknado/worker-mcp.json`, `exact_workflows` drops the workflow copies. Milknado plugin, MCPs, and package stay.

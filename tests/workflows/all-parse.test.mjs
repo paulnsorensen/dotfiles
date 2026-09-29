@@ -89,16 +89,6 @@ test('every workflow declares the meta fields the runtime requires', async () =>
   }
 })
 
-test('milknado worker config retains its required execution keys', async () => {
-  const source = await readFile(resolve(root, 'claude/workflows/milknado-fleet-worker.toml'), 'utf8')
-
-  for (const key of ['execution_agent', 'quality_gates', 'concurrency_limit', 'db_path', 'worktree_pattern']) {
-    assert.match(source, new RegExp(`^${key}\\s*=`, 'm'), key)
-  }
-  assert.match(source, /--dangerously-skip-permissions/)
-})
-
-
 test('workflow smoke wiring invokes the wrapper, CI runs every test recipe, and the old parse guard is gone', async () => {
   const [justfile, ci] = await Promise.all([
     readFile(resolve(root, 'justfile'), 'utf8'),

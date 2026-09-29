@@ -5,4 +5,4 @@
 - **Alternatives:** (a) Keep both scripts side by side — rejected: split-brain guard, the grep-based one keeps producing false green. (b) Leave workflow tests local-only — rejected: a guard that never runs on PRs cannot gate regressions.
 - **Consequences:** One guard, CI-enforced. Cost: CI `test` job now needs node (preinstalled on ubuntu-latest runners) and the smoke leg's runtime (~seconds).
 
-(2026-07: `ultracook-fleet*` renamed to `milknado-fleet*`; the checks now target the renamed files.)
+(2026-07: `ultracook-fleet*` renamed to `milknado-fleet*`. 2026-09: the `milknado-fleet` workflow and its worker TOML are retired; `all-parse.test.mjs` keeps only the generic workflow checks.)

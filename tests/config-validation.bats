@@ -63,35 +63,6 @@ NODE
     [[ "$(yq -p=toml '.milknado.quality_gates | join(",")' "$config")" == "just check" ]]
 }
 
-@test "milknado worker MCP config is strict JSON that tracks the registry" {
-    # Fleet workers run `claude --strict-mcp-config --mcp-config <file>`, so
-    # each worker loads these three servers instead of the global install.
-    # tilth is the only entry in agents/mcp/registry.yaml. milknado and
-    # hallouminate are plugin entries without command fields, so the test
-    # pins their launchers as literals.
-    local config="$DOTFILES_DIR/chezmoi/dot_config/milknado/worker-mcp.json"
-    local registry="$DOTFILES_DIR/agents/mcp/registry.yaml"
-    local field expected actual
-
-    run jq -e '.' "$config"
-    [[ $status -eq 0 ]]
-    [[ "$(jq -r '.mcpServers | keys | join(",")' "$config")" == "hallouminate,milknado,tilth" ]]
-
-    for field in command args; do
-        expected=$(yq -I=0 -o=json ".mcps.tilth.$field" "$registry")
-        actual=$(jq -c ".mcpServers.tilth.$field" "$config")
-        [[ "$actual" == "$expected" ]] || {
-            echo "tilth.$field: registry has $expected, worker file has $actual" >&2
-            return 1
-        }
-    done
-
-    [[ "$(jq -c '.mcpServers.milknado | [.command, .args]' "$config")" == '["milknado-mcp",[]]' ]]
-    [[ "$(jq -c '.mcpServers.hallouminate | [.command, .args]' "$config")" == '["hallouminate",["serve"]]' ]]
-    # packages.yaml installs the milknado-mcp binary that the worker file launches.
-    yq -r '.packages[] | select(kind == "map") | keys[0]' "$DOTFILES_DIR/packages/packages.yaml" | grep -qx milknado
-}
-
 # ── Atuin ─────────────────────────────────────────────────────────────────────
 
 @test "atuin config is valid TOML" {
