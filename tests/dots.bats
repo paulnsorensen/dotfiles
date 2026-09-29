@@ -5,6 +5,15 @@ load test_helper
 
 setup() {
     setup_test_env
+    # `dots doctor` runs bin-doctor, which runs `cargo install --list`. With
+    # MISE_DATA_DIR sandboxed, the mise cargo shim holds its cache lock while
+    # it runs the mise rustup shim, which waits on that lock forever. A stub
+    # cargo keeps the doctor tests off the host toolchain.
+    stub_bin="$TEST_HOME/stub-bin"
+    mkdir -p "$stub_bin"
+    printf '#!/bin/bash\nexit 0\n' > "$stub_bin/cargo"
+    chmod +x "$stub_bin/cargo"
+    PATH="$stub_bin:$PATH"
 }
 
 teardown() {
@@ -162,15 +171,12 @@ STUB
 @test "dots doctor issue count grows with each recorded drift file" {
     # Stub zsh so the shell-startup timing check in `dots doctor` never adds
     # its own issue; otherwise a slow real `zsh -i` run makes the before/after
-    # comparison flaky.
-    local stub_bin="$TEST_HOME/stub-bin"
-    mkdir -p "$stub_bin"
+    # comparison flaky. setup() already put $stub_bin on PATH.
     cat > "$stub_bin/zsh" <<'STUB'
 #!/bin/bash
 exit 0
 STUB
     chmod +x "$stub_bin/zsh"
-    PATH="$stub_bin:$PATH"
 
     run dots doctor
     local before=0
