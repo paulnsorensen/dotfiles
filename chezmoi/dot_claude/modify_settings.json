@@ -31,6 +31,12 @@
 #     gate below (prefix semantics) whose live values are overlaid back onto
 #     the merged document when the repo doesn't already own that leaf. These
 #     are keys Claude Code owns at runtime; they never warn.
+#   * ${CLAUDE_DEVBOX_HOOKS:-/opt/devbox/claude-hooks.json} — the keep-alive
+#     hook groups the cloud-devbox image ships, shape {"hooks": {event: [
+#     group, ...]}}. When this regular file is readable, the script strips
+#     every keep-alive hook from the desired document, then appends each
+#     event's groups after the registry groups. An absent file changes
+#     nothing. The image is the source of truth; the repo keeps no copy.
 #
 # EVERY managed key is overwritten from source — live drift (in-app /model
 # changes, session-granted permissions, in-app plugin toggles) is discarded.
@@ -259,6 +265,34 @@ desired=$(
 # still treats a live copy as known so the transition sync wipes it, not halts.
 if [ "$(uname -s)" != "Darwin" ]; then
     desired=$(printf '%s' "$desired" | jq 'del(.env.SSL_CERT_FILE)')
+fi
+
+# The cloud-devbox image ships per-session keep-alive hook groups in
+# /opt/devbox/claude-hooks.json. Its startup script merges them into
+# ~/.claude/settings.json on every boot: it strips every hook whose command
+# matches the keep-alive regex below (old direct keep_alive.sh hooks
+# included), then appends the file's groups. The registry authors `hooks`
+# whole, so a plain rewrite wipes the image's groups and the two writers churn
+# every boot. Mirror the image instead: strip the same hooks from the desired
+# document, drop groups and events that become empty, then append each event's
+# groups after the registry groups. An absent file changes nothing. A file that
+# does not parse warns and skips, so it never halts the apply.
+DEVBOX_HOOKS="${CLAUDE_DEVBOX_HOOKS:-/opt/devbox/claude-hooks.json}"
+if [ -f "$DEVBOX_HOOKS" ] && [ -r "$DEVBOX_HOOKS" ]; then
+    if jq -e '.hooks | type == "object"' "$DEVBOX_HOOKS" >/dev/null 2>&1; then
+        desired=$(printf '%s' "$desired" | jq --slurpfile devbox "$DEVBOX_HOOKS" '
+            def keepalive: (.command // "") | test("(\\[k\\]|k)eep_alive\\.sh|/opt/devbox/(agent|codex)-keepalive\\.py");
+            def strip: map(if any(.hooks[]?; keepalive)
+                then (.hooks |= map(select(keepalive | not))) | select(.hooks | length > 0)
+                else . end);
+            .hooks = ((.hooks // {}) | with_entries(if any(.value[]?.hooks[]?; keepalive)
+                then (.value |= strip) | select(.value | length > 0) else . end))
+            | reduce ($devbox[0].hooks | to_entries[]) as $e (.;
+                .hooks[$e.key] = ((.hooks[$e.key] // []) + $e.value))
+        ')
+    else
+        echo "modify_settings.json: skipping devbox keep-alive hooks, $DEVBOX_HOOKS has no .hooks object" >&2
+    fi
 fi
 
 # Fresh machine (empty stdin): emit the desired document; no prior harness

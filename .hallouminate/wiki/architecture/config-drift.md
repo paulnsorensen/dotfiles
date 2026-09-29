@@ -672,3 +672,15 @@ rather than weaken the script.
 
 See [[agent-profile]] for the `ap` render/install model and [[../harnesses/claude]]
 for where each Claude config surface lives.
+
+## Known drift pattern: cloud-devbox keep-alive hooks in `settings.json`
+
+**Symptom:** On a cloud devbox, `dots sync` removes the image's keep-alive hooks from `~/.claude/settings.json`. The workstation then idle-times-out while Claude works. Before the preserve-and-warn gate, the apply halted on `hooks.SessionEnd`, `hooks.SubagentStart`, `hooks.TaskCreated`, and several `*.matcher` paths.
+
+**Cause:** The devbox image ships Claude keep-alive hook groups in `/opt/devbox/claude-hooks.json`. Its startup script `/etc/workstation-startup.d/300_devbox.sh` runs as root and merges them into `~/.claude/settings.json` on every boot. Before the merge, it strips every hook whose command matches `(\[k\]|k)eep_alive\.sh|/opt/devbox/(agent|codex)-keepalive\.py`. The registry authors the `hooks` subtree whole, so the gate wipes live-only hook groups without a warning. An ignore-list entry cannot keep them, because the repo owns those leaves.
+
+**Decision (2026-09-29):** The image file `/opt/devbox/claude-hooks.json` is the source of truth. `modify_settings.json` reads `${CLAUDE_DEVBOX_HOOKS:-/opt/devbox/claude-hooks.json}` when it is a readable regular file. It strips every keep-alive hook from the desired document with the image's regex and drops groups and events that become empty. It then appends each event's groups after the registry groups. An absent file changes nothing, so other machines render no keep-alive hooks.
+
+**Why not a repo copy:** On 2026-09-29 the image moved to per-session `agent-keepalive.py` monitors. `300_devbox.sh` now strips direct `keep_alive.sh` hooks at every boot. A repo copy of the old hooks churns on every boot. The boot strips the repo's hooks. The next `dots sync` wipes the image's hooks. Reading the image file makes both writers converge on the same document.
+
+`tests/claude-settings.bats` pins `CLAUDE_DEVBOX_HOOKS` to a missing path in `setup()`, so the suite gives the same result on a devbox host. The devbox tests write a fixture with the image's shape.
