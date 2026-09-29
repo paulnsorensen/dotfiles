@@ -672,3 +672,11 @@ rather than weaken the script.
 
 See [[agent-profile]] for the `ap` render/install model and [[../harnesses/claude]]
 for where each Claude config surface lives.
+
+## Known drift pattern: cloud-devbox keep-alive hooks in `settings.json`
+
+**Symptom:** On a cloud devbox, `dots sync` removes the image's keep-alive hooks from `~/.claude/settings.json`. The workstation then idle-times-out while Claude works. Before the preserve-and-warn gate, the apply halted on `hooks.SessionEnd`, `hooks.SubagentStart`, `hooks.TaskCreated`, and several `*.matcher` paths.
+
+**Cause:** The devbox image pre-installs Claude hooks that start and stop `/google/scripts/keep_alive.sh`. The script reports activity every 60 seconds. The registry authors the `hooks` subtree whole, so the gate wipes live-only hook groups without a warning. An ignore-list entry cannot keep them, because the repo owns those leaves.
+
+**Decision (2026-09-25):** `modify_settings.json` appends the groups from `chezmoi/lib/claude-settings-devbox-keepalive.json` after the registry groups on each event. It does this only when `$CLAUDE_KEEP_ALIVE_SCRIPT` (default `/google/scripts/keep_alive.sh`) is executable. Other machines render no keep-alive hooks. The source file copies the image's hooks byte for byte. If the image changes its hooks, update that file. `tests/claude-settings.bats` pins `CLAUDE_KEEP_ALIVE_SCRIPT` to a missing path in `setup()`, so the suite gives the same result on a devbox host.

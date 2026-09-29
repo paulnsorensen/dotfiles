@@ -1,0 +1,98 @@
+{
+  "UserPromptSubmit": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "flock -n /tmp/keep_alive.lock -c \"/google/scripts/keep_alive.sh < /dev/null > /dev/null 2>&1 &\" || true",
+          "timeout": 5000
+        }
+      ]
+    }
+  ],
+  "PreToolUse": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "flock -n /tmp/keep_alive.lock -c \"/google/scripts/keep_alive.sh < /dev/null > /dev/null 2>&1 &\" || true",
+          "timeout": 5000
+        }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "flock -n /tmp/keep_alive.lock -c \"/google/scripts/keep_alive.sh < /dev/null > /dev/null 2>&1 &\" || true",
+          "timeout": 5000
+        }
+      ]
+    }
+  ],
+  "SubagentStart": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "flock -n /tmp/keep_alive.lock -c \"/google/scripts/keep_alive.sh < /dev/null > /dev/null 2>&1 &\" || true",
+          "timeout": 5000
+        }
+      ]
+    }
+  ],
+  "TaskCreated": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "flock -n /tmp/keep_alive.lock -c \"/google/scripts/keep_alive.sh < /dev/null > /dev/null 2>&1 &\" || true",
+          "timeout": 5000
+        }
+      ]
+    }
+  ],
+  "PermissionRequest": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "pkill -f '/google/scripts/[k]eep_alive.sh' || true",
+          "timeout": 5000
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "pkill -f '/google/scripts/[k]eep_alive.sh' || true",
+          "timeout": 5000
+        }
+      ]
+    }
+  ],
+  "SessionEnd": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "pkill -f '/google/scripts/[k]eep_alive.sh' || true; rm -f /tmp/keep_alive.lock",
+          "timeout": 5000
+        }
+      ]
+    }
+  ]
+}

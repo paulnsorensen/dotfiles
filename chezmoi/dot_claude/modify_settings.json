@@ -31,6 +31,10 @@
 #     gate below (prefix semantics) whose live values are overlaid back onto
 #     the merged document when the repo doesn't already own that leaf. These
 #     are keys Claude Code owns at runtime; they never warn.
+#   * $CHEZMOI_SOURCE_DIR/lib/claude-settings-devbox-keepalive.json — the
+#     cloud-devbox keep-alive hook groups. Appended per event after the
+#     registry hooks ONLY when the devbox keep-alive script exists
+#     ($CLAUDE_KEEP_ALIVE_SCRIPT, default /google/scripts/keep_alive.sh).
 #
 # EVERY managed key is overwritten from source — live drift (in-app /model
 # changes, session-granted permissions, in-app plugin toggles) is discarded.
@@ -259,6 +263,18 @@ desired=$(
 # still treats a live copy as known so the transition sync wipes it, not halts.
 if [ "$(uname -s)" != "Darwin" ]; then
     desired=$(printf '%s' "$desired" | jq 'del(.env.SSL_CERT_FILE)')
+fi
+
+# Cloud devbox images pre-install keep-alive hooks that stop the workstation
+# from idle-timing-out while Claude works. The registry authors `hooks` whole,
+# so the rewrite would wipe them silently. Append them per event after the
+# registry groups — only where the devbox script exists.
+KEEPALIVE="$CHEZMOI_SOURCE_DIR/lib/claude-settings-devbox-keepalive.json"
+if [ -x "${CLAUDE_KEEP_ALIVE_SCRIPT:-/google/scripts/keep_alive.sh}" ] && [ -f "$KEEPALIVE" ]; then
+    desired=$(printf '%s' "$desired" | jq --slurpfile ka "$KEEPALIVE" '
+        reduce ($ka[0] | to_entries[]) as $e (.;
+            .hooks[$e.key] = ((.hooks[$e.key] // []) + $e.value))
+    ')
 fi
 
 # Fresh machine (empty stdin): emit the desired document; no prior harness
