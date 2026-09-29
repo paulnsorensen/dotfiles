@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# ~/.config/devbox/on-start — Cloud Workstations boot hook.
+#
+# /etc/workstation-startup.d/300_devbox.sh runs this file as the user at
+# every boot, detached with setsid, and appends its output to
+# ~/.local/state/devbox/on-start.log. Keep it short: start the keep-alive
+# daemon and return.
+#
+# Rendered by chezmoi from chezmoi/dot_config/devbox/executable_on-start.tmpl.
+# Edit the source, then run `dots sync`. chezmoi deploys this file only when
+# /opt/devbox exists (see chezmoi/.chezmoiignore).
+set -u
+
+# chezmoi's source dir is <clone>/chezmoi; bin/ runs live from the clone.
+keepalive={{ joinPath (dir .chezmoi.sourceDir) "bin" "devbox-keepalive" | quote }}
+
+if [ ! -x "$keepalive" ]; then
+    echo "on-start: $keepalive is missing or not executable; keep-alive daemon not started" >&2
+    exit 1
+fi
+
+# The daemon is a singleton (flock), so a repeated run is harmless. A new
+# session keeps it alive after this hook's process group ends; nohup is the
+# fallback. Its stderr stays on on-start.log for crash diagnostics; it logs
+# reports itself to ~/.local/state/devbox/keepalive.log.
+if command -v setsid >/dev/null 2>&1; then
+    setsid "$keepalive" daemon </dev/null &
+else
+    nohup "$keepalive" daemon </dev/null &
+fi
+echo "on-start: $(date -u +%Y-%m-%dT%H:%M:%SZ) started $keepalive daemon (pid $!)"

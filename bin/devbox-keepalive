@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# devbox-keepalive — keep a Cloud Workstations devbox awake while an agent CLI
+# works, with no hook in any harness.
+#
+# Usage:
+#   devbox-keepalive once                   Compare one snapshot with the saved one; report if busy
+#   devbox-keepalive daemon [--interval N]  Sample every N seconds (default 60) as a singleton
+#   devbox-keepalive status                 Show whether the daemon runs and the last report
+#
+# The logic lives in bin/lib/devbox-keepalive.sh (Bats: tests/devbox-keepalive.bats).
+# On a devbox, ~/.config/devbox/on-start (chezmoi) starts the daemon at boot.
+# `once` and `daemon` keep separate snapshots, so a hand run does not skew the
+# daemon's next delta.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/devbox-keepalive.sh
+source "${SCRIPT_DIR}/lib/devbox-keepalive.sh"
+
+RUNTIME_DIR="${DEVBOX_KEEPALIVE_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/devbox-keepalive-$(id -u)}"
+STATE_DIR="${DEVBOX_KEEPALIVE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/devbox}"
+LOG="$STATE_DIR/keepalive.log"
+INTERVAL="${DEVBOX_KEEPALIVE_INTERVAL:-60}"
+
+usage() {
+    echo "Usage: devbox-keepalive once | daemon [--interval N] | status"
+    echo ""
+    echo "  once      Compare one snapshot with the saved one; report activity if busy"
+    echo "  daemon    Sample every N seconds (default ${INTERVAL}) as a singleton"
+    echo "  status    Show whether the daemon runs and the last accepted report"
+    echo ""
+    echo "Runtime dir: ${RUNTIME_DIR}"
+    echo "Log:         ${LOG}"
+}
+
+cmd="${1:-}"
+[[ $# -eq 0 ]] || shift
+
+case "$cmd" in
+    once)
+        dk_runtime_dir "$RUNTIME_DIR"
+        dk_once "$RUNTIME_DIR/once.snapshot"
+        ;;
+    daemon)
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --interval)
+                    INTERVAL="${2:-}"
+                    [[ "$INTERVAL" =~ ^[0-9]+$ && "$INTERVAL" -gt 0 ]] \
+                        || { echo "devbox-keepalive: --interval needs a positive integer" >&2; exit 1; }
+                    shift 2
+                    ;;
+                *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
+            esac
+        done
+        dk_daemon "$RUNTIME_DIR" "$RUNTIME_DIR/daemon.snapshot" "$LOG" "$INTERVAL"
+        ;;
+    status)
+        dk_status "$RUNTIME_DIR/daemon.lock" "$LOG"
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 1
+        ;;
+esac

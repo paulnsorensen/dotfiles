@@ -143,6 +143,21 @@ The audit checks each `tmux.conf` option against tmux 3.7b source and mosh 1.4.0
 
 **Gotcha:** `if-shell` expands tmux formats in its command, so a shell `${SHELL##*/}` becomes `${SHELL#*/}`. Use an `if -F` format match (`#{m:*/zsh,#{default-shell}}`) instead of shell parameter expansion.
 
+## Cloud devbox: a process watcher keeps the box awake, not harness hooks
+
+**Problem:** Cloud Workstations suspends the devbox after 20 idle minutes. The idle detector counts only reports to `localhost:981/_workstation/reportactivity`. The image's `300_devbox.sh` merges keep-alive hooks into `~/.claude/settings.json` and `~/.codex/hooks.json` at each boot. Those hooks cover Claude and Codex only. `dots sync` rewrites the hooks key, so the two writers churn the file (PR #1110).
+
+**Decision (2026-09-29):** `bin/devbox-keepalive daemon` watches processes instead. Every 60 s it sums utime+stime over the process tree of each agent CLI owned by the user (`claude codex omp pi cursor-agent opencode gemini copilot` by default). When a tree gains 50 or more ticks, or a new agent appears, the daemon sends one report. No harness settings file is involved, so every agent CLI is covered and `dots sync` has nothing to churn. The logic lives in `bin/lib/devbox-keepalive.sh`; `tests/devbox-keepalive.bats` covers it with fixture proc trees.
+
+**Boot wiring:** `300_devbox.sh` runs `~/.config/devbox/on-start` as the user when that file is executable, detached with `setsid`, with output in `~/.local/state/devbox/on-start.log`. chezmoi renders the hook from `chezmoi/dot_config/devbox/executable_on-start.tmpl`; it resolves the clone from `dir .chezmoi.sourceDir` and starts the daemon. `.chezmoiignore` skips `.config/devbox/**` when `/opt/devbox` is absent, so only the devbox gets the hook. Enable: run `dots sync` on the devbox, then reboot or run `~/.config/devbox/on-start` by hand. Check: `devbox-keepalive status`; reports log to `~/.local/state/devbox/keepalive.log`.
+
+**Limits of the heuristic:**
+
+- An agent that waits for input or for a permission answer burns no CPU. The box can then idle out. This is the intent: a parked agent must not hold a workstation awake for hours.
+- The sampling interval is 60 s against a 20 minute timeout, so one busy sample per 20 minutes is enough. A 50 tick threshold is 0.5 s of CPU per minute; a tool call or a model response crosses it, a blinking cursor does not.
+- The kernel truncates `comm` to 15 bytes, and a CLI that runs under node reports `node` (gemini does on this image). Set `DEVBOX_KEEPALIVE_AGENTS` to widen the list.
+- The daemon reads `/proc`, so it is Linux-only. The library stays bash 3.2 compatible so `dots doctor` style callers can source it on macOS.
+
 ## Related
 
 - [[sync-and-chezmoi]] — how `packages/packages.yaml` and `dots sync` deploy brew formulae.

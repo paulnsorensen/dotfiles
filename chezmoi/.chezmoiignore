@@ -75,3 +75,10 @@ Library/LaunchAgents/com.dotfiles.bin-doctor-clean.plist
 .config/systemd/user/bin-doctor-clean.service
 .config/systemd/user/bin-doctor-clean.timer
 {{- end }}
+
+{{- if not (stat "/opt/devbox") }}
+# The devbox boot hook (.config/devbox/on-start) starts bin/devbox-keepalive.
+# /opt/devbox exists only on the Cloud Workstations image; keep the hook off
+# every other host, a Linux laptop included.
+.config/devbox/**
+{{- end }}

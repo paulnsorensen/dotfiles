@@ -653,6 +653,40 @@ TOML
     assert_output_contains ".config/systemd/user/llama-swap.service"
 }
 
+@test ".chezmoiignore keeps the devbox on-start hook off hosts without /opt/devbox" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    # The hook starts bin/devbox-keepalive at boot. /opt/devbox exists only on
+    # the Cloud Workstations image, so the gate is a `stat` on that path, not
+    # an os test: a Linux laptop must not get the hook either.
+    local ignore="$REAL_DOTFILES_DIR/chezmoi/.chezmoiignore"
+    grep -qF 'stat "/opt/devbox"' "$ignore"
+    write_valid_chezmoi_config
+    run chezmoi --config "$HOME/.config/chezmoi/chezmoi.toml" --source "$REAL_DOTFILES_DIR/chezmoi" \
+        execute-template < "$ignore"
+    assert_success
+    if [[ -d /opt/devbox ]]; then
+        assert_output_not_contains ".config/devbox/**"
+    else
+        assert_output_contains ".config/devbox/**"
+    fi
+}
+
+@test "devbox on-start template starts the clone's devbox-keepalive daemon" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/dot_config/devbox/executable_on-start.tmpl"
+    assert_file_exists "$tmpl"
+    write_valid_chezmoi_config
+    run chezmoi --config "$HOME/.config/chezmoi/chezmoi.toml" --source "$REAL_DOTFILES_DIR/chezmoi" \
+        execute-template < "$tmpl"
+    assert_success
+    # sourceDir is <clone>/chezmoi; the hook must resolve bin/ in the clone.
+    assert_output_contains "keepalive=\"$REAL_DOTFILES_DIR/bin/devbox-keepalive\""
+    assert_output_contains 'keepalive" daemon </dev/null &'
+    if command -v shellcheck >/dev/null 2>&1; then
+        printf '%s\n' "$output" | shellcheck -s bash -
+    fi
+}
+
 @test "skills-install/ directory is gone from the repo" {
     [[ ! -e "$REAL_DOTFILES_DIR/skills-install" ]]
 }
