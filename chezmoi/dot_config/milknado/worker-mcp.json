@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "tilth": {
+      "command": "tilth",
+      "args": ["--mcp", "--edit"]
+    },
+    "milknado": {
+      "command": "milknado-mcp",
+      "args": []
+    },
+    "hallouminate": {
+      "command": "hallouminate",
+      "args": ["serve"]
+    }
+  }
+}
