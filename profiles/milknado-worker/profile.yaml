@@ -1,0 +1,75 @@
+# milknado-worker — unattended fleet worker for milknado ralph runs.
+#
+# Purpose: give each `claude -p` fleet worker a closed world of three MCPs:
+# tilth (AST search and edit), milknado (node verify and result deposit), and
+# hallouminate (repo-wiki grounding). Nothing else loads.
+#
+# Memory rationale (verified 2026-09-29): bare `claude` inherits the global
+# install. Each worker then starts 15 MCP servers (8 claude.ai connectors plus
+# context7, nx-mcp, the Notion plugin, hallouminate, milknado, tavily, tilth;
+# 7 of them local child processes) and every plugin. Eight workers plus three
+# interactive sessions exhausted a 31 GiB box and restarted the devbox
+# container. The isolated launch passes `--strict-mcp-config --mcp-config
+# <ephemeral>` and `--setting-sources ""`, so a worker loads only the MCP set
+# below.
+#
+# Hooks: `--setting-sources ""` also drops the global hooks, including the
+# devbox keep-alive hooks. The interactive session's keep-alive already covers
+# the box, so a worker needs no hook of its own.
+#
+# Use from milknado.toml. `ap` reads its own options up to `--` and appends
+# every token after `--` to the generated isolation flags (see
+# `_parse_common_opts` and `_launch_isolated` in agent_profile/cli.py):
+#   execution_agent = "ap launch claude milknado-worker -- --model opus --permission-mode auto --permission-prompts none -p"
+# milknado pipes the node brief to the worker's stdin, which `-p` reads.
+# Known blocker: milknado validates argv[0] of `execution_agent` against
+# ALLOWED_WORKER_EXECUTABLES (milknado/domains/common/agent_argv.py) and
+# rejects `ap` today. Add `ap` to that set upstream before this line is used.
+#
+# NOTE: hallouminate and milknado are declared as plain MCP servers here (not
+# via enabled_plugins) so they load under --strict-mcp-config — the isolated
+# launch only loads MCPs from the generated --mcp-config, and does not restore
+# custom plugin marketplaces. Tool names are the bare mcp__hallouminate__* /
+# mcp__milknado__* forms (not the plugin-scoped mcp__plugin_*__ names).
+#
+# No `registries:` block. The fleet worker is the top-level `claude -p`
+# process and spawns no sub-agents. The plugin agent `milknado:milknado-worker`
+# serves the in-session Workflow backend, not this launch.
+name: milknado-worker
+description: Unattended milknado fleet worker — closed MCP world of tilth, milknado, and hallouminate
+isolated: true
+system_prompt: CLAUDE.md
+# Auto-approve what an auto-mode implementation worker needs. `just` covers the
+# repo quality gate that milknado.toml declares (`just check`).
+permissions_allow:
+  - "Bash(git:*)"
+  - "Bash(gh:*)"
+  - "Bash(uv:*)"
+  - "Bash(npm:*)"
+  - "Bash(node:*)"
+  - "Bash(python3:*)"
+  - "Bash(jq:*)"
+  - "Bash(yq:*)"
+  - "Bash(just:*)"
+  - "mcp__tilth__*"
+  - "mcp__milknado__*"
+  - "mcp__hallouminate__*"
+enabled_plugins:
+  "playwright@claude-plugins-official": false
+  "frontend-design@claude-plugins-official": false
+  "plugin-dev@claude-plugins-official": false
+  "skill-creator@claude-plugins-official": false
+  "todoist-flow@todoist-flow": false
+mcps:
+  - name: tilth
+    command: tilth
+    args: ["--mcp", "--edit"]
+  - name: milknado
+    # Launch the binary that `packages.yaml` installs with `uv tool install`.
+    # The plugin's own `uvx --from git+...@main` form fetches GitHub on each
+    # cold start; a fetch failure kills the MCP connection.
+    command: milknado-mcp
+    args: []
+  - name: hallouminate
+    command: hallouminate
+    args: ["serve"]

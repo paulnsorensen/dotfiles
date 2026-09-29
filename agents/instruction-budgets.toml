@@ -41,6 +41,10 @@ path = "profiles/tui/CLAUDE.md"
 max_tokens = 900
 
 [[source]]
+path = "profiles/milknado-worker/CLAUDE.md"
+max_tokens = 350
+
+[[source]]
 path = "profiles/oss-docs/CLAUDE.md"
 max_tokens = 600
 [[source]]

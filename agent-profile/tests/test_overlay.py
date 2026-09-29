@@ -822,6 +822,39 @@ def test_real_todo_profile_is_closed_todoist_world(monkeypatch, tmp_path):
     assert env.get("ENABLE_CLAUDEAI_MCP_SERVERS") == "true"
 
 
+def test_real_milknado_worker_profile_is_closed_worker_world(monkeypatch, tmp_path):
+    """The shipped milknado-worker profile must keep a three-server closed MCP
+    world (tilth, milknado, hallouminate). Bare ``claude`` gave each fleet
+    worker 15 MCP servers and exhausted a 31 GiB devbox; a wider world here
+    reintroduces that memory pressure. The launch must stay isolated
+    (``--setting-sources ""``) and keep the built-in tools (no ``--tools``),
+    because an auto-mode worker needs Edit/Write/Bash."""
+    _hermetic_dotenv(monkeypatch, tmp_path)
+    pdir = find_profile_dir("milknado-worker")
+    assert pdir is not None, "real profiles/milknado-worker not found"
+    m = parse_manifest(pdir)
+    assert m.isolated is True
+    assert m.agents == []
+    flags, env = overlay.build_isolated_launch(m, pdir, "claude")
+
+    assert flags[0] == "--strict-mcp-config"
+    assert flags[flags.index("--setting-sources") + 1] == ""
+    assert "--tools" not in flags
+    assert env == {}
+
+    mcp_path = flags[flags.index("--mcp-config") + 1]
+    servers = json.loads(Path(mcp_path).read_text())["mcpServers"]
+    assert set(servers) == {"tilth", "milknado", "hallouminate"}
+    assert servers["milknado"]["command"] == "milknado-mcp"
+    assert servers["hallouminate"] == {"command": "hallouminate", "args": ["serve"]}
+
+    settings = json.loads(Path(flags[flags.index("--settings") + 1]).read_text())
+    allow = set(settings["permissions"]["allow"])
+    assert {"mcp__tilth__*", "mcp__milknado__*", "mcp__hallouminate__*"} <= allow
+    assert {"Bash(git:*)", "Bash(gh:*)", "Bash(uv:*)"} <= allow
+    assert not any(settings["enabledPlugins"].values())
+
+
 def test_real_mgmt_profile_is_http_shape(monkeypatch, tmp_path):
     """The shipped mgmt profile renders its remote MCPs as http records."""
     _hermetic_dotenv(monkeypatch, tmp_path)
