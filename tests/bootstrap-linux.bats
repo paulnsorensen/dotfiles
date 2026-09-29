@@ -117,7 +117,17 @@ EOF
     chmod +x "$MOCK_BIN/bash"
     # apt/sudo toolchain step is out of scope for these unit tests.
     bootstrap_brew_deps_linux() { :; }
-    export PATH="$MOCK_BIN:/usr/bin:/bin"
+    # Some hosts (cloud devbox images) ship /usr/bin/op, so mirror the system
+    # bin dirs as symlinks without the provider CLIs instead of using them raw.
+    # BATS_FILE_TMPDIR outlives teardown's TEST_HOME removal, so bats' own
+    # cleanup still resolves rm through this PATH.
+    local sys_bin="$BATS_FILE_TMPDIR/sysbin"
+    if [[ ! -d "$sys_bin" ]]; then
+        mkdir -p "$sys_bin"
+        ln -s /usr/bin/* /bin/* "$sys_bin"/ 2>/dev/null || true
+        rm -f "$sys_bin/op" "$sys_bin/bws"
+    fi
+    export PATH="$MOCK_BIN:$sys_bin"
 }
 
 @test "main hands off to sync.sh with FORCE_PACKAGES=true" {
