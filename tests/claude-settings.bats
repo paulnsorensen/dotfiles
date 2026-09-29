@@ -25,9 +25,9 @@ setup() {
     export IGNORE="$CZ_SRC/lib/claude-settings-ignore.txt"
     OUT="$TEST_HOME/out.json"
     export OUT
-    # Hermetic: a devbox host has the real keep-alive script, so default the
-    # overlay off. The keep-alive tests point this at a stub instead.
-    export CLAUDE_KEEP_ALIVE_SCRIPT="$TEST_HOME/no-such-keep-alive.sh"
+    # Hermetic: a devbox host ships /opt/devbox/claude-hooks.json, so point
+    # the overlay at a missing file. The devbox tests write a fixture instead.
+    export CLAUDE_DEVBOX_HOOKS="$TEST_HOME/no-such-claude-hooks.json"
 }
 
 teardown() { teardown_test_env; }
@@ -699,56 +699,78 @@ STDIN"
 }
 
 # ── cloud-devbox keep-alive hooks ───────────────────────────────────────────
-# Devbox images pre-install keep-alive hooks in ~/.claude/settings.json. The
-# overlay appends them per event after the registry groups only when the
-# keep-alive script exists, so the wholesale rewrite keeps the VM awake.
+# The devbox image ships per-session keep-alive hook groups in
+# /opt/devbox/claude-hooks.json and merges them into ~/.claude/settings.json
+# on every boot. The overlay mirrors that merge: strip every keep-alive hook,
+# then append the file's groups after the registry groups. Without the file
+# the output carries no keep-alive hook. $CLAUDE_DEVBOX_HOOKS selects the file.
 
-KA_SRC_REL="lib/claude-settings-devbox-keepalive.json"
+DEVBOX_CMD='[ ! -x /opt/devbox/agent-keepalive.py ] || /opt/devbox/agent-keepalive.py claude'
+DEVBOX_EVENTS='["UserPromptSubmit","PostToolUse","PostToolUseFailure","Stop","Notification","SessionEnd"]'
 
-enable_keepalive_stub() {
-    export CLAUDE_KEEP_ALIVE_SCRIPT="$TEST_HOME/keep_alive.sh"
-    printf '#!/bin/sh\n' >"$CLAUDE_KEEP_ALIVE_SCRIPT"
-    chmod +x "$CLAUDE_KEEP_ALIVE_SCRIPT"
+# Write a fixture with the image's shape and point CLAUDE_DEVBOX_HOOKS at it.
+write_devbox_hooks() {
+    export CLAUDE_DEVBOX_HOOKS="$TEST_HOME/claude-hooks.json"
+    jq -n --arg cmd "$DEVBOX_CMD" --argjson events "$DEVBOX_EVENTS" '
+        {hooks: ($events | map({(.): [{hooks: [{type: "command", command: $cmd, timeout: 3}]}]}) | add)}
+    ' >"$CLAUDE_DEVBOX_HOOKS"
 }
 
-@test "modify_settings: keep-alive hooks absent when the devbox script does not exist" {
+@test "modify_settings: no keep-alive hook when the devbox hook file is absent" {
     run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
     [ "$status" -eq 0 ]
-    ! grep -q 'keep_alive' "$OUT"
-    jq -e '.hooks | has("SubagentStart") | not' "$OUT" >/dev/null
+    ! grep -q -e 'keep_alive' -e 'keepalive' "$OUT"
+    # Image-only events do not appear.
+    jq -e '.hooks | has("SessionEnd") or has("PostToolUseFailure") | not' "$OUT" >/dev/null
 }
 
-@test "modify_settings: keep-alive hooks appended after registry hooks on every devbox event" {
+@test "modify_settings: devbox hook groups follow the registry groups on every event" {
     run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT.base'"
-    enable_keepalive_stub
+    write_devbox_hooks
     run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
     [ "$status" -eq 0 ]
     local event
-    for event in $(jq -r 'keys[]' "$CZ_SRC/$KA_SRC_REL"); do
-        # Registry groups first and unchanged, keep-alive groups last.
+    for event in $(jq -r '.hooks | keys[]' "$CLAUDE_DEVBOX_HOOKS"); do
+        # Registry groups first and unchanged, devbox groups last.
         diff <(jq -S --arg e "$event" '.hooks[$e] // []' "$OUT.base") \
-             <(jq -S --arg e "$event" --slurpfile ka "$CZ_SRC/$KA_SRC_REL" \
-                 '.hooks[$e][: (.hooks[$e] | length) - ($ka[0][$e] | length)]' "$OUT")
-        diff <(jq -S --arg e "$event" '.[$e]' "$CZ_SRC/$KA_SRC_REL") \
-             <(jq -S --arg e "$event" --slurpfile ka "$CZ_SRC/$KA_SRC_REL" \
-                 '.hooks[$e][-($ka[0][$e] | length):]' "$OUT")
+             <(jq -S --arg e "$event" --slurpfile dh "$CLAUDE_DEVBOX_HOOKS" \
+                 '.hooks[$e][: (.hooks[$e] | length) - ($dh[0].hooks[$e] | length)]' "$OUT")
+        diff <(jq -S --arg e "$event" '.hooks[$e]' "$CLAUDE_DEVBOX_HOOKS") \
+             <(jq -S --arg e "$event" --slurpfile dh "$CLAUDE_DEVBOX_HOOKS" \
+                 '.hooks[$e][-($dh[0].hooks[$e] | length):]' "$OUT")
     done
+    # Events the file does not name are unchanged.
+    diff <(jq -S --argjson ev "$DEVBOX_EVENTS" '.hooks | with_entries(select(.key as $k | $ev | index($k) | not))' "$OUT.base") \
+         <(jq -S --argjson ev "$DEVBOX_EVENTS" '.hooks | with_entries(select(.key as $k | $ev | index($k) | not))' "$OUT")
 }
 
-@test "modify_settings: live devbox-image settings do not halt and keep the keep-alive hooks" {
-    enable_keepalive_stub
-    local live
-    live=$(jq '{hooks: .}' "$CZ_SRC/$KA_SRC_REL")
-    run_modify "$live"
-    [ "$status" -eq 0 ]
-    jq -e '.hooks.SessionEnd[0].hooks[0].command | test("keep_alive")' "$OUT" >/dev/null
-    jq -e '[.hooks.PreToolUse[].hooks[].command | select(test("keep_alive"))] | length == 1' "$OUT" >/dev/null
-}
-
-@test "modify_settings: keep-alive overlay is idempotent" {
-    enable_keepalive_stub
+@test "modify_settings: devbox overlay is idempotent — a second pass adds no duplicate group" {
+    write_devbox_hooks
     bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
     run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' <'$OUT' >'$OUT.2'"
     [ "$status" -eq 0 ]
     diff <(jq -S . "$OUT") <(jq -S . "$OUT.2")
+    # Exactly one devbox hook per event the file names.
+    jq -e --arg cmd "$DEVBOX_CMD" --argjson ev "$DEVBOX_EVENTS" \
+        '[.hooks[][].hooks[] | select(.command == $cmd)] | length == ($ev | length)' "$OUT.2" >/dev/null
+}
+
+@test "modify_settings: an old-style keep_alive.sh hook in the live file is removed" {
+    write_devbox_hooks
+    # The 2026-09-25 image wrote these directly; the current image strips them
+    # at boot with the same regex the overlay uses.
+    local live
+    live=$(cat <<'JSON'
+{"hooks":{
+  "Stop":[{"matcher":"","hooks":[{"type":"command","command":"pkill -f '/google/scripts/[k]eep_alive.sh' || true","timeout":5000}]}],
+  "SubagentStart":[{"matcher":"","hooks":[{"type":"command","command":"flock -n /tmp/keep_alive.lock -c \"/google/scripts/keep_alive.sh < /dev/null > /dev/null 2>&1 &\" || true","timeout":5000}]}]
+}}
+JSON
+)
+    run_modify "$live"
+    [ "$status" -eq 0 ]
+    ! grep -q 'keep_alive' "$OUT"
+    # The live-only event vanished with its last hook; the devbox group ends Stop.
+    jq -e '.hooks | has("SubagentStart") | not' "$OUT" >/dev/null
+    jq -e --arg cmd "$DEVBOX_CMD" '.hooks.Stop[-1].hooks[0].command == $cmd' "$OUT" >/dev/null
 }
