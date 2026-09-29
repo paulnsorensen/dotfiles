@@ -133,6 +133,16 @@ The audit checks each `tmux.conf` option against tmux 3.7b source and mosh 1.4.0
   OpenSSH 10.1+ already marks interactive sessions EF, so `IPQoS` needs no change.
   The repo does not manage `~/.ssh/config`.
 
+## Cloud devbox: the login shell resets to bash on every boot
+
+**Symptom:** `chsh -s /bin/zsh` succeeds and `/etc/passwd` shows `/bin/zsh`, but tmux panes still open bash.
+
+**Cause:** On a Cloud Workstation, only `/home` persists. At each boot, `/etc/workstation-startup.d/010_add-user.sh` recreates the user with `useradd --shell /bin/bash`. The SSH login then runs `tmux new-session -A`, so the tmux server inherits `SHELL=/bin/bash`. A `chsh` does not change a running tmux server, and the next boot reverts it. The `bin/linux-install` chsh step has the same limit on a devbox.
+
+**Decision (2026-09-29):** `tmux.conf` sets `default-shell /bin/zsh` when `default-shell` is not a zsh and `/bin/zsh` is executable. A zsh login shell keeps its own path. `tests/tmux-default-shell.bats` covers both cases.
+
+**Gotcha:** `if-shell` expands tmux formats in its command, so a shell `${SHELL##*/}` becomes `${SHELL#*/}`. Use an `if -F` format match (`#{m:*/zsh,#{default-shell}}`) instead of shell parameter expansion.
+
 ## Related
 
 - [[sync-and-chezmoi]] — how `packages/packages.yaml` and `dots sync` deploy brew formulae.
