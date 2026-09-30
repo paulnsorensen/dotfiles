@@ -10,9 +10,9 @@ CLAUDE_BIN="${CLAUDE_BIN:-${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims/claude
 
 flags=()
 
-# Preamble system-prompt replacement (replaces Anthropic's baked prompt).
+# Add shared prompt content while preserving Claude's vendor system prompt.
 [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && \
-    flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    flags+=(--append-system-prompt-file "$AGENTS_DOTFILES/preamble.md")
 
 # Fresh .env keys at process start (mirrors _cc_base's launcher prefix) —
 # Conductor doesn't source zsh init, so .env keys may be absent from its env.
