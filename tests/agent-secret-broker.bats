@@ -23,12 +23,15 @@ setup() {
 #!$PYTHON
 import json
 import os
+import signal
 import sys
 import time
 from pathlib import Path
 
 started = Path(sys.argv[1])
 started.touch()
+# Record the inherited signal mask: a blocked SIGTERM makes terminate() a no-op.
+Path(f"{started}.mask").write_text("blocked" if signal.SIGTERM in signal.pthread_sigmask(signal.SIG_BLOCK, []) else "clear")
 for line in sys.stdin:
     request = json.loads(line)
     method = request.get("method")
@@ -601,6 +604,14 @@ wait_exit() {
             [[ ! -e "$s" && ! -e "$c" ]] || { echo "run $i: sockets leaked"; exit 1; }
         done' "$BROKER" "$POLICY" "$TEST_ROOT/early.log" "$TEST_ROOT"
     assert_success
+}
+
+@test "the upstream MCP server starts with SIGTERM unblocked" {
+    # The broker blocks SIGTERM while it binds its sockets. The mask survives
+    # fork and exec, so a leaked block makes the upstream ignore terminate().
+    run proxy_call '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    assert_success
+    [[ "$(<"$STARTED.mask")" == clear ]]
 }
 
 @test "a broker exits when the process that started it exits" {

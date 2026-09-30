@@ -14,6 +14,8 @@ A broker exits when its parent process exits. launchd and systemd start the inst
 
 On SIGTERM, a broker closes its sockets and then dies by the signal, not with exit 0. launchd restarts a `KeepAlive` job only after an unsuccessful exit. An unprivileged broker removes both socket files. The installed broker drops root after it binds, so it cannot delete them from the root-owned `0710` directory. The next start finds them stale and replaces them.[^5]
 
+Callers treat both sockets as the ready signal, so a SIGTERM can arrive before the handler is set. `Broker.run` blocks SIGTERM while `_listen()` binds the sockets. It restores the mask before `_serve()` starts the accept threads. Threads inherit the signal mask, and the mask survives fork and exec. If the threads start while SIGTERM is blocked, every upstream MCP child ignores `terminate()` and gets SIGKILL after 1 s (PR #1121).[^7]
+
 `dots doctor` reports broker processes whose script path is missing and brokers that share one socket. It does not compare the installed broker with the repository copy; #643 owns that check.[^6]
 
 [^1]: scripts/agent-secret-broker.py:215-234; services/agent-secret/com.dotfiles.agent-secret.plist:9-24
@@ -22,6 +24,7 @@ On SIGTERM, a broker closes its sockets and then dies by the signal, not with ex
 [^4]: scripts/agent-secret-broker.py:761-796; tests/agent-secret-broker.bats:531-548
 [^5]: scripts/agent-secret-broker.py:927-961; tests/agent-secret-broker.bats:568-596
 [^6]: bin/lib/agent-secret-doctor.sh:18-56; tests/agent-secret-doctor.bats
+[^7]: scripts/agent-secret-broker.py:815-835, 930-960; tests/agent-secret-broker.bats "SIGTERM sent as soon as both sockets appear still removes them", "the upstream MCP server starts with SIGTERM unblocked"
 
 ## ProcessType must stay `Standard` (2026-09-28)
 

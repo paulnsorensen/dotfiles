@@ -812,7 +812,7 @@ class Broker:
             raise ConfigError(f"socket cannot be created: {path}") from exc
         return listener
 
-    def start(self) -> None:
+    def _listen(self) -> None:
         self._request_listener = self._bind(
             self.request_socket_path,
             self.policy.request_uid,
@@ -828,6 +828,8 @@ class Broker:
             self._request_listener.close()
             self.request_socket_path.unlink(missing_ok=True)
             raise
+
+    def _serve(self) -> None:
         threading.Thread(target=self._accept_requests, daemon=True).start()
         threading.Thread(target=self._accept_controls, daemon=True).start()
 
@@ -931,13 +933,13 @@ class Broker:
         if parent is None:
             parent = os.getppid()
         # Callers treat the sockets as the ready signal, so a SIGTERM can land
-        # while start() still runs. Hold it until the handler and the finally
+        # while _listen() still runs. Hold it until the handler and the finally
         # block below are in place; otherwise it kills the broker and leaks both
-        # sockets. Threads that start() spawns inherit the mask, so the main
-        # thread takes the signal.
+        # sockets. Restore the mask before _serve(): threads inherit it, and so
+        # does every upstream child they spawn, which then ignores terminate().
         mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
         try:
-            self.start()
+            self._listen()
         except BaseException:
             signal.pthread_sigmask(signal.SIG_SETMASK, mask)
             raise
@@ -947,6 +949,7 @@ class Broker:
         terminated = False
         try:
             signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+            self._serve()
             while not self._stop.wait(1):
                 if os.getppid() != parent:
                     break
