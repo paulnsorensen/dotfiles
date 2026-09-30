@@ -94,6 +94,34 @@ See [[../operations/remote-access]] for Tailscale installation.
 
 _Source: package registry, T3 CLI help, and upstream documentation · Updated: 2026-09-29 · Supersedes: none_
 
+## Service version upgrades
+
+The service does not run the mise-installed `t3` CLI. `t3 service install`
+writes a unit whose `ExecStart` points at its own runtime copy,
+`~/.t3/runtime/versions/<version>/t3`, and
+`~/.t3/runtime/service-state.json` records `activeVersion`. A bump of the
+`npm:t3` pin in `chezmoi/dot_config/mise/config.toml` therefore never moves
+the headless server by itself.
+
+`dots sync` closes that gap. `sync_mise` in `packages/sync.sh` calls
+`sync_t3_service` (`packages/lib-t3-service.sh`) after `mise install`. When
+a service is installed and its active version is older than the pin, it runs
+`t3 update <pin> --yes`, which restarts the service and cuts off running
+threads. It never downgrades a service that a manual `t3 update` moved
+ahead of the pin. A failure only warns.
+
+`t3 update` does not migrate `service-state.json` across a state protocol
+change. The 0.0.42 → 0.0.44 update (2026-09-30) left protocol 2 on disk.
+The 0.0.44 launcher logged `Service state is invalid or unsupported`,
+crash-looped, and systemd hit `StartLimitBurst`. Repair: `t3 service
+install` from the new version rewrites the state as protocol 3, after
+`systemctl --user reset-failed t3code.service` clears the start limit.
+`sync_t3_service` runs that repair after every update, and also whenever
+`t3 service status` reports `needs an update or repair`.
+
+mise hides fresh `npm:t3` releases behind its `minimum_release_age`, so
+`mise upgrade --bump` can trail Renovate's 4-hour soak by days.
+
 ## Gotchas
 
 - T3 reads `settings.json` at thread start. Restart T3 or open a new thread
@@ -102,4 +130,5 @@ _Source: package registry, T3 CLI help, and upstream documentation · Updated: 2
 - Only `providers.claudeAgent.launchArgs` is registry-owned. Provider
   toggles, `defaultThreadEnvMode`, and sidebar state stay T3-owned; add new
   T3 UI keys to `lib/t3-settings-ignore.txt`, not to the registry.
-- Tests: `tests/t3-config.bats`.
+- Tests: `tests/t3-config.bats` (settings) and `tests/lib-t3-service.bats`
+  (service upgrade).
