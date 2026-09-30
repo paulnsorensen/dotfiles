@@ -35,7 +35,7 @@ pi:
         maxRetryDelayMs: 60000
     packages:
       # renovate: datasource=npm depName=pi-mcp-adapter
-      - npm:pi-mcp-adapter@2.38.0
+      - npm:pi-mcp-adapter@3.3.0
       # renovate: datasource=npm depName=pi-subagents
       - npm:pi-subagents@0.73.1
       # renovate: datasource=npm depName=pi-web-access
