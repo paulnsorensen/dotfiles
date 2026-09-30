@@ -16,6 +16,7 @@ source "$DOTFILES_DIR/zsh/completion.zsh"
 source "$DOTFILES_DIR/zsh/fzf.zsh"
 source "$DOTFILES_DIR/zsh/tools.zsh"     # zoxide, atuin, yazi (after fzf — atuin takes Ctrl+R)
 source "$DOTFILES_DIR/zsh/tmux.zsh"      # sesh shell-prompt session picker (Alt-s)
+source "$DOTFILES_DIR/zsh/ssh.zsh"       # reset mouse/focus modes a dropped remote TUI left on
 
 # Source local customizations early
 [ -f $HOME/.zshrc.local ] && source $HOME/.zshrc.local
