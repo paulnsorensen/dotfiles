@@ -583,6 +583,26 @@ wait_exit() {
     [[ "$output" != *protocolVersion* ]]
 }
 
+@test "SIGTERM sent as soon as both sockets appear still removes them" {
+    # Setup, launchd, and systemd treat the sockets as the ready signal. A
+    # SIGTERM that arrives before the handler is set must not leak them.
+    # A plain bash child spins on the sockets: the bats DEBUG trap is too slow
+    # to hit the start-up window.
+    run bash -c 'for i in {1..20}; do
+            s="$3/early$i.sock" c="$3/early$i-control.sock" rc=0
+            "$0" --policy "$1" --socket "$s" --control-socket "$c" >"$2" 2>&1 &
+            pid=$!
+            until [[ -S "$s" && -S "$c" ]]; do
+                kill -0 "$pid" 2>/dev/null || { cat "$2"; exit 2; }
+            done
+            kill -TERM "$pid"
+            wait "$pid" || rc=$?
+            [[ "$rc" -eq 143 ]] || { echo "run $i: exit $rc"; exit 1; }
+            [[ ! -e "$s" && ! -e "$c" ]] || { echo "run $i: sockets leaked"; exit 1; }
+        done' "$BROKER" "$POLICY" "$TEST_ROOT/early.log" "$TEST_ROOT"
+    assert_success
+}
+
 @test "a broker exits when the process that started it exits" {
     local orphan_socket="$TEST_ROOT/orphan.sock" orphan_control="$TEST_ROOT/orphan-control.sock"
     # The parent shell backgrounds the broker, waits for its socket, then

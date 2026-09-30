@@ -930,12 +930,23 @@ class Broker:
         # owns the broker's lifetime: once it exits, the broker exits too.
         if parent is None:
             parent = os.getppid()
-        self.start()
+        # Callers treat the sockets as the ready signal, so a SIGTERM can land
+        # while start() still runs. Hold it until the handler and the finally
+        # block below are in place; otherwise it kills the broker and leaks both
+        # sockets. Threads that start() spawns inherit the mask, so the main
+        # thread takes the signal.
+        mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+        try:
+            self.start()
+        except BaseException:
+            signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+            raise
         # Raise from the handler: Event.set() takes a non-reentrant lock that
         # the main thread can hold inside _stop.wait(), which deadlocks.
         signal.signal(signal.SIGTERM, _raise_terminated)
         terminated = False
         try:
+            signal.pthread_sigmask(signal.SIG_SETMASK, mask)
             while not self._stop.wait(1):
                 if os.getppid() != parent:
                     break
