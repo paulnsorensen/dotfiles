@@ -112,16 +112,19 @@ hooks:
   # wt-git shell equivalent via updatedInput (grep/rg/ag/ack → tilth, cd+git →
   # wt-git, bare cat → tilth, find -name → tilth <glob>), and DENIES the two
   # cases with no shell rewrite target (the Grep/Glob tools, shell
-  # write-redirects) naming cheez-search / cheez-write. Rewrite and deny only —
-  # every other Bash command runs unchanged. One dispatcher (tool-reroute.js)
-  # runs four independently-removable modules (lib/tool-reroute/{search,cd-strip,
-  # cd-git,io}.js); cd-strip strips a no-op `cd <cwd> &&` prefix and re-classifies
+  # write-redirects) naming cheez-search / cheez-write. `sed -n A,Bp` and
+  # `head -n N` rewrite to `tilth <file> --section`. Any other shell read of an
+  # existing repo path runs unchanged with an additionalContext tilth nudge
+  # (#880); every other Bash command runs unchanged. One dispatcher
+  # (tool-reroute.js) runs five independently-removable modules
+  # (lib/tool-reroute/{search,cd-strip,cd-git,io,read-nudge}.js); cd-strip
+  # strips a no-op `cd <cwd> &&` prefix and re-classifies
   # the remainder; the shared lexer is lib/tool-reroute/shell.js and the shared
   # jsonl append/rotate helper is lib/jsonl-log.js. Both harnesses share the
   # allow/deny + updatedInput schema. Harness identity: see wiki
   # architecture/cross-harness-guards.
   # Fail-open: a missing logic file or absent node degrades to the unrewritten
-  # command. Every rewrite/deny is appended to decisions.jsonl (fail-open,
+  # command. Every rewrite/deny/nudge is appended to decisions.jsonl (fail-open,
   # 5 MiB rotation) for observability.
   tool-reroute:
     event: PreToolUse
@@ -134,6 +137,7 @@ hooks:
       - agents/lib/tool-reroute/cd-strip.js
       - agents/lib/tool-reroute/cd-git.js
       - agents/lib/tool-reroute/io.js
+      - agents/lib/tool-reroute/read-nudge.js
     harnesses: [claude] # adding codex requires the DOTFILES_HARNESS prefix (see wiki architecture/cross-harness-guards)
     matcher: "Bash|Grep|Glob"
     timeout: 5

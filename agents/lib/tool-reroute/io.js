@@ -2,6 +2,7 @@
 // io.js — reroute module: file I/O via the shell.
 //
 //   bare `cat <file>` (no redirect, no pipe, one file operand)  → REWRITE `tilth <file>`
+//   `sed -n 'A,Bp' <file>` / `head [-n] N <file>` (same shape)   → REWRITE `tilth <file> --section A-B`
 //   write-redirect (`echo`/`printf`/`cat` … `>` / `>>`)         → DENY → cheez-write
 //
 // The bare-cat read has a faithful tilth equivalent, so it rewrites. A
@@ -15,6 +16,7 @@
 // bare-read path requires a single segment). A `>` inside a quoted string is
 // not a redirect (the lexer resolves quotes), so `echo "a > b"` passes through.
 
+const fs = require('fs');
 const path = require('path');
 const { parse, commandWord, shQuote } = require('./shell');
 
@@ -64,8 +66,50 @@ function detect(toolName, input, cwd) {
     if (word === 'cat' && args.length === 1 && !args[0].startsWith('-')) {
       return { rewrite: `tilth ${shQuote(args[0])}`, module: 'io' };
     }
+    const range = word === 'sed' ? sedRange(args) : word === 'head' ? headRange(args) : null;
+    if (range && startInFile(range, cwd)) {
+      return { rewrite: `tilth ${shQuote(range.file)} --section ${range.start}-${range.end}`, module: 'io' };
+    }
   }
   return null;
+}
+
+// `sed -n 'A,Bp' <file>` or `sed -n 'Ap' <file>` → {start, end, file}; any other sed shape is null.
+function sedRange(args) {
+  if (args.length !== 3 || args[0] !== '-n' || args[2].startsWith('-')) return null;
+  const m = /^([1-9][0-9]*)(?:,([1-9][0-9]*))?p$/.exec(args[1]);
+  if (!m) return null;
+  const start = Number(m[1]);
+  const end = m[2] === undefined ? start : Number(m[2]);
+  return end >= start ? { start, end, file: args[2] } : null;
+}
+
+// `head -n N <file>`, `head -nN <file>`, or `head -N <file>` → {start: 1, end: N, file}.
+function headRange(args) {
+  let count;
+  let file;
+  if (args.length === 3 && args[0] === '-n') [, count, file] = args;
+  else if (args.length === 2 && /^-n?[0-9]+$/.test(args[0])) { count = args[0].replace(/^-n?/, ''); file = args[1]; }
+  else return null;
+  if (!/^[1-9][0-9]*$/.test(count) || file.startsWith('-')) return null;
+  return { start: 1, end: Number(count), file };
+}
+
+// tilth rejects a start line past EOF, where sed and head print nothing. So
+// rewrite only an in-tree regular file whose line count covers the start line.
+const MAX_COUNT_BYTES = 4 * 1024 * 1024;
+function startInFile(range, cwd) {
+  const resolved = path.resolve(cwd, range.file);
+  if (!resolved.startsWith(cwd + path.sep)) return false;
+  try {
+    const st = fs.statSync(resolved);
+    if (!st.isFile() || st.size === 0 || st.size > MAX_COUNT_BYTES) return false;
+    const text = fs.readFileSync(resolved, 'utf8');
+    const lines = text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+    return range.start <= lines;
+  } catch {
+    return false;
+  }
 }
 
 module.exports = { detect };
