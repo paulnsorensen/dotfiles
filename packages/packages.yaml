@@ -36,6 +36,7 @@ packages:
   - terminal-notifier: { platform: mac }      # macOS notifications from terminal
   - emdash: { source: cask, platform: mac }   # Desktop UI for running coding agents in parallel
   - cursor: { source: cask, platform: mac, greedy: false } # Cursor — AI code editor; self-updates in-app
+  - t3-code: { source: cask, platform: mac, greedy: false } # T3 Code desktop app; self-updates
   - cursor-cli: { source: cask, platform: mac } # Cursor CLI — command-line agent (cursor-agent)
   - zed: { source: cask, platform: mac }      # Zed — code editor; Codex wired as an ACP agent (chezmoi/dot_config/zed)
   - obsidian: { source: cask, platform: mac } # Obsidian — Markdown knowledge base
