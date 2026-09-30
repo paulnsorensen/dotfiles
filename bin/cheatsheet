@@ -45,6 +45,7 @@ print_cheatsheet() {
     row "cddot"               "cd \$DOTFILES_DIR"
     row "z <dir>"             "zoxide jump (frecency)"
     row "y [path]"            "yazi file manager (cd on exit)"
+    row "ssh [args]"          "ssh, then reset stuck mouse/focus modes"
 
     hdr "Claude launchers"
     row "cc [args]"           "claude + preamble system prompt"

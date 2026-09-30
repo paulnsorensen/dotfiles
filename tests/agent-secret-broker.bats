@@ -23,12 +23,15 @@ setup() {
 #!$PYTHON
 import json
 import os
+import signal
 import sys
 import time
 from pathlib import Path
 
 started = Path(sys.argv[1])
 started.touch()
+# Record the inherited signal mask: a blocked SIGTERM makes terminate() a no-op.
+Path(f"{started}.mask").write_text("blocked" if signal.SIGTERM in signal.pthread_sigmask(signal.SIG_BLOCK, []) else "clear")
 for line in sys.stdin:
     request = json.loads(line)
     method = request.get("method")
@@ -581,6 +584,34 @@ wait_exit() {
     run proxy_call '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
     assert_failure
     [[ "$output" != *protocolVersion* ]]
+}
+
+@test "SIGTERM sent as soon as both sockets appear still removes them" {
+    # Setup, launchd, and systemd treat the sockets as the ready signal. A
+    # SIGTERM that arrives before the handler is set must not leak them.
+    # A plain bash child spins on the sockets: the bats DEBUG trap is too slow
+    # to hit the start-up window.
+    run bash -c 'for i in {1..20}; do
+            s="$3/early$i.sock" c="$3/early$i-control.sock" rc=0
+            "$0" --policy "$1" --socket "$s" --control-socket "$c" >"$2" 2>&1 &
+            pid=$!
+            until [[ -S "$s" && -S "$c" ]]; do
+                kill -0 "$pid" 2>/dev/null || { cat "$2"; exit 2; }
+            done
+            kill -TERM "$pid"
+            wait "$pid" || rc=$?
+            [[ "$rc" -eq 143 ]] || { echo "run $i: exit $rc"; exit 1; }
+            [[ ! -e "$s" && ! -e "$c" ]] || { echo "run $i: sockets leaked"; exit 1; }
+        done' "$BROKER" "$POLICY" "$TEST_ROOT/early.log" "$TEST_ROOT"
+    assert_success
+}
+
+@test "the upstream MCP server starts with SIGTERM unblocked" {
+    # The broker blocks SIGTERM while it binds its sockets. The mask survives
+    # fork and exec, so a leaked block makes the upstream ignore terminate().
+    run proxy_call '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    assert_success
+    [[ "$(<"$STARTED.mask")" == clear ]]
 }
 
 @test "a broker exits when the process that started it exits" {
