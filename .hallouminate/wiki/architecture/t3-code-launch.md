@@ -52,6 +52,48 @@ because chezmoi data files are not templated. `--settings` in Claude Code
 accepts a file path or inline JSON, so a file keeps quoting out of T3's
 launch-args tokenizer.
 
+## Desktop installation and Tailscale connections
+
+The package registry installs the macOS desktop app through the `t3-code` cask.
+The app updates itself; `greedy: false` excludes it from forced cask upgrades.[^desktop]
+Mise separately owns the pinned `t3` CLI used on servers.[^cli]
+
+Run `dots sync --no-upgrade` to install missing packages without upgrading unrelated packages.
+
+Join the Mac and server to the same tailnet.
+For an existing server, run this command on that server:[^remote]
+
+```bash
+t3 pair --tailscale
+```
+
+Paste the fresh pairing URL into **Settings → Connections → Add environment** in the desktop app.
+The HTTPS route persists across restarts.
+Use `--tailscale-serve-port 8443` if the default port is occupied.[^remote]
+Check existing Tailscale Serve routes before changing them.
+
+For a new foreground server, use:[^remote]
+
+```bash
+t3 serve --tailscale-serve
+```
+
+Alternatively, select **SSH** in **Add environment** and enter `user@tailscale-host`.
+T3 starts or reuses a remote server and manages the tunnel.[^remote]
+
+Keep pairing URLs, tokens, and client authorization state outside Git.
+Pair each client separately; do not copy authenticated app storage through chezmoi.
+Pairing URLs authorize access and must stay private.[^remote]
+The dotfiles registry manages launch settings, not authenticated remote connections.
+
+See [[../operations/remote-access]] for Tailscale installation.
+
+[^desktop]: `packages/packages.yaml`, macOS-only entries; [Homebrew T3 Code cask](https://formulae.brew.sh/cask/t3-code), checked 2026-09-29.
+[^cli]: `chezmoi/dot_config/mise/config.toml:93`; local `t3 --version` reports 0.0.42.
+[^remote]: [T3 Code remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md), checked 2026-09-29. Local `t3 pair --help` confirms both Tailscale flags in 0.0.42.
+
+_Source: package registry, T3 CLI help, and upstream documentation · Updated: 2026-09-29 · Supersedes: none_
+
 ## Gotchas
 
 - T3 reads `settings.json` at thread start. Restart T3 or open a new thread

@@ -27,7 +27,7 @@ default_shell_under() {
 @test "tmux.conf: a bash login shell gets zsh panes" {
     run default_shell_under /bin/bash
     [ "$status" -eq 0 ]
-    [ "${lines[-1]}" = /bin/zsh ]
+    [ "${lines[${#lines[@]}-1]}" = /bin/zsh ]
 }
 
 @test "tmux.conf: a zsh login shell keeps its own zsh path" {
@@ -35,5 +35,5 @@ default_shell_under() {
     zsh_path=$(command -v zsh)
     run default_shell_under "$zsh_path"
     [ "$status" -eq 0 ]
-    [ "${lines[-1]}" = "$zsh_path" ]
+    [ "${lines[${#lines[@]}-1]}" = "$zsh_path" ]
 }

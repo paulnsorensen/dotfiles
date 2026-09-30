@@ -26,6 +26,13 @@ setup() {
     [[ "$output" != *"dangerously-skip-permissions"* ]]
 }
 
+@test "t3 desktop package is one macOS cask with in-app updates" {
+    run yq -o=json '.packages' "$REAL_DOTFILES_DIR/packages/packages.yaml"
+    [ "$status" -eq 0 ]
+    run jq -e '([.[] | objects | .["t3-code"]? | select(. != null)]) as $entries | ($entries | length) == 1 and $entries[0] == {"source":"cask","platform":"mac","greedy":false}' <<<"$output"
+    [ "$status" -eq 0 ]
+}
+
 @test "t3 claude-settings.json disables claude.ai connectors" {
     run jq -e '.disableClaudeAiConnectors == true' "$CZ_SRC/dot_t3/userdata/claude-settings.json"
     [ "$status" -eq 0 ]
