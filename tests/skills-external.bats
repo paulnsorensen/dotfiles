@@ -66,6 +66,16 @@ if [[ "$*" == *" skills list --global --json"* ]]; then
     exit 0
 fi
 
+# skills 1.7.0 `remove --global` also deletes <cwd>/.agents/skills/<name> for
+# agents that have no global skills dir. Mirror that so tests catch a remove
+# that runs inside a project checkout.
+if [[ "$*" == *" skills remove "* ]]; then
+    for a in "${@:4}"; do
+        [[ "$a" == -* ]] || rm -rf "$PWD/.agents/skills/$a"
+    done
+    exit 0
+fi
+
 # Args look like: --yes skills add <spec> --skill ... --agent ... -g --copy -y
 for a in "$@"; do
     if [[ "$a" == "add" ]]; then
@@ -332,6 +342,27 @@ EOF
     run grep -F 'skills remove' "$NPX_LOG"
     assert_success
     [[ "$output" == "npx --yes skills remove retired --global -y" ]]
+}
+
+@test "skill sync: retired-skill removal keeps same-named skills in the cwd project" {
+    write_registry "acme/widgets"
+    write_env "codex"
+
+    local repo_cache="$HOME/.cache/dotfiles/claude-skill-sources/acme__widgets"
+    mkdir -p "$repo_cache/skills/current" "$MOCK_DOTFILES/.agents/skills/retired"
+    printf '%s\n' '# current' > "$repo_cache/skills/current/SKILL.md"
+    printf '%s\n' '# repo-local' > "$MOCK_DOTFILES/.agents/skills/retired/SKILL.md"
+    export NPX_LIST_JSON='[
+      {"name":"current","source":"acme/widgets"},
+      {"name":"retired","source":"acme/widgets"}
+    ]'
+
+    cd "$MOCK_DOTFILES"
+    run_sync
+    assert_success
+    run grep -F 'skills remove retired' "$NPX_LOG"
+    assert_success
+    [[ -f "$MOCK_DOTFILES/.agents/skills/retired/SKILL.md" ]]
 }
 
 @test "skill sync: reads the installed list without pipe truncation" {
