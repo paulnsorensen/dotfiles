@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2016  # fixture commands hold literal $W and $I on purpose
 # Tests for the wheypoint-stop-guard Stop hook (Claude-only).
 #   agents/hooks/wheypoint-stop-guard.sh - bash wrapper + streaming jq reducer
 #
@@ -200,4 +201,48 @@ assert_allow() { [ "$status" -eq 0 ]; [ -z "$output" ]; }
     [ "$(jq -r '.event' <<<"$output")" = "Stop" ]
     [ "$(jq -c '.harnesses' <<<"$output")" = '["claude"]' ]
     [ "$(jq -r '.script' <<<"$output")" = "agents/hooks/wheypoint-stop-guard.sh" ]
+}
+
+# Real command shapes: the pyz path sits in a shell variable and stdout is filtered.
+read_after() { # append a Read call so the wheypoint turns stale
+    N=$((N + 1))
+    tool Read '{"file_path":"/a"}' "t$N"
+    result "t$N" "content"
+}
+FILTERED='{"ok": true, "work_id": "wk-9", "note_path": "/n"}'
+
+@test "detects W=...pyz; python3 \$W checkpoint < \$I | python3 -c (filtered output)" {
+    bash_call 'I=/tmp/i.json; W=/h/skills/wheypoint/scripts/wheypoint.pyz; python3 $W checkpoint < $I | python3 -c "import sys"' "$FILTERED"
+    read_after
+    run_hook
+    [ "$(jq -r '.decision' <<<"$output")" = "block" ]
+    [[ "$(jq -r '.reason' <<<"$output")" == *"wk-9"* ]]
+}
+
+@test "detects a quoted \"\$W\" checkpoint" {
+    bash_call 'W=/h/wheypoint.pyz; python3 "$W" checkpoint - <<<"{}"' "$FILTERED"
+    read_after
+    run_hook
+    [ "$(jq -r '.decision' <<<"$output")" = "block" ]
+}
+
+@test "detects validate < \$I && ... checkpoint < \$I" {
+    bash_call 'W=/h/wheypoint.pyz; python3 $W validate < $I && python3 ${W} checkpoint < $I' "$FILTERED"
+    read_after
+    run_hook
+    [ "$(jq -r '.decision' <<<"$output")" = "block" ]
+}
+
+@test "detects the stdin-redirect form with a relative pyz path" {
+    bash_call 'python3 skills/wheypoint/scripts/wheypoint.pyz checkpoint < /tmp/i.json | python3 -c "pass"' "$FILTERED"
+    read_after
+    run_hook
+    [ "$(jq -r '.decision' <<<"$output")" = "block" ]
+}
+
+@test "schema checkpoint-intent is not a checkpoint" {
+    bash_call 'python3 /h/wheypoint.pyz schema checkpoint-intent' '{"ok": true, "slug": "checkpoint-intent"}'
+    read_after
+    run_hook
+    assert_allow
 }

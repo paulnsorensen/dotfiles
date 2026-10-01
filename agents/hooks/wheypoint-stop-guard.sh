@@ -39,7 +39,8 @@ verdict="$(jq -nRr '
             elif type == "array" then map(.text? // "") | join("")
             else "" end;
   def blocks: (.message.content // []) | if type == "array" then . else [] end;
-  def cp_re: "wheypoint\\.pyz[\"\\x27]?\\s+(\\S+\\s+){0,3}?checkpoint(\\s|$|[\"\\x27<;&|])";
+  def cp_re: "(^|[\\s\"\\x27])checkpoint($|[\\s\"\\x27<;&|])";
+  def is_cp: test("wheypoint\\.pyz") and test(cp_re);
   def injected: test("^\\s*<(system-reminder|command-|local-command-|task-notification|user-prompt-submit-hook)")
                 or test("^\\s*(Stop hook feedback|\\[Request interrupted)");
 
@@ -48,7 +49,7 @@ verdict="$(jq -nRr '
       if $e.type == "assistant" then
         reduce ($e | blocks[] | select(.type == "tool_use")) as $t (.;
           ($t.input.command? // "") as $cmd
-          | if $t.name == "Bash" and ($cmd | test(cp_re)) then .cp[$t.id] = true
+          | if $t.name == "Bash" and ($cmd | is_cp) then .cp[$t.id] = true
             elif $t.name == "Bash" and ($cmd | test("wheypoint\\.pyz")) then .
             elif $t.name == "Skill" and (($t.input.skill? // $t.input.name? // $t.input.command? // "") | tostring | test("wheypoint")) then .
             elif .have then .stale = true
