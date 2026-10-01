@@ -267,7 +267,13 @@ remove_stale_source_skills() {
     while IFS= read -r name; do
         [[ -n "$name" ]] && stale+=("$name")
     done <<<"$stale_output"
-    npx --yes skills remove "${stale[@]}" --global -y >/dev/null
+    # `skills remove --global` also deletes <cwd>/<agent skills dir>/<name> for
+    # agents without a global dir. Run it from an empty directory so a project
+    # checkout (such as this repo's .agents/skills) keeps its own copies.
+    local neutral_dir
+    neutral_dir=$(mktemp -d "${TMPDIR:-/tmp}/skill-remove.XXXXXX")
+    (cd "$neutral_dir" && npx --yes skills remove "${stale[@]}" --global -y >/dev/null)
+    rmdir "$neutral_dir"
     echo -e "    ${GREEN}Removed retired skills:${NC} ${stale[*]}"
 }
 

@@ -45,7 +45,7 @@
 "aqua:jqlang/jq" = "jq-1.8.2"
 "aqua:mikefarah/yq" = "v4.54.1"
 "aqua:junegunn/fzf" = "v0.74.4"
-"aqua:cli/cli" = "v2.101.0"
+"aqua:cli/cli" = "v2.102.0"
 "aqua:koalaman/shellcheck" = "v0.11.0"
 "aqua:bats-core/bats-core" = "v1.14.0"
 "aqua:BurntSushi/ripgrep" = "15.2.0"
