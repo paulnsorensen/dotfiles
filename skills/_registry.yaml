@@ -31,8 +31,9 @@ sources:
   paulnsorensen/easy-cheese:
     description: Portable agent workflow toolkit — mold, cook, press, age, cure, melt, and related gates
   paulnsorensen/skillz-that-grillz:
-    description: Other useful skills
-    harnesses: [claude]
+    # Tracks main (no pin). Ships /skillz with its bundled analytics engine to
+    # every harness; it replaces the retired local skills/skillz.
+    description: skillz — add, improve, audit, and self-update skill and agent definitions
   paulnsorensen/routines:
     description: Cloud-routine skills — wiki-curator (applied by the routines at runtime), routine-scaffold, routine-env
     # PRIVATE repo. _cz_vendor_external_skills clones plain HTTPS, so this

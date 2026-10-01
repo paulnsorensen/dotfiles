@@ -13,7 +13,8 @@ Skill/profile work needs `ap`, local profile files, the repo wiki, and skill-rou
 
 ## Skills in scope
 
-- Local diagnostics: `skillz`, `harness-doctor` (drift audit + settings prune), `tool-efficiency`, `prompt-analytics`, `session-analytics`.
+- Local diagnostics: `harness-doctor` (drift audit + settings prune), `tool-efficiency`, `prompt-analytics`, `session-analytics`.
+- Skill authoring: `skillz`, fetched from `paulnsorensen/skillz-that-grillz` with its bundled analytics engine.
 - Easy-cheese: fetched from `paulnsorensen/easy-cheese` for `/mold`, `/cook`, `/age`, `/cure`, and the cheez-* routing skills.
 
 ## Defaults

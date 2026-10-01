@@ -17,7 +17,7 @@ mcps:
     args: ["serve"]
     scope: user
 skills:
-  - { name: skillz, path: skills/skillz }
+  - { source: paulnsorensen/skillz-that-grillz }
   - { name: harness-doctor, path: skills/harness-doctor }
   - { name: tool-efficiency, path: skills/tool-efficiency }
   - { name: prompt-analytics, path: skills/prompt-analytics }
