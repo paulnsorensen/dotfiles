@@ -127,6 +127,13 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/commit-hallouminate-reminder.sh"'
             timeout: 5
+      # Block a stop when the session changed after its last wheypoint
+      # checkpoint. Registry entry `wheypoint-stop-guard` deploys the script;
+      # this authors the live-claude settings.json half.
+      - hooks:
+          - type: command
+            command: '"$HOME/.claude/hooks/wheypoint-stop-guard.sh"'
+            timeout: 10
     PostToolUse:
       - matcher: ".*"
         hooks:

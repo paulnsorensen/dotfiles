@@ -46,6 +46,16 @@ Claude receives `additionalContext`. Codex receives a one-shot block continuatio
 [^hallouminate-status-tests]: `tests/commit-hallouminate-reminder.bats:17-235`.
 [^hallouminate-status-adapters]: `agents/hooks/registry.yaml:276-294`; `chezmoi/dot_omp/private_agent/extensions/commit-hallouminate-reminder.ts:1-40`.
 
+## Wheypoint stop guard
+
+The `wheypoint-stop-guard` Stop hook keeps an existing wheypoint current. Wheypoint records store no session id, so the hook reads the Claude JSONL transcript from `transcript_path`. It acts only when the session ran a successful `wheypoint.pyz checkpoint` Bash call. The result must not be an error and must print `"ok": true`.
+
+The wheypoint is stale when a genuine user prompt or any other tool call follows the last successful checkpoint. Reads count. Wheypoint commands and the wheypoint Skill do not count. A stale wheypoint blocks the stop with a reason that names the work item and asks for `/wheypoint`.
+
+The hook exits 0 when `stop_hook_active` is true, so it never blocks twice in a row. It fails open and streams the transcript through jq. Disable it with `WHEYPOINT_STOP_GUARD=0`. It is Claude-only because Codex Stop payloads carry no Claude-format transcript.
+
+Cost: once a session has a wheypoint, most turns end with one forced checkpoint round.
+
 ## tool-reroute
 
 `agents/lib/tool-reroute.js` is the Claude-only `PreToolUse` dispatcher for `Bash|Grep|Glob`. It redirects file operations to Tilth, rewrites worktree command shapes to `wt-git`, denies unsupported shell-file operations, and passes unrelated Bash commands unchanged.

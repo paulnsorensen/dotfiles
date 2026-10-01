@@ -292,3 +292,20 @@ hooks:
     harnesses: [claude, codex]
     timeout: 5
     description: After a commit omits knowledge changes, remind the agent to include wiki and corpus files
+
+  # --- Wheypoint stop guard ---
+  # Keeps an existing wheypoint current. Acts only in a session that already ran
+  # a successful `wheypoint.pyz checkpoint` Bash call. When a genuine user
+  # prompt or any non-wheypoint tool call (reads included) follows the last
+  # checkpoint, the Stop is blocked with a reason that asks for /wheypoint.
+  # Wheypoint records store no session id, so the script reads the Claude JSONL
+  # transcript from `transcript_path`. claude-only: Codex Stop payloads do not
+  # carry a Claude-format transcript, so the same detection does not apply.
+  # Never blocks twice in a row (stop_hook_active); fail-open. Opt out with
+  # WHEYPOINT_STOP_GUARD=0.
+  wheypoint-stop-guard:
+    event: Stop
+    script: agents/hooks/wheypoint-stop-guard.sh
+    harnesses: [claude]
+    timeout: 10
+    description: Block a stop when the session changed after its last wheypoint checkpoint
