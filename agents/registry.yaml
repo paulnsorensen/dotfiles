@@ -287,3 +287,70 @@ agents:
     skills: []
     maxTurns: 100
     body_path: agents/agent_definitions/generalist.md
+  # ---- cheese-factory-next prototype (ADR-011..014) ----
+  # Factory agents carry agent-scoped hooks: factory-handback-gate.js checks
+  # every StructuredOutput handback and writes it as a Wheypoint revision.
+  # They are Claude-only: codex.yaml selects agents by explicit list.
+  curd-boss:
+    description: Opus curd boss for the cheese-factory-next workflow. Directs one curd through typed decisions (dispatch a coder, dispatch a review, raise a fork, finish). Never edits files and never spawns agents; the workflow script runs each decision. Dispatched only by cheese-factory-next.
+    models:
+      claude: opus
+      codex: gpt-6-astra
+    tools:
+      - Bash
+      - Read
+      - ToolSearch
+      - mcp__tilth
+    color: purple
+    effort: high
+    skills: []
+    maxTurns: 30
+    hooks: &factory_hooks
+      PreToolUse:
+        - matcher: StructuredOutput
+          hooks:
+            - type: command
+              command: node "$HOME/.claude/hooks/hook-runner.js" factory-handback-gate.js
+      Stop:
+        - hooks:
+            - type: command
+              command: node "$HOME/.claude/hooks/hook-runner.js" factory-handback-gate.js
+    harnesses: [claude]
+    body_path: agents/agent_definitions/curd-boss.md
+  factory-coder:
+    description: Implementer for one curd-boss brief inside one cheese-factory-next curd worktree. Hands back through the factory handback gate. Dispatched only by cheese-factory-next.
+    models:
+      claude: sonnet
+      codex: gpt-6-sol
+    tools:
+      - Bash
+      - Read
+      - ToolSearch
+      - mcp__tilth
+      - mcp__tilth__tilth_write
+    color: green
+    effort: medium
+    skills: []
+    maxTurns: 100
+    hooks: *factory_hooks
+    harnesses: [claude]
+    body_path: agents/agent_definitions/factory-coder.md
+  factory-reviewer:
+    description: Severity reviewer for one cheese-factory-next curd diff. Runs /age without chaining to /cure and hands back through the factory handback gate. Dispatched only by cheese-factory-next.
+    models:
+      claude: opus
+      codex: gpt-6-astra
+    disallowedTools:
+      - Edit
+      - Write
+      - NotebookEdit
+      - Agent
+      - Grep
+      - Glob
+    color: red
+    effort: high
+    skills: []
+    maxTurns: 50
+    hooks: *factory_hooks
+    harnesses: [claude]
+    body_path: agents/agent_definitions/factory-reviewer.md

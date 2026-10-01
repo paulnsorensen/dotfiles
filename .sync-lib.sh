@@ -437,6 +437,7 @@ _cz_render_claude_agent() {
             line("color";           .color),
             line("effort";          .effort),
             line("maxTurns";        (if .maxTurns then (.maxTurns | tostring) else null end)),
+            line("hooks";           (if .hooks then (.hooks | tojson) else null end)),
             line("skills";          (if .skills then "[" + (.skills | join(", ")) + "]" else null end))
         '
         echo "---"

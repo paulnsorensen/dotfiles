@@ -302,8 +302,11 @@ claude:
   # Frontmatter is rendered from agents/registry.yaml metadata at assembly time.
   agents:
     - coder
+    - curd-boss
     - duckdb-expert
     - explorer
+    - factory-coder
+    - factory-reviewer
     - generalist
     - ghostbuster
     - nih-scanner

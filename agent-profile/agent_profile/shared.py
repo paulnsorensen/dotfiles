@@ -15,6 +15,7 @@ renderer resets per-harness.
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -148,6 +149,12 @@ def claude_agent_frontmatter(item: dict[str, Any]) -> dict[str, str]:
     max_turns = item.get("maxTurns")
     if max_turns is not None:
         fm["maxTurns"] = str(max_turns)
+    # Agent-scoped hooks (``hooks:`` frontmatter) render as one compact JSON
+    # flow mapping, which is valid YAML. ``_cz_render_claude_agent`` emits
+    # the same bytes through jq ``tojson``.
+    hooks = item.get("hooks") or {}
+    if hooks:
+        fm["hooks"] = json.dumps(hooks, separators=(",", ":"))
     skills = item.get("skills") or []
     if skills:
         fm["skills"] = f"[{', '.join(skills)}]"

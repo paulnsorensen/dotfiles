@@ -146,6 +146,16 @@ Agent body.
 EXPECTED
 }
 
+@test "assembly: renders agent-scoped hooks as one compact JSON line" {
+    yq -i '.agents.tester.hooks = {"PreToolUse": [{"matcher": "StructuredOutput", "hooks": [{"type": "command", "command": "gate"}]}]}' "$ROOT/agents/registry.yaml"
+    run_assembly
+    [ "$status" -eq 0 ]
+    local agent="$SRC/dot_claude/exact_agents/tester.md"
+    grep -qxF 'hooks: {"PreToolUse":[{"matcher":"StructuredOutput","hooks":[{"type":"command","command":"gate"}]}]}' "$agent"
+    # hooks sits between maxTurns and skills, matching the ap renderer order.
+    [ "$(grep -n '^hooks:' "$agent" | cut -d: -f1)" -eq 9 ]
+}
+
 @test "assembly: claude-harness hook scripts land executable; codex-only and command-only do not" {
     run_assembly
     [ "$status" -eq 0 ]

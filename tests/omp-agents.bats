@@ -5,8 +5,11 @@ REGISTRY="$DOTFILES_DIR/agents/registry.yaml"
 OMP_AGENTS="$DOTFILES_DIR/chezmoi/dot_omp/private_agent/agents"
 OMP_CONFIG="$DOTFILES_DIR/chezmoi/.chezmoidata/omp.yaml"
 
+# Registry agents that OMP mirrors natively. An agent with an explicit
+# `harnesses` list that omits omp (the Claude-only cheese-factory-next
+# factory agents) has no OMP twin.
 canonical_agents() {
-    yq -oy -r '.agents | keys | .[]' "$REGISTRY"
+    yq -oy -r '.agents | to_entries | map(select(.value.harnesses == null or (.value.harnesses | contains(["omp"])))) | .[].key' "$REGISTRY" | sort
 }
 
 omp_agent_names() {
