@@ -11,7 +11,8 @@
 //   PreToolUse  — increment the per-agent turn counter, read live context
 //                 tokens; over either hard ceiling, permit one atomic
 //                 mcp__tilth__tilth_write checkpoint with exactly one path
-//                 under .cheese/ or .context/, then deny every other call.
+//                 under .cheese/ or .context/, always permit the
+//                 SubagentHandback return, then deny every other call.
 //   PostToolUse — once per agent, inject a wrap-up nudge when either signal
 //                 crosses its soft threshold (the graceful handoff window);
 //                 a sterner one-time hard nudge fires when context tokens
@@ -560,13 +561,19 @@ const CHECKPOINT_OPS = [
 const CHECKPOINT_SHAPE =
   `exactly one edit targeting .cheese/ or .context/ using only ${CHECKPOINT_OPS.join('/')} ops`;
 
+// Tools that return the agent's result to its parent. The deny text tells a
+// starved agent to return inline; where the harness routes that return through
+// a tool call, denying it traps the agent in a retry loop (one session retried
+// SubagentHandback 114 times). These tools end the agent, so they stay allowed.
+const HANDBACK_TOOLS = new Set(['SubagentHandback']);
+
 function checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent) {
   const exceeded = [];
   if (turns > budget.turnHard) exceeded.push(`turns ${turns}/${budget.turnHard}`);
   if (tokens > budget.ctxHard) exceeded.push(`context ${tokens}/${budget.ctxHard} tokens`);
   const status = checkpointSpent
-    ? 'Stop calling tools now — synthesize your findings and return inline. The checkpoint allowance is spent.'
-    : `One mcp__tilth__tilth_write with ${CHECKPOINT_SHAPE} remains. No tool call is allowed except that constrained checkpoint write; after it, return inline.`;
+    ? 'Stop calling tools now — synthesize your findings and return inline. The checkpoint allowance is spent. SubagentHandback stays allowed.'
+    : `One mcp__tilth__tilth_write with ${CHECKPOINT_SHAPE} remains. No tool call is allowed except that constrained checkpoint write and SubagentHandback; after it, return inline.`;
   const coder = String(agentType || '').trim().toLowerCase() === 'coder';
   const incomplete = coder
     ? 'If your task is incomplete, open your final reply with "status: needs-context" so the phase owner can persist observations and retry the same phase.'
@@ -701,6 +708,10 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
       ...thresholdFields(budget),
     };
     if (state.turns > budget.turnHard || charged > budget.ctxHard) {
+      if (HANDBACK_TOOLS.has(event.tool_name)) {
+        writeDecision(event, { ...fields, action: 'allow', reason: 'handback' });
+        return { action: 'allow', reason: 'handback' };
+      }
       if (isCheckpointWrite(event) && !state.checkpointSpent) {
         if (markOnce(dir, checkpointSpentFile(dir))) {
           writeDecision(event, { ...fields, checkpointSpent: true, action: 'allow', reason: 'checkpoint-write' });
