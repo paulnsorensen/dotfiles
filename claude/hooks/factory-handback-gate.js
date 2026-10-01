@@ -29,8 +29,12 @@ function wheypointArchive() {
     || path.join(os.homedir(), '.claude/skills/wheypoint/scripts/wheypoint.pyz');
 }
 
+// The PreToolUse and SubagentStop hooks run as separate processes, so the
+// marker needs a stable path. It lives in a per-user state dir (mode 0700),
+// not the shared temp dir, so another user cannot pre-create or link it.
 function spoolPath(agentId) {
-  const dir = path.join(process.env.FACTORY_GATE_SPOOL || os.tmpdir(), 'factory-handback');
+  const root = process.env.FACTORY_GATE_SPOOL || path.join(os.homedir(), '.claude', 'state');
+  const dir = path.join(root, 'factory-handback');
   return path.join(dir, `${String(agentId).replace(/[^A-Za-z0-9_-]/g, '_')}.done`);
 }
 
@@ -149,8 +153,8 @@ const structuredOutputGate = {
     const result = commit(intentFor(event.agent_type, input, ref), event.cwd || process.cwd());
     if (result.error) return deny(`wheypoint refused the revision (${result.error}). Re-resolve ${ref.project}/${ref.workId} and retry.`);
     const spool = spoolPath(event.agent_id);
-    fs.mkdirSync(path.dirname(spool), { recursive: true });
-    fs.writeFileSync(spool, `${ref.workId}@${result.revision}\n`);
+    fs.mkdirSync(path.dirname(spool), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(spool, `${ref.workId}@${result.revision}\n`, { mode: 0o600 });
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
