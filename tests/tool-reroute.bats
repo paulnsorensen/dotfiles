@@ -208,6 +208,70 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
     [[ "$(newcmd "$out")" == "tilth README.md" ]]
 }
 
+@test "tool-reroute/io: sed -n range rewrites to tilth --section" {
+    local cmd want
+    while IFS='|' read -r cmd want; do
+        local out; out=$(out_for "$cmd")
+        [[ "$(decision "$out")" == "allow" ]]
+        [[ "$(newcmd "$out")" == "$want" ]]
+    done <<'EOF'
+sed -n '10,20p' f.txt|tilth f.txt --section 10-20
+sed -n 10,20p f.txt|tilth f.txt --section 10-20
+sed -n "5p" f.txt|tilth f.txt --section 5-5
+sed -n '7,7p' src/a.js|tilth src/a.js --section 7-7
+EOF
+}
+
+@test "tool-reroute/io: head rewrites to tilth --section 1-N" {
+    local cmd want
+    while IFS='|' read -r cmd want; do
+        local out; out=$(out_for "$cmd")
+        [[ "$(decision "$out")" == "allow" ]]
+        [[ "$(newcmd "$out")" == "$want" ]]
+    done <<'EOF'
+head -20 f.txt|tilth f.txt --section 1-20
+head -n 20 f.txt|tilth f.txt --section 1-20
+head f.txt|tilth f.txt --section 1-10
+EOF
+}
+
+@test "tool-reroute/io: sed/head/tail shapes outside a bare single-file read pass through" {
+    local cmd out
+    for cmd in \
+        'cat f.txt | head -5' \
+        'grep foo f | head' \
+        'ls | sed -n 1,5p' \
+        'sed -n 1,5p a b' \
+        'head -5 a b' \
+        'head -n 5 a b' \
+        'sed -i 1,5p f' \
+        'sed -n -e 1,5p f' \
+        'sed -n s/a/b/p f' \
+        "sed -n '1,\$p' f" \
+        'sed 5p f' \
+        'sed -n 5,2p f' \
+        'sed -n 1,5p' \
+        'head -c 100 f' \
+        'head' \
+        'head -n 0 f' \
+        'head -5' \
+        'tail -5 f' \
+        'tail -n 5 f' \
+        'tail f' \
+        'head -5 f > out'; do
+        out=$(out_for "$cmd")
+        if [[ "$out" == *'"command":"tilth'* ]] || denied "$out"; then
+            echo "must pass through: $cmd -> $out" >&2
+            return 1
+        fi
+    done
+}
+
+@test "tool-reroute/cd-strip: a cd to cwd before sed -n re-classifies against io" {
+    local out; out=$(out_for "cd $W && sed -n 1,5p f.txt")
+    [[ "$(newcmd "$out")" == "tilth f.txt --section 1-5" ]]
+}
+
 @test "tool-reroute/io: cat with a flag is NOT rewritten to tilth (delegated)" {
     local out; out=$(out_for 'cat -n file.txt')
     [[ "$out" != *'"command":"tilth'* ]]

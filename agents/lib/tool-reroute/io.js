@@ -2,7 +2,13 @@
 // io.js — reroute module: file I/O via the shell.
 //
 //   bare `cat <file>` (no redirect, no pipe, one file operand)  → REWRITE `tilth <file>`
+//   bare `sed -n 'A,Bp' <file>` / `sed -n 'Ap' <file>`            → REWRITE `tilth <file> --section A-B`
+//   bare `head [-n] N <file>` / `head <file>` (default 10)       → REWRITE `tilth <file> --section 1-N`
 //   write-redirect (`echo`/`printf`/`cat` … `>` / `>>`)         → DENY → cheez-write
+//
+// `tail` stays untouched: a tail range needs the file length, and tilth has no
+// tail flag. Any other sed script or flag, `head -c`, and multi-file reads pass
+// through.
 //
 // The bare-cat read has a faithful tilth equivalent, so it rewrites. A
 // write-redirect to a working-tree file has no shell write CLI to rewrite to (a
@@ -39,6 +45,31 @@ function isRepoWrite(target, cwd) {
   return resolved === cwd || resolved.startsWith(cwd + path.sep);
 }
 
+// `sed -n 'A,Bp' file` or `sed -n 'Ap' file` → a tilth line range. Returns null
+// for any other shape so the command runs unchanged.
+function sedRange(args) {
+  if (args.length !== 3 || args[0] !== '-n' || args[2].startsWith('-')) return null;
+  const m = /^([0-9]+)(?:,([0-9]+))?p$/.exec(args[1]);
+  if (!m) return null;
+  const start = Number(m[1]);
+  const end = m[2] === undefined ? start : Number(m[2]);
+  if (start < 1 || end < start) return null;
+  return `tilth ${shQuote(args[2])} --section ${start}-${end}`;
+}
+
+// `head -N f`, `head -n N f`, `head f` (default 10) → a tilth range from line 1.
+// Returns null for `-c`, multiple files, and every other flag.
+function headRange(args) {
+  let count = 10;
+  let file;
+  if (args.length === 1) file = args[0];
+  else if (args.length === 2 && /^-[0-9]+$/.test(args[0])) { count = Number(args[0].slice(1)); file = args[1]; }
+  else if (args.length === 3 && args[0] === '-n' && /^[0-9]+$/.test(args[1])) { count = Number(args[1]); file = args[2]; }
+  else return null;
+  if (count < 1 || file.startsWith('-')) return null;
+  return `tilth ${shQuote(file)} --section 1-${count}`;
+}
+
 function detect(toolName, input, cwd) {
   if (toolName !== 'Bash') return null;
   cwd = cwd || process.cwd();
@@ -64,6 +95,8 @@ function detect(toolName, input, cwd) {
     if (word === 'cat' && args.length === 1 && !args[0].startsWith('-')) {
       return { rewrite: `tilth ${shQuote(args[0])}`, module: 'io' };
     }
+    const range = word === 'sed' ? sedRange(args) : word === 'head' ? headRange(args) : null;
+    if (range) return { rewrite: range, module: 'io' };
   }
   return null;
 }
