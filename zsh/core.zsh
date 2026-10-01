@@ -139,7 +139,7 @@ if [[ -f "$_dotfiles_env_file" ]]; then
     _dotfiles_value="${_dotfiles_line#*=}"
     case "$_dotfiles_key" in
       CLAUDE_SETUP_DIR|DOTFILES_VAULT_PROVIDER|DOTFILES_OP_ITEM|BWS_PROJECT_ID|\
-      DOTFILES_DEV|CHEESE_FLOW|VAUDEVILLE|TODOIST|SKILL_HARNESSES)
+      DOTFILES_DEV|CHEESE_FLOW|VAUDEVILLE|VAUDEVILLE_API_KEY_FILE|TODOIST|SKILL_HARNESSES)
         if [[ "$_dotfiles_value" == \"*\" && "$_dotfiles_value" == *\" ]]; then
           _dotfiles_value="${_dotfiles_value[2,-2]}"
         fi

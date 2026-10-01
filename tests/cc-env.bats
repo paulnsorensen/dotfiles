@@ -69,3 +69,25 @@ EOF
     [ "$output" = ok ]
     [ ! -e "$HOME/.cache/dotfiles/secrets.env" ]
 }
+
+@test "cc-env-exec exports the Vaudeville key path without loading its contents" {
+    local key_file="$TEST_HOME/credentials with spaces/openrouter-api-key"
+    mkdir -p "${key_file%/*}"
+    printf 'fixture-key-must-not-be-exported\n' > "$key_file"
+    printf 'VAUDEVILLE_API_KEY_FILE="%s"\n' "$key_file" > "$DOTFILES_DIR/.env"
+    run env -u VAUDEVILLE_API_KEY_FILE "$REAL_DOTFILES_DIR/bin/cc-env-exec" bash -c \
+        "printf 'PATH=[%s]\n' \"\$VAUDEVILLE_API_KEY_FILE\"; env"
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "PATH=[$key_file]" ]
+    [[ "$output" != *fixture-key-must-not-be-exported* ]]
+}
+
+@test "cc-env-exec keeps shell syntax in the Vaudeville key path literal" {
+    local key_file="\$(touch $TEST_HOME/must-not-exist)"
+    printf 'VAUDEVILLE_API_KEY_FILE="%s"\n' "$key_file" > "$DOTFILES_DIR/.env"
+    run env -u VAUDEVILLE_API_KEY_FILE "$REAL_DOTFILES_DIR/bin/cc-env-exec" bash -c \
+        "printf '%s\n' \"\$VAUDEVILLE_API_KEY_FILE\""
+    [ "$status" -eq 0 ]
+    [ "$output" = "$key_file" ]
+    [ ! -e "$TEST_HOME/must-not-exist" ]
+}

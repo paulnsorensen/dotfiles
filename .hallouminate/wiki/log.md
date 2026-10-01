@@ -77,3 +77,7 @@
 2026-09-29 · milknado-worker-mcp-20260929 · merged · architecture/agents-dir.md · Recorded the milknado fleet worker MCP file: bare claude with `--strict-mcp-config --mcp-config ~/.config/milknado/worker-mcp.json` loads 3 servers instead of 15 after eight workers exhausted a 31 GiB devbox; an `ap` profile (adapter keys on argv[0]) and `--setting-sources ""` (drops skills) were rejected; milknado appends the project `.mcp.json` as a fourth config.
 
 2026-09-29 · milknado-fleet-retire-20260929 · merged · architecture/agents-dir.md · Retired the milknado-fleet workflow, worker TOML, and worker MCP file; `.chezmoiremove` drops `~/.config/milknado/worker-mcp.json`, `exact_workflows` drops the workflow copies. Milknado plugin, MCPs, and package stay.
+
+2026-10-01 · vaudeville-credential-file-20261001 · merged · architecture/mcp-secret-handling.md · Record nonsecret Vaudeville path configuration and distinguish same-user files from managed MCP isolation. Source hashing was unavailable because the sensitive-file guard rejected a prose-only hashing command.
+
+2026-10-01 · fb5237314daff339 · merged · architecture/mcp-secret-handling.md · Supersede Haiku default with pinned Jev through explicit OpenRouter endpoint. Preserve file-backed credentials and text-model overrides. All three frozen retrieval probes return the page at rank 1.

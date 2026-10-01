@@ -22,6 +22,20 @@ setup() {
 
 teardown() { teardown_test_env; }
 
+@test "Vaudeville config references only the machine-local key path" {
+    cat > "$TEST_HOME/expected-config" <<'EOF'
+default_model: typesafe:jev-1.13
+providers:
+  typesafe:
+    base_url: https://openrouter.ai/api
+    key_file_env: VAUDEVILLE_API_KEY_FILE
+  openrouter:
+    key_file_env: VAUDEVILLE_API_KEY_FILE
+EOF
+    run diff -u "$TEST_HOME/expected-config" "$REAL_DOTFILES_DIR/chezmoi/dot_vaudeville/config"
+    [ "$status" -eq 0 ]
+}
+
 # ── chezmoi/.sync wiring ────────────────────────────────────────────────
 
 # Helper: drop a fake chezmoi binary on PATH that records its args and

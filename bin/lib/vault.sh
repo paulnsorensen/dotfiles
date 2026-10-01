@@ -54,7 +54,7 @@ vault_load_settings() {
         value="${line#*=}"
         case "$key" in
             CLAUDE_SETUP_DIR|DOTFILES_VAULT_PROVIDER|DOTFILES_OP_ITEM|BWS_PROJECT_ID|\
-            DOTFILES_DEV|CHEESE_FLOW|VAUDEVILLE|TODOIST|SKILL_HARNESSES)
+            DOTFILES_DEV|CHEESE_FLOW|VAUDEVILLE|VAUDEVILLE_API_KEY_FILE|TODOIST|SKILL_HARNESSES)
                 if [[ "$value" == \"*\" && "$value" == *\" ]]; then
                     value="${value:1:${#value}-2}"
                 elif [[ "$value" == \"* && "$value" != *\" ]]; then

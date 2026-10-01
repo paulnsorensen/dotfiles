@@ -107,3 +107,35 @@ Bitwarden path: exact Secret names, machine-account permission, the temporary
 root-shell access token, and key rotation.
 
 [^1]: scripts/agent-secret-broker.py:30, 673-684
+
+### Vaudeville credential-file references
+
+Vaudeville uses a separate credential-file path, not the managed MCP brokers.
+Its shared config selects `typesafe:jev-1.13` with `base_url: https://openrouter.ai/api`.
+The TypeSafe adapter sends decision requests through OpenRouter.
+The explicit endpoint avoids dependence on a shell-level `TYPESAFE_BASE_URL` setting.[^vaudeville-config]
+Both configured providers name `key_file_env: VAUDEVILLE_API_KEY_FILE`.
+Both settings loaders export that variable as a nonsecret, literal path.
+They do not open the key file or export its contents.[^vaudeville-loaders]
+
+Jev handles bounded decision rules, not rewriting or free-form reasons.
+The retained `openrouter` provider permits explicit text-model overrides such as `openrouter:anthropic/claude-haiku-4.5`.[^vaudeville-config]
+Rules that need text generation must select a text model explicitly.
+
+Set the path variable in each machine's untracked `.env` with an absolute path.
+Linux and macOS can use different paths without changing the shared config.
+The `.env.example` file includes examples for both platforms.[^vaudeville-example]
+Keep the credential file outside Git with owner-only permissions.
+Populate it privately; an empty placeholder does not authenticate requests.
+Restart the Vaudeville daemon after changing its inherited path variable.
+This endpoint setting requires the Vaudeville revision that supports `ProviderConfig.base_url`; older installations need an update.[^vaudeville-config]
+
+This option keeps credentials out of configuration; it does not isolate them from same-user processes.
+The three managed MCP consumers retain their separate system identities.
+Vaudeville does not add OpenRouter to `vault-provision` or store a BWS access token.
+
+[^vaudeville-config]: chezmoi/dot_vaudeville/config:1-7; Vaudeville vaudeville/server/user_config.py:30-58 and vaudeville/server/agents/model_resolution.py:90-91,128-137; commands/setup.md.
+[^vaudeville-loaders]: bin/lib/vault.sh:42-67; zsh/core.zsh:119-151; tests/cc-env.bats; tests/zsh-config.bats.
+[^vaudeville-example]: .env.example:33-39.
+
+_Source: user-selected Jev setup and local configuration · Updated: 2026-10-01 · Supersedes: Haiku default, 2026-10-01_
