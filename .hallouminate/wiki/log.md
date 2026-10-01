@@ -77,3 +77,5 @@
 2026-09-29 · milknado-worker-mcp-20260929 · merged · architecture/agents-dir.md · Recorded the milknado fleet worker MCP file: bare claude with `--strict-mcp-config --mcp-config ~/.config/milknado/worker-mcp.json` loads 3 servers instead of 15 after eight workers exhausted a 31 GiB devbox; an `ap` profile (adapter keys on argv[0]) and `--setting-sources ""` (drops skills) were rejected; milknado appends the project `.mcp.json` as a fourth config.
 
 2026-09-29 · milknado-fleet-retire-20260929 · merged · architecture/agents-dir.md · Retired the milknado-fleet workflow, worker TOML, and worker MCP file; `.chezmoiremove` drops `~/.config/milknado/worker-mcp.json`, `exact_workflows` drops the workflow copies. Milknado plugin, MCPs, and package stay.
+
+2026-09-30 · cheese-factory-linked-wheypoints-20260930 · proposed · adr/cheese-factory-workflow.md · Proposed ADR-011..014: thin wrapper on linked wheypoints, agent-scoped handoff hooks, script-loop curd bosses, and parked forks. Smoke evidence: agent-scoped hooks fire and `SubagentStop` carries `last_assistant_message`; project agent-frontmatter hooks need workspace trust; renderers do not emit `hooks:` yet.
