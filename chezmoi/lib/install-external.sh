@@ -374,7 +374,10 @@ install_source() {
 # source: null, which also covers retired externals and other repos' skills, so
 # a source-filtered cleanup cannot target them safely. Track the exact set we
 # install in a manifest and remove only names we previously installed that the
-# source no longer provides. Bash 3.2 compatible (macOS /bin/bash).
+# source no longer provides. A retired local name that a registry source now
+# provides stays: the external install ran first and owns that directory. When
+# a source's names cannot be resolved, skip removal and keep the manifest so
+# the next sync retries. Bash 3.2 compatible (macOS /bin/bash).
 reconcile_local_skills() {
     local local_dir="$1"
     local target="$AGENTS_SKILLS_DIR"
@@ -390,10 +393,23 @@ reconcile_local_skills() {
     done
 
     if [[ -f "$manifest" ]]; then
+        local external="" repo names
+        for repo in $SOURCES; do
+            if ! names=$(source_skill_names "$repo"); then
+                echo -e "    ${YELLOW}Skipping retired local skill cleanup: cannot resolve skills for $repo${NC}" >&2
+                return 0
+            fi
+            external+="$names"$'\n'
+        done
+
         local name
         while IFS= read -r name; do
             [[ -n "$name" ]] || continue
             if printf '%s\n' ${current[@]+"${current[@]}"} | grep -Fxq "$name"; then
+                continue
+            fi
+            if grep -Fxq "$name" <<<"$external"; then
+                echo -e "    ${BLUE}Retired local skill now external, kept:${NC} $name"
                 continue
             fi
             if [[ -d "$target/$name" ]]; then

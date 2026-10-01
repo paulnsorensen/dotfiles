@@ -538,6 +538,49 @@ EOF
     [[ "$output" == "keep" ]]
 }
 
+@test "skill sync: keeps a retired local skill that an external source now provides" {
+    write_registry "acme/widgets"
+    write_env "cursor"
+
+    # The external source now ships `moved`; the local tree ships only `keep`.
+    local repo_cache="$HOME/.cache/dotfiles/claude-skill-sources/acme__widgets"
+    mkdir -p "$repo_cache/skills/moved"
+    printf '# moved\n' > "$repo_cache/skills/moved/SKILL.md"
+    mkdir -p "$MOCK_DOTFILES/skills/keep"
+    printf '# keep\n' > "$MOCK_DOTFILES/skills/keep/SKILL.md"
+
+    local target="$HOME/.agents/skills"
+    mkdir -p "$target/keep" "$target/moved" "$target/dropped"
+    printf 'dropped\nkeep\nmoved\n' > "$target/.dotfiles-local-managed"
+
+    run_sync
+    assert_success
+    [[ -d "$target/moved" ]]
+    [[ ! -e "$target/dropped" ]]
+    assert_output_contains "Retired local skill now external, kept: moved"
+    run cat "$target/.dotfiles-local-managed"
+    [[ "$output" == "keep" ]]
+}
+
+@test "skill sync: unresolvable source skips retired local cleanup and keeps the manifest" {
+    write_registry "acme/widgets"
+    write_env "cursor"
+
+    mkdir -p "$MOCK_DOTFILES/skills/keep"
+    printf '# keep\n' > "$MOCK_DOTFILES/skills/keep/SKILL.md"
+
+    local target="$HOME/.agents/skills"
+    mkdir -p "$target/dropped"
+    printf 'dropped\nkeep\n' > "$target/.dotfiles-local-managed"
+
+    # No vendor cache: the wildcard source cannot be resolved.
+    run_sync
+    [[ -d "$target/dropped" ]]
+    assert_output_contains "Skipping retired local skill cleanup"
+    run cat "$target/.dotfiles-local-managed"
+    [[ "$output" == "dropped
+keep" ]]
+}
 @test "skill sync: first run records the local manifest without deleting anything" {
     cat > "$MOCK_REGISTRY_FILE" <<'EOF'
 sources: {}
