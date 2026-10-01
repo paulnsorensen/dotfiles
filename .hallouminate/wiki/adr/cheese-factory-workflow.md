@@ -87,3 +87,36 @@ The parent must not implement the remainder automatically.
 The coordinator's verified response remains an agent trust boundary; deterministic workflow tests verify routing, not model execution.[^recovery-20260919]
 
 [^recovery-20260919]: `claude/workflows/cheese-factory.js` (`checkpointPrompt`, `validCheckpointResult`, Cook pipeline stage); `tests/workflows/cheese-factory.test.mjs`; [[operations/subagent-dispatch-analytics]]. Decision: September 19, 2026.
+
+## ADR-011: Thin wrapper over easy-cheese contracts on linked wheypoints [status: proposed]
+
+- **Context:** Every handoff passes as agent-echoed JSON. The workflow runtime cannot read files, and no hook checks a handback. A 2026-09-30 explorer digest found 15 handoff failure classes; most trace to this gap. The `/cook` fan path cannot run inside a workflow agent, because a workflow agent cannot spawn sub-agents (ADR-007).
+- **Decision:** The script owns only scheduling: waves, boss turns, parking, and barriers. Easy-cheese owns phase meaning: Mold `PlannerRequest`, `validate_curd_plan`, `write-handoff-artifact`, and Wheypoint. State lives in a linked Wheypoint graph. One run record `factory-<spec>` holds an `implements` edge to the spec. `fork` creates one record per curd, and `blocked_by` edges carry dependencies. Agents receive only a pinned `wheypoint:<project>/<curd>@<rev>` ref.
+- **Alternatives:** Run `/cook` fan at the top level (no bosses, no deterministic control flow); patch the current loop (keeps the custom decomposer and echoed JSON); do nothing.
+- **Consequences:** ADR-005 and ADR-008 curd merging give way to `blocked_by` waves. A pinned revision makes a race fail as `stale-parent`. `shape <run>` reports the whole factory graph.[^factory-20260930]
+
+## ADR-012: Agent-scoped hooks enforce the factory handoff contract [status: proposed]
+
+- **Context:** Claude Code 2.1.285 has no workflow hook event, and hook input carries no workflow run id. `SubagentStop` input carries `agent_id`, `agent_type`, `agent_transcript_path`, `last_assistant_message`, and `stop_hook_active`.
+- **Decision:** Factory-only agents (`curd-boss`, `factory-coder`, `factory-reviewer`) carry `hooks:` frontmatter. A `PreToolUse` hook on `StructuredOutput` denies an invalid handback and names the failed field. A `SubagentStop` hook records the handback as a Wheypoint revision. This retires the ADR-010 checkpoint coordinator agent.
+- **Alternatives:** A global hook that matches `agent_type`; a global hook gated on a `.cheese/` run marker; agent-side checks only.
+- **Consequences:** Hooks run only inside factory agents. Hook failures block work, so each hook must fail closed with a clear reason.
+- **Smoke evidence (2026-09-30, headless `claude -p`):** settings hooks fired inside a sub-agent. Hooks on a session agent from `--agents` fired, and the agent `Stop` hook arrived as `SubagentStop` with `last_assistant_message`. Hooks in a project `.claude/agents/` file in an untrusted directory did not fire; the binary evaluates agent-frontmatter hooks at launch under workspace trust.
+- **Gotcha:** neither renderer emits `hooks:` today (`agent-profile/agent_profile/shared.py` `claude_agent_frontmatter`, `.sync-lib.sh` `_cz_render_claude_agent`).
+- **Open:** a workflow `agent()` with `agentType` may ignore frontmatter hooks, and a `StructuredOutput` deny may not trigger a clean retry. The first implementation curd smoke-tests both.[^factory-20260930]
+
+## ADR-013: Curd bosses direct coders through the script loop [status: proposed]
+
+- **Context:** The user wants Opus curd bosses that nest coders. A workflow agent cannot spawn sub-agents, and `workflow()` nests one level only, which `age-fanout` already uses.
+- **Decision:** Each curd runs a script loop. The loop calls an Opus boss with the curd ref, and the boss returns one typed decision: dispatch a coder, dispatch a review, raise a fork, or finish. The script runs the decision with a `factory-coder` and calls the boss again.
+- **Alternatives:** Flat coders without a boss (the current shape).
+- **Consequences:** The boss keeps judgment, and the script keeps control flow and resume caching.[^factory-20260930]
+
+## ADR-014: Forks park the curd and batch at barriers [status: proposed]
+
+- **Context:** A workflow can log or return, but it cannot ask the user mid-run.
+- **Decision:** A boss records a gating `question` and a `decision_dossier` fork, so Wheypoint derives `gated`. The curd parks, and the other curds continue. The next barrier returns every parked fork. Resume uses `resumeFromRunId` with the answers in `args`, and each answer resolves its entry with the user's quoted words.
+- **Alternatives:** Bosses decide every fork and log it for veto; the first fork stops the run.
+- **Consequences:** Only the parked curds' boss turns rerun on resume; finished work returns from the cache.[^factory-20260930]
+
+[^factory-20260930]: Spec `specs/cheese-factory-linked-wheypoints.md` (durable corpus `~/.local/share/cheese/paulnsorensen-dotfiles/`); `~/.claude/skills/wheypoint/references/work-graph.md`; `~/.claude/skills/cook/references/fan-pathway.md`. Decision: September 30, 2026.
