@@ -187,10 +187,12 @@ tilth_write_input() {
     local v json
     json=$(jq -nc '{tool_name:"Grep", tool_input:{pattern:"x"}, cwd:"/tmp"}')
     for v in 0 false off no OFF; do
+        # shellcheck disable=SC2016  # $1/$2 expand inside the inner bash, by design
         run env DOTFILES_TOOL_REROUTE="$v" bash -c 'printf "%s" "$1" | "$2"' bash "$json" "$DEPLOY/hooks/tool-reroute.sh"
         [ "$status" -eq 0 ]
         [ -z "$output" ] || { echo "not disabled: $v" >&2; return 1; }
     done
+    # shellcheck disable=SC2016  # $1/$2 expand inside the inner bash, by design
     run env DOTFILES_TOOL_REROUTE=1 bash -c 'printf "%s" "$1" | "$2"' bash "$json" "$DEPLOY/hooks/tool-reroute.sh"
     [ "$(decision)" = "deny" ]
 }
