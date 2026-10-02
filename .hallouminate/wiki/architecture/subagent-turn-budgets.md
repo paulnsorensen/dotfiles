@@ -182,6 +182,7 @@ Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
   `default` (40 soft / 50 hard turns). `general-purpose` — the ultracook /
   cheese-factory full-peer worker — sits at coder tier (75/100) for this reason;
   a new pipeline-scale agent type left off the table gets half a coder's budget.
+- **The guard always allows the handback tool past the hard ceiling (2026-10-01).** The deny text tells a starved agent to "return inline". In Conductor, a sub-agent returns through the `SubagentHandback` tool call, and the guard denied it. Over 14 days, the guard denied 209 of 367 handbacks, and one coder session retried 114 times. `HANDBACK_TOOLS` in the guard now exempts that tool before the checkpoint check. The deny message names it. Add any new return-path tool to that set. Do not widen it to tools that do work.
 
 ### Measured 2026-09-09: the 90k soft-stop was dead text; the resume brief replaces it
 
