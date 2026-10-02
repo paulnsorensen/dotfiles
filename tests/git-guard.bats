@@ -401,3 +401,49 @@ copilot_guard() {
     [[ "$(jq -r '.hooks.preToolUse[0].matcher' <<<"$rendered")" == "bash|shell" ]]
     [[ "$(jq -r '.hooks.preToolUse[0].bash' <<<"$rendered")" == */.copilot/hooks/git-guard.sh ]]
 }
+
+# ── wt-git and cd-chains are seen through ─────────────────────────────
+
+# Like guard(), but the event cwd is /tmp, not the repo.
+guard_from_tmp() {
+    local cmd="$1" json
+    json=$(jq -nc --arg c "$cmd" '{tool_name:"Bash", tool_input:{command:$c}, cwd:"/tmp"}')
+    run bash -c "printf '%s' '$json' | '$DEPLOY/hooks/git-guard.sh'"
+    [ "$status" -eq 0 ]
+    if [[ -z "$output" ]]; then echo "allow"; else
+        jq -r '.hookSpecificOutput.permissionDecision' <<<"$output"
+    fi
+}
+
+@test "wt-git <dirty repo> reset --hard is denied from another cwd" {
+    dirty_tracked
+    [[ "$(guard_from_tmp "wt-git $REPO reset --hard")" == "deny" ]]
+}
+
+@test "wt-git <clean repo> reset --hard is allowed" {
+    [[ "$(guard_from_tmp "wt-git $REPO reset --hard")" == "allow" ]]
+}
+
+@test "wt-git <dirty repo> status is allowed" {
+    dirty_tracked
+    [[ "$(guard_from_tmp "wt-git $REPO status")" == "allow" ]]
+}
+
+@test "cd <dirty repo> && git reset --hard is denied from another cwd" {
+    dirty_tracked
+    [[ "$(guard_from_tmp "cd $REPO && git reset --hard")" == "deny" ]]
+}
+
+@test "cd <clean repo> && git reset --hard is allowed" {
+    [[ "$(guard_from_tmp "cd $REPO && git reset --hard")" == "allow" ]]
+}
+
+@test "cd <dirty repo> && git status is allowed" {
+    dirty_tracked
+    [[ "$(guard_from_tmp "cd $REPO && git status")" == "allow" ]]
+}
+
+@test "git -C <dirty repo> reset --hard is denied from another cwd" {
+    dirty_tracked
+    [[ "$(guard_from_tmp "git -C $REPO reset --hard")" == "deny" ]]
+}

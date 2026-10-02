@@ -370,3 +370,33 @@ cursor_guard() {
     # shellcheck disable=SC2016  # literal command text is the payload, not for expansion
     [[ "$(cursor_guard shell '{"hook_event_name":"beforeShellExecution","command":"echo `cat .env`"}')" == "2" ]]
 }
+
+# ── tilth MCP search ──────────────────────────────────────────────────
+
+@test "tilth_search with a .env glob is denied" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"KEY","glob":".env"}]}')" == "deny" ]]
+}
+
+@test "tilth_search with a .env* glob is denied" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"KEY","glob":"**/.env*"}]}')" == "deny" ]]
+}
+
+@test "tilth_search scoped to ~/.aws is denied" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"KEY"}],"scope":"~/.aws"}')" == "deny" ]]
+}
+
+@test "tilth_search scoped to .ssh is denied" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"x"}],"scope":".ssh","cwd":"/home/u"}')" == "deny" ]]
+}
+
+@test "tilth_search with a .pem glob among clean queries is denied" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"a","glob":"*.ts"},{"query":"b","glob":"*.pem"}]}')" == "deny" ]]
+}
+
+@test "tilth_search with clean globs and scope is allowed" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"foo","glob":"*.ts"},{"pattern":"Some(x)","language":"rust"}],"scope":"src","cwd":"/project"}')" == "allow" ]]
+}
+
+@test "tilth_search for .env.example is allowed" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"KEY","glob":".env.example"}]}')" == "allow" ]]
+}

@@ -60,7 +60,7 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/git-guard.sh"'
             timeout: 5
-      - matcher: "Read|Edit|Write|MultiEdit|Bash|apply_patch|mcp__tilth__tilth_read|mcp__tilth__tilth_write"
+      - matcher: "Read|Edit|Write|MultiEdit|Bash|apply_patch|mcp__tilth__tilth_read|mcp__tilth__tilth_write|mcp__tilth__tilth_search"
         hooks:
           - type: command
             command: '"$HOME/.claude/hooks/sensitive-file-guard.sh"'

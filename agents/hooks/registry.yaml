@@ -103,7 +103,7 @@ hooks:
     shared_assets:
       - agents/lib/sensitive-file-guard.js
     harnesses: [claude, codex]
-    matcher: "Read|Edit|Write|MultiEdit|Bash|apply_patch|mcp__tilth__tilth_read|mcp__tilth__tilth_write"
+    matcher: "Read|Edit|Write|MultiEdit|Bash|apply_patch|mcp__tilth__tilth_read|mcp__tilth__tilth_write|mcp__tilth__tilth_search"
     timeout: 5
     description: Block reads/writes of .env, private keys, and credential stores
 
