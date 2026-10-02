@@ -19,7 +19,6 @@ settings:
   permissions_allow:
     - Bash(git:*)
     - Bash(approve:*)
-    - Bash(tilth:*)
     - Bash(ls:*)
     - Bash(head:*)
     - Bash(tail:*)
@@ -79,11 +78,12 @@ settings:
     - Skill
   # PoC disallow-list (walk-back-able). Two groups:
   #   1. Search/IO routing. The tool-reroute hook (Claude and Codex) owns
-  #      this: it denies built-in and shell file reads, writes, and searches
-  #      in favor of the tilth MCP tools, so they are not denied here. This
-  #      list also lowers onto Cursor and Copilot, which keep their native
-  #      file tools and the routing system-prompt nudge. Bash(rg:*)'s allow
-  #      stays removed (a stray rg prompts rather than running unfiltered).
+  #      this. It denies built-in and shell file reads, writes, and searches
+  #      in favor of the tilth MCP tools, so this list does not deny them.
+  #      This list also lowers onto Cursor and Copilot. Those harnesses keep
+  #      their native file tools and the routing system-prompt nudge.
+  #      The Bash(rg:*) allow stays removed. A stray rg then prompts instead
+  #      of running unfiltered.
   #   2. Cross-harness safety floor (porting the retired bash-guard hook's
   #      spirit to every harness). `Bash(rm -rf:*)` is COARSER than bash-guard
   #      was (it blocks even safe relative `rm -rf node_modules`); with the

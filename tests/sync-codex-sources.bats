@@ -228,11 +228,17 @@ EOF
     local unprefixed
     unprefixed=$(printf '%s' "$output" | jq -r '[.hooks[][].hooks[].command | select(startswith("env DOTFILES_HARNESS=codex bash /") | not)] | length')
     [ "$unprefixed" -eq 0 ]
-    # tool-reroute routes Codex file reads, writes, and searches to tilth, so
-    # it is a codex hook and runs after git-guard and sensitive-file-guard,
-    # which keeps their hooks.state trust hashes stable.
-    run jq -r '[.hooks.PreToolUse[].hooks[0].command | split("/") | last] | join(",")' <<<"$output"
+    # tool-reroute routes Codex file reads, writes, and searches to tilth.
+    # It is a codex hook and runs after git-guard and sensitive-file-guard.
+    # That order keeps their hooks.state trust hashes stable.
+    local hooks_json="$output"
+    run jq -r '[.hooks.PreToolUse[].hooks[0].command | split("/") | last] | join(",")' <<<"$hooks_json"
     [ "$output" = "git-guard.sh,sensitive-file-guard.sh,tool-reroute.sh" ]
+    # The rendered matcher covers Codex apply_patch and the tilth_write guard.
+    local matcher
+    matcher=$(jq -r '.hooks.PreToolUse[] | select(.hooks[0].command | endswith("tool-reroute.sh")) | .matcher' <<<"$hooks_json")
+    [[ "$matcher" == *apply_patch* ]]
+    [[ "$matcher" == *mcp__tilth__tilth_write* ]]
 }
 
 # ── assembly: read-only predicate parity ────────────────────────────────────

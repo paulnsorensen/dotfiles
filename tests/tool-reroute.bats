@@ -424,7 +424,7 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
 @test "tool-reroute: permissions profile leaves file tools to the hook" {
     local prof="$REAL_DOTFILES_DIR/profiles/_permissions/profile.yaml"
     run yq -e '.settings.permissions_allow[] | select(. == "Bash(tilth:*)")' "$prof"
-    [ "$status" -eq 0 ]
+    [ "$status" -ne 0 ]
     # The profile also lowers onto Cursor and Copilot, which keep native file
     # tools, so it carries no static deny for them.
     run yq -e '.settings.permissions_deny[] | select(. == "Grep" or . == "Glob" or . == "Bash(grep:*)")' "$prof"

@@ -80,10 +80,6 @@ function searchTargets(seg, spec, args, xargs) {
 }
 
 function detect(toolName, input) {
-  if (toolName === 'Grep' || toolName === 'Glob') {
-    const pattern = input && typeof input.pattern === 'string' ? input.pattern : null;
-    return { reason: reason(`the ${toolName} tool`, pattern), pattern, module: 'search' };
-  }
   if (toolName !== 'Bash') return null;
   for (const seg of commands((input && input.command) || '')) {
     const { word, args, xargs } = commandWord(seg.argv);
