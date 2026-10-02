@@ -10,7 +10,7 @@
 // `ack -f`). The deny names the tilth_search MCP tool; it does not depend on a
 // tilth CLI.
 
-const { parse, commandWord, splitArgs, realFiles, pipedIn, inputFiles } = require('./shell');
+const { commands, commandWord, splitArgs, realFiles, pipedIn, inputFiles } = require('./shell');
 
 // Per-binary option grammar: which flags take a value, which flags make the
 // search recursive, which supply the pattern (so every operand is a path), and
@@ -64,7 +64,7 @@ Add glob:"*.rs" to a query to narrow it. Filters on command output (\`git log | 
 }
 
 // The files a shell search reads, or null when it reads none.
-function searchTargets(seg, spec, args) {
+function searchTargets(seg, spec, args, xargs) {
   const { flags, operands } = splitArgs(args, new Set(spec.valuedShort), new Set(spec.valuedLong));
   if ((spec.listing || []).some((f) => flags.has(f))) return null;
   const patternGiven = PATTERN_FLAGS.some((f) => flags.has(f));
@@ -75,6 +75,7 @@ function searchTargets(seg, spec, args) {
   const recursive = spec.recursive === 'always' || spec.recursive.some((f) => flags.has(f));
   const stdinFed = pipedIn(seg) || seg.inputRedirects.length > 0;
   if (recursive && !stdinFed) return { targets: ['.'], pattern };
+  if (xargs) return { targets: ['(files from xargs)'], pattern }; // xargs feeds file names on stdin
   return null;
 }
 
@@ -84,11 +85,11 @@ function detect(toolName, input) {
     return { reason: reason(`the ${toolName} tool`, pattern), pattern, module: 'search' };
   }
   if (toolName !== 'Bash') return null;
-  for (const seg of parse((input && input.command) || '')) {
-    const { word, args } = commandWord(seg.argv);
-    const spec = word && BINS[word];
+  for (const seg of commands((input && input.command) || '')) {
+    const { word, args, xargs } = commandWord(seg.argv);
+    const spec = word && Object.hasOwn(BINS, word) && BINS[word];
     if (!spec) continue;
-    const hit = searchTargets(seg, spec, args);
+    const hit = searchTargets(seg, spec, args, xargs);
     if (hit) return { reason: reason(`\`${word}\``, hit.pattern, hit.targets), pattern: hit.pattern, module: 'search' };
   }
   return null;

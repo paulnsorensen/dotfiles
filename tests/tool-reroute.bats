@@ -122,6 +122,15 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
     [[ "$(decision "$(out_for 'grep foo < f.txt')")" == "deny" ]]
 }
 
+@test "tool-reroute/search: rg with -- before the path denies" {
+    [[ "$(decision "$(out_for 'rg foo -- src')")" == "deny" ]]
+}
+
+@test "tool-reroute/search: ack -f lists files and passes; ack with a pattern denies" {
+    [[ -z "$(out_for 'ack -f')" ]]
+    [[ "$(decision "$(out_for 'ack foo')")" == "deny" ]]
+}
+
 @test "tool-reroute/search: the Grep tool denies and names tilth_search" {
     local out; out=$(out_for_input Grep '{"pattern":"foo"}')
     [[ "$(decision "$out")" == "deny" ]]
@@ -210,6 +219,101 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
     local out; out=$(out_for 'sed -i s/a/b/ f.txt')
     [[ "$(decision "$out")" == "deny" ]]
     [[ "$(reason "$out")" == *tilth_write* ]]
+}
+
+@test "tool-reroute/io: in-tree cat > f <<EOF and cat < f deny; data-file sed -f denies, piped sed -f passes" {
+    local cmd
+    for cmd in $'cat > f.txt <<EOF\nhi\nEOF' 'cat < f.txt' 'sed -f s.sed f.txt'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+    # Intentional: a script file on a piped filter reads no data file.
+    [[ -z "$(out_for_safe 'git log | sed -f rules.sed')" ]]
+}
+
+@test "tool-reroute/io: joined head/tail counts, absolute and env-prefixed readers deny" {
+    local cmd
+    for cmd in 'head -n5 f' 'tail -n 20 f' '/bin/cat f' 'env cat f'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: /sys, /dev/null and tail -f reads pass" {
+    local cmd
+    for cmd in 'cat /sys/class/net/lo/mtu' 'cat /dev/null' 'tail -f app.log'; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: wrappers do not hide a reader or searcher" {
+    local cmd
+    # shellcheck disable=SC2016  # literal commands for the hook; nothing expands here.
+    for cmd in 'xargs grep foo' 'xargs cat' 'git ls-files | xargs rg foo' 'find . -exec grep foo {} +' \
+        'find . -execdir cat {} \;' 'command cat f' 'exec cat f' 'time cat f' 'nice -n 5 cat f' \
+        'timeout -s KILL 5 cat f' 'sudo -u x cat f' 'sudo -n cat f' 'env -i cat f' 'echo `cat f`' \
+        'bash -c "cat f"' "sh -c 'grep x f'" $'bash <<EOF\necho x > src/a\nEOF' $'bash <<EOF\ncat README.md\nEOF'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+    for cmd in 'git log | grep fix' 'xargs echo' 'xargs' 'git ls-files | xargs wc -l' 'find . -name x' \
+        'command -v cat' "bash -c 'echo hi'" $'bash <<EOF\necho hi\nEOF'; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: a # comment hides no command and breaks no quote" {
+    local cmd
+    for cmd in "cat foo.txt  # it's big" $'# don\'t dump it\ncat foo.txt' 'cat foo.txt # note'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+    # Comment words are not operands, and a `;` in a comment starts no segment.
+    [[ "$(reason "$(out_for_safe 'cat foo.txt # note')")" != *note* ]]
+    # shellcheck disable=SC2016  # literal commands for the hook; nothing expands here.
+    for cmd in 'git log # see; cat foo.txt' 'echo a#b' 'echo $# ${#x}'; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: arithmetic << does not start a here-doc" {
+    [[ "$(decision "$(out_for_safe $'echo $((1<<2))\ncat foo.txt')")" == "deny" ]]
+}
+
+@test "tool-reroute/io: sed -i with a macOS empty suffix names the file, not the script" {
+    local out; out=$(out_for_safe "sed -i '' s/a/b/ f.txt")
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'edits f.txt in place'* ]]
+    [[ "$(reason "$out")" != *s/a/b/* ]]
+    out=$(out_for 'gsed -i s/a/b/ f.txt')
+    [[ "$(reason "$out")" == *tilth_write* ]]
+    out=$(out_for_safe "awk -i inplace '{print}' f.txt")
+    [[ "$(reason "$out")" == *'edits f.txt in place'* ]]
+}
+
+@test "tool-reroute/io: +N operands of tail/less/more are not files" {
+    local cmd out
+    for cmd in 'tail +5 f.txt' 'less +F f.txt' 'more +5 f.txt'; do
+        out=$(out_for_safe "$cmd")
+        [[ "$(decision "$out")" == "deny" ]] || return 1
+        [[ "$(reason "$out")" == *"reads f.txt —"* ]] || { echo "bad files: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: a parent-relative read suggests an absolute tilth path" {
+    local out; out=$(out_for 'cat ../sibling/file')
+    [[ "$(reason "$out")" == *"paths:[\"$(dirname "$W")/sibling/file\"]"* ]]
+}
+
+@test "tool-reroute/io: >| and &> writes deny; /dev/null and /tmp targets pass" {
+    local cmd
+    for cmd in 'echo x >| f.txt' 'echo x &> f.txt' 'echo x &>> f.txt'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+    for cmd in 'echo x &> /dev/null' 'echo x >| /tmp/a' 'echo x > /tmp/a'; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: a binary name like valueOf is not a reader (no throw)" {
+    [[ -z "$(out_for 'valueOf README.md')" ]]
+    [[ -z "$(out_for 'constructor README.md')" ]]
 }
 
 @test "tool-reroute/io: echo write-redirect denies and names tilth_write" {
