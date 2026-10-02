@@ -411,9 +411,9 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 # shellcheck disable=SC2016
 @test "tool-reroute/io: a redirect to a variable assigned an out-of-tree path is NOT denied" {
     local out; out=$(out_for_safe 'S=/tmp/scratch; mkdir -p $S; cat > $S/intent.json')
-    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+    [ -z "$out" ]
     out=$(out_for_safe 'D=/tmp/q cat > "${D}/m.json"')
-    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+    [ -z "$out" ]
 }
 
 # shellcheck disable=SC2016
@@ -426,9 +426,9 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 # shellcheck disable=SC2016
 @test "tool-reroute/io: a redirect to an unknown variable or command substitution delegates" {
     local out; out=$(out_for_safe 'cat > $UNSET_DIR/x.json')
-    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+    [ -z "$out" ]
     out=$(out_for_safe 'echo a >> "$(git rev-parse --git-common-dir)/info/exclude"')
-    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+    [ -z "$out" ]
 }
 
 # shellcheck disable=SC2016
@@ -440,7 +440,7 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 # shellcheck disable=SC2016
 @test "tool-reroute/io: a later reassignment does not resolve an earlier redirect" {
     local out; out=$(out_for_safe 'echo hi > $D/f; D=.')
-    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+    [ -z "$out" ]
     out=$(out_for_safe 'D=.; echo hi > "$D/x"; D=/tmp')
     [[ "$(decision "$out")" == "deny" ]]
 }
@@ -448,13 +448,13 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 # shellcheck disable=SC2016
 @test "tool-reroute/io: a command-local prefix does not apply to its own redirect" {
     local out; out=$(out_for_safe 'D=. echo hi > $D/f')
-    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+    [ -z "$out" ]
 }
 
 # shellcheck disable=SC2016
 @test "tool-reroute/io: an assignment in a pipeline is uncertain and delegates" {
     local out; out=$(out_for_safe 'D=. | cat; echo hi > $D/f')
-    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+    [ -z "$out" ]
 }
 
 # shellcheck disable=SC2016
@@ -470,13 +470,21 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 # shellcheck disable=SC2016
 @test "tool-reroute/io: HOME resolves outside the working tree and delegates" {
     local out; out=$(out_for_safe 'echo x > $HOME/f')
-    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+    [ -z "$out" ]
 }
 
 # shellcheck disable=SC2016
 @test "tool-reroute/io: a tilde assignment expands to HOME and delegates" {
     local out; out=$(out_for_safe 'D=~/tmp; echo x > $D/f')
-    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+    [ -z "$out" ]
+}
+
+@test "tool-reroute/io: every stdout redirect is checked, not only the first" {
+    local out; out=$(out_for_safe 'echo hi > /tmp/a > f.txt')
+    [ "$(decision "$out")" = "deny" ]
+    case "$(reason "$out")" in *f.txt*) ;; *) false ;; esac
+    out=$(out_for_safe 'echo hi > /tmp/a > /tmp/b')
+    [ -z "$out" ]
 }
 
 @test "tool-reroute/io: a redirect to /dev/null is NOT denied (no tilth_write target)" {

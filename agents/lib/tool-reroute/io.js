@@ -112,9 +112,11 @@ function detect(toolName, input, cwd) {
     if (seg.redirects.length > 0) {
       const { word } = commandWord(seg.argv);
       if (word && WRITE_BINS.has(word)) {
-        const j = seg.redirectFds.findIndex((fd) => fd === null || fd === '1');
-        if (j !== -1 && isRepoWrite(seg.redirectTargets[j], cwd, vars)) {
-          return { reason: writeReason(seg.redirectTargets[j]), module: 'io' };
+        for (let j = 0; j < seg.redirectFds.length; j++) {
+          const fd = seg.redirectFds[j];
+          if ((fd === null || fd === '1') && isRepoWrite(seg.redirectTargets[j], cwd, vars)) {
+            return { reason: writeReason(seg.redirectTargets[j]), module: 'io' };
+          }
         }
       }
     }
