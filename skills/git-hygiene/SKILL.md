@@ -4,7 +4,7 @@ model: haiku
 effort: low
 user-invocable: false
 description: >
-  Guardrail against git commands that read file contents outside the Read tool —
+  Guardrail against git commands that read file contents outside `tilth_read` —
   especially `git show <ref>:<path>` and `git cat-file`, which bypass file-access
   controls. Triggers when constructing git commands with colon ref:path syntax or
   cat-file to read another branch or commit. Do NOT use for normal git operations
@@ -14,7 +14,7 @@ description: >
 # git-hygiene
 
 Git has commands that can read arbitrary file contents from any branch or commit.
-Using them in Bash bypasses the Read tool, avoids file access controls, and floods
+Using them in Bash bypasses `tilth_read`, avoids file access controls, and floods
 the context window with unstructured output. This skill explains why these
 patterns are dangerous and what to do instead.
 
@@ -36,24 +36,25 @@ The colon (`:`) is the tell — it means "file contents at ref", not "commit det
 
 | Goal | Correct approach |
 |------|-----------------|
-| Read a file in the current worktree | Use the **Read** tool directly |
+| Read a file in the current worktree | Use `tilth_read` directly |
 | Compare a file across versions | `git diff <ref> -- <path>` (shows diff, not raw content) |
 | See what changed in a file between refs | `git diff <ref> HEAD -- <path>` (shows delta, not raw content) |
-| Read a file from another branch in isolation | Use **Read** tool after switching branches via `/worktree` — isolated worktree is the safe pattern |
+| Read a file from another branch in isolation | Use `tilth_read` after switching branches via `/worktree` — isolated worktree is the safe pattern |
 | View commit metadata | `git show <commit>` (no colon — this is fine) |
 | View commit stats | `git show --stat <commit>` (fine) |
 | List files changed in a commit | `git diff-tree --no-commit-id -r <commit>` (fine) |
 
 ## Why this matters
 
-- **Read tool** lets the user see what you're reading and control access
+- **`tilth_read`** lets the user see what you're reading and control access
 - **git show ref:path** is invisible to file access guards
 - Raw file dumps pollute context — diffs are almost always more useful
-- Worktree files are already available via Read — no git gymnastics needed
+- Worktree files are already available via `tilth_read` — no git gymnastics needed
 
 ## Gotchas
 
 - `git log -p` and `git show <commit>` (without path) are safe — they show diffs, not file contents
-- `git diff <ref> -- <path>` is safe — shows delta, doesn't bypass Read tool
+- `git diff <ref> -- <path>` is safe — shows delta, doesn't bypass `tilth_read`
 - The colon syntax (`ref:path`) is the specific pattern to block — not all `git show` usage
+- The built-in Read tool stays valid only for images and PDFs
 - Sub-agents may not have this skill loaded — the companion hook is the real enforcement

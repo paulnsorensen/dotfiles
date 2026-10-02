@@ -11,7 +11,7 @@ description: >
   invokes /xray. Do NOT use for a standalone "trace this concept" or "blast
   radius" question with no verification session — that is /steel-thread.
 argument-hint: <module path, spec path, PR number, symbol, or concept>
-allowed-tools: Read, Write, Glob, Grep, Bash(sg:*), Bash(git diff:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(gh:*), Agent, mcp__tilth__tilth_search, mcp__tilth__tilth_read, mcp__tilth__tilth_list, mcp__tilth__tilth_deps
+allowed-tools: Read, Bash(sg:*), Bash(git diff:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(gh:*), Agent, mcp__tilth__tilth_search, mcp__tilth__tilth_read, mcp__tilth__tilth_write, mcp__tilth__tilth_list, mcp__tilth__tilth_deps
 ---
 
 # /xray — Interactive Design Verification

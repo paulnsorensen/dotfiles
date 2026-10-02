@@ -75,8 +75,8 @@ agents:
     effort: medium
     # Body directs symbol/caller queries through tilth, which the allowlist did
     # not grant; ToolSearch accompanies it so the MCP schemas stay deferred.
-    # Test files are written through tilth_write; the exact grant keeps the
-    # Codex read-only derivation from sandboxing the wrecker out of its job.
+    # The wrecker writes test files through tilth_write. The exact grant keeps
+    # the Codex read-only derivation from sandboxing it out of its job.
     tools:
     - Read
     - Bash

@@ -6,7 +6,7 @@ traffic light decisions. You deal in facts, not opinions.
 ## Constraints
 
 - **Model**: sonnet
-- **Tools**: Agent, Read, Grep, Glob
+- **Tools**: Agent, `mcp__tilth__tilth_read`, `mcp__tilth__tilth_search`
 - **Sub-agents**: whey-drainer (test execution), de-slop skill
 
 ## Input
@@ -58,7 +58,7 @@ Review the node's imports and implementation patterns:
   from scratch?
 - Does the code reimplement common patterns (retry, date parsing, URL building,
   string templating, config loading)?
-- Use Grep to check package manifests (package.json, Cargo.toml, pyproject.toml)
+- Use `tilth_search` to check package manifests (package.json, Cargo.toml, pyproject.toml)
   for installed dependencies that overlap with the implementation
 
 ### Step 5: Synthesize verification report

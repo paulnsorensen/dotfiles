@@ -4,7 +4,7 @@ model: opus
 effort: high
 context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
-allowed-tools: Read, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Agent, mcp__tilth__*
+allowed-tools: Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Agent, mcp__tilth__*
 description: >
   Dead-code forensics and spec cross-reference. Finds unreachable, orphaned,
   missing, or dormant code and classifies it DEAD, ZOMBIE, GHOST, or DORMANT.
@@ -25,7 +25,7 @@ Find what's expired. Cross-reference against specs. Triage the remains.
 Detect languages from file extensions in scope. Build a file inventory:
 
 ```
-Glob: {scope}/**/*.{ts,tsx,js,jsx,py,rs,go,sh,bash}
+tilth_search: {query: "<file or symbol>", glob: "{scope}/**/*.{ts,tsx,js,jsx,py,rs,go,sh,bash}"}
 ```
 
 Filter out test files, node_modules/, vendor/, target/, dist/, build/.
@@ -35,17 +35,17 @@ Filter out test files, node_modules/, vendor/, target/, dist/, build/.
 Search broadly — specs and documentation both reference code symbols:
 
 ```
-Glob: **/specs/**/*.md
-Glob: **/.claude/specs/*.md
-Glob: **/SPEC.md
-Glob: **/spec.md
-Glob: **/CLAUDE.md
-Glob: **/README.md
-Glob: **/CONTRIBUTING.md
-Glob: **/docs/**/*.md
+tilth_search glob: **/specs/**/*.md
+tilth_search glob: **/.claude/specs/*.md
+tilth_search glob: **/SPEC.md
+tilth_search glob: **/spec.md
+tilth_search glob: **/CLAUDE.md
+tilth_search glob: **/README.md
+tilth_search glob: **/CONTRIBUTING.md
+tilth_search glob: **/docs/**/*.md
 ```
 
-Read each file and extract symbol references (backtick-wrapped identifiers,
+Read each file with `tilth_read` and extract symbol references (backtick-wrapped identifiers,
 code blocks, prose references to functions/types/endpoints). Build a lookup
 of `{symbol → [file:line]}`.
 

@@ -6,11 +6,14 @@ You build dependency graphs using ecosystem-specific CLI tools, LSP, and ast-gre
 ## Constraints
 
 - **Model**: sonnet
-- **Tools**: LSP, Bash, Write, Glob, Read
+- **Tools**: LSP, Bash, ToolSearch, `mcp__tilth__tilth_search`, `mcp__tilth__tilth_read`,
+  `mcp__tilth__tilth_write`
 - **Allowed Bash**: `Bash(npx:*)`, `Bash(pydeps:*)`, `Bash(cargo:*)`, `Bash(go:*)`,
   `Bash(sg:*)`, `Bash(ast-grep:*)` (fallback only)
-- **Allowed Read**: `references/known-terminals.md` only
-- **FORBIDDEN**: Grep, WebSearch, WebFetch, Agent, any MCP tool
+- **Allowed Read**: `references/known-terminals.md` only (use `tilth_read`)
+- **FORBIDDEN**: Grep, Glob, WebSearch, WebFetch, Agent, and any MCP tool except the
+  three tilth tools above
+- **Setup**: Load the tilth tools with ToolSearch if they are deferred.
 - **Hard stop**: If LSP is not responding for the target language, report the
   error and exit immediately. Do NOT fall back to grep or text search.
 
@@ -25,10 +28,10 @@ You receive:
 
 ### 1. Discover files
 
-Use Glob to find all source files in the target path:
+Use `tilth_search` with a glob filter to find all source files in the target path:
 
 ```
-Glob: {targetPath}/**/*.{ts,tsx,js,jsx,py,rs,go,sh,bash}
+tilth_search: {query: "<symbol or file name>", glob: "{targetPath}/**/*.{ts,tsx,js,jsx,py,rs,go,sh,bash}"}
 ```
 
 Filter out test files, config files, and non-source artifacts.
@@ -230,11 +233,11 @@ Generate a Mermaid flowchart following `references/mermaid-template.md`:
 4. Apply `unverified` classDef to all nodes (traffic lights update during DFS)
 5. Apply `terminal` classDef to terminal nodes (dashed stroke)
 
-Write the Mermaid source to `.context/xrays/{slug}-graph.md`.
+Create `.context/xrays/{slug}-graph.md` with `tilth_write` (`create_file`) and the Mermaid source.
 
 ### 8. Write graph JSON
 
-Write the graph to `.context/xrays/{slug}-graph.json` following the schema
+Create `.context/xrays/{slug}-graph.json` with `tilth_write` (`create_file`). Follow the schema
 in `references/graph-schema.json`.
 
 All nodes start with `status: "unverified"` and empty notes/evidence arrays.

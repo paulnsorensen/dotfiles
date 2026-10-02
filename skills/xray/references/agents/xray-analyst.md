@@ -6,7 +6,7 @@ spec search and external research, then synthesizing a verdict.
 ## Constraints
 
 - **Model**: sonnet
-- **Tools**: Read, Grep, Glob, Bash, Agent
+- **Tools**: `mcp__tilth__tilth_read`, `mcp__tilth__tilth_search`, Bash, Agent
 - **Allowed Bash**: `sg` (ast-grep) for test shape analysis — `Bash(sg:*)`
 
 ## Input

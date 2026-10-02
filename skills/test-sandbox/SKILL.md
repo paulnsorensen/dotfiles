@@ -4,7 +4,7 @@ model: haiku
 effort: low
 context: fork
 background: false
-allowed-tools: Read, Write, Bash(python3:*), Bash(uv:*), Bash(pytest:*), Bash(ls:*), Bash(rm:*)
+allowed-tools: mcp__tilth__tilth_read, mcp__tilth__tilth_write, Bash(python3:*), Bash(uv:*), Bash(pytest:*), Bash(ls:*), Bash(rm:*)
 description: >
   Run Python test code in an isolated .claude/testing sandbox (via sub-agent)
   without polluting the main context, reporting only pass/fail counts and
@@ -152,7 +152,7 @@ Separate with semicolons:
 
 ```
 /test-sandbox --keep "assert my_fn() == expected"  # Don't delete file after failure
-cat .claude/testing/test_*.py  # Inspect the generated test
+tilth_read .claude/testing/test_*.py  # Inspect the generated test (tilth_read, not cat)
 ```
 
 ## Implementation
