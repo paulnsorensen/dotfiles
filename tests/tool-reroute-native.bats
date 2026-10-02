@@ -120,6 +120,13 @@ tilth_write_input() {
     [ -z "$output" ]
 }
 
+@test "codex tilth_write: a symlink in the checkout that points outside denies" {
+    ln -s /etc "$REPO/etc-link"
+    hook codex mcp__tilth__tilth_write "$(tilth_write_input "$REPO/etc-link/x")"
+    [ "$(decision)" = "deny" ]
+    [[ "$(reason)" == *etc-link/x* ]]
+}
+
 @test "codex tilth_write: a relative path resolves against input cwd" {
     local j
     j=$(jq -nc --arg c "$REPO" '{cwd:$c, edits:[{path:"a.txt", ops:[]}]}')

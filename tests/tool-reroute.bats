@@ -8,8 +8,9 @@
 # DENIES a built-in or shell call that reads, searches, or writes files and names
 # the tilth MCP call to make instead; a hook's updatedInput cannot turn a Bash
 # call into an MCP call, so there is no rewrite target. Claude also removes
-# Write/Edit/Grep/Glob from context through permissions.deny, so the
-# model does not retry a tool it cannot see. Calls that read no file (pipe
+# Grep/Glob from context through permissions.deny, so the model does not retry
+# a tool it cannot see. Write/Edit stay in context: plan mode and auto-memory
+# need them, so the hook denies them outside ~/.claude/plans and memory.
 # filters, here-docs, `tail -f`, /proc) run unchanged, and the passthrough and
 # fail-open tests encode that a non-file or broken hook never blocks a call.
 
@@ -402,12 +403,22 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
     done
 }
 
-@test "tool-reroute: live Claude settings deny the write and search tools and route through the hook" {
+@test "tool-reroute: live Claude settings deny the search tools and route through the hook" {
     local data="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
     local reg="$REAL_DOTFILES_DIR/agents/hooks/registry.yaml"
     local tool
-    for tool in Edit Glob Grep Write; do
+    for tool in Glob Grep; do
         yq -e ".claude.permissions.deny[] | select(. == \"$tool\")" "$data" >/dev/null || { echo "not denied: $tool" >&2; return 1; }
+        if yq -e ".claude.permissions.allow[] | select(. == \"$tool\")" "$data" >/dev/null; then
+            echo "still allowed: $tool" >&2; return 1
+        fi
+    done
+    # Plan mode writes its plan file and auto-memory writes memory with Write/Edit,
+    # so a bare deny would break both. The hook gates them instead.
+    for tool in Edit Write; do
+        if yq -e ".claude.permissions.deny[] | select(. == \"$tool\")" "$data" >/dev/null; then
+            echo "$tool must stay reachable for plan mode and memory" >&2; return 1
+        fi
         if yq -e ".claude.permissions.allow[] | select(. == \"$tool\")" "$data" >/dev/null; then
             echo "still allowed: $tool" >&2; return 1
         fi

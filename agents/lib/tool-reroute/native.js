@@ -136,11 +136,13 @@ function realish(p) {
   }
 }
 
+// Judge the real path only: a symlink inside the checkout that points outside
+// it must not pass. Roots match in raw and real form (/tmp → /private/tmp).
 function underRoot(resolved, roots) {
-  if (/(^|\/)\.cheese(\/|$)/.test(resolved)) return true;
-  const candidates = [resolved, realish(resolved)];
+  const real = realish(resolved);
+  if (/(^|\/)\.cheese(\/|$)/.test(real)) return true;
   const allRoots = roots.flatMap((r) => [r.replace(/\/+$/, ''), realish(r.replace(/\/+$/, ''))]);
-  return candidates.some((c) => allRoots.some((r) => c === r || c.startsWith(r + '/')));
+  return allRoots.some((r) => real === r || real.startsWith(r + '/'));
 }
 
 function outOfTreeReason(blocked, roots) {
