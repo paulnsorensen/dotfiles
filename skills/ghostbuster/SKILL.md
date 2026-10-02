@@ -4,7 +4,7 @@ model: opus
 effort: high
 context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
-allowed-tools: Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Agent, mcp__tilth__*
+allowed-tools: Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Bash(rg --files:*), Agent, mcp__tilth__*
 description: >
   Dead-code forensics and spec cross-reference. Finds unreachable, orphaned,
   missing, or dormant code and classifies it DEAD, ZOMBIE, GHOST, or DORMANT.
@@ -32,17 +32,14 @@ Filter out test files, node_modules/, vendor/, target/, dist/, build/.
 
 ## Phase 2: Spec & Doc Collection
 
-Search broadly — specs and documentation both reference code symbols:
+Search broadly — specs and documentation both reference code symbols. List the
+files with `rg --files` (it lists paths and reads no file content, so the
+tool-reroute hook lets it run):
 
-```
-tilth_search glob: **/specs/**/*.md
-tilth_search glob: **/.claude/specs/*.md
-tilth_search glob: **/SPEC.md
-tilth_search glob: **/spec.md
-tilth_search glob: **/CLAUDE.md
-tilth_search glob: **/README.md
-tilth_search glob: **/CONTRIBUTING.md
-tilth_search glob: **/docs/**/*.md
+```bash
+rg --files -g '**/specs/**/*.md' -g '**/.claude/specs/*.md' -g '**/SPEC.md' \
+  -g '**/spec.md' -g '**/CLAUDE.md' -g '**/README.md' -g '**/CONTRIBUTING.md' \
+  -g '**/docs/**/*.md'
 ```
 
 Read each file with `tilth_read` and extract symbol references (backtick-wrapped identifiers,

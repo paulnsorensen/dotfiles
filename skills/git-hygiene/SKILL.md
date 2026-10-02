@@ -56,5 +56,5 @@ The colon (`:`) is the tell — it means "file contents at ref", not "commit det
 - `git log -p` and `git show <commit>` (without path) are safe — they show diffs, not file contents
 - `git diff <ref> -- <path>` is safe — shows delta, doesn't bypass `tilth_read`
 - The colon syntax (`ref:path`) is the specific pattern to block — not all `git show` usage
-- The built-in Read tool stays valid only for images and PDFs
+- The built-in Read tool stays valid only for images, PDFs, and notebooks
 - Sub-agents may not have this skill loaded — the companion hook is the real enforcement

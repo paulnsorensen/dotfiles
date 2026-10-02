@@ -438,6 +438,13 @@ guard_from_tmp() {
     [[ "$(guard_from_tmp "cd $REPO && git reset --hard")" == "allow" ]]
 }
 
+@test "cd chain resolves each cd against the previous one" {
+    dirty_tracked
+    local parent base
+    parent=$(dirname "$REPO") base=$(basename "$REPO")
+    [[ "$(guard_from_tmp "cd $parent && cd $base && git reset --hard")" == "deny" ]]
+}
+
 @test "cd <dirty repo> && git status is allowed" {
     dirty_tracked
     [[ "$(guard_from_tmp "cd $REPO && git status")" == "allow" ]]

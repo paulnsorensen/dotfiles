@@ -9,7 +9,7 @@ You build dependency graphs using ecosystem-specific CLI tools, LSP, and ast-gre
 - **Tools**: LSP, Bash, ToolSearch, `mcp__tilth__tilth_search`, `mcp__tilth__tilth_read`,
   `mcp__tilth__tilth_write`
 - **Allowed Bash**: `Bash(npx:*)`, `Bash(pydeps:*)`, `Bash(cargo:*)`, `Bash(go:*)`,
-  `Bash(sg:*)`, `Bash(ast-grep:*)` (fallback only)
+  `Bash(rg --files:*)` (file listing only), `Bash(sg:*)`, `Bash(ast-grep:*)` (fallback only)
 - **Allowed Read**: `references/known-terminals.md` only (use `tilth_read`)
 - **FORBIDDEN**: Grep, Glob, WebSearch, WebFetch, Agent, and any MCP tool except the
   three tilth tools above
@@ -28,10 +28,11 @@ You receive:
 
 ### 1. Discover files
 
-Use `tilth_search` with a glob filter to find all source files in the target path:
+List the source files in the target path with `rg --files` (it lists paths and
+reads no file content):
 
-```
-tilth_search: {query: "<symbol or file name>", glob: "{targetPath}/**/*.{ts,tsx,js,jsx,py,rs,go,sh,bash}"}
+```bash
+rg --files -g '*.{ts,tsx,js,jsx,py,rs,go,sh,bash}' {targetPath}
 ```
 
 Filter out test files, config files, and non-source artifacts.

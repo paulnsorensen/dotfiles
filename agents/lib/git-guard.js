@@ -204,20 +204,21 @@ function classifyArgs(args) {
   return null;
 }
 
-// Every destructive segment, in order. A preceding `cd <path>` segment is
-// carried on the hit as the first entry of `dirs`, so the dirty check runs
-// against the directory git actually operates in.
+// Every destructive segment, in order. The preceding `cd` targets are carried
+// on the hit as the leading entries of `dirs`, in order, so the dirty check
+// runs against the directory git actually operates in. `cd a && cd ../b`
+// resolves `../b` against `a`; an absolute target resets the chain.
 function classifyAll(command) {
   const hits = [];
-  let cd = null;
+  let cds = [];
   for (const tokens of tokenizeSegments(command)) {
     if (tokens[0] === 'cd') {
       const target = tokens.slice(1).find((t) => t !== '--');
-      cd = target === undefined ? null : target;
+      cds = target === undefined ? ['~'] : [...cds, target];
       continue;
     }
     const hit = classify(tokens);
-    if (hit) hits.push(cd === null ? hit : { ...hit, dirs: [cd, ...hit.dirs] });
+    if (hit) hits.push(cds.length ? { ...hit, dirs: [...cds, ...hit.dirs] } : hit);
   }
   return hits;
 }
