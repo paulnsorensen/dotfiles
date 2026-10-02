@@ -9,7 +9,11 @@ Use the working-directory option.
 Batch independent calls in one turn. Follow schemas.
 Do not invent fields or anchors.
 Read affected sections before edits.
-Refresh them after changes or stale anchors.
+Take each `tilth_write` TAG and `replace_text` `old` from lines its read displayed.
+Re-read a section after a write or a stale anchor.
+Use `create_file` only for new paths.
+Escape control characters in JSON strings.
+Write files with `tilth_write`, not shell redirects.
 Omit `tilth_read` `mode` unless a section cannot answer.
 Limit edits to changed lines or complete constructs.
 Check callers with `tilth_deps` before exported-interface changes.

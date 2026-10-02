@@ -10,9 +10,12 @@
 // filters a pipe or a here-doc reads no file and runs unchanged, as does
 // `tail -f` (a live stream tilth_read cannot follow) and a read of /dev,
 // /proc, or /sys. A write-redirect to /dev/null or outside the cwd (e.g. /tmp
-// scratch) delegates rather than hard-denying a legitimate non-repo write. A
-// `>` inside a quoted string is not a redirect (the lexer resolves quotes).
+// scratch) delegates rather than hard-denying a legitimate non-repo write.
+// A `$VAR` target resolves from the command's own assignments; an unknown
+// expansion delegates. A `>` inside a quoted string is not a redirect (the
+// lexer resolves quotes).
 
+const os = require('os');
 const path = require('path');
 const { commands, commandWord, splitArgs, realFiles, inputFiles } = require('./shell');
 
@@ -39,12 +42,14 @@ READERS.gsed = READERS.sed;
 
 function writeReason(target) {
   const p = target || '<file>';
-  return `Blocked: shell write-redirect to ${p} — use tilth_write, not echo/printf/cat with > / >>.
+  return `Blocked: shell write-redirect to ${p} — write workspace files with mcp__tilth__tilth_write, not echo/printf/cat with > / >>.
 
-New file (seed — omit tag):
+New file (omit tag):
   mcp__tilth__tilth_write(edits:[{path:${JSON.stringify(p)}, ops:[{op:"create_file", content:"…"}]}], cwd:"<checkout>")
 
-Existing file: tilth_read first to get the [path#TAG], then tag-anchored ops (replace/insert_before/insert_after) on the numbered lines.`;
+Existing file: tilth_read the section first to get the [path#TAG], then edit the displayed lines with that TAG (replace_text, replace, insert_after). create_file fails on an existing path.
+
+Out-of-tree scratch (for example /tmp) may still use a shell redirect.`;
 }
 
 // tilth refuses `..` in a relative path, so a parent-relative file becomes absolute.
@@ -69,12 +74,62 @@ tilth_read the file first to get the [path#TAG], then:
   mcp__tilth__tilth_write(edits:[{path:${JSON.stringify(suggestPath(files[0], cwd))}, tag:"<TAG>", ops:[{op:"replace_text", old:"…", new:"…"}]}], cwd:"<checkout>")`;
 }
 
+const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
+const LEADING_VAR = /^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/;
+
+// Resolve a leading `$NAME` / `${NAME}` from the tracked variables, or a leading
+// `$(pwd)` as cwd. Return null when the target starts with an expansion the hook
+// cannot know (an unknown variable, another `$(...)`, or a backtick): its real
+// path may sit outside the tree, so the hook delegates instead of a false deny.
+function expandTarget(target, vars, cwd) {
+  if (!target.startsWith('$') && !target.startsWith('`')) return target;
+  if (target.startsWith('$(pwd)')) return cwd + target.slice('$(pwd)'.length);
+  const m = LEADING_VAR.exec(target);
+  if (!m) return null;
+  const value = vars.get(m[1] || m[2]);
+  if (value === undefined || value.includes('$') || value.includes('`')) return null;
+  return value + target.slice(m[0].length);
+}
+
+function expandTilde(value) {
+  if (value === '~' || value.startsWith('~/')) return os.homedir() + value.slice(1);
+  return value;
+}
+
+// Leading `NAME=value` words of a segment, as [name, value] pairs.
+function leadingAssignments(argv) {
+  const out = [];
+  for (const word of argv) {
+    const m = ASSIGNMENT.exec(word);
+    if (!m) break;
+    out.push([m[1], m[2]]);
+  }
+  return out;
+}
+
+// Track variables in execution order. Only an assignment-only segment persists
+// its names; `D=x cmd` is command-local. Where the effect is uncertain (a
+// pipeline, background, or &&/|| segment) the names are dropped, not set.
+function applyAssignments(vars, segs, i) {
+  const seg = segs[i];
+  if (commandWord(seg.argv).word !== null) return;
+  const next = segs[i + 1];
+  const uncertain =
+    ['|', '&', '&&', '||'].includes(seg.sep) || (next && (next.sep === '|' || next.sep === '&'));
+  for (const [name, value] of leadingAssignments(seg.argv)) {
+    if (uncertain) vars.delete(name);
+    else vars.set(name, expandTilde(value));
+  }
+}
+
 // A write-redirect only needs tilth_write when it targets a file in the working
 // tree. /dev/null and absolute paths outside cwd resolve elsewhere, so they
 // delegate rather than hard-deny a legitimate non-repo write.
-function isRepoWrite(target, cwd) {
-  if (!target || target === '/dev/null') return false;
-  const resolved = path.resolve(cwd, target);
+function isRepoWrite(target, cwd, vars) {
+  if (!target) return false;
+  const expanded = expandTarget(target, vars, cwd);
+  if (!expanded || expanded === '/dev/null') return false;
+  const resolved = path.resolve(cwd, expanded);
   return resolved === cwd || resolved.startsWith(cwd + path.sep);
 }
 
@@ -106,18 +161,30 @@ function detect(toolName, input, cwd) {
   if (toolName !== 'Bash') return null;
   cwd = cwd || process.cwd();
   const segs = commands((input && input.command) || '');
+  const vars = new Map([
+    ['PWD', cwd],
+    ['CLAUDE_PROJECT_DIR', process.env.CLAUDE_PROJECT_DIR || cwd],
+    ['HOME', os.homedir()],
+  ]);
 
   // write-redirect: a stdout content write (`>`/`>>`, bare or `1>`) by a write
   // bin. An fd redirect (`2>`, `N>`, `2>&1`) writes no file content, so it must
   // NOT deny a command like `make 2>/dev/null`. `&>` and `>|` write stdout.
-  for (const seg of segs) {
-    if (seg.redirects.length === 0) continue;
-    const { word } = commandWord(seg.argv);
-    if (!word || !WRITE_BINS.has(word)) continue;
-    const i = seg.redirectFds.findIndex((fd) => fd === null || fd === '1');
-    if (i !== -1 && isRepoWrite(seg.redirectTargets[i], cwd)) {
-      return { reason: writeReason(seg.redirectTargets[i]), module: 'io' };
+  // Each redirect resolves against the variables set BEFORE its own segment.
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i];
+    if (seg.redirects.length > 0) {
+      const { word } = commandWord(seg.argv);
+      if (word && WRITE_BINS.has(word)) {
+        for (let j = 0; j < seg.redirectFds.length; j++) {
+          const fd = seg.redirectFds[j];
+          if ((fd === null || fd === '1') && isRepoWrite(seg.redirectTargets[j], cwd, vars)) {
+            return { reason: writeReason(seg.redirectTargets[j]), module: 'io' };
+          }
+        }
+      }
     }
+    applyAssignments(vars, segs, i);
   }
 
   for (const seg of segs) {

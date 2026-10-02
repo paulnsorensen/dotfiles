@@ -182,6 +182,8 @@ hooks:
   #                            hard ceiling gets a short grace window before
   #                            it denies (a resumed sub-agent's transcript can
   #                            already sit above it on the very first call).
+  #                            SubagentHandback stays allowed at the ceiling,
+  #                            because it ends the agent.
   #   turn-budget-guard-post — PostToolUse: inject a one-time wrap-up nudge
   #                            (additionalContext) when either signal crosses
   #                            its soft threshold — the graceful handoff

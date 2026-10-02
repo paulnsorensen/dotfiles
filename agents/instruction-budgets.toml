@@ -21,8 +21,10 @@ max_tokens = 550
 [[source]]
 # 520: PR #1051 added section-read and coder re-dispatch rules (2026-09-24).
 # 530: parallel-call batching and read-section handoff rules (2026-09-28).
+# 575: tilth_write TAG, create_file, JSON-escape, and no-redirect rules; 14-day
+# session analytics showed 12.7% tilth_write errors and 205 redirect blocks (2026-10-01).
 path = "agents/preamble.md"
-max_tokens = 530
+max_tokens = 575
 
 [[source]]
 path = "profiles/codex-code/AGENTS.md"
@@ -108,15 +110,16 @@ max_tokens = 5000
 "skills/xray/SKILL.md" = 5800
 
 # 1060: parallel-call batching and read-section handoff rules (2026-09-28).
+# 1120: preamble tilth_write and no-redirect rules (2026-10-01).
 [[stack]]
 name = "global_codex"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1060
+max_tokens = 1120
 
 [[stack]]
 name = "global_claude"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1060
+max_tokens = 1120
 
 [[stack]]
 name = "repo_codex"
