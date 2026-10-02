@@ -78,12 +78,12 @@ settings:
     - WebFetch
     - Skill
   # PoC disallow-list (walk-back-able). Two groups:
-  #   1. Search/IO routing. The tool-reroute hook (claude-only) now OWNS this:
-  #      it REWRITES grep/rg/ag/ack/cat/find to tilth and lets everything else
-  #      run unchanged, so grep/ag/ack and the Grep/Glob tools are no longer
-  #      denied here. Cursor and Copilot keep the routing system-prompt nudge.
-  #      Bash(rg:*)'s allow stays removed (a stray rg prompts rather than
-  #      running unfiltered).
+  #   1. Search/IO routing. The tool-reroute hook (Claude and Codex) owns
+  #      this: it denies built-in and shell file reads, writes, and searches
+  #      in favor of the tilth MCP tools, so they are not denied here. This
+  #      list also lowers onto Cursor and Copilot, which keep their native
+  #      file tools and the routing system-prompt nudge. Bash(rg:*)'s allow
+  #      stays removed (a stray rg prompts rather than running unfiltered).
   #   2. Cross-harness safety floor (porting the retired bash-guard hook's
   #      spirit to every harness). `Bash(rm -rf:*)` is COARSER than bash-guard
   #      was (it blocks even safe relative `rm -rf node_modules`); with the

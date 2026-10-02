@@ -228,9 +228,11 @@ EOF
     local unprefixed
     unprefixed=$(printf '%s' "$output" | jq -r '[.hooks[][].hooks[].command | select(startswith("env DOTFILES_HARNESS=codex bash /") | not)] | length')
     [ "$unprefixed" -eq 0 ]
-    # tool-reroute is harnesses:[claude] (5f78a0f) and must not leak into codex.
-    run bash -c "printf '%s' '$output' | grep -c tool-reroute || true"
-    [ "$output" = "0" ]
+    # tool-reroute routes Codex file reads, writes, and searches to tilth, so
+    # it is a codex hook and runs after git-guard and sensitive-file-guard,
+    # which keeps their hooks.state trust hashes stable.
+    run jq -r '[.hooks.PreToolUse[].hooks[0].command | split("/") | last] | join(",")' <<<"$output"
+    [ "$output" = "git-guard.sh,sensitive-file-guard.sh,tool-reroute.sh" ]
 }
 
 # ── assembly: read-only predicate parity ────────────────────────────────────

@@ -75,12 +75,14 @@ agents:
     effort: medium
     # Body directs symbol/caller queries through tilth, which the allowlist did
     # not grant; ToolSearch accompanies it so the MCP schemas stay deferred.
+    # Test files are written through tilth_write; the exact grant keeps the
+    # Codex read-only derivation from sandboxing the wrecker out of its job.
     tools:
     - Read
-    - Write
     - Bash
     - ToolSearch
     - mcp__tilth
+    - mcp__tilth__tilth_write
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/roquefort-wrecker.md
@@ -93,7 +95,8 @@ agents:
     effort: low
     tools:
     - Bash
-    - Read
+    - ToolSearch
+    - mcp__tilth__tilth_read
     disallowedTools:
     - Edit
     - Write
@@ -116,7 +119,8 @@ agents:
     effort: low
     tools:
     - Bash
-    - Read
+    - ToolSearch
+    - mcp__tilth__tilth_read
     skills: []
     maxTurns: 50
     body_path: agents/agent_definitions/whey-drainer.md
@@ -129,7 +133,8 @@ agents:
     effort: low
     tools:
     - Bash
-    - Read
+    - ToolSearch
+    - mcp__tilth__tilth_read
     maxTurns: 30
     body_path: agents/agent_definitions/worktree-content-digest.md
   # ── easy-cheese general phase agents ──────────────────────────────────────

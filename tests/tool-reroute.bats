@@ -1,17 +1,17 @@
 #!/usr/bin/env bats
 # Tests for the tool-reroute PreToolUse hook (harness-agnostic).
 #   agents/hooks/tool-reroute.sh  — bash bridge (self-locating, overrideable harness)
-#   agents/lib/tool-reroute.js    — dispatcher (search → cd-strip → cd-git → io)
-#   agents/lib/tool-reroute/{shell,search,cd-git,io}.js — lexer + modules
+#   agents/lib/tool-reroute.js    — dispatcher (native → search → cd-strip → cd-git → io)
+#   agents/lib/tool-reroute/{shell,native,search,cd-strip,cd-git,io}.js — lexer + modules
 #
-# WHY: hard-denying grep/cat/find does not stop the model RETRYING — the static
-# permissions_deny even overrides a hook deny, so the redirect never lands. This
-# hook instead REWRITES the wrong-tool call to its tilth/wt-git shell equivalent
-# via updatedInput (transparent, one step) and DENIES only the two cross-tool
-# cases with no shell target (the Grep/Glob tools, write-redirects); every other
-# command runs unchanged. The rewrite tests assert the exact updatedInput.command;
-# the passthrough/fail-open tests encode that a non-reroute or broken hook never
-# blocks a call.
+# WHY: tilth owns file reads, writes, and searches on Claude and Codex. The hook
+# DENIES a built-in or shell call that reads, searches, or writes files and names
+# the tilth MCP call to make instead; a hook's updatedInput cannot turn a Bash
+# call into an MCP call, so there is no rewrite target. Claude also removes
+# Write/Edit/Grep/Glob from context through permissions.deny, so the
+# model does not retry a tool it cannot see. Calls that read no file (pipe
+# filters, here-docs, `tail -f`, /proc) run unchanged, and the passthrough and
+# fail-open tests encode that a non-file or broken hook never blocks a call.
 
 load test_helper
 
@@ -93,70 +93,33 @@ newcmd()   { jq -r '.hookSpecificOutput.updatedInput.command' <<<"$1"; }
 reason()   { jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$1"; }
 no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision") | not' <<<"$1" >/dev/null; }
 
-# ── tool-reroute/search: grep/rg/ag/ack/find → tilth (rewrite) ───────────
+# ── tool-reroute/search: file searches → tilth_search (deny) ───────────────
 
-@test "tool-reroute/search: bash grep rewrites to tilth with --scope" {
-    local out; out=$(out_for 'grep foo .')
-    [[ "$(decision "$out")" == "allow" ]]
-    [[ "$(newcmd "$out")" == "tilth foo --scope ." ]]
+@test "tool-reroute/search: grep on a path denies and names tilth_search" {
+    local out; out=$(out_for 'grep foo src/')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *tilth_search* ]]
+    [[ "$(reason "$out")" == *src/* ]]
+    [[ "$(reason "$out")" == *'"foo"'* ]]
 }
 
-@test "tool-reroute/search: bash grep with no path rewrites to bare tilth" {
-    local out; out=$(out_for 'grep -rn foo')
-    [[ "$(newcmd "$out")" == "tilth foo" ]]
+@test "tool-reroute/search: recursive searches with no path deny (they read the cwd)" {
+    local cmd
+    for cmd in 'grep -rn foo' 'rg foo' 'ag baz' 'ack qux' 'egrep -R x'; do
+        [[ "$(decision "$(out_for "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
 }
 
-@test "tool-reroute/search: rg/ag/ack all rewrite to tilth" {
-    [[ "$(newcmd "$(out_for 'rg bar src/')")" == "tilth bar --scope src/" ]]
-    [[ "$(newcmd "$(out_for 'ag baz')")" == "tilth baz" ]]
-    [[ "$(newcmd "$(out_for 'ack qux')")" == "tilth qux" ]]
+@test "tool-reroute/search: flags and their values do not hide the path operand" {
+    local cmd
+    for cmd in 'grep -i Foo .' 'grep -l foo .' 'grep --include=*.js foo .' 'grep -A 3 foo f.txt' \
+        'rg -t rust foo' 'rg -g "*.rs" foo src' 'grep -e foo -e bar f.txt' 'grep "a.*b" src/'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
 }
 
-@test "tool-reroute/search: find -name rewrites to positional tilth glob" {
-    # tilth has no --glob flag; QUERY is positional and accepts a glob pattern.
-    local out; out=$(out_for 'find . -name foo.js')
-    [[ "$(newcmd "$out")" == "tilth foo.js --scope ." ]]
-}
-
-@test "tool-reroute/search: a glob pattern is shell-quoted in the rewrite" {
-    # *.js must survive as a runnable single-quoted arg, not be left bare.
-    local out; out=$(out_for "find . -name '*.js'")
-    [[ "$(newcmd "$out")" == "tilth '*.js' --scope ." ]]
-}
-
-@test "tool-reroute/search: the rewrite reason records orig → new" {
-    local out; out=$(out_for 'grep foo .')
-    [[ "$(reason "$out")" == "tool-reroute: grep foo . → tilth foo --scope ." ]]
-}
-
-@test "tool-reroute/search: exotic grep (-l) is NOT rewritten to tilth (delegated)" {
-    # -l changes semantics (file list, not matches); tilth can't express it, so
-    # it must fall through unchanged, never a tilth rewrite or a hard block.
-    local out; out=$(out_for 'grep -l foo .')
-    [[ "$out" != *"tilth foo"* ]]
-}
-
-@test "tool-reroute/search: find -iname (case-insensitive) is NOT rewritten (tilth glob is case-sensitive)" {
-    # tilth's positional glob is case-sensitive, so -iname '*.JS' would silently
-    # narrow the match set (matches UPPER.JS but not lower.js); the call must
-    # delegate, never become a literal tilth glob rewrite.
-    local out; out=$(out_for 'find . -iname "*.JS"')
-    [[ "$out" != *'"command":"tilth'* ]]
-    ! denied "$out"
-}
-
-@test "tool-reroute/search: non-name find is NOT rewritten (delegated)" {
-    # A -size predicate is a real filesystem op tilth can't express, so it must
-    # never become a tilth rewrite — it falls through unchanged.
-    local out; out=$(out_for 'find . -size +100M')
-    [[ "$(newcmd "$out")" != tilth* ]]
-}
-
-@test "tool-reroute/search: a piped grep is NOT rewritten (delegated, not unfaithful)" {
-    # `cat f | grep foo` means search-in-f; rewriting to `tilth foo` would drop
-    # the file scope, so the multi-segment shape delegates instead.
-    local out; out=$(out_for 'cat f.txt | grep foo')
-    [[ "$out" != *"tilth foo"* ]]
+@test "tool-reroute/search: a file fed through an input redirect denies" {
+    [[ "$(decision "$(out_for 'grep foo < f.txt')")" == "deny" ]]
 }
 
 @test "tool-reroute/search: the Grep tool denies and names tilth_search" {
@@ -171,9 +134,34 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
 }
 
 @test "tool-reroute/search: a binary name inside a quoted echo arg does not trip" {
-    # 'grep' lives inside a string literal, not the command word — no rewrite.
+    # 'grep' lives inside a string literal, not the command word.
     local out; out=$(out_for 'echo "run grep later"')
-    [[ "$out" != *"tilth"* ]]
+    [[ -z "$out" ]]
+}
+
+# ── tool-reroute/native: built-in file tools → tilth (deny) ─────────────────
+
+@test "tool-reroute/native: Read on a text file denies and names tilth_read" {
+    local out; out=$(out_for_input Read '{"file_path":"/repo/src/main.rs"}')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *tilth_read* ]]
+    [[ "$(reason "$out")" == */repo/src/main.rs* ]]
+}
+
+@test "tool-reroute/native: Read on an image, PDF, or notebook runs unchanged" {
+    local f
+    for f in shot.png photo.JPG anim.gif diagram.webp spec.pdf nb.ipynb; do
+        [[ -z "$(out_for_input Read "{\"file_path\":\"/tmp/$f\"}")" ]] || { echo "expected pass: $f" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/native: Write, Edit, MultiEdit, and Codex apply_patch deny and name tilth_write" {
+    local tool out
+    for tool in Write Edit MultiEdit apply_patch; do
+        out=$(out_for_input "$tool" '{"file_path":"a.txt","command":"*** Begin Patch"}')
+        [[ "$(decision "$out")" == "deny" ]] || { echo "expected deny: $tool" >&2; return 1; }
+        [[ "$(reason "$out")" == *tilth_write* ]]
+    done
 }
 
 # ── tool-reroute/cd-git: cd <path> && git … → wt-git <path> <args> ────────
@@ -200,17 +188,28 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
     [[ "$out" != *"wt-git"* ]]
 }
 
-# ── tool-reroute/io: bare cat → tilth (rewrite); write-redirect → deny ────
+# ── tool-reroute/io: shell reads → tilth_read; writes → tilth_write (deny) ──
 
-@test "tool-reroute/io: bare cat rewrites to tilth" {
+@test "tool-reroute/io: a shell file read denies and names tilth_read" {
     local out; out=$(out_for 'cat README.md')
-    [[ "$(decision "$out")" == "allow" ]]
-    [[ "$(newcmd "$out")" == "tilth README.md" ]]
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *tilth_read* ]]
+    [[ "$(reason "$out")" == *README.md* ]]
 }
 
-@test "tool-reroute/io: cat with a flag is NOT rewritten to tilth (delegated)" {
-    local out; out=$(out_for 'cat -n file.txt')
-    [[ "$out" != *'"command":"tilth'* ]]
+@test "tool-reroute/io: every reader with a file operand denies" {
+    local cmd
+    # shellcheck disable=SC2016  # literal commands for the hook; nothing expands here.
+    for cmd in 'cat -n file.txt' 'head -n 5 f' 'head -5 f' 'tail -50 /tmp/x.log' 'sed -n 1,20p f' \
+        "awk '{print \$1}' f" 'nl f' 'less f' 'bat f' 'tac f' 'x=$(cat f)' 'wc -l a && cat b'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: sed -i denies and names tilth_write" {
+    local out; out=$(out_for 'sed -i s/a/b/ f.txt')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *tilth_write* ]]
 }
 
 @test "tool-reroute/io: echo write-redirect denies and names tilth_write" {
@@ -251,7 +250,7 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
 # ── tool-reroute: protocol / fail-open ───────────────────────────────────
 
 @test "tool-reroute: rewrite payload is a valid PreToolUse allow + updatedInput" {
-    local out; out=$(out_for 'grep foo .')
+    local out; out=$(out_for 'cd /r && git status')
     [[ "$(jq -r '.hookSpecificOutput.hookEventName' <<<"$out")" == "PreToolUse" ]]
     [[ "$(decision "$out")" == "allow" ]]
     [[ -n "$(newcmd "$out")" ]]
@@ -278,28 +277,52 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
 }
 
 @test "tool-reroute: a non-matching tool is allowed (no output)" {
-    local out; out=$(out_for_input Read '{"file_path":"/x"}')
+    local out; out=$(out_for_input mcp__tilth__tilth_read '{"paths":["/x"]}')
     [[ -z "$out" ]]
 }
 
 # ── deploy wiring ────────────────────────────────────────────────────────
 
-@test "tool-reroute: registry registers tool-reroute for claude matching Bash|Grep|Glob" {
+@test "tool-reroute: registry registers tool-reroute for claude and codex file tools" {
     local reg="$REAL_DOTFILES_DIR/agents/hooks/registry.yaml"
     [[ "$(yq -r '.hooks.tool-reroute.event' "$reg")" == "PreToolUse" ]]
     [[ "$(yq -r '.hooks.tool-reroute.script' "$reg")" == "agents/hooks/tool-reroute.sh" ]]
-    [[ "$(yq -r '.hooks.tool-reroute.matcher' "$reg")" == "Bash|Grep|Glob" ]]
-    [[ "$(yq -r '.hooks.tool-reroute.harnesses | join(",")' "$reg")" == "claude" ]]
+    [[ "$(yq -r '.hooks.tool-reroute.matcher' "$reg")" == "Bash|Read|Write|Edit|MultiEdit|Grep|Glob|apply_patch" ]]
+    [[ "$(yq -r '.hooks.tool-reroute.harnesses | join(",")' "$reg")" == "claude,codex" ]]
     [[ "$(yq -r '.hooks.tool-reroute.shared_assets[0]' "$reg")" == "agents/lib/tool-reroute.js" ]]
-    [[ "$(yq -r '.hooks.tool-reroute.shared_assets | length' "$reg")" -ge 5 ]]
+    # every module file the dispatcher requires is deployed
+    local mod
+    for mod in "$MOD_DIR"/*.js; do
+        yq -e ".hooks.tool-reroute.shared_assets[] | select(. == \"agents/lib/tool-reroute/$(basename "$mod")\")" "$reg" >/dev/null \
+            || { echo "undeployed module: $mod" >&2; return 1; }
+    done
 }
 
-@test "tool-reroute: permissions profile allows tilth and un-denies the search tools" {
+@test "tool-reroute: live Claude settings deny the write and search tools and route through the hook" {
+    local data="$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
+    local reg="$REAL_DOTFILES_DIR/agents/hooks/registry.yaml"
+    local tool
+    for tool in Edit Glob Grep Write; do
+        yq -e ".claude.permissions.deny[] | select(. == \"$tool\")" "$data" >/dev/null || { echo "not denied: $tool" >&2; return 1; }
+        if yq -e ".claude.permissions.allow[] | select(. == \"$tool\")" "$data" >/dev/null; then
+            echo "still allowed: $tool" >&2; return 1
+        fi
+    done
+    # Read stays reachable for images, PDFs, and notebooks; the hook gates text reads.
+    if yq -e '.claude.permissions.deny[] | select(. == "Read")' "$data" >/dev/null; then
+        echo "Read must stay reachable for media" >&2; return 1
+    fi
+    # The settings.json matcher mirrors the registry matcher.
+    [[ "$(yq -r '.claude.hooks.PreToolUse[] | select(.hooks[0].command | test("tool-reroute")) | .matcher' "$data")" \
+        == "$(yq -r '.hooks.tool-reroute.matcher' "$reg")" ]]
+}
+
+@test "tool-reroute: permissions profile leaves file tools to the hook" {
     local prof="$REAL_DOTFILES_DIR/profiles/_permissions/profile.yaml"
-    # rewritten tilth commands run without a prompt
     run yq -e '.settings.permissions_allow[] | select(. == "Bash(tilth:*)")' "$prof"
     [ "$status" -eq 0 ]
-    # the hook owns search routing now, so the static denies are gone
+    # The profile also lowers onto Cursor and Copilot, which keep native file
+    # tools, so it carries no static deny for them.
     run yq -e '.settings.permissions_deny[] | select(. == "Grep" or . == "Glob" or . == "Bash(grep:*)")' "$prof"
     [ "$status" -ne 0 ]
     # the rg allow stays removed (a stray rg prompts rather than running unfiltered)
@@ -307,67 +330,53 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
     [ "$status" -ne 0 ]
 }
 
-# ── press hardening: the never-hard-block contract ───────────────────────
-# The rewrite-not-deny design hinges on this: any wrong-tool call tilth cannot
-# faithfully express must run unchanged (a prompt at worst), never
-# a hook DENY. A regression that turned any fall-through into a deny would
-# reinstate the exact retry-loop trap the hook was built to remove. The
-# original suite asserts these shapes are not *rewritten*; here we lock the
-# stronger, essential half — they are never *blocked*.
+# ── press hardening: the passthrough contract ─────────────────────────────
+# A deny is correct only when the call reads, searches, or writes a file that
+# tilth can serve. A command that filters a stream, reads a kernel interface,
+# follows a live log, or lists files must run unchanged; denying it would send
+# the model to a tilth call that cannot do the job.
 
 denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 
-@test "tool-reroute: exotic/fall-through shapes delegate, never hard-block" {
+@test "tool-reroute: commands that read no file run unchanged" {
     local cmd out
+    # shellcheck disable=SC2016  # literal commands for the hook; nothing expands here.
     for cmd in \
-        'grep -l foo .' \
-        'grep -rl foo' \
-        'grep --include=*.js foo .' \
-        'grep foo dir1 dir2' \
+        'git log | grep fix' \
+        'git diff | head -20' \
+        'echo x | rg foo' \
+        'ps aux | awk "{print \$1}"' \
+        'git show HEAD | sed s/a/b/' \
+        'grep foo' \
+        'tail -f /tmp/x.log' \
+        'cat /proc/cpuinfo' \
+        'head -c 16 /dev/urandom' \
+        'rg --files' \
+        'ag -g foo' \
+        'git grep foo' \
+        'find . -name foo.js' \
         'find . -size +100M' \
-        'cat f.txt | grep foo' \
-        'cat -n file.txt' \
+        'ls -la' \
         'cd /r && gh pr list'; do
-        out=$(out_for "$cmd")
+        out=$(out_for_safe "$cmd")
         if denied "$out"; then
-            echo "must delegate, not DENY: $cmd -> $out" >&2
+            echo "must pass, not DENY: $cmd -> $out" >&2
             return 1
         fi
     done
 }
 
-@test "tool-reroute/search: a fused exotic short flag (-rl) is NOT rewritten" {
-    # The `l` fused into `-rl` is semantic (file list), so tilth can't express
-    # it — the whole call must fall through, not rewrite on the clean `-r`.
-    local out; out=$(out_for 'grep -rl foo')
-    [[ "$out" != *"tilth foo"* ]]
-}
-
-@test "tool-reroute/search: a long flag forces delegation (no tilth rewrite)" {
-    local out; out=$(out_for 'grep --include=*.js foo .')
-    [[ "$out" != *'"command":"tilth'* ]]
-}
-
-@test "tool-reroute/search: two path operands fall through (tilth takes one scope)" {
-    # pattern + two paths = 3 operands > the 2 tilth can carry, so delegate.
-    local out; out=$(out_for 'grep foo dir1 dir2')
-    [[ "$out" != *'"command":"tilth'* ]]
-}
-
-@test "tool-reroute/search: grep -i (case-insensitive) is NOT rewritten (tilth is case-sensitive)" {
-    # tilth's positional query is case-sensitive, so -i Foo would silently match
-    # a narrower set; the call must delegate, never become a literal tilth rewrite.
-    local out; out=$(out_for 'grep -i Foo .')
-    [[ "$out" != *'"command":"tilth'* ]]
-    ! denied "$out"
-}
-
-@test "tool-reroute/search: a regex-metachar pattern is NOT rewritten (tilth matches literally)" {
-    # `a.*b` is a regex in grep but a literal substring in tilth; rewriting it
-    # would silently change the match set, so a metachar pattern delegates.
-    local out; out=$(out_for 'grep "a.*b" src/')
-    [[ "$out" != *'"command":"tilth'* ]]
-    ! denied "$out"
+@test "tool-reroute: here-doc bodies are not parsed as commands" {
+    local cmd out
+    cmd=$'git commit -F - <<\'EOF\'\ngrep foo bar\ncat secret.txt\nEOF'
+    out=$(out_for_safe "$cmd")
+    if denied "$out"; then echo "body parsed as a command: $out" >&2; return 1; fi
+    cmd=$'cat <<-EOF > /tmp/note\n\tsed -n 1p f\n\tEOF\ngit status'
+    out=$(out_for_safe "$cmd")
+    if denied "$out"; then echo "<<- body parsed as a command: $out" >&2; return 1; fi
+    # A command after the closed body is still classified.
+    cmd=$'git commit -F - <<EOF\nmsg\nEOF\ncat README.md'
+    [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]]
 }
 
 # ── press hardening: cd-git chain separators (CHAIN = && ;) ───────────────
@@ -387,10 +396,10 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 
 # ── press hardening: io boundaries ───────────────────────────────────────
 
-@test "tool-reroute/io: cat with two files is NOT rewritten (single-file read only)" {
+@test "tool-reroute/io: a read of several files names every file" {
     local out; out=$(out_for 'cat a b')
-    [[ "$out" != *'"command":"tilth'* ]]
-    ! denied "$out"
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'"a", "b"'* ]]
 }
 
 @test "tool-reroute/io: the write-redirect deny names the offending target file" {
@@ -414,20 +423,18 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
 
 # ── press hardening: fd/stderr redirects are reads, not content writes ─────
 # The write-redirect deny must fire ONLY on a stdout content write (`>`, `1>`).
-# An fd redirect (`2>/dev/null`, `2>&1`) writes no file content, so hard-denying
-# it would block the pervasive `cat f 2>/dev/null` idiom and tell the model to
-# "use tilth_write" for a command that writes nothing — the one shape that broke
-# the never-hard-block contract.
+# An fd redirect (`2>/dev/null`, `2>&1`) writes no file content, so a read
+# with one denies as a read (tilth_read), never as a write (tilth_write).
 
-@test "tool-reroute/io: a 2>/dev/null stderr redirect is a read, not a write (no deny)" {
+@test "tool-reroute/io: a 2>/dev/null stderr redirect is a read, not a write" {
     local out; out=$(out_for 'cat README.md 2>/dev/null')
-    ! denied "$out"
+    [[ "$(reason "$out")" == *tilth_read* ]]
     [[ "$out" != *tilth_write* ]]
 }
 
-@test "tool-reroute/io: a 2>&1 fd redirect is a read, not a write (no deny)" {
+@test "tool-reroute/io: a 2>&1 fd redirect is a read, not a write" {
     local out; out=$(out_for 'cat README.md 2>&1')
-    ! denied "$out"
+    [[ "$(reason "$out")" == *tilth_read* ]]
     [[ "$out" != *tilth_write* ]]
 }
 
@@ -452,16 +459,22 @@ deploy_codex() {
 
 @test "tool-reroute: codex harness — deny+rewrite fire; non-reroute never blocks" {
     local hook; hook=$(deploy_codex)
-    # deny fires identically under the codex bridge
-    local dj; dj=$(jq -nc --arg w "$W" '{tool_name:"Grep",tool_input:{pattern:"foo"},cwd:$w}')
-    run env DOTFILES_HARNESS=codex bash -c "printf '%s' '$dj' | '$hook'"
+    # apply_patch denies under the codex bridge
+    local pj; pj=$(jq -nc --arg w "$W" '{tool_name:"apply_patch",tool_input:{command:"*** Begin Patch"},cwd:$w}')
+    run env DOTFILES_HARNESS=codex bash -c "printf '%s' '$pj' | '$hook'"
+    [ "$status" -eq 0 ]
+    [[ "$(decision "$output")" == "deny" ]]
+    [[ "$(reason "$output")" == *tilth_write* ]]
+    # a shell file read denies under the codex bridge
+    local rj; rj=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"sed -n 1,80p README.md"},cwd:$w}')
+    run env DOTFILES_HARNESS=codex bash -c "printf '%s' '$rj' | '$hook'"
     [ "$status" -eq 0 ]
     [[ "$(decision "$output")" == "deny" ]]
     # rewrite fires identically under the codex bridge
-    local gj; gj=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"grep foo ."},cwd:$w}')
+    local gj; gj=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"cd /r && git status"},cwd:$w}')
     run env DOTFILES_HARNESS=codex bash -c "printf '%s' '$gj' | '$hook'"
     [ "$status" -eq 0 ]
-    [[ "$(newcmd "$output")" == "tilth foo --scope ." ]]
+    [[ "$(newcmd "$output")" == "wt-git /r status" ]]
     # a non-reroute command under the codex bridge just runs, unchanged.
     local cj; cj=$(jq -nc --arg w "$W" '{tool_name:"Bash",tool_input:{command:"git status"},cwd:$w}')
     run env DOTFILES_HARNESS=codex bash -c "printf '%s' '$cj' | '$hook'"
@@ -608,8 +621,8 @@ NODE
 
 @test "tool-reroute/cd-strip: the remainder re-classifies against search" {
     local out; out=$(out_for "cd $W && grep foo .")
-    [[ "$(decision "$out")" == "allow" ]]
-    [[ "$(newcmd "$out")" == "$(newcmd "$(out_for 'grep foo .')")" ]]
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *tilth_search* ]]
 }
 
 @test "tool-reroute/cd-strip: the remainder re-classifies against io and denies" {

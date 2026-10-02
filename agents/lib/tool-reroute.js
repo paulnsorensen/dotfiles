@@ -1,36 +1,39 @@
 #!/usr/bin/env node
 // tool-reroute.js — PreToolUse rewrite hook (harness-agnostic).
 //
-// Transparently REWRITES wrong-tool Bash/Grep/Glob calls to their tilth /
-// wt-git shell equivalent, and DENIES the two cross-tool cases that have no
-// shell rewrite target (the Grep/Glob tools, shell write-redirects). Rewrite
-// and deny only — every other command runs unchanged.
+// Routes file reads, writes, and searches to the tilth MCP tools. It DENIES
+// the built-in file tools (Read on text, Write/Edit/MultiEdit, Codex
+// apply_patch, Grep/Glob) and shell commands that read, search, or write files
+// in the tree, naming the tilth call to make instead. It REWRITES worktree
+// command shapes to wt-git. Every other command runs unchanged.
 //
-// Four detection modules run in order; the FIRST hit wins:
-//   search   → grep/rg/ag/ack/find + the Grep/Glob tools
+// Five detection modules run in order; the FIRST hit wins:
+//   native   → Read (text) / Write / Edit / MultiEdit / apply_patch
+//   search   → grep/egrep/fgrep/rg/ag/ack on files + the Grep/Glob tools
 //   cd-strip → `cd <cwd> && …` — strip a no-op cd to the event's own cwd,
 //              then re-classify the remainder against search/cd-git/io
 //   cd-git   → `cd <path> && git …` (including a git-only chain)
-//   io       → write-redirect (deny) / bare `cat` (rewrite)
+//   io       → write-redirect / file read by cat, head, sed, … (deny)
 // Each module's detect() returns {rewrite} (allow + updatedInput), {reason}
 // (deny + message), or null. A null from every module leaves the command
 // untouched — it runs exactly as the model wrote it.
 //
 // Fail-open everywhere: malformed stdin or a thrown detection error resolve
-// to exit 0 with no rewrite — the command runs unchanged. A rewrite hook must
+// to exit 0 with no decision — the call runs unchanged. A routing hook must
 // never become a denial-of-service.
 
 const os = require('os');
 const path = require('path');
 const { appendJsonl, scrubSecrets } = require('./jsonl-log');
+const native = require('./tool-reroute/native');
 const search = require('./tool-reroute/search');
 const cdStrip = require('./tool-reroute/cd-strip');
 const cdGit = require('./tool-reroute/cd-git');
 const io = require('./tool-reroute/io');
 
-const MODULES = [search, cdStrip, cdGit, io];
-// Modules re-run against the cd-strip remainder — everything except cd-strip
-// itself, so a stripped command can still hit search/cd-git/io.
+const MODULES = [native, search, cdStrip, cdGit, io];
+// Modules re-run against the cd-strip remainder — the Bash modules except
+// cd-strip itself, so a stripped command can still hit search/cd-git/io.
 const AFTER_STRIP = [search, cdGit, io];
 
 // Pure over (toolName, input, cwd): the first module hit, or null. The unit-
@@ -74,7 +77,9 @@ function logDir() {
 // Log a rewrite/deny/strip decision to decisions.jsonl. Never called when no
 // module matches — that path carries no module/action to record.
 function logDecision(harness, event, toolName, cwd, hit, action) {
-  const command = (event.tool_input && event.tool_input.command) || '';
+  const input = event.tool_input || {};
+  // Only a shell command is logged verbatim; an apply_patch body is not.
+  const command = toolName === 'Bash' ? (input.command || '') : '';
   appendJsonl(logDir(), 'decisions.jsonl', {
     ts: new Date().toISOString(),
     harness,
@@ -84,6 +89,7 @@ function logDecision(harness, event, toolName, cwd, hit, action) {
     module: hit.module || null,
     action,
     command,
+    ...(typeof input.file_path === 'string' ? { file_path: input.file_path } : {}),
     ...(hit.pattern !== undefined ? { pattern: hit.pattern } : {}),
     ...(action === 'rewrite' || action === 'strip'
       ? { rewrite: hit.rewrite }

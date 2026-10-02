@@ -65,7 +65,7 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/sensitive-file-guard.sh"'
             timeout: 5
-      - matcher: "Bash|Grep|Glob"
+      - matcher: "Bash|Read|Write|Edit|MultiEdit|Grep|Glob|apply_patch"
         hooks:
           - type: command
             command: '"$HOME/.claude/hooks/tool-reroute.sh"'
@@ -221,17 +221,23 @@ claude:
       - "Bash(which:*)"
       - "Bash(wt-git:*)"
       - "Bash(yq:*)"
-      - "Edit"
       - "Skill"
       - "WebFetch"
       - "WebSearch"
-      - "Write"
       - "mcp__context7__*"
       - "mcp__hallouminate__*"
       - "mcp__plugin_playwright_playwright__*"
       - "mcp__tavily__*"
       - "mcp__tilth__*"
     deny:
+      # Tilth owns file writes and searches. A bare tool name removes the
+      # tool from Claude's context; the tool-reroute hook is the second layer.
+      # Read stays: it is the only viewer for images, PDFs, and notebooks, so
+      # tool-reroute denies it on text files instead.
+      - "Edit"
+      - "Glob"
+      - "Grep"
+      - "Write"
       # Vault master-credential paths. The Bitwarden access token reads the
       # whole project, so it outranks every individual key. Prefix rules
       # only — an absolute path or `sh -c` sidesteps them: friction, not a
