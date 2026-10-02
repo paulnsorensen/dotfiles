@@ -337,7 +337,7 @@ block_sha() {
 }
 
 
-@test "only the reviewers retain Skill; no subagent retains Agent" {
+@test "only reviewer retains Skill; no subagent retains Agent" {
     local registry="$AGENTS_DIR/registry.yaml"
     local skill_grants agent_grants
     skill_grants=$(yq -oj '.agents' "$registry" | jq -r '
@@ -349,9 +349,8 @@ block_sha() {
                 (((.value.disallowedTools // []) | index("Skill")) == null)
             end
         )
-        | .key' | sort | paste -sd ' ' -)
-    # factory-reviewer (cheese-factory-next prototype) runs /age, like reviewer.
-    [[ "$skill_grants" == "factory-reviewer reviewer" ]] || {
+        | .key')
+    [[ "$skill_grants" == "reviewer" ]] || {
         echo "unexpected Skill grants: $skill_grants" >&2
         return 1
     }

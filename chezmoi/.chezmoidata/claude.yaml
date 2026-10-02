@@ -75,6 +75,14 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/deep-think-nudge.sh"'
             timeout: 5
+      # /cheese-factory handback gate. It acts only on handbacks that carry a
+      # factory role and a factory- Wheypoint ref, and writes each one as a
+      # revision. Other StructuredOutput calls pass through.
+      - matcher: "StructuredOutput"
+        hooks:
+          - type: command
+            command: node "$HOME/.claude/hooks/hook-runner.js" factory-handback-gate.js
+            timeout: 35
       - matcher: "AskUserQuestion"
         hooks:
           - type: command
@@ -302,11 +310,8 @@ claude:
   # Frontmatter is rendered from agents/registry.yaml metadata at assembly time.
   agents:
     - coder
-    - curd-boss
     - duckdb-expert
     - explorer
-    - factory-coder
-    - factory-reviewer
     - generalist
     - ghostbuster
     - nih-scanner

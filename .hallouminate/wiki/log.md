@@ -77,3 +77,5 @@
 2026-09-29 · milknado-worker-mcp-20260929 · merged · architecture/agents-dir.md · Recorded the milknado fleet worker MCP file: bare claude with `--strict-mcp-config --mcp-config ~/.config/milknado/worker-mcp.json` loads 3 servers instead of 15 after eight workers exhausted a 31 GiB devbox; an `ap` profile (adapter keys on argv[0]) and `--setting-sources ""` (drops skills) were rejected; milknado appends the project `.mcp.json` as a fourth config.
 
 2026-09-29 · milknado-fleet-retire-20260929 · merged · architecture/agents-dir.md · Retired the milknado-fleet workflow, worker TOML, and worker MCP file; `.chezmoiremove` drops `~/.config/milknado/worker-mcp.json`, `exact_workflows` drops the workflow copies. Milknado plugin, MCPs, and package stay.
+
+2026-10-02 · cheese-factory-inplace-20261002 · merged · adr/cheese-factory-workflow.md · Recorded ADR-015: cheese-factory is edited in place on linked wheypoints, with one global StructuredOutput handback gate keyed on the handback role and factory ref. The factory agents, registry hooks, and renderer changes are dropped. A two-pass resume keeps the cache prefix.

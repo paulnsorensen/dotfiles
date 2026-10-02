@@ -220,34 +220,6 @@ def test_claude_shared_agent_carries_model_color_effort_skills_max_turns(
     assert "maxTurns: 20" in shared_file
 
 
-def test_claude_shared_agent_renders_agent_scoped_hooks_as_json(
-    tmp_path: Path,
-) -> None:
-    hooks = {
-        "PreToolUse": [
-            {
-                "matcher": "StructuredOutput",
-                "hooks": [{"type": "command", "command": "gate"}],
-            }
-        ]
-    }
-    ClaudeRenderer().render(_agent_manifest(tmp_path, hooks=hooks), tmp_path)
-    shared_file = (
-        tmp_path / ".claude" / "agents" / "ghostbuster.md"
-    ).read_text()
-    assert (
-        'hooks: {"PreToolUse":[{"matcher":"StructuredOutput",'
-        '"hooks":[{"type":"command","command":"gate"}]}]}'
-    ) in shared_file
-
-
-def test_claude_shared_agent_omits_hooks_when_absent(tmp_path: Path) -> None:
-    ClaudeRenderer().render(_agent_manifest(tmp_path), tmp_path)
-    shared_file = (
-        tmp_path / ".claude" / "agents" / "ghostbuster.md"
-    ).read_text()
-    assert "hooks:" not in shared_file
-
 # ── cursor ────────────────────────────────────────────────────────────
 
 

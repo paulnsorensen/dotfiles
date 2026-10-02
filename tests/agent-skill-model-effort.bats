@@ -26,8 +26,8 @@ is_inline_skill() {
 
 expected_agent_codex_model() {
     case "$1" in
-        reviewer|curd-boss|factory-reviewer) echo gpt-6-astra ;;
-        taste-tester|ghostbuster|researcher|generalist|coder|factory-coder|explorer) echo gpt-6-sol ;;
+        reviewer) echo gpt-6-astra ;;
+        taste-tester|ghostbuster|researcher|generalist|coder|explorer) echo gpt-6-sol ;;
         roquefort-wrecker|nih-scanner|duckdb-expert|whey-drainer|worktree-content-digest) echo gpt-6-luna ;;
         *) echo UNMAPPED ;;
     esac
