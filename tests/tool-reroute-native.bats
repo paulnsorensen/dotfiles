@@ -209,13 +209,16 @@ tilth_write_input() {
     [[ "$(reason)" == *"DOTFILES_TOOL_REROUTE=0"* ]]
 }
 
-@test "a 50K-char command finishes under 2 seconds and still denies" {
+# The bound is the 5 s hook timeout, not a speed target: the quadratic scrub
+# took ~17 s here. $SECONDS has whole-second steps and the full suite runs in
+# parallel, so the check allows up to 3 s.
+@test "a 50K-char command finishes inside the hook timeout and still denies" {
     local cmd start elapsed
     cmd="cat $(head -c 50000 /dev/zero | tr '\0' 'a')"
     start=$SECONDS
     hook claude Bash "$(jq -nc --arg c "$cmd" '{command:$c}')"
     elapsed=$((SECONDS - start))
-    [ "$elapsed" -lt 2 ] || { echo "took ${elapsed}s" >&2; return 1; }
+    [ "$elapsed" -lt 4 ] || { echo "took ${elapsed}s" >&2; return 1; }
     [ "$(decision)" = "deny" ]
 }
 
