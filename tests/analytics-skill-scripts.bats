@@ -184,7 +184,7 @@ assert_not_contains() {
     make_fixture
     run "$SKILLS/tool-efficiency/scripts/analyze.sh" permission-friction Bash
     [ "$status" -eq 0 ]
-    assert_contains "$output" "grep (use Grep)"
+    assert_contains "$output" "grep (use tilth_search)"
     assert_contains "$output" "Compound-command"
     assert_contains "$output" 'grep foo \| sort'
 }

@@ -10,6 +10,8 @@ const fs = require('fs');
 const path = require('path');
 
 const MAX_STRING_LENGTH = 500;
+// Callers slice to this before scrubbing, so regex work stays linear.
+const MAX_SCRUB_INPUT = 2000;
 
 // Redact credential-shaped assignments, bearer values, token arguments, and
 // common token prefixes. The replacer below applies this at the write boundary.
@@ -17,7 +19,7 @@ function scrubSecrets(str) {
   if (typeof str !== 'string') return str;
   let result = str;
   result = result.replace(
-    /((?:[A-Za-z_][A-Za-z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD)|TOKEN|SECRET|KEY|PASSWORD|API[-_]?KEY)\s*=\s*)(?:"[^"]*"|'[^']*'|[^\s;&|]+)/gi,
+    /((?:[A-Za-z_][A-Za-z0-9_]{0,64}(?:TOKEN|SECRET|KEY|PASSWORD)|TOKEN|SECRET|KEY|PASSWORD|API[-_]?KEY)\s*=\s*)(?:"[^"]*"|'[^']*'|[^\s;&|]+)/gi,
     '$1<redacted>',
   );
   result = result.replace(
@@ -75,7 +77,7 @@ function appendJsonl(dir, file, record, maxBytes) {
       fs.constants.O_NOFOLLOW |
       fs.constants.O_NONBLOCK;
     const replacer = (_key, value) => (
-      typeof value === 'string' ? scrubSecrets(value).slice(0, MAX_STRING_LENGTH) : value
+      typeof value === 'string' ? scrubSecrets(value.slice(0, MAX_SCRUB_INPUT)).slice(0, MAX_STRING_LENGTH) : value
     );
     const line = `${JSON.stringify(record, replacer)}\n`;
     for (let attempt = 0; attempt < 2; attempt += 1) {

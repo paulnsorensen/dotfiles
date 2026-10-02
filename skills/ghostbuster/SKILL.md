@@ -4,7 +4,7 @@ model: opus
 effort: high
 context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
-allowed-tools: Read, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Agent, mcp__tilth__*
+allowed-tools: Bash(git log:*), Bash(git diff:*), Bash(git blame:*), Bash(wc:*), Bash(rg --files:*), Agent, mcp__tilth__*
 description: >
   Dead-code forensics and spec cross-reference. Finds unreachable, orphaned,
   missing, or dormant code and classifies it DEAD, ZOMBIE, GHOST, or DORMANT.
@@ -25,27 +25,24 @@ Find what's expired. Cross-reference against specs. Triage the remains.
 Detect languages from file extensions in scope. Build a file inventory:
 
 ```
-Glob: {scope}/**/*.{ts,tsx,js,jsx,py,rs,go,sh,bash}
+tilth_search: {query: "<file or symbol>", glob: "{scope}/**/*.{ts,tsx,js,jsx,py,rs,go,sh,bash}"}
 ```
 
 Filter out test files, node_modules/, vendor/, target/, dist/, build/.
 
 ## Phase 2: Spec & Doc Collection
 
-Search broadly — specs and documentation both reference code symbols:
+Search broadly — specs and documentation both reference code symbols. List the
+files with `rg --files` (it lists paths and reads no file content, so the
+tool-reroute hook lets it run):
 
-```
-Glob: **/specs/**/*.md
-Glob: **/.claude/specs/*.md
-Glob: **/SPEC.md
-Glob: **/spec.md
-Glob: **/CLAUDE.md
-Glob: **/README.md
-Glob: **/CONTRIBUTING.md
-Glob: **/docs/**/*.md
+```bash
+rg --files -g '**/specs/**/*.md' -g '**/.claude/specs/*.md' -g '**/SPEC.md' \
+  -g '**/spec.md' -g '**/CLAUDE.md' -g '**/README.md' -g '**/CONTRIBUTING.md' \
+  -g '**/docs/**/*.md'
 ```
 
-Read each file and extract symbol references (backtick-wrapped identifiers,
+Read each file with `tilth_read` and extract symbol references (backtick-wrapped identifiers,
 code blocks, prose references to functions/types/endpoints). Build a lookup
 of `{symbol → [file:line]}`.
 

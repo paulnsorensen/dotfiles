@@ -48,7 +48,44 @@ Claude receives `additionalContext`. Codex receives a one-shot block continuatio
 
 ## tool-reroute
 
-`agents/lib/tool-reroute.js` is the Claude-only `PreToolUse` dispatcher for `Bash|Grep|Glob`. It redirects file operations to Tilth, rewrites worktree command shapes to `wt-git`, denies unsupported shell-file operations, and passes unrelated Bash commands unchanged.
+`agents/lib/tool-reroute.js` is the `PreToolUse` dispatcher that makes Tilth the only file tool on Claude and Codex. Its matcher is `Bash|Read|Write|Edit|MultiEdit|Grep|Glob|apply_patch|mcp__tilth__tilth_write`.[^reroute-wiring]
+
+It denies each call below and names the Tilth MCP call to make instead:
+
+- The built-in `Read` on a text file. Images, PDFs, and notebooks pass, because `Read` is Claude's only viewer for them.
+- `Write`, `Edit`, `MultiEdit`, and the Codex `apply_patch` tool. Claude plan files (`~/.claude/plans/`) and auto-memory (`~/.claude/projects/*/memory/`) pass for `Read`, `Write`, and `Edit`.
+- On Codex only, `tilth_write` targets outside the checkout. See Codex specifics.
+- The `Grep` and `Glob` tools.
+- Shell searches that read files: `grep`, `rg`, `ag`, and `ack` with a path, a `< file` redirect, or a recursive default.
+- Shell reads: `cat`, `head`, `tail`, `sed`, `awk`, `nl`, `less`, `bat`, and `tac` with a file operand. `sed -i` names `tilth_write`.
+- Shell write-redirects into the working tree.
+
+Calls that read no file run unchanged: pipe filters such as `git log | grep fix`, here-doc bodies sent to a non-interpreter, `tail -f`, reads of `/dev`, `/proc`, and `/sys`, `find`, and `rg --files`. A piped `sed -f rules.sed` also runs: the script file runs but does not print, and Tilth cannot run it. The lexer looks through wrappers (`xargs`, `command`, `time`, `nice`, `timeout`, `sudo`, `env`, `find -exec`, backticks, `bash -c`) and ignores `#` comments. The hook still rewrites `cd <path> && git …` to `wt-git`.[^reroute-tests]
+
+The hook fails open. `DOTFILES_TOOL_REROUTE=0` turns it off, for example when the Tilth MCP server does not connect. Every deny reason names this switch when it fits.
+
+### Why deny, and why two layers on Claude
+
+The earlier design rewrote shell searches to the `tilth` CLI, because a static deny made the model retry. That design depended on a Tilth CLI, and the Tilth fork now narrows to code intelligence and AST search through MCP. A hook cannot turn a Bash call into an MCP call, so the hook now denies with the exact MCP call instead.
+
+Claude also lists `Glob` and `Grep` in `permissions.deny`. A bare tool name removes the tool from Claude's context, so the model cannot retry it; a fresh `claude -p` session confirmed this on 2026-10-02. `Write` and `Edit` are not listed. Plan mode writes its plan file with `Write`, and it refuses MCP writers such as `tilth_write`. A live plan-mode run with `Write` denied could not write its plan file. A deny rule cannot exempt a path, so the hook gates `Write` and `Edit` instead. `MultiEdit` is not listed: current Claude builds do not ship it, and a deny rule for it logs a "matches no known tool" warning. `Read` is not denied there, because a permission rule cannot exempt images. The hook is the only gate for `Read`, `Write`, and `Edit`, and the second layer for `ap` launches that do not carry the Claude deny list.[^reroute-claude]
+
+The `ap` permissions profile carries no file-tool deny, because it also lowers onto Cursor and Copilot. Those harnesses keep their native file tools.
+
+### Codex specifics
+
+Codex reports shell calls as `Bash` and file edits as `apply_patch`, and a `PreToolUse` deny blocks both (developers.openai.com/codex/hooks). The Codex hooks renderer prefixes the command with `env DOTFILES_HARNESS=codex`. The new hook entry follows `git-guard` and `sensitive-file-guard`. Codex can ask once to trust the new `tool-reroute` entry, and again for the changed `sensitive-file-guard` matcher.
+
+Codex rejects `updatedInput` without `permissionDecision` and reports `PreToolUse Failed`. The hook therefore emits nothing for a no-op `cd <cwd> &&` strip on Codex. The `cd <path> && git` rewrite carries `allow` and runs on Codex. `git-guard` reads the `wt-git <path>`, `cd <path> &&`, and `git -C` forms, so a destructive command in another repo still meets the dirty-tree check.
+
+The `apply_patch` deny moves every Codex write to `tilth_write`. Codex sets `approval_mode: approve` for it, and `tilth_write` accepts absolute paths. A probe on 2026-10-02 wrote outside the checkout. Whether the Codex sandbox covers MCP servers is not verified, so the hook does not rely on it. The hook therefore denies a Codex `tilth_write` whose real path is outside the git toplevel, `/tmp`, `$TMPDIR`, a `.cheese/` directory, or the cheese data directory. `DOTFILES_WRITE_GUARD_ALLOW` adds roots. Claude leaves this check to `worktree-guard`. `sensitive-file-guard` also reads the `glob` and `scope` fields of `tilth_search`, because every search now goes there.
+
+Agents that only read files grant `mcp__tilth__tilth_read` instead of `Read`. `roquefort-wrecker` grants `mcp__tilth__tilth_write` by exact name, so the Codex read-only derivation does not sandbox it.[^reroute-agents]
+
+[^reroute-wiring]: `agents/hooks/registry.yaml` (`tool-reroute`); `agents/lib/tool-reroute/{native,search,io,shell}.js`.
+[^reroute-tests]: `tests/tool-reroute.bats` (passthrough contract, here-doc, and lexer tests); `tests/tool-reroute-native.bats` (plan files, Codex out-of-tree writes, kill switch).
+[^reroute-claude]: `chezmoi/.chezmoidata/claude.yaml` (`permissions.deny`, `PreToolUse` matcher).
+[^reroute-agents]: `agents/registry.yaml`; `.sync-lib.sh` (`_cz_render_codex_agent`).
 
 ## Claude-only pre-tool guards
 

@@ -22,6 +22,7 @@
 const path = require('path');
 
 const READ_TOOLS = new Set(['Read', 'mcp__tilth__tilth_read']);
+const SEARCH_TOOL = 'mcp__tilth__tilth_search';
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'mcp__tilth__tilth_write']);
 
 // Non-secret .env companions — checked-in templates, never hold real values.
@@ -155,8 +156,29 @@ function editTargets(input) {
   return targets;
 }
 
+// tilth_search targets: every query glob, plus the scope. A glob is also
+// tried without trailing wildcards so `.env*` counts as `.env`. A scope that
+// is a credential directory itself (`~/.aws`, `.ssh`) is sensitive because the
+// search would read the files inside it.
+function tilthSearchTargets(input) {
+  const out = [];
+  if (Array.isArray(input.queries)) {
+    for (const q of input.queries) {
+      if (!q || typeof q.glob !== 'string' || !q.glob) continue;
+      out.push(q.glob, q.glob.replace(/\*+$/, ''));
+    }
+  }
+  if (typeof input.scope === 'string' && input.scope) {
+    const scope = resolveEditPath(input.scope, input.cwd);
+    out.push(scope);
+    if (/(^|\/)\.(aws|ssh|gnupg)\/?$/.test(scope)) out.push(scope.replace(/\/?$/, '/') + 'credentials');
+  }
+  return out;
+}
+
 function extractTargets(toolName, input) {
   if (!input) return [];
+  if (toolName === SEARCH_TOOL) return tilthSearchTargets(input);
   if (toolName === 'Bash') return bashTokens(input.command || '');
   // Codex apply_patch: target paths live in the patch headers (command field).
   if (toolName === 'apply_patch') return applyPatchTargets(input.command || '');

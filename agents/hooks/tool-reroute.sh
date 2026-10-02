@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# PreToolUse hook: transparently REWRITE wrong-tool Bash/Grep/Glob calls to their
-# tilth / wt-git shell equivalent (via updatedInput); every other command runs
-# unchanged. The detection logic lives in the sibling Node module
+# PreToolUse hook: deny wrong-tool file reads, writes, and searches and name the
+# tilth MCP call to use. It rewrites `cd <path> && git …` to wt-git. Every other
+# call runs unchanged. The detection logic lives in the sibling Node module
 # (lib/tool-reroute.js) + its lib/tool-reroute/ modules; this bridge exists so
 # the entry deploys as a `.sh`
 # that runs correctly whether invoked directly via shebang (the `ap` plugin-tree
@@ -15,10 +15,15 @@
 # Harness identity: the renderer sets DOTFILES_HARNESS on the command; this
 # script only reads it. See wiki architecture/cross-harness-guards.
 #
-# Fail-open: a missing logic file or absent node must never block a tool call —
-# the hook rewrites/hardens, it must not become a denial-of-service.
+# Fail-open: a missing logic file or absent node must never block a tool call.
+# The hook routes and denies, but it must not become a denial-of-service.
+# Kill switch: DOTFILES_TOOL_REROUTE=0|false|off|no disables the hook.
 
 set -u
+
+case "${DOTFILES_TOOL_REROUTE:-}" in
+    0|false|off|no|FALSE|OFF|NO|False|Off|No) exit 0 ;;
+esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_ROOT="$(dirname "$SCRIPT_DIR")"  # ~/.claude/plugins/local/<p> or ~/.codex

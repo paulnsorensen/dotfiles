@@ -143,10 +143,10 @@ d_fix_recommendations() {
     echo "### Raw-bash that should route to a dedicated tool/skill"
     run "SELECT
              CASE
-                 WHEN bash_cmd LIKE 'find %' OR bash_cmd LIKE '% find %' THEN 'find -> Glob / cheez-search'
-                 WHEN bash_cmd LIKE 'grep %' OR bash_cmd LIKE 'egrep %' OR bash_cmd LIKE 'rg %' THEN 'grep/rg -> cheez-search'
-                 WHEN bash_cmd LIKE 'cat %' AND bash_cmd NOT LIKE '%>%' THEN 'cat -> cheez-read'
-                 WHEN bash_cmd LIKE 'sed %' OR bash_cmd LIKE '%sed -i%' THEN 'sed -> cheez-write / Edit'
+                 WHEN bash_cmd LIKE 'find %' OR bash_cmd LIKE '% find %' THEN 'find -> tilth_search'
+                 WHEN bash_cmd LIKE 'grep %' OR bash_cmd LIKE 'egrep %' OR bash_cmd LIKE 'rg %' THEN 'grep/rg -> tilth_search'
+                 WHEN bash_cmd LIKE 'cat %' AND bash_cmd NOT LIKE '%>%' THEN 'cat -> tilth_read'
+                 WHEN bash_cmd LIKE 'sed %' OR bash_cmd LIKE '%sed -i%' THEN 'sed -> tilth_write'
                  WHEN bash_cmd LIKE '%python3%json%' THEN 'python3 json -> jq'
                  WHEN bash_cmd LIKE '%git add%' AND bash_cmd LIKE '%git commit%' THEN 'git add+commit -> /commit'
                  ELSE NULL
@@ -176,9 +176,9 @@ d_permission_friction() {
     run "SELECT
              CASE
                  WHEN bash_cmd LIKE '%python3%' THEN 'python3 inline'
-                 WHEN bash_cmd LIKE 'find %' OR bash_cmd LIKE '% find %' THEN 'find (use Glob)'
-                 WHEN bash_cmd LIKE 'grep %' OR bash_cmd LIKE 'egrep %' THEN 'grep (use Grep)'
-                 WHEN bash_cmd LIKE 'sed %' OR bash_cmd LIKE '%sed -i%' THEN 'sed (use Edit)'
+                 WHEN bash_cmd LIKE 'find %' OR bash_cmd LIKE '% find %' THEN 'find (use tilth_search)'
+                 WHEN bash_cmd LIKE 'grep %' OR bash_cmd LIKE 'egrep %' THEN 'grep (use tilth_search)'
+                 WHEN bash_cmd LIKE 'sed %' OR bash_cmd LIKE '%sed -i%' THEN 'sed (use tilth_write)'
                  WHEN bash_cmd LIKE 'cd %' AND bash_cmd LIKE '%git%' THEN 'cd+git (use wt-git)'
                  WHEN bash_cmd LIKE '%git add%&&%git commit%' THEN 'git add+commit (use /commit)'
                  ELSE 'other: ' || substr(bash_cmd, 1, 40)

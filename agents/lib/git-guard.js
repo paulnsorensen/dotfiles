@@ -37,6 +37,8 @@
 //   CLAUDE_GIT_GUARD=0|false|off|no   → disable entirely
 
 const { execSync } = require('child_process');
+const os = require('os');
+const path = require('path');
 
 function isDisabled() {
   const v = (process.env.CLAUDE_GIT_GUARD || '').trim().toLowerCase();
@@ -110,8 +112,24 @@ function gitArgs(tokens) {
       while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) i++;
     }
   }
+  // `wt-git <path> <git-args>` runs `git -C <path> <git-args>`.
+  if (i < tokens.length && /(^|\/)wt-git$/.test(tokens[i])) {
+    return i + 1 < tokens.length ? ['-C', tokens[i + 1], ...tokens.slice(i + 2)] : null;
+  }
   if (i >= tokens.length || !/(^|\/)git$/.test(tokens[i])) return null;
   return tokens.slice(i + 1);
+}
+
+// The `-C <dir>` values among the leading git global options, in order.
+function globalDirs(args) {
+  const dirs = [];
+  let j = 0;
+  while (j < args.length && args[j].startsWith('-')) {
+    if (args[j] === '-C') { if (j + 1 < args.length) dirs.push(args[j + 1]); j += 2; }
+    else if (args[j] === '-c') j += 2;
+    else j += 1;
+  }
+  return dirs;
 }
 
 function subcommand(args) {
@@ -135,6 +153,11 @@ function pathsAfterDashDash(arr) {
 function classify(tokens) {
   const args = gitArgs(tokens);
   if (!args) return null;
+  const hit = classifyArgs(args);
+  return hit ? { ...hit, dirs: globalDirs(args) } : null;
+}
+
+function classifyArgs(args) {
   const { sub, rest } = subcommand(args);
   if (!sub) return null;
 
@@ -181,12 +204,36 @@ function classify(tokens) {
   return null;
 }
 
-function classifyCommand(command) {
+// Every destructive segment, in order. The preceding `cd` targets are carried
+// on the hit as the leading entries of `dirs`, in order, so the dirty check
+// runs against the directory git actually operates in. `cd a && cd ../b`
+// resolves `../b` against `a`; an absolute target resets the chain.
+function classifyAll(command) {
+  const hits = [];
+  let cds = [];
   for (const tokens of tokenizeSegments(command)) {
+    if (tokens[0] === 'cd') {
+      const target = tokens.slice(1).find((t) => t !== '--');
+      cds = target === undefined ? ['~'] : [...cds, target];
+      continue;
+    }
     const hit = classify(tokens);
-    if (hit) return hit;
+    if (hit) hits.push(cds.length ? { ...hit, dirs: [...cds, ...hit.dirs] } : hit);
   }
-  return null;
+  return hits;
+}
+
+function classifyCommand(command) {
+  return classifyAll(command)[0] || null;
+}
+
+function resolveDirs(cwd, dirs) {
+  let dir = cwd || process.cwd();
+  for (const d of dirs || []) {
+    const expanded = d === '~' || d.startsWith('~/') ? path.join(os.homedir(), d.slice(1)) : d;
+    dir = path.resolve(dir, expanded);
+  }
+  return dir;
 }
 
 function pathsDirty(cwd, paths) {
@@ -229,10 +276,10 @@ Or export CLAUDE_GIT_GUARD=0 to disable this guard for the session.`;
 // Pure over (command, cwd) — the unit-testable core the adapters call.
 // Returns the classify hit when it should block, else null.
 function shouldBlock(command, cwd) {
-  const hit = classifyCommand(command || '');
-  if (!hit) return null;
-  if (!pathsDirty(cwd, hit.paths)) return null;
-  return hit;
+  for (const hit of classifyAll(command || '')) {
+    if (pathsDirty(resolveDirs(cwd, hit.dirs), hit.paths)) return hit;
+  }
+  return null;
 }
 
 // Adapter entry point. The Cursor + Copilot shell hooks invoke this via

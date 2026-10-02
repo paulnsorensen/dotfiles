@@ -103,26 +103,36 @@ hooks:
     shared_assets:
       - agents/lib/sensitive-file-guard.js
     harnesses: [claude, codex]
-    matcher: "Read|Edit|Write|MultiEdit|Bash|apply_patch|mcp__tilth__tilth_read|mcp__tilth__tilth_write"
+    matcher: "Read|Edit|Write|MultiEdit|Bash|apply_patch|mcp__tilth__tilth_read|mcp__tilth__tilth_write|mcp__tilth__tilth_search"
     timeout: 5
     description: Block reads/writes of .env, private keys, and credential stores
 
   # ─── Tool reroute ───────────────────────────────────────────────────
-  # Transparently REWRITES wrong-tool Bash/Grep/Glob calls to their tilth /
-  # wt-git shell equivalent via updatedInput (grep/rg/ag/ack → tilth, cd+git →
-  # wt-git, bare cat → tilth, find -name → tilth <glob>), and DENIES the two
-  # cases with no shell rewrite target (the Grep/Glob tools, shell
-  # write-redirects) naming cheez-search / tilth_write. Rewrite and deny only —
-  # every other Bash command runs unchanged. One dispatcher (tool-reroute.js)
-  # runs four independently-removable modules (lib/tool-reroute/{search,cd-strip,
-  # cd-git,io}.js); cd-strip strips a no-op `cd <cwd> &&` prefix and re-classifies
-  # the remainder; the shared lexer is lib/tool-reroute/shell.js and the shared
-  # jsonl append/rotate helper is lib/jsonl-log.js. Both harnesses share the
-  # allow/deny + updatedInput schema. Harness identity: see wiki
+  # Tilth owns file reads, writes, and searches on both harnesses. The hook
+  # denies each call below and names the tilth MCP call to make instead.
+  # Built-in Read on a text file is denied; images, PDFs, and notebooks pass.
+  # Write/Edit/MultiEdit, Codex apply_patch, and the Grep/Glob tools are denied.
+  # Shell reads and searches of files are denied (grep/rg/ag/ack,
+  # cat/head/tail/sed/awk), as are `sed -i` and write-redirects into the tree.
+  # Pipe filters (`git log | grep x`), `tail -f`, and here-docs run unchanged.
+  # The hook rewrites `cd <path> && git …` to wt-git.
+  # Claude plan files and auto-memory (~/.claude/plans/, ~/.claude/projects/*/memory/)
+  # keep Write/Edit access, because plan mode cannot use tilth_write.
+  # On Codex, tilth_write is denied outside the checkout, /tmp, and .cheese/.
+  # One dispatcher (tool-reroute.js) runs five independently-removable modules
+  # (lib/tool-reroute/{native,search,cd-strip,cd-git,io}.js). The cd-strip module
+  # strips a no-op `cd <cwd> &&` prefix and re-classifies the remainder.
+  # The shared lexer is lib/tool-reroute/shell.js.
+  # The shared jsonl append/rotate helper is lib/jsonl-log.js.
+  # Both harnesses share the allow/deny and updatedInput schema.
+  # Codex matches apply_patch by name and reports shell calls as Bash.
+  # Claude also removes Grep/Glob through permissions.deny in
+  # chezmoi/.chezmoidata/claude.yaml. Harness identity: see wiki
   # architecture/cross-harness-guards.
-  # Fail-open: a missing logic file or absent node degrades to the unrewritten
-  # command. Every rewrite/deny is appended to decisions.jsonl (fail-open,
-  # 5 MiB rotation) for observability.
+  # Kill switch: DOTFILES_TOOL_REROUTE=0|false|off|no disables the hook.
+  # Fail-open: a missing logic file or absent node degrades to the unrouted
+  # call. The hook appends every rewrite and deny to decisions.jsonl
+  # (fail-open, 5 MiB rotation) for observability.
   tool-reroute:
     event: PreToolUse
     script: agents/hooks/tool-reroute.sh
@@ -130,14 +140,15 @@ hooks:
       - agents/lib/tool-reroute.js
       - agents/lib/jsonl-log.js
       - agents/lib/tool-reroute/shell.js
+      - agents/lib/tool-reroute/native.js
       - agents/lib/tool-reroute/search.js
       - agents/lib/tool-reroute/cd-strip.js
       - agents/lib/tool-reroute/cd-git.js
       - agents/lib/tool-reroute/io.js
-    harnesses: [claude] # adding codex requires the DOTFILES_HARNESS prefix (see wiki architecture/cross-harness-guards)
-    matcher: "Bash|Grep|Glob"
+    harnesses: [claude, codex]
+    matcher: "Bash|Read|Write|Edit|MultiEdit|Grep|Glob|apply_patch|mcp__tilth__tilth_write"
     timeout: 5
-    description: Rewrite wrong-tool Bash/Grep/Glob calls to tilth/wt-git; otherwise run unchanged
+    description: Route file reads, writes, and searches to tilth; rewrite cd+git to wt-git
 
   # ─── Deep-think nudge ───────────────────────────────────────────────
   # When a reasoning-heavy skill (briesearch/culture/spec/mold) is invoked at an

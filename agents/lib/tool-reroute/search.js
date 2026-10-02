@@ -1,109 +1,92 @@
 'use strict';
-// search.js — reroute module: wrong-tool code/text/file search → tilth.
+// search.js — reroute module: code/text search → tilth_search.
 //
-// Bash grep/rg/ag/ack with a CLEAN shape — a single standalone invocation (no
-// pipe, no redirect), a pattern, an optional single path, and only
-// non-semantic flags — REWRITE to `tilth <pattern> [--scope <path>]`. Bash find
-// filtering solely by -name/-path REWRITES to `tilth <glob> [--scope <path>]`
-// (QUERY is positional — tilth has no --glob flag). The native Grep/Glob TOOLS
-// have no Bash rewrite target (a hook's updatedInput cannot change the tool
-// name, only its args) so they DENY with a cheez-search
-// message.
-//
-// "Exotic" shapes — a case flag (-i, tilth is case-sensitive), other semantic
-// flags tilth cannot reproduce faithfully (-l, -c, -o, -v, -w, -x, -E/-P,
-// context -A/-B/-C, any long flag, multiple path operands, a piped/redirected
-// search), a pattern carrying regex metacharacters (tilth matches literally), a
-// case-insensitive find (-iname/-ipath — tilth's glob is case-sensitive, so a
-// rewrite would silently narrow the match set), or any other non-name find —
-// return null and fall through (command runs unchanged): never ship a rewrite
-// that silently changes search semantics, never hard-block.
+// The native Grep/Glob TOOLS deny (a hook's updatedInput cannot change the tool
+// name, so there is no rewrite target). Shell grep/egrep/fgrep/rg/ag/ack DENY
+// when they read files: a path operand, a `< file` input redirect, or a
+// recursive search with no path (rg/ag/ack default to the cwd; grep with -r).
+// A search that filters a pipe or a here-string (`git log | grep fix`) reads
+// no file and runs unchanged, as do file-listing modes (`rg --files`, `ag -g`,
+// `ack -f`). The deny names the tilth_search MCP tool; it does not depend on a
+// tilth CLI.
 
-const { parse, commandWord, shQuote } = require('./shell');
+const { commands, commandWord, splitArgs, realFiles, pipedIn, inputFiles } = require('./shell');
 
-const GREP_BINS = new Set(['grep', 'rg', 'ag', 'ack']);
-const GLOB_FLAGS = new Set(['-name', '-path']);
-// Short option letters whose semantics tilth cannot reproduce; their presence
-// (alone or fused, e.g. `-rl`) forces delegation. -i/-I (case-insensitive) are
-// exotic too — tilth's positional query is case-sensitive. Letters that take a
-// value (-A/-B/-C context, -e pattern, -f file, -m max-count) are exotic too, so
-// we never have to consume a following value to find the operands.
-const EXOTIC_SHORT = new Set('lLcovwxEPABCefmiI'.split(''));
+// Per-binary option grammar: which flags take a value, which flags make the
+// search recursive, which supply the pattern (so every operand is a path), and
+// which list files instead of searching them.
+const BINS = {
+  grep: {
+    valuedShort: 'efmABCdD',
+    valuedLong: ['--regexp', '--file', '--max-count', '--context', '--after-context',
+      '--before-context', '--directories', '--devices', '--label', '--include',
+      '--exclude', '--exclude-dir', '--binary-files'],
+    recursive: ['-r', '-R', '--recursive', '--dereference-recursive'],
+  },
+  rg: {
+    valuedShort: 'efgtTmABCjMrdE',
+    valuedLong: ['--regexp', '--file', '--glob', '--iglob', '--type', '--type-not',
+      '--type-add', '--type-clear', '--max-count', '--context', '--after-context',
+      '--before-context', '--threads', '--max-columns', '--replace', '--max-depth',
+      '--encoding', '--sort', '--sortr', '--colors', '--color', '--pre', '--pre-glob',
+      '--max-filesize', '--engine'],
+    recursive: 'always',
+    listing: ['--files', '--type-list'],
+  },
+  ag: {
+    valuedShort: 'ABCGgm',
+    valuedLong: ['--file-search-regex', '--ignore', '--ignore-dir', '--context',
+      '--after', '--before', '--max-count', '--depth', '--pager'],
+    recursive: 'always',
+    listing: ['-g', '--list-file-types'],
+  },
+  ack: {
+    valuedShort: 'ABCm',
+    valuedLong: ['--type', '--ignore-dir', '--ignore-file', '--match', '--context',
+      '--after-context', '--before-context', '--max-count', '--output'],
+    recursive: 'always',
+    listing: ['-f', '-g', '--help-types'],
+  },
+};
+BINS.egrep = BINS.grep;
+BINS.fgrep = BINS.grep;
+const PATTERN_FLAGS = ['-e', '-f', '--regexp', '--file'];
 
-// A pattern carrying any BRE/ERE metacharacter cannot be reproduced by tilth's
-// literal, case-sensitive positional query, so delegate rather than silently
-// narrow the match set.
-const REGEX_META = /[\\.^$*+?()[\]{}|]/;
-
-function reason(label, pattern) {
+function reason(label, pattern, targets) {
   const q = pattern || '<pattern>';
-  const example = `mcp__tilth__tilth_search(queries:[{query:${JSON.stringify(q)}}])`;
-  return `Blocked: ${label} — use the cheez-search skill (tilth_search), not the raw search tool.
+  const where = targets && targets.length ? ` (${targets.join(', ')})` : '';
+  return `Blocked: ${label} searches files${where} — use tilth_search, not a raw search tool.
 
-tilth_search is AST-aware and far cheaper in context than grep/find. Run instead:
-  ${example}
+tilth_search is AST-aware and far cheaper in context. Run instead:
+  mcp__tilth__tilth_search(queries:[{query:${JSON.stringify(q)}}], cwd:"<checkout>")
 
-For "where is X defined" / "what calls Y" pass kind:"symbol" or kind:"callers".`;
+Add glob:"*.rs" to a query to narrow it. Filters on command output (\`git log | grep fix\`) still run.`;
 }
 
-// grep-family clean-shape → `tilth <pattern> [--scope <path>]`, or null when exotic.
-function grepRewrite(args) {
-  const operands = [];
-  for (const a of args) {
-    if (a === '--') continue; // a lone separator; the rest are operands
-    if (a.startsWith('--')) return null; // any long flag: conservatively exotic
-    if (a.startsWith('-') && a.length > 1) {
-      for (const ch of a.slice(1)) if (EXOTIC_SHORT.has(ch)) return null;
-      continue; // clean short flags (-r/-n/-H/…): ignore
-    }
-    operands.push(a);
-  }
-  if (operands.length === 0 || operands.length > 2) return null;
-  const [pattern, path] = operands;
-  if (REGEX_META.test(pattern)) return null; // regex pattern → tilth matches literally → delegate
-  return `tilth ${shQuote(pattern)}${path !== undefined ? ` --scope ${shQuote(path)}` : ''}`;
-}
-
-// find filtering ONLY by -name/-path → `tilth <glob> [--scope <path>]` (QUERY
-// positional), or null when any other predicate is present (a real filesystem op).
-function findRewrite(args) {
-  const paths = [];
-  let i = 0;
-  while (i < args.length && !args[i].startsWith('-')) { paths.push(args[i]); i++; }
-  let glob = null;
-  for (; i < args.length; i++) {
-    if (GLOB_FLAGS.has(args[i])) {
-      if (glob !== null) return null; // a second name/path predicate → exotic
-      glob = args[i + 1];
-      i++; // skip the predicate value
-      continue;
-    }
-    return null; // -type/-size/-mtime/-o/-exec/… → delegate, tilth can't express it
-  }
-  if (glob == null || paths.length > 1) return null;
-  return `tilth ${shQuote(glob)}${paths.length ? ` --scope ${shQuote(paths[0])}` : ''}`;
+// The files a shell search reads, or null when it reads none.
+function searchTargets(seg, spec, args, xargs) {
+  const { flags, operands } = splitArgs(args, new Set(spec.valuedShort), new Set(spec.valuedLong));
+  if ((spec.listing || []).some((f) => flags.has(f))) return null;
+  const patternGiven = PATTERN_FLAGS.some((f) => flags.has(f));
+  const pattern = patternGiven ? null : operands[0];
+  const paths = realFiles(patternGiven ? operands : operands.slice(1));
+  const targets = [...paths, ...inputFiles(seg)];
+  if (targets.length) return { targets, pattern };
+  const recursive = spec.recursive === 'always' || spec.recursive.some((f) => flags.has(f));
+  const stdinFed = pipedIn(seg) || seg.inputRedirects.length > 0;
+  if (recursive && !stdinFed) return { targets: ['.'], pattern };
+  if (xargs) return { targets: ['(files from xargs)'], pattern }; // xargs feeds file names on stdin
+  return null;
 }
 
 function detect(toolName, input) {
-  if (toolName === 'Grep' || toolName === 'Glob') {
-    const pattern = input && typeof input.pattern === 'string' ? input.pattern : null;
-    return { reason: reason(`the ${toolName} tool`, pattern), pattern, module: 'search' };
-  }
   if (toolName !== 'Bash') return null;
-  const segs = parse((input && input.command) || '');
-  // A clean search reroute is a STANDALONE invocation: one segment, no
-  // redirect. A pipe/`&&`/redirect adds structure tilth can't carry, so leave
-  // it for delegation.
-  if (segs.length !== 1 || segs[0].redirects.length) return null;
-  const { word, args } = commandWord(segs[0].argv);
-  if (!word) return null;
-  if (GREP_BINS.has(word)) {
-    const rw = grepRewrite(args);
-    return rw ? { rewrite: rw, module: 'search' } : null;
-  }
-  if (word === 'find') {
-    const rw = findRewrite(args);
-    return rw ? { rewrite: rw, module: 'search' } : null;
+  for (const seg of commands((input && input.command) || '')) {
+    const { word, args, xargs } = commandWord(seg.argv);
+    const spec = word && Object.hasOwn(BINS, word) && BINS[word];
+    if (!spec) continue;
+    const hit = searchTargets(seg, spec, args, xargs);
+    if (hit) return { reason: reason(`\`${word}\``, hit.pattern, hit.targets), pattern: hit.pattern, module: 'search' };
   }
   return null;
 }
