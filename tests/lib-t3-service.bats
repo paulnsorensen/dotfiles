@@ -57,6 +57,7 @@ case "$1 $2" in
 "service status")
     echo "T3 Code service"
     echo "  Status: $(cat "$T3CODE_HOME/status") · t3@x"
+    exit "${STATUS_EXIT:-0}"
     ;;
 "service install")
     [[ -n "${INSTALL_EXIT:-}" ]] && exit "$INSTALL_EXIT"
@@ -129,6 +130,17 @@ EOF
     [ "$(grep -c '^update\|^service install' "$CALLS")" -eq 0 ]
 }
 
+@test "sync_t3_service continues under errexit when service status fails" {
+    write_manifest 0.0.44
+    write_runtime 0.0.42 "not installed"
+    # dots sync runs under set -euo pipefail; bats run does not.
+    # shellcheck disable=SC2016  # $1 and $2 expand inside the child shell.
+    STATUS_EXIT=1 run bash -euo pipefail -c '
+        log_info() { :; }; log_success() { :; }; log_warning() { :; }
+        source "$1"; sync_t3_service "$2"; echo reached' _ "$LIB" "$MANIFEST"
+    [ "$status" -eq 0 ]
+    [ "$output" = reached ]
+}
 @test "sync_t3_service skips when T3 has no runtime state" {
     write_manifest 0.0.44
     run sync_t3_service "$MANIFEST"

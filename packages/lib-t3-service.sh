@@ -31,9 +31,11 @@ t3_active_version() {
 }
 
 # Print the service status: installed, needs an update or repair, and so on.
+# Always succeed: a failed `t3 service status` must not abort a sync that runs
+# under `set -euo pipefail`. An empty status makes the callers skip.
 #   t3_service_status <t3_bin>
 t3_service_status() {
-    "$1" service status 2>/dev/null |
+    { "$1" service status </dev/null 2>/dev/null || true; } |
         sed -n 's/^[[:space:]]*Status:[[:space:]]*\([^·]*\).*/\1/p' |
         sed 's/[[:space:]]*$//' | head -n1
 }
