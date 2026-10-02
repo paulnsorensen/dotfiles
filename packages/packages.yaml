@@ -57,7 +57,7 @@ packages:
 
   # AI harnesses not owned by mise
   # renovate: datasource=npm depName=@earendil-works/pi-coding-agent
-  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.99.1", flags: ["--ignore-scripts"] }
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "0.99.2", flags: ["--ignore-scripts"] }
 
   # LSP servers not owned by mise
   # renovate: datasource=npm depName=@vtsls/language-server
@@ -87,7 +87,7 @@ packages:
   # renovate: datasource=pypi depName=ralphify
   - ralphify: { source: uv, version: "0.3.0" }
   # renovate: datasource=pypi depName=ruff
-  - ruff: { source: uv, version: "0.16.8" } # Python linter (just lint-python)
+  - ruff: { source: uv, version: "0.16.9" } # Python linter (just lint-python)
   # renovate: datasource=pypi depName=check-jsonschema
   - check-jsonschema: { source: uv, version: "0.38.2" }
   # renovate: datasource=git-refs depName=agentskills/agentskills

@@ -78,4 +78,8 @@
 
 2026-09-29 · milknado-fleet-retire-20260929 · merged · architecture/agents-dir.md · Retired the milknado-fleet workflow, worker TOML, and worker MCP file; `.chezmoiremove` drops `~/.config/milknado/worker-mcp.json`, `exact_workflows` drops the workflow copies. Milknado plugin, MCPs, and package stay.
 
+2026-10-01 · vaudeville-credential-file-20261001 · merged · architecture/mcp-secret-handling.md · Record nonsecret Vaudeville path configuration and distinguish same-user files from managed MCP isolation. Source hashing was unavailable because the sensitive-file guard rejected a prose-only hashing command.
+
+2026-10-01 · fb5237314daff339 · merged · architecture/mcp-secret-handling.md · Supersede Haiku default with pinned Jev through explicit OpenRouter endpoint. Preserve file-backed credentials and text-model overrides. All three frozen retrieval probes return the page at rank 1.
+
 2026-10-02 · cheese-factory-inplace-20261002 · merged · adr/cheese-factory-workflow.md · Recorded ADR-015: cheese-factory is edited in place on linked wheypoints, with one global StructuredOutput handback gate keyed on the handback role and factory ref. The factory agents, registry hooks, and renderer changes are dropped. A two-pass resume keeps the cache prefix.

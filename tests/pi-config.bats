@@ -104,7 +104,7 @@ JSON
 @test "pi registry pins the selected mainstream packages" {
     run yq -o=json -I=0 '.pi.settings.packages' "$REGISTRY"
     [ "$status" -eq 0 ]
-    [ "$output" = '["npm:pi-mcp-adapter@2.38.0","npm:pi-subagents@0.73.1","npm:pi-web-access@0.33.0","npm:@gotgenes/pi-permission-system@33.1.1","npm:pi-vim@0.14.2"]' ]
+    [ "$output" = '["npm:pi-mcp-adapter@2.38.0","npm:pi-subagents@0.74.0","npm:pi-web-access@0.35.0","npm:@gotgenes/pi-permission-system@33.1.1","npm:pi-vim@0.14.2"]' ]
 }
 
 @test "pi uses shared agent skills instead of a copied skill tree" {
@@ -163,6 +163,6 @@ TOML
 
 @test "pi CLI install is pinned and lifecycle scripts are disabled" {
     [ "$(yq -r '.packages[] | select(has("pi")) | .pi.pkg' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "@earendil-works/pi-coding-agent" ]
-    [ "$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "0.99.1" ]
+    [ "$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "0.99.2" ]
     [ "$(yq -o=json -I=0 '.packages[] | select(has("pi")) | .pi.flags' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = '["--ignore-scripts"]' ]
 }

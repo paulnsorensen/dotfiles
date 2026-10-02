@@ -1,0 +1,7 @@
+default_model: typesafe:jev-1.13
+providers:
+  typesafe:
+    base_url: https://openrouter.ai/api
+    key_file_env: VAUDEVILLE_API_KEY_FILE
+  openrouter:
+    key_file_env: VAUDEVILLE_API_KEY_FILE

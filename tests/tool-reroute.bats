@@ -400,6 +400,93 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
     [[ "$(reason "$out")" == *"scratch.txt"* ]]
 }
 
+@test "tool-reroute/io: the write-redirect deny shows a create_file template, not a retired skill" {
+    local out; out=$(out_for 'echo hi > scratch.txt')
+    [[ "$(reason "$out")" == *'op:"create_file"'* ]]
+    [[ "$(reason "$out")" != *cheez-write* ]]
+}
+
+# The next four tests keep a literal $ in the fixture: the hook must see the
+# unexpanded redirect target, as an agent's Bash call delivers it.
+# shellcheck disable=SC2016
+@test "tool-reroute/io: a redirect to a variable assigned an out-of-tree path is NOT denied" {
+    local out; out=$(out_for_safe 'S=/tmp/scratch; mkdir -p $S; cat > $S/intent.json')
+    [ -z "$out" ]
+    out=$(out_for_safe 'D=/tmp/q cat > "${D}/m.json"')
+    [ -z "$out" ]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: a redirect to a variable assigned an in-tree path still denies" {
+    local out; out=$(out_for_safe 'D=.cheese/notes; cat > $D/x.md')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'$D/x.md'* ]]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: a redirect to an unknown variable or command substitution delegates" {
+    local out; out=$(out_for_safe 'cat > $UNSET_DIR/x.json')
+    [ -z "$out" ]
+    out=$(out_for_safe 'echo a >> "$(git rev-parse --git-common-dir)/info/exclude"')
+    [ -z "$out" ]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: an in-tree path with a variable after the first segment still denies" {
+    local out; out=$(out_for_safe 'cat > .cheese/press/$S.json')
+    [[ "$(decision "$out")" == "deny" ]]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: a later reassignment does not resolve an earlier redirect" {
+    local out; out=$(out_for_safe 'echo hi > $D/f; D=.')
+    [ -z "$out" ]
+    out=$(out_for_safe 'D=.; echo hi > "$D/x"; D=/tmp')
+    [[ "$(decision "$out")" == "deny" ]]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: a command-local prefix does not apply to its own redirect" {
+    local out; out=$(out_for_safe 'D=. echo hi > $D/f')
+    [ -z "$out" ]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: an assignment in a pipeline is uncertain and delegates" {
+    local out; out=$(out_for_safe 'D=. | cat; echo hi > $D/f')
+    [ -z "$out" ]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: PWD and a leading command-substitution pwd resolve to cwd and deny" {
+    local out; out=$(out_for_safe 'echo x > $PWD/f.txt')
+    [[ "$(decision "$out")" == "deny" ]]
+    out=$(out_for_safe 'echo x > "$(pwd)/f"')
+    [[ "$(decision "$out")" == "deny" ]]
+    out=$(out_for_safe 'echo x > "$CLAUDE_PROJECT_DIR/f"')
+    [[ "$(decision "$out")" == "deny" ]]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: HOME resolves outside the working tree and delegates" {
+    local out; out=$(out_for_safe 'echo x > $HOME/f')
+    [ -z "$out" ]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: a tilde assignment expands to HOME and delegates" {
+    local out; out=$(out_for_safe 'D=~/tmp; echo x > $D/f')
+    [ -z "$out" ]
+}
+
+@test "tool-reroute/io: every stdout redirect is checked, not only the first" {
+    local out; out=$(out_for_safe 'echo hi > /tmp/a > f.txt')
+    [ "$(decision "$out")" = "deny" ]
+    case "$(reason "$out")" in *f.txt*) ;; *) false ;; esac
+    out=$(out_for_safe 'echo hi > /tmp/a > /tmp/b')
+    [ -z "$out" ]
+}
+
 @test "tool-reroute/io: a redirect to /dev/null is NOT denied (no tilth_write target)" {
     local out; out=$(out_for 'echo x > /dev/null')
     ! denied "$out"

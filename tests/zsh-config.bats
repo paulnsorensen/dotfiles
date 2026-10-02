@@ -5,6 +5,7 @@ load test_helper
 
 setup() {
     setup_test_env
+    export DOTFILES_DIR="$TEST_HOME/Dev/dotfiles"
     # Copy zsh files to test home
     mkdir -p "$TEST_HOME/Dev/dotfiles/zsh"
     cp "$REAL_DOTFILES_DIR/zsh"/*.zsh "$TEST_HOME/Dev/dotfiles/zsh/" 2>/dev/null || true
@@ -338,6 +339,32 @@ SH
     command -v zsh &>/dev/null || skip "zsh not installed"
     run zsh -c "PATH=/usr/bin:/bin; source '$REAL_DOTFILES_DIR/zsh/core.zsh'" 2>&1
     assert_success
+}
+
+@test "core.zsh exports the Vaudeville key path without loading its contents" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    export DOTFILES_DIR="$TEST_HOME/Dev/dotfiles"
+    local key_file="$TEST_HOME/credentials with spaces/openrouter-api-key"
+    mkdir -p "${key_file%/*}"
+    printf 'fixture-key-must-not-be-exported\n' > "$key_file"
+    printf 'VAUDEVILLE_API_KEY_FILE="%s"\n' "$key_file" > "$DOTFILES_DIR/.env"
+    run zsh --no-rcs -c \
+        'PATH=/usr/bin:/bin; OSTYPE=test; unset VAUDEVILLE_API_KEY_FILE; source "$DOTFILES_DIR/zsh/core.zsh"; printf "PATH=[%s]\n" "$VAUDEVILLE_API_KEY_FILE"; env'
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "PATH=[$key_file]" ]
+    [[ "$output" != *fixture-key-must-not-be-exported* ]]
+}
+
+@test "core.zsh keeps shell syntax in the Vaudeville key path literal" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    export DOTFILES_DIR="$TEST_HOME/Dev/dotfiles"
+    local key_file="\$(touch $TEST_HOME/must-not-exist)"
+    printf 'VAUDEVILLE_API_KEY_FILE="%s"\n' "$key_file" > "$DOTFILES_DIR/.env"
+    run zsh --no-rcs -c \
+        'PATH=/usr/bin:/bin; OSTYPE=test; unset VAUDEVILLE_API_KEY_FILE; source "$DOTFILES_DIR/zsh/core.zsh"; printf "%s\n" "$VAUDEVILLE_API_KEY_FILE"'
+    [ "$status" -eq 0 ]
+    [ "$output" = "$key_file" ]
+    [ ! -e "$TEST_HOME/must-not-exist" ]
 }
 
 # Extract the absolute gh path core.zsh embedded, from a captured
