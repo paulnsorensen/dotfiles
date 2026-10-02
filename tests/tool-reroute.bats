@@ -392,7 +392,7 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
     local reg="$REAL_DOTFILES_DIR/agents/hooks/registry.yaml"
     [[ "$(yq -r '.hooks.tool-reroute.event' "$reg")" == "PreToolUse" ]]
     [[ "$(yq -r '.hooks.tool-reroute.script' "$reg")" == "agents/hooks/tool-reroute.sh" ]]
-    [[ "$(yq -r '.hooks.tool-reroute.matcher' "$reg")" == "Bash|Read|Write|Edit|MultiEdit|Grep|Glob|apply_patch" ]]
+    [[ "$(yq -r '.hooks.tool-reroute.matcher' "$reg")" == "Bash|Read|Write|Edit|MultiEdit|Grep|Glob|apply_patch|mcp__tilth__tilth_write" ]]
     [[ "$(yq -r '.hooks.tool-reroute.harnesses | join(",")' "$reg")" == "claude,codex" ]]
     [[ "$(yq -r '.hooks.tool-reroute.shared_assets[0]' "$reg")" == "agents/lib/tool-reroute.js" ]]
     # every module file the dispatcher requires is deployed
