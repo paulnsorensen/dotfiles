@@ -53,10 +53,17 @@ Separate open sites duplicate validation and trigger CodeQL's check/use heuristi
 
 A 14-day analysis found 205 `tool-reroute/io` write-redirect blocks in 134 sessions. Two causes were guard defects, not agent mistakes:
 
-- **Variable targets resolved in-tree.** `S=/private/tmp/...; cat > $S/intent.json` resolved `$S/intent.json` relative to cwd, so the guard denied a valid out-of-tree scratch write. The guard now expands a leading `$NAME` or `${NAME}` from assignments in the same command. It delegates when the leading expansion is unknown, such as an unset variable, `$(...)`, or a backtick.
+- **Variable targets resolved in-tree.** `S=/private/tmp/...; cat > $S/intent.json` resolved `$S/intent.json` relative to cwd, so the guard denied a valid out-of-tree scratch write. The guard now expands a leading `$NAME` or `${NAME}` from assignments, resolved in command order. A redirect sees only assignments that ran before its segment. Command-local prefixes such as `D=x cmd` never apply. An assignment-only segment in a pipeline, in the background, or beside `&&`/`||` drops its names. A leading `~` in a value expands to HOME. The guard seeds `PWD`, `HOME`, and `CLAUDE_PROJECT_DIR`, and treats a leading `$(pwd)` as cwd. It delegates when the leading expansion is unknown, such as an unset variable, another `$(...)`, or a backtick.
 - **The deny text named a retired skill.** It said "use the cheez-write skill", which no longer exists. It also seeded new files with `prepend`. The text now names `mcp__tilth__tilth_write` and shows a `create_file` template.
 
-The same pass added `tilth_write` rules to `agents/preamble.md`. Top `tilth_write` failures were a TAG reused for lines its read never displayed (138 in 14 days), a `replace_text` `old` outside the displayed section (19), JSON parse errors (11), and `create_file` on existing paths (11). The preamble budget rose to 575 tokens for these rules.
+The same pass added `tilth_write` rules to `agents/preamble.md`. Top `tilth_write` failures in 14 days were:
+
+- A TAG reused for lines its read never displayed: 138.
+- A `replace_text` `old` outside the displayed section: 19.
+- JSON parse errors: 11.
+- `create_file` on existing paths: 11.
+
+The preamble budget rose to 575 tokens for these rules.
 
 `tool-reroute/search.js` still names the retired `cheez-search` skill in its deny text.
 

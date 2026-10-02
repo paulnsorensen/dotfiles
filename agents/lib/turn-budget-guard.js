@@ -594,7 +594,7 @@ function nudgeContext(agentType, budget) {
   return `Local guard budget warning (type '${agentType || 'default'}': ` +
     `soft ${budget.turnSoft} turns / ${budget.ctxSoft} context tokens). ` +
     `This is a local guard budget signal, not a provider context failure. ${handoff} ` +
-    `non-checkpoint tool calls are hard-blocked at the ceiling, so prefer returning a concise ` +
+    `non-checkpoint tool calls are hard-blocked at the ceiling (SubagentHandback stays allowed), so prefer returning a concise ` +
     `final answer over further exploration.`;
 }
 

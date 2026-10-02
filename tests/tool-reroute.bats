@@ -437,6 +437,48 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
     [[ "$(decision "$out")" == "deny" ]]
 }
 
+# shellcheck disable=SC2016
+@test "tool-reroute/io: a later reassignment does not resolve an earlier redirect" {
+    local out; out=$(out_for_safe 'echo hi > $D/f; D=.')
+    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+    out=$(out_for_safe 'D=.; echo hi > "$D/x"; D=/tmp')
+    [[ "$(decision "$out")" == "deny" ]]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: a command-local prefix does not apply to its own redirect" {
+    local out; out=$(out_for_safe 'D=. echo hi > $D/f')
+    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: an assignment in a pipeline is uncertain and delegates" {
+    local out; out=$(out_for_safe 'D=. | cat; echo hi > $D/f')
+    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: PWD and a leading command-substitution pwd resolve to cwd and deny" {
+    local out; out=$(out_for_safe 'echo x > $PWD/f.txt')
+    [[ "$(decision "$out")" == "deny" ]]
+    out=$(out_for_safe 'echo x > "$(pwd)/f"')
+    [[ "$(decision "$out")" == "deny" ]]
+    out=$(out_for_safe 'echo x > "$CLAUDE_PROJECT_DIR/f"')
+    [[ "$(decision "$out")" == "deny" ]]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: HOME resolves outside the working tree and delegates" {
+    local out; out=$(out_for_safe 'echo x > $HOME/f')
+    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: a tilde assignment expands to HOME and delegates" {
+    local out; out=$(out_for_safe 'D=~/tmp; echo x > $D/f')
+    [[ "$out" != *'"permissionDecision":"deny"'* ]]
+}
+
 @test "tool-reroute/io: a redirect to /dev/null is NOT denied (no tilth_write target)" {
     local out; out=$(out_for 'echo x > /dev/null')
     ! denied "$out"
