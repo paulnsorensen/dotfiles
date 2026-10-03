@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, readdir } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -104,8 +104,9 @@ test('workflow smoke wiring invokes the wrapper, CI runs every test recipe, and 
   await assert.rejects(readFile(resolve(root, 'tests/workflows-parse.sh')), { code: 'ENOENT' })
 })
 
-test('workflow wrapper skips cleanly when node is unavailable', async () => {
+test('workflow wrapper skips cleanly when node is unavailable', async (t) => {
   const nodeFreePath = await mkdtemp(join(tmpdir(), 'workflow-no-node-'))
+  t.after(() => rm(nodeFreePath, { recursive: true, force: true }))
   const { stdout } = await execFileAsync('/bin/bash', [resolve(root, 'tests/workflows-test.sh')], {
     env: { PATH: nodeFreePath },
   })

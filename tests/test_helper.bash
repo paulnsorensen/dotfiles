@@ -30,8 +30,22 @@ export YELLOW='\033[1;33m'
 export BLUE='\033[0;34m'
 export NC='\033[0m'
 
+# Remove sandboxes left by runs that were killed or timed out before teardown.
+# The suffix is the owning PID ($$), so a dir is stale once that PID is gone.
+_sweep_stale_test_homes() {
+    local dir pid
+    for dir in "${TEST_HOME%/*}"/dotfiles-test-*; do
+        [[ -d "$dir" ]] || continue
+        pid="${dir##*-}"
+        [[ "$pid" =~ ^[0-9]+$ ]] || continue
+        kill -0 "$pid" 2>/dev/null && continue
+        rm -rf "$dir" 2>/dev/null || { chmod -R u+w "$dir" 2>/dev/null; rm -rf "$dir" 2>/dev/null; } || true
+    done
+}
+
 # Setup test environment
 setup_test_env() {
+    _sweep_stale_test_homes
     # Create test home directory
     mkdir -p "$TEST_HOME"
     mkdir -p "$DOTFILES_STATE_DIR"
