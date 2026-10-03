@@ -43,3 +43,9 @@ sources:
     skills: [wiki-curator, routine-scaffold, routine-env]
   paulnsorensen/sliced-bread-architecture:
     description: Sliced Bread doctrine skills — seam/spine coherence review, five-rule change review, slice depth scoring
+  gepa-ai/gepa:
+    description: GEPA optimize_anything — optimize any scorable text artifact (prompts, code, configs, agent scaffolds)
+    # The skill lives under .claude/skills, not skills/. Runtime needs
+    # `pip install "gepa[full]"` per project plus a reflection-LM key.
+    skills: [gepa-optimize-anything]
+    skills_path: .claude/skills
