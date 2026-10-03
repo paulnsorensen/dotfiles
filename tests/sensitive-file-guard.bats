@@ -381,6 +381,20 @@ cursor_guard() {
     [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"KEY","glob":"**/.env*"}]}')" == "deny" ]]
 }
 
+@test "tilth_search with a leading-wildcard .env glob is denied" {
+    local g
+    for g in '*.env' '*.env*' 'config/*.env' '**/*.env'; do
+        [[ "$(guard mcp__tilth__tilth_search "{\"queries\":[{\"query\":\"KEY\",\"glob\":\"$g\"}]}")" == "deny" ]] || { echo "expected deny: $g" >&2; return 1; }
+    done
+}
+
+@test "tilth_search with a leading-wildcard non-secret glob is allowed" {
+    local g
+    for g in '*' '**/*' '*.md' '*.envrc.md' '*.env.example' '*.env.ts' '*.env.d.ts' 'src/**/*.env.test.ts'; do
+        [[ "$(guard mcp__tilth__tilth_search "{\"queries\":[{\"query\":\"KEY\",\"glob\":\"$g\"}]}")" == "allow" ]] || { echo "expected allow: $g" >&2; return 1; }
+    done
+}
+
 @test "tilth_search scoped to ~/.aws is denied" {
     [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"KEY"}],"scope":"~/.aws"}')" == "deny" ]]
 }

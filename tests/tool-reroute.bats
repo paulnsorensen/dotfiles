@@ -302,12 +302,12 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
     [[ "$(reason "$out")" == *"paths:[\"$(dirname "$W")/sibling/file\"]"* ]]
 }
 
-@test "tool-reroute/io: >| and &> writes deny; /dev/null and /tmp targets pass" {
+@test "tool-reroute/io: >| and &> writes deny in or out of the tree; /dev targets pass" {
     local cmd
-    for cmd in 'echo x >| f.txt' 'echo x &> f.txt' 'echo x &>> f.txt'; do
+    for cmd in 'echo x >| f.txt' 'echo x &> f.txt' 'echo x &>> f.txt' 'echo x >| /tmp/a' 'echo x > /tmp/a'; do
         [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
     done
-    for cmd in 'echo x &> /dev/null' 'echo x >| /tmp/a' 'echo x > /tmp/a'; do
+    for cmd in 'echo x &> /dev/null' 'echo x > /dev/stderr' 'echo x >&2'; do
         [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
     done
 }
@@ -486,7 +486,7 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
     cmd=$'git commit -F - <<\'EOF\'\ngrep foo bar\ncat secret.txt\nEOF'
     out=$(out_for_safe "$cmd")
     if denied "$out"; then echo "body parsed as a command: $out" >&2; return 1; fi
-    cmd=$'cat <<-EOF > /tmp/note\n\tsed -n 1p f\n\tEOF\ngit status'
+    cmd=$'cat <<-EOF > /dev/null\n\tsed -n 1p f\n\tEOF\ngit status'
     out=$(out_for_safe "$cmd")
     if denied "$out"; then echo "<<- body parsed as a command: $out" >&2; return 1; fi
     # A command after the closed body is still classified.
@@ -530,29 +530,32 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
     [[ "$(reason "$out")" != *cheez-write* ]]
 }
 
-# The next four tests keep a literal $ in the fixture: the hook must see the
+# The next tests keep a literal $ in the fixture: the hook must see the
 # unexpanded redirect target, as an agent's Bash call delivers it.
 # shellcheck disable=SC2016
-@test "tool-reroute/io: a redirect to a variable assigned an out-of-tree path is NOT denied" {
-    local out; out=$(out_for_safe 'S=/tmp/scratch; mkdir -p $S; cat > $S/intent.json')
-    [ -z "$out" ]
-    out=$(out_for_safe 'D=/tmp/q cat > "${D}/m.json"')
-    [ -z "$out" ]
+@test "tool-reroute/io: a redirect to a variable target denies wherever it points" {
+    local cmd out
+    for cmd in 'S=/tmp/scratch; mkdir -p $S; cat > $S/intent.json' 'D=/tmp/q cat > "${D}/m.json"' \
+        'cat > $UNSET_DIR/x.json' 'echo a >> "$(git rev-parse --git-common-dir)/info/exclude"' \
+        'D=.cheese/notes; cat > $D/x.md' 'echo x > $HOME/f' 'D=~/tmp; echo x > $D/f' \
+        'echo x > $PWD/f.txt' 'echo x > "$(pwd)/f"' 'echo x > "$CLAUDE_PROJECT_DIR/f"'; do
+        out=$(out_for_safe "$cmd")
+        [[ "$(decision "$out")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
 }
 
 # shellcheck disable=SC2016
-@test "tool-reroute/io: a redirect to a variable assigned an in-tree path still denies" {
+@test "tool-reroute/io: a variable write target gets a placeholder path in the hint" {
     local out; out=$(out_for_safe 'D=.cheese/notes; cat > $D/x.md')
-    [[ "$(decision "$out")" == "deny" ]]
-    [[ "$(reason "$out")" == *'$D/x.md'* ]]
+    [[ "$(reason "$out")" == *'write-redirect to $D/x.md'* ]]
+    [[ "$(reason "$out")" == *'path:"<absolute path>"'* ]]
 }
 
 # shellcheck disable=SC2016
-@test "tool-reroute/io: a redirect to an unknown variable or command substitution delegates" {
-    local out; out=$(out_for_safe 'cat > $UNSET_DIR/x.json')
-    [ -z "$out" ]
-    out=$(out_for_safe 'echo a >> "$(git rev-parse --git-common-dir)/info/exclude"')
-    [ -z "$out" ]
+@test "tool-reroute/io: a variable read target gets a placeholder path in the hint" {
+    local out; out=$(out_for_safe 'tail -n 3 "$f"')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'paths:["<absolute path>"]'* ]]
 }
 
 # shellcheck disable=SC2016
@@ -561,53 +564,11 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
     [[ "$(decision "$out")" == "deny" ]]
 }
 
-# shellcheck disable=SC2016
-@test "tool-reroute/io: a later reassignment does not resolve an earlier redirect" {
-    local out; out=$(out_for_safe 'echo hi > $D/f; D=.')
-    [ -z "$out" ]
-    out=$(out_for_safe 'D=.; echo hi > "$D/x"; D=/tmp')
-    [[ "$(decision "$out")" == "deny" ]]
-}
-
-# shellcheck disable=SC2016
-@test "tool-reroute/io: a command-local prefix does not apply to its own redirect" {
-    local out; out=$(out_for_safe 'D=. echo hi > $D/f')
-    [ -z "$out" ]
-}
-
-# shellcheck disable=SC2016
-@test "tool-reroute/io: an assignment in a pipeline is uncertain and delegates" {
-    local out; out=$(out_for_safe 'D=. | cat; echo hi > $D/f')
-    [ -z "$out" ]
-}
-
-# shellcheck disable=SC2016
-@test "tool-reroute/io: PWD and a leading command-substitution pwd resolve to cwd and deny" {
-    local out; out=$(out_for_safe 'echo x > $PWD/f.txt')
-    [[ "$(decision "$out")" == "deny" ]]
-    out=$(out_for_safe 'echo x > "$(pwd)/f"')
-    [[ "$(decision "$out")" == "deny" ]]
-    out=$(out_for_safe 'echo x > "$CLAUDE_PROJECT_DIR/f"')
-    [[ "$(decision "$out")" == "deny" ]]
-}
-
-# shellcheck disable=SC2016
-@test "tool-reroute/io: HOME resolves outside the working tree and delegates" {
-    local out; out=$(out_for_safe 'echo x > $HOME/f')
-    [ -z "$out" ]
-}
-
-# shellcheck disable=SC2016
-@test "tool-reroute/io: a tilde assignment expands to HOME and delegates" {
-    local out; out=$(out_for_safe 'D=~/tmp; echo x > $D/f')
-    [ -z "$out" ]
-}
-
 @test "tool-reroute/io: every stdout redirect is checked, not only the first" {
-    local out; out=$(out_for_safe 'echo hi > /tmp/a > f.txt')
+    local out; out=$(out_for_safe 'echo hi > /dev/null > f.txt')
     [ "$(decision "$out")" = "deny" ]
     case "$(reason "$out")" in *f.txt*) ;; *) false ;; esac
-    out=$(out_for_safe 'echo hi > /tmp/a > /tmp/b')
+    out=$(out_for_safe 'echo hi > /dev/null > /dev/stderr')
     [ -z "$out" ]
 }
 
@@ -616,11 +577,47 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
     ! denied "$out"
 }
 
-@test "tool-reroute/io: an out-of-tree /tmp redirect is NOT denied (delegates)" {
-    # /tmp scratch has no tilth_write equivalent; hard-denying it broke valid
-    # non-repo writes — it must delegate, not block.
+@test "tool-reroute/io: an out-of-tree /tmp redirect denies and names the absolute tilth path" {
+    # tilth_write takes absolute paths, so scratch writes go through it too.
     local out; out=$(out_for 'echo hi > /tmp/zzz.txt')
-    ! denied "$out"
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'path:"/tmp/zzz.txt"'* ]]
+    [[ "$(reason "$out")" == *'outside the checkout'* ]]
+}
+
+@test "tool-reroute/io: only exact stream devices pass; other /dev paths deny" {
+    local cmd
+    for cmd in 'echo x > /dev/stdout' 'echo x > /dev/tty' 'echo x > /dev/fd/2' \
+        'echo 1 > /proc/sys/vm/drop_caches' 'echo mem > /sys/power/state'; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+    for cmd in 'echo x > /dev/shm/out' 'echo x > /dev/../tmp/out' 'echo x > /dev/fd/x' 'echo x > /proc/../tmp/out'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: an expansion mid-path gets a placeholder path in the hint" {
+    local out; out=$(out_for_safe 'echo hi > logs/$name')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'path:"<absolute path>"'* ]]
+}
+
+@test "tool-reroute/io: the Claude redirect hint does not name the Codex write-guard variable" {
+    local out; out=$(out_for 'echo hi > /tmp/zzz.txt')
+    [[ "$(reason "$out")" != *DOTFILES_WRITE_GUARD_ALLOW* ]]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: a command-substitution target shows \$(…), not a bare \$" {
+    local out; out=$(out_for_safe 'cat > $(mktemp)')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'write-redirect to $(…) '* ]]
+}
+
+@test "tool-reroute/io: a tilde target gets an absolute HOME path in the hint" {
+    local out; out=$(out_for_safe 'echo x > ~/f.txt')
+    [[ "$(reason "$out")" == *"path:\"$HOME/f.txt\""* ]]
 }
 
 # ── press hardening: fd/stderr redirects are reads, not content writes ─────
