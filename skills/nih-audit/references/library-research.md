@@ -24,9 +24,11 @@ Deduplicate candidates that share a category, then group into research queries:
 
 ## Lookup-agent dispatch template
 
-For each category group (max 5 parallel), spawn a general-purpose agent with
-focused MCP access. Library lookup primarily uses Context7 for API surface
-and `gh` CLI for repo stats — not a full /briesearch call.
+For each category group (max 5 parallel), dispatch one fresh-context,
+read-only, sonnet-tier lookup agent in the background. Library lookup primarily
+uses Context7 for API surface and `gh` CLI for repo stats — not a full
+/briesearch call. Claude example (Codex `spawn_agent`, OMP `task` are
+equivalent):
 
 ```
 Agent(
