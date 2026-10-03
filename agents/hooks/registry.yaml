@@ -113,7 +113,8 @@ hooks:
   # Built-in Read on a text file is denied; images, PDFs, and notebooks pass.
   # Write/Edit/MultiEdit, Codex apply_patch, and the Grep/Glob tools are denied.
   # Shell reads and searches of files are denied (grep/rg/ag/ack,
-  # cat/head/tail/sed/awk), as are `sed -i` and write-redirects into the tree.
+  # cat/head/tail/sed/awk), as are `sed -i` and echo/printf/cat write-redirects.
+  # These denies apply inside and outside the tree (/tmp too); only /dev passes.
   # Pipe filters (`git log | grep x`), `tail -f`, and here-docs run unchanged.
   # The hook rewrites `cd <path> && git …` to wt-git.
   # Claude plan files and auto-memory (~/.claude/plans/, ~/.claude/projects/*/memory/)

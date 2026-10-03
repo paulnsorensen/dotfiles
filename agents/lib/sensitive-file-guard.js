@@ -157,15 +157,24 @@ function editTargets(input) {
 }
 
 // tilth_search targets: every query glob, plus the scope. A glob is also
-// tried without trailing wildcards so `.env*` counts as `.env`. A scope that
-// is a credential directory itself (`~/.aws`, `.ssh`) is sensitive because the
-// search would read the files inside it.
+// tried with its wildcards stripped, because a wildcard can match nothing:
+// `.env*` and `*.env` both match `.env`. The stripped `*.pem` is `.pem`,
+// which the key-extension rule catches.
+// A scope that is a credential directory itself (`~/.aws`, `.ssh`) is
+// sensitive because the search would read the files inside it.
+function globCandidates(glob) {
+  const bare = glob
+    .replace(/(^|\/)\*+(?=[^/*])/g, '$1') // leading `*` of a path segment
+    .replace(/\*+$/, ''); // trailing `*`
+  return [glob, bare];
+}
+
 function tilthSearchTargets(input) {
   const out = [];
   if (Array.isArray(input.queries)) {
     for (const q of input.queries) {
       if (!q || typeof q.glob !== 'string' || !q.glob) continue;
-      out.push(q.glob, q.glob.replace(/\*+$/, ''));
+      out.push(...globCandidates(q.glob));
     }
   }
   if (typeof input.scope === 'string' && input.scope) {

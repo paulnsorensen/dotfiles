@@ -58,7 +58,9 @@ It denies each call below and names the Tilth MCP call to make instead:
 - The `Grep` and `Glob` tools.
 - Shell searches that read files: `grep`, `rg`, `ag`, and `ack` with a path, a `< file` redirect, or a recursive default.
 - Shell reads: `cat`, `head`, `tail`, `sed`, `awk`, `nl`, `less`, `bat`, and `tac` with a file operand. `sed -i` names `tilth_write`.
-- Shell write-redirects into the working tree.
+- Shell write-redirects by `echo`, `printf`, or `cat` to any file, in the tree or outside it. Only `/dev` targets pass.
+
+The shell denies apply outside the checkout too, for example in `/tmp` or a scratchpad. Tilth takes absolute paths, so no shell file read or write is needed anywhere. An earlier design let out-of-tree writes through but still denied out-of-tree reads, so an agent could write a log that it could not read back. Do not reopen that exemption. A command that writes its own output (`just check > log`) still runs; read the log back with `tilth_read`.
 
 Calls that read no file run unchanged: pipe filters such as `git log | grep fix`, here-doc bodies sent to a non-interpreter, `tail -f`, reads of `/dev`, `/proc`, and `/sys`, `find`, and `rg --files`. A piped `sed -f rules.sed` also runs: the script file runs but does not print, and Tilth cannot run it. The lexer looks through wrappers (`xargs`, `command`, `time`, `nice`, `timeout`, `sudo`, `env`, `find -exec`, backticks, `bash -c`) and ignores `#` comments. The hook still rewrites `cd <path> && git …` to `wt-git`.[^reroute-tests]
 
@@ -78,7 +80,7 @@ Codex reports shell calls as `Bash` and file edits as `apply_patch`, and a `PreT
 
 Codex rejects `updatedInput` without `permissionDecision` and reports `PreToolUse Failed`. The hook therefore emits nothing for a no-op `cd <cwd> &&` strip on Codex. The `cd <path> && git` rewrite carries `allow` and runs on Codex. `git-guard` reads the `wt-git <path>`, `cd <path> &&`, and `git -C` forms, so a destructive command in another repo still meets the dirty-tree check.
 
-The `apply_patch` deny moves every Codex write to `tilth_write`. Codex sets `approval_mode: approve` for it, and `tilth_write` accepts absolute paths. A probe on 2026-10-02 wrote outside the checkout. Whether the Codex sandbox covers MCP servers is not verified, so the hook does not rely on it. The hook therefore denies a Codex `tilth_write` whose real path is outside the git toplevel, `/tmp`, `$TMPDIR`, a `.cheese/` directory, or the cheese data directory. `DOTFILES_WRITE_GUARD_ALLOW` adds roots. Claude leaves this check to `worktree-guard`. `sensitive-file-guard` also reads the `glob` and `scope` fields of `tilth_search`, because every search now goes there.
+The `apply_patch` deny moves every Codex write to `tilth_write`. Codex sets `approval_mode: approve` for it, and `tilth_write` accepts absolute paths. A probe on 2026-10-02 wrote outside the checkout. Whether the Codex sandbox covers MCP servers is not verified, so the hook does not rely on it. The hook therefore denies a Codex `tilth_write` whose real path is outside the git toplevel, `/tmp`, `$TMPDIR`, a `.cheese/` directory, or the cheese data directory. `DOTFILES_WRITE_GUARD_ALLOW` adds roots. Claude leaves this check to `worktree-guard`. `sensitive-file-guard` also reads the `glob` and `scope` fields of `tilth_search`, because every search now goes there. It also checks each glob with its leading and trailing wildcards removed, because a wildcard can match nothing: `*.env` matches `.env`. A live probe on 2026-10-02 found `*.env` passed the guard; Tilth's own denylist still redacted the contents.
 
 Agents that only read files grant `mcp__tilth__tilth_read` instead of `Read`. `roquefort-wrecker` grants `mcp__tilth__tilth_write` by exact name, so the Codex read-only derivation does not sandbox it.[^reroute-agents]
 
