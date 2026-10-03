@@ -585,6 +585,41 @@ denied() { [[ "$1" == *'"permissionDecision":"deny"'* ]]; }
     [[ "$(reason "$out")" == *'outside the checkout'* ]]
 }
 
+@test "tool-reroute/io: only exact stream devices pass; other /dev paths deny" {
+    local cmd
+    for cmd in 'echo x > /dev/stdout' 'echo x > /dev/tty' 'echo x > /dev/fd/2' \
+        'echo 1 > /proc/sys/vm/drop_caches' 'echo mem > /sys/power/state'; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+    for cmd in 'echo x > /dev/shm/out' 'echo x > /dev/../tmp/out' 'echo x > /dev/fd/x' 'echo x > /proc/../tmp/out'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: an expansion mid-path gets a placeholder path in the hint" {
+    local out; out=$(out_for_safe 'echo hi > logs/$name')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'path:"<absolute path>"'* ]]
+}
+
+@test "tool-reroute/io: the Claude redirect hint does not name the Codex write-guard variable" {
+    local out; out=$(out_for 'echo hi > /tmp/zzz.txt')
+    [[ "$(reason "$out")" != *DOTFILES_WRITE_GUARD_ALLOW* ]]
+}
+
+# shellcheck disable=SC2016
+@test "tool-reroute/io: a command-substitution target shows \$(…), not a bare \$" {
+    local out; out=$(out_for_safe 'cat > $(mktemp)')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'write-redirect to $(…) '* ]]
+}
+
+@test "tool-reroute/io: a tilde target gets an absolute HOME path in the hint" {
+    local out; out=$(out_for_safe 'echo x > ~/f.txt')
+    [[ "$(reason "$out")" == *"path:\"$HOME/f.txt\""* ]]
+}
+
 # ── press hardening: fd/stderr redirects are reads, not content writes ─────
 # The write-redirect deny must fire ONLY on a stdout content write (`>`, `1>`).
 # An fd redirect (`2>/dev/null`, `2>&1`) writes no file content, so a read

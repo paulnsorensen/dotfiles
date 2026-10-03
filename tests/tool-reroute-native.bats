@@ -228,3 +228,11 @@ tilth_write_input() {
     [[ "$(reason)" == *tilth_read* ]]
     [[ "$(reason)" == *'Append #start-end'* ]]
 }
+
+# ── Codex: the shell write-redirect hint names the write-guard variable ──
+
+@test "io: a Codex write-redirect deny names DOTFILES_WRITE_GUARD_ALLOW" {
+    hook codex Bash '{"command":"echo hi > /tmp/zzz.txt"}'
+    [ "$(decision)" = "deny" ]
+    [[ "$(reason)" == *DOTFILES_WRITE_GUARD_ALLOW* ]]
+}

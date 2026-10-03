@@ -390,7 +390,7 @@ cursor_guard() {
 
 @test "tilth_search with a leading-wildcard non-secret glob is allowed" {
     local g
-    for g in '*' '**/*' '*.md' '*.envrc.md' '*.env.example'; do
+    for g in '*' '**/*' '*.md' '*.envrc.md' '*.env.example' '*.env.ts' '*.env.d.ts' 'src/**/*.env.test.ts'; do
         [[ "$(guard mcp__tilth__tilth_search "{\"queries\":[{\"query\":\"KEY\",\"glob\":\"$g\"}]}")" == "allow" ]] || { echo "expected allow: $g" >&2; return 1; }
     done
 }

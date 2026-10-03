@@ -162,10 +162,14 @@ function editTargets(input) {
 // which the key-extension rule catches.
 // A scope that is a credential directory itself (`~/.aws`, `.ssh`) is
 // sensitive because the search would read the files inside it.
+// A leading-wildcard glob with a source extension (`*.env.ts`) names source
+// files such as `server.env.ts`, not a dotenv file, so it keeps only the raw glob.
+const SOURCE_EXT = /\.(c|cc|cpp|cs|css|go|h|html|java|jsx?|kt|md|mjs|cjs|php|py|rb|rs|scss|sh|swift|tsx?|vue)$/i;
+
 function globCandidates(glob) {
-  const bare = glob
-    .replace(/(^|\/)\*+(?=[^/*])/g, '$1') // leading `*` of a path segment
-    .replace(/\*+$/, ''); // trailing `*`
+  const lead = glob.replace(/(^|\/)\*+(?=[^/*])/g, '$1'); // leading `*` of a path segment
+  const bare = lead.replace(/\*+$/, ''); // trailing `*`
+  if (lead !== glob && SOURCE_EXT.test(bare)) return [glob];
   return [glob, bare];
 }
 
