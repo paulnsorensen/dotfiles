@@ -84,7 +84,7 @@
 "aqua:axodotdev/cargo-dist" = "v0.33.0"
 "aqua:rust-lang/mdBook" = "v0.5.4"
 "aqua:anthropics/claude-code" = "v2.1.288"
-"aqua:openai/codex" = "rust-v0.154.0"
+"aqua:openai/codex" = "rust-v0.160.0"
 
 node = "26.10.0"
 bun = "1.4.2"
