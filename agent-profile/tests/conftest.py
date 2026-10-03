@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,19 @@ def install_profile(argv: list[str]) -> int:
     ) as exc:
         print(str(exc), file=sys.stderr)
         return 1
+
+@pytest.fixture(autouse=True)
+def _private_tmpdir(monkeypatch, tmp_path_factory):
+    """Route ``tempfile`` under pytest's managed tmp tree.
+
+    Production code such as ``overlay._build_isolated_claude`` calls
+    ``tempfile.mkdtemp`` when no scratch dir is passed; without this those
+    ``ap-<name>-*`` dirs leak into the system ``/tmp`` on every run.
+    """
+    private = tmp_path_factory.mktemp("tmpdir")
+    monkeypatch.setenv("TMPDIR", str(private))
+    monkeypatch.setattr(tempfile, "tempdir", None)
+
 
 @pytest.fixture
 def golden():

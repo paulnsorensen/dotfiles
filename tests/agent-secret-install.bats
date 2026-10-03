@@ -2,6 +2,8 @@
 
 load test_helper
 
+teardown() { teardown_test_env; }
+
 setup() {
     setup_test_env
     export INSTALLER="$REAL_DOTFILES_DIR/bin/agent-secret-install"
