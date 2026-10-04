@@ -128,6 +128,8 @@ teardown() {
   # Guard against that: without SCAN/ORIGINAL_HOME set, the rm below would
   # target the real $HOME (SCAN="") and wipe it.
   [[ -n "${SCAN:-}" && -n "${ORIGINAL_HOME:-}" ]] || return 0
+  # Fixtures include read-only dirs/files (e.g. .worktrees/old/target/locked).
+  chmod -R u+w "$SCAN" "$HOME" 2>/dev/null || true
   rm -rf "$SCAN" "$HOME"
   export HOME="$ORIGINAL_HOME"
 }

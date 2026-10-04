@@ -12,6 +12,8 @@ setup() {
     export SCRIPT="$CZ_SRC/dot_pi/private_agent/modify_settings.json"
 }
 
+teardown() { teardown_test_env; }
+
 @test "pi settings render from the authoritative registry" {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]

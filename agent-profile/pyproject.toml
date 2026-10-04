@@ -23,6 +23,8 @@ dev = [
 ]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Keep tmp_path dirs only for failed tests so passing runs do not fill /tmp.
+tmp_path_retention_policy = "failed"
 # NOTE: -n auto is deliberately NOT in addopts. `just test-python` passes it so
 # the gate fans across all cores, while a bare `pytest -k foo --pdb` stays serial
 # and debuggable (xdist breaks --pdb and defers -x).
