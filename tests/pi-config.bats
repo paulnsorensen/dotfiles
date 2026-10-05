@@ -106,7 +106,7 @@ JSON
 @test "pi registry pins the selected mainstream packages" {
     run yq -o=json -I=0 '.pi.settings.packages' "$REGISTRY"
     [ "$status" -eq 0 ]
-    [ "$output" = '["npm:pi-mcp-adapter@2.38.0","npm:pi-subagents@0.76.0","npm:pi-web-access@0.36.0","npm:@gotgenes/pi-permission-system@39.0.4","npm:pi-vim@0.14.2"]' ]
+    [ "$output" = '["npm:pi-mcp-adapter@5.0.0","npm:pi-subagents@0.76.0","npm:pi-web-access@0.36.0","npm:@gotgenes/pi-permission-system@39.0.4","npm:pi-vim@0.14.2"]' ]
 }
 
 @test "pi uses shared agent skills instead of a copied skill tree" {
@@ -115,7 +115,7 @@ JSON
 }
 
 @test "pi native config exposes MCP and protects sensitive paths" {
-    local mcp="$CZ_SRC/dot_pi/private_agent/mcp.json"
+    local mcp="$CZ_SRC/dot_pi/private_agent/mcp-adapter.json"
     local permissions="$CZ_SRC/dot_pi/private_agent/extensions/pi-permission-system/config.json"
 
     [ "$(jq -r '.mcpServers.tilth.command' "$mcp")" = "tilth" ]
@@ -150,13 +150,14 @@ TOML
     run find "$destination/.pi/agent" -name models.json -print
     [ "$status" -eq 0 ]
     [ -z "$output" ]
-    [ -f "$destination/.pi/agent/mcp.json" ]
+    [ -f "$destination/.pi/agent/mcp-adapter.json" ]
+    [ ! -e "$destination/.pi/agent/mcp.json" ]
     [ -f "$destination/.pi/agent/APPEND_SYSTEM.md" ]
     [ -f "$destination/.pi/agent/themes/chocolate-donut.json" ]
     [ -f "$destination/.pi/agent/extensions/cheese-flair.ts" ]
     [ "$(cat "$destination/.pi/agent/auth.json")" = "runtime state" ]
     [ "$(jq -S . "$destination/.pi/agent/settings.json")" = "$(yq -o=json '.pi.settings' "$REGISTRY" | jq -S .)" ]
-    cmp -s "$CZ_SRC/dot_pi/private_agent/mcp.json" "$destination/.pi/agent/mcp.json"
+    cmp -s "$CZ_SRC/dot_pi/private_agent/mcp-adapter.json" "$destination/.pi/agent/mcp-adapter.json"
     cmp -s "$CZ_SRC/dot_pi/private_agent/APPEND_SYSTEM.md" "$destination/.pi/agent/APPEND_SYSTEM.md"
     cmp -s "$CZ_SRC/dot_pi/private_agent/themes/chocolate-donut.json" "$destination/.pi/agent/themes/chocolate-donut.json"
     cmp -s "$CZ_SRC/dot_pi/private_agent/extensions/cheese-flair.ts" "$destination/.pi/agent/extensions/cheese-flair.ts"

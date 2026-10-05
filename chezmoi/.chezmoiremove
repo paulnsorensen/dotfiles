@@ -20,6 +20,9 @@ local-llm/configs/lean.json
 # Pi local providers are disabled until the local model catalog is restored.
 .pi/agent/models.json
 
+# Pi adapter 3.0 moved its settings to mcp-adapter.json; mcp.json now belongs to Pi.
+.pi/agent/mcp.json
+
 # Retired native harnesses. Remove their configuration and runtime state;
 # package binaries are removed by packages/sync.sh.
 .config/opencode
