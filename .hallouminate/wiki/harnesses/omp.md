@@ -102,8 +102,6 @@ A compatibility adapter also has unresolved semantic and loading problems:
 
 Do not build that adapter unless native-looking Todo behavior becomes a requirement. If it does, prefer the upstream backend/MCP facade seam over maintaining a private second MCP transport.
 
-
-
 ## Native binary pin
 
 `OMP_PIN` in `packages/sync.sh` selects the native `omp` release asset that `dots sync` downloads.
