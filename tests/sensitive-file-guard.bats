@@ -241,13 +241,22 @@ guard() {
 
 # ── protocol / robustness ─────────────────────────────────────────────
 
-@test "deny payload is a valid Claude PreToolUse decision" {
-    local json='{"tool_name":"Read","tool_input":{"file_path":".env"}}'
-    run bash -c "printf '%s' '$json' | '$DEPLOY/hooks/sensitive-file-guard.sh'"
-    [ "$status" -eq 0 ]
-    [[ "$(jq -r '.hookSpecificOutput.hookEventName' <<<"$output")" == "PreToolUse" ]]
-    [[ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$output")" == "deny" ]]
-    [[ -n "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$output")" ]]
+@test "deny payload guides Claude and Codex without secret or guard-bypass advice" {
+    local json='{"tool_name":"Read","tool_input":{"file_path":".env"}}' harness reason
+    for harness in claude codex; do
+        # shellcheck disable=SC2016  # $1/$2 expand inside the inner bash, by design
+        run env DOTFILES_HARNESS="$harness" bash -c 'printf "%s" "$1" | "$2"' bash "$json" "$DEPLOY/hooks/sensitive-file-guard.sh"
+        [ "$status" -eq 0 ]
+        [[ "$(jq -r '.hookSpecificOutput.hookEventName' <<<"$output")" == "PreToolUse" ]]
+        [[ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$output")" == "deny" ]]
+        reason=$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$output")
+        [[ "$reason" == *"checked-in template"* ]]
+        [[ "$reason" == *"non-secret result"* ]]
+        [[ "$reason" == *"ask the user for explicit approval"* ]]
+        [[ "$reason" != *"paste"* ]]
+        [[ "$reason" != *"CLAUDE_SENSITIVE_GUARD=0"* ]]
+        [[ "$reason" != *"CLAUDE_SENSITIVE_GUARD_ALLOW="* ]]
+    done
 }
 
 @test "malformed stdin fails open (allow, exit 0)" {
@@ -369,4 +378,48 @@ cursor_guard() {
 @test "cursor beforeShellExecution backtick cat .env is denied (exit 2)" {
     # shellcheck disable=SC2016  # literal command text is the payload, not for expansion
     [[ "$(cursor_guard shell '{"hook_event_name":"beforeShellExecution","command":"echo `cat .env`"}')" == "2" ]]
+}
+
+# ── tilth MCP search ──────────────────────────────────────────────────
+
+@test "tilth_search with a .env glob is denied" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"KEY","glob":".env"}]}')" == "deny" ]]
+}
+
+@test "tilth_search with a .env* glob is denied" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"KEY","glob":"**/.env*"}]}')" == "deny" ]]
+}
+
+@test "tilth_search with a leading-wildcard .env glob is denied" {
+    local g
+    for g in '*.env' '*.env*' 'config/*.env' '**/*.env'; do
+        [[ "$(guard mcp__tilth__tilth_search "{\"queries\":[{\"query\":\"KEY\",\"glob\":\"$g\"}]}")" == "deny" ]] || { echo "expected deny: $g" >&2; return 1; }
+    done
+}
+
+@test "tilth_search with a leading-wildcard non-secret glob is allowed" {
+    local g
+    for g in '*' '**/*' '*.md' '*.envrc.md' '*.env.example' '*.env.ts' '*.env.d.ts' 'src/**/*.env.test.ts'; do
+        [[ "$(guard mcp__tilth__tilth_search "{\"queries\":[{\"query\":\"KEY\",\"glob\":\"$g\"}]}")" == "allow" ]] || { echo "expected allow: $g" >&2; return 1; }
+    done
+}
+
+@test "tilth_search scoped to ~/.aws is denied" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"KEY"}],"scope":"~/.aws"}')" == "deny" ]]
+}
+
+@test "tilth_search scoped to .ssh is denied" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"x"}],"scope":".ssh","cwd":"/home/u"}')" == "deny" ]]
+}
+
+@test "tilth_search with a .pem glob among clean queries is denied" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"a","glob":"*.ts"},{"query":"b","glob":"*.pem"}]}')" == "deny" ]]
+}
+
+@test "tilth_search with clean globs and scope is allowed" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"foo","glob":"*.ts"},{"pattern":"Some(x)","language":"rust"}],"scope":"src","cwd":"/project"}')" == "allow" ]]
+}
+
+@test "tilth_search for .env.example is allowed" {
+    [[ "$(guard mcp__tilth__tilth_search '{"queries":[{"query":"KEY","glob":".env.example"}]}')" == "allow" ]]
 }

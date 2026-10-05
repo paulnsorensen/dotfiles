@@ -15,7 +15,7 @@ PLATFORM="$(uname)"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}"
 MISE_BOOTSTRAP_CONFIG_FILE="${MISE_BOOTSTRAP_CONFIG_FILE:-$SCRIPT_DIR/../chezmoi/dot_config/mise/config.toml}"
 # renovate: datasource=github-tags depName=can1357/oh-my-pi
-OMP_PIN="v18.4.8"
+OMP_PIN="v18.6.2"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -35,6 +35,8 @@ log_error()   { echo -e "${RED}[packages]${NC} $1" >&2; }
 source "$SCRIPT_DIR/lib-linux-bootstrap.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib-gh-resolve.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-t3-service.sh"
 
 if [[ ! -f "$PACKAGES_FILE" ]]; then
     log_warning "packages.yaml not found"
@@ -468,6 +470,7 @@ sync_mise() {
     fi
 
     bump_mise_manifest "$mise_config"
+    sync_t3_service "$mise_config"
 
     export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims:$PATH"
     hash -r 2>/dev/null || true

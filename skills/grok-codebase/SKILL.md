@@ -11,7 +11,7 @@ description: >
 argument-hint: <optional focus area, e.g. "auth flow" or "payments">
 model: sonnet
 effort: medium
-allowed-tools: Read, Write, TodoWrite, Skill, Bash(git:*), Bash(ls:*), Bash(cat:*), Bash(jq:*), Bash(yq:*), Bash(tokei:*), mcp__tilth__*, mcp__context7__*
+allowed-tools: TodoWrite, Skill, Bash(git:*), Bash(ls:*), Bash(jq:*), Bash(yq:*), Bash(tokei:*), mcp__tilth__*, mcp__context7__*
 metadata:
   version: 1.0.0
   author: paulnsorensen

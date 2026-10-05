@@ -121,11 +121,16 @@ EOF
     # bin dirs as symlinks without the provider CLIs instead of using them raw.
     # BATS_FILE_TMPDIR outlives teardown's TEST_HOME removal, so bats' own
     # cleanup still resolves rm through this PATH.
+    # bats --jobs runs the tests in this file in parallel, and they share
+    # BATS_FILE_TMPDIR. Fill a private staging dir, then publish it with one
+    # atomic symlink. A test never sees a half-filled dir without rm or cat.
     local sys_bin="$BATS_FILE_TMPDIR/sysbin"
-    if [[ ! -d "$sys_bin" ]]; then
-        mkdir -p "$sys_bin"
-        ln -s /usr/bin/* /bin/* "$sys_bin"/ 2>/dev/null || true
-        rm -f "$sys_bin/op" "$sys_bin/bws"
+    if [[ ! -e "$sys_bin" ]]; then
+        local staging
+        staging=$(mktemp -d "$BATS_FILE_TMPDIR/sysbin.XXXXXX")
+        ln -s /usr/bin/* /bin/* "$staging"/ 2>/dev/null || true
+        rm -f "$staging/op" "$staging/bws"
+        ln -sn "$staging" "$sys_bin" 2>/dev/null || rm -rf "$staging"
     fi
     export PATH="$MOCK_BIN:$sys_bin"
 }

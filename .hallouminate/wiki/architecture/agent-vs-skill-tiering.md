@@ -52,7 +52,6 @@ This resolved the 2026-05 backlog items for `fromage-age-history` (collapse obvi
 
 - **ghostbuster → merge agent into the `/ghostbuster` skill** — the old blocker (reviewer fork-tier entanglement) is gone: `reviewer.md` no longer names it. Now a clean dotfiles-local collapse if ever wanted; the 2026-07 audit notes its taxonomy is movable but the read-only grant is what `explorer` would have to supply.
 - **de-slop catalogue as single source of truth** — `/de-slop` (dotfiles) and `/age`'s per-language `deslop-*.md` refs (easy-cheese) still duplicate the anti-pattern catalogue with no shared source. Unifying is cross-repo.
-- **`cheez-read` / `cheez-write` naming residue** — remaining mentions live in `agents/lib/tool-reroute/io.js` deny-messages and `agents/hooks/registry.yaml` comments; harmless while those skills exist under `~/.agents/skills`.
 
 KEEP (isolation genuinely load-bearing): `explorer`/`researcher`/`reviewer`/`coder` (phase backbone), `ghostbuster`, `nih-scanner`, `roquefort-wrecker`, `whey-drainer`, `duckdb-expert`, `worktree-content-digest`. `/wreck` (adversarial, standalone) and `/press` (corrective, diff-scoped, pipeline-gated) are distinct phases — not redundant.
 

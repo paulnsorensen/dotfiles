@@ -6,7 +6,7 @@ description: >
   Reconstruct what a past coding-agent session was doing — goal, files touched,
   last verified state, next step — so it can be resumed. Use for /work-recovery
   or "what was I working on".
-allowed-tools: Read, Bash, Write(.cheese/notes/**)
+allowed-tools: mcp__tilth__tilth_read, mcp__tilth__tilth_search, mcp__tilth__tilth_write, Bash
 ---
 
 # work-recovery

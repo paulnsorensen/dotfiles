@@ -2,7 +2,7 @@
 name: claude-local
 model: sonnet
 effort: medium
-allowed-tools: Read, Write, Edit, Bash(git:*), Bash(grep:*), Bash(test:*), Bash(touch:*), Bash(mkdir:*), Bash(printf:*), Glob
+allowed-tools: mcp__tilth__tilth_read, mcp__tilth__tilth_search, mcp__tilth__tilth_write, Bash(git:*), Bash(test:*), Bash(touch:*), Bash(mkdir:*), Bash(printf:*)
 description: >
   Distill the user's global ~/.claude/CLAUDE.md into a gitignored
   CLAUDE.local.md for repos they contribute to but don't own — keeping only

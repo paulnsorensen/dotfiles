@@ -155,6 +155,12 @@ checkpoint_event() {
         '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"mcp__tilth__tilth_write", tool_input:{cwd:$cwd, edits:[{path:$target, ops:[{op:"append",content:"checkpoint"}]}]}}'
 }
 
+handback_event() {
+    local session="$1" agent="$2" type="$3"
+    jq -nc --arg s "$session" --arg a "$agent" --arg t "$type" --arg p "$PROJ/$session.jsonl" \
+        '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"SubagentHandback", tool_input:{message:"status: ok"}}'
+}
+
 multiple_checkpoint_event() {
     local session="$1" agent="$2" type="$3"
     jq -nc --arg s "$session" --arg a "$agent" --arg t "$type" --arg p "$PROJ/$session.jsonl" --arg cwd "$PROJ" \
@@ -329,6 +335,27 @@ post_event() {
     fire "$(pre_event s2b checkpoint_msg coder)"
     [[ "$(verdict)" == "deny" ]]
     [[ "$output" == *"create_file/replace_text/prepend/append/replace/insert_before/insert_after/replace_block/insert_after_block"* ]]
+}
+
+@test "A2c: SubagentHandback is allowed over the turn-hard ceiling" {
+    seed_turns s2c handback1 100
+    fire "$(handback_event s2c handback1 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "handback" ]]
+}
+
+@test "A2c: SubagentHandback is allowed over the context-hard ceiling after the checkpoint is spent" {
+    seed_turns s2c handback2 5
+    seed_usage_transcript s2c handback2 "$((180000 + 1)):0:0"
+    fire "$(checkpoint_event s2c handback2 reviewer .cheese/notes.md)"
+    [[ "$(verdict)" == "allow" ]]
+    fire "$(handback_event s2c handback2 reviewer)"
+    [[ "$(verdict)" == "allow" ]]
+    fire "$(handback_event s2c handback2 reviewer)"
+    [[ "$(verdict)" == "allow" ]]
+    fire "$(pre_event s2c handback2 reviewer)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$output" == *"SubagentHandback stays allowed"* ]]
 }
 
 @test "A2b: a second valid checkpoint is denied after the allowance is spent" {

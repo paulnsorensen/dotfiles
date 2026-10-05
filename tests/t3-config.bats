@@ -8,6 +8,8 @@ bats_require_minimum_version 1.5.0
 # T3 rewrites that file from its UI, so the guard must preserve UI state and
 # only assert the launchArgs contract.
 
+teardown() { teardown_test_env; }
+
 setup() {
     setup_test_env
     command -v jq >/dev/null 2>&1 || skip "jq not installed"

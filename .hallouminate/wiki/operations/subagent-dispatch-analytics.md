@@ -140,7 +140,7 @@ granted (Bash necessarily, for gates) and are the open doors.
 
 ## Finding 5 — the tool-reroute hook catches ~8% of what it targets
 
-`agents/lib/tool-reroute/search.js` rewrites only "clean shape" searches. It
+History: this finding predates the deny design, which now blocks file readers and searches instead of rewriting them. At that time, `agents/lib/tool-reroute/search.js` rewrote only "clean shape" searches. It
 returns `null` (falls through to raw execution) for any of: a regex
 metacharacter in the pattern (`[\\.^$*+?()[\]{}|]`), any long flag, any of
 `-i -l -c -o -v -w -x -E -P -A -B -C -e -f -m`, more than two operands, or any

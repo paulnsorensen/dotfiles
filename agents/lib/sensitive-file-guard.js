@@ -22,6 +22,7 @@
 const path = require('path');
 
 const READ_TOOLS = new Set(['Read', 'mcp__tilth__tilth_read']);
+const SEARCH_TOOL = 'mcp__tilth__tilth_search';
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'mcp__tilth__tilth_write']);
 
 // Non-secret .env companions — checked-in templates, never hold real values.
@@ -155,8 +156,42 @@ function editTargets(input) {
   return targets;
 }
 
+// tilth_search targets: every query glob, plus the scope. A glob is also
+// tried with its wildcards stripped, because a wildcard can match nothing:
+// `.env*` and `*.env` both match `.env`. The stripped `*.pem` is `.pem`,
+// which the key-extension rule catches.
+// A scope that is a credential directory itself (`~/.aws`, `.ssh`) is
+// sensitive because the search would read the files inside it.
+// A leading-wildcard glob with a source extension (`*.env.ts`) names source
+// files such as `server.env.ts`, not a dotenv file, so it keeps only the raw glob.
+const SOURCE_EXT = /\.(c|cc|cpp|cs|css|go|h|html|java|jsx?|kt|md|mjs|cjs|php|py|rb|rs|scss|sh|swift|tsx?|vue)$/i;
+
+function globCandidates(glob) {
+  const lead = glob.replace(/(^|\/)\*+(?=[^/*])/g, '$1'); // leading `*` of a path segment
+  const bare = lead.replace(/\*+$/, ''); // trailing `*`
+  if (lead !== glob && SOURCE_EXT.test(bare)) return [glob];
+  return [glob, bare];
+}
+
+function tilthSearchTargets(input) {
+  const out = [];
+  if (Array.isArray(input.queries)) {
+    for (const q of input.queries) {
+      if (!q || typeof q.glob !== 'string' || !q.glob) continue;
+      out.push(...globCandidates(q.glob));
+    }
+  }
+  if (typeof input.scope === 'string' && input.scope) {
+    const scope = resolveEditPath(input.scope, input.cwd);
+    out.push(scope);
+    if (/(^|\/)\.(aws|ssh|gnupg)\/?$/.test(scope)) out.push(scope.replace(/\/?$/, '/') + 'credentials');
+  }
+  return out;
+}
+
 function extractTargets(toolName, input) {
   if (!input) return [];
+  if (toolName === SEARCH_TOOL) return tilthSearchTargets(input);
   if (toolName === 'Bash') return bashTokens(input.command || '');
   // Codex apply_patch: target paths live in the patch headers (command field).
   if (toolName === 'apply_patch') return applyPatchTargets(input.command || '');
@@ -191,10 +226,9 @@ function denyReason(toolName, hit) {
 These hold secrets (.env values, private keys, credentials) and must not be
 read into the agent context or modified by an automated tool.
 
-- Need a real value? Pull it yourself and paste only what's required.
-- Reading a checked-in template? Use the .env.example/.sample variant.
-- Genuinely need access this session? export CLAUDE_SENSITIVE_GUARD=0
-- Allow specific paths only: export CLAUDE_SENSITIVE_GUARD_ALLOW=/abs/path,substr`;
+- For structure, use a checked-in template such as .env.example or .env.sample.
+- For a real value, ask the operator to run the action and return only a non-secret result.
+- If no compliant route works, ask the user for explicit approval before changing guard controls.`;
 }
 
 let stdin = '';

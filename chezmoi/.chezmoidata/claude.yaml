@@ -60,12 +60,12 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/git-guard.sh"'
             timeout: 5
-      - matcher: "Read|Edit|Write|MultiEdit|Bash|apply_patch|mcp__tilth__tilth_read|mcp__tilth__tilth_write"
+      - matcher: "Read|Edit|Write|MultiEdit|Bash|apply_patch|mcp__tilth__tilth_read|mcp__tilth__tilth_write|mcp__tilth__tilth_search"
         hooks:
           - type: command
             command: '"$HOME/.claude/hooks/sensitive-file-guard.sh"'
             timeout: 5
-      - matcher: "Bash|Grep|Glob"
+      - matcher: "Bash|Read|Write|Edit|MultiEdit|Grep|Glob|apply_patch|mcp__tilth__tilth_write"
         hooks:
           - type: command
             command: '"$HOME/.claude/hooks/tool-reroute.sh"'
@@ -213,7 +213,6 @@ claude:
       - "Bash(sg:*)"
       - "Bash(tail:*)"
       - "Bash(test:*)"
-      - "Bash(tilth:*)"
       - "Bash(tokei:*)"
       - "Bash(touch:*)"
       - "Bash(uv:*)"
@@ -221,17 +220,24 @@ claude:
       - "Bash(which:*)"
       - "Bash(wt-git:*)"
       - "Bash(yq:*)"
-      - "Edit"
       - "Skill"
       - "WebFetch"
       - "WebSearch"
-      - "Write"
       - "mcp__context7__*"
       - "mcp__hallouminate__*"
       - "mcp__plugin_playwright_playwright__*"
       - "mcp__tavily__*"
       - "mcp__tilth__*"
     deny:
+      # Tilth owns searches. A bare tool name removes the tool from Claude's
+      # context; the tool-reroute hook is the second layer.
+      # Write/Edit stay available because plan mode and auto-memory can write
+      # only through them. tool-reroute denies them outside ~/.claude/plans/
+      # and ~/.claude/projects/*/memory/.
+      # Read stays: it is the only viewer for images, PDFs, and notebooks, so
+      # tool-reroute denies it on text files instead.
+      - "Glob"
+      - "Grep"
       # Vault master-credential paths. The Bitwarden access token reads the
       # whole project, so it outranks every individual key. Prefix rules
       # only — an absolute path or `sh -c` sidesteps them: friction, not a

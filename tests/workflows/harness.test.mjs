@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, unlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -28,8 +28,9 @@ test('validate rejects unsupported schema keywords', () => {
   )
 })
 
-test('a workflow fails when an agent schema uses an unsupported keyword', async () => {
+test('a workflow fails when an agent schema uses an unsupported keyword', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'workflow-harness-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
   const path = join(directory, 'unsupported-schema.js')
   await writeFile(path, [
     'export const meta = {',
@@ -47,8 +48,9 @@ test('a workflow fails when an agent schema uses an unsupported keyword', async 
   )
 })
 
-test('loadWorkflow caches compilation but creates a fresh VM context for every run', async () => {
+test('loadWorkflow caches compilation but creates a fresh VM context for every run', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'workflow-harness-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
   const path = join(directory, 'cached.js')
   await writeFile(path, [
     'export const meta = {',
@@ -162,8 +164,9 @@ for (const [name, body, error] of [
   ['globalThis.Math.random()', 'return globalThis.Math.random()', /not available in workflow scripts/],
   ['process', 'return process', /process is not defined/],
 ]) {
-  test(`workflow code cannot call ${name}`, async () => {
+  test(`workflow code cannot call ${name}`, async (t) => {
     const directory = await mkdtemp(join(tmpdir(), 'workflow-harness-'))
+    t.after(() => rm(directory, { recursive: true, force: true }))
     const path = join(directory, 'sandbox.js')
     await writeFile(path, `export const meta = {\n  name: 'sandbox',\n}\n\n${body}\n`)
 

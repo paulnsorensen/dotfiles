@@ -252,15 +252,23 @@ guard() {
     [[ "$(guard Edit 'git reset --hard')" == "allow" ]]
 }
 
-@test "deny payload is a valid PreToolUse decision (claude + codex schema)" {
+@test "deny payload guides Claude and Codex without guard-bypass advice" {
     dirty_tracked
-    local json
+    local json harness reason
     json=$(jq -nc --arg w "$REPO" '{tool_name:"Bash", tool_input:{command:"git reset --hard"}, cwd:$w}')
-    run bash -c "printf '%s' '$json' | '$DEPLOY/hooks/git-guard.sh'"
-    [ "$status" -eq 0 ]
-    [[ "$(jq -r '.hookSpecificOutput.hookEventName' <<<"$output")" == "PreToolUse" ]]
-    [[ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$output")" == "deny" ]]
-    [[ -n "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$output")" ]]
+    for harness in claude codex; do
+        # shellcheck disable=SC2016  # $1/$2 expand inside the inner bash, by design
+        run env DOTFILES_HARNESS="$harness" bash -c 'printf "%s" "$1" | "$2"' bash "$json" "$DEPLOY/hooks/git-guard.sh"
+        [ "$status" -eq 0 ]
+        [[ "$(jq -r '.hookSpecificOutput.hookEventName' <<<"$output")" == "PreToolUse" ]]
+        [[ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$output")" == "deny" ]]
+        reason=$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$output")
+        [[ "$reason" == *"Tilth"* ]]
+        [[ "$reason" == *"stash"* ]]
+        [[ "$reason" == *"ask the user for explicit approval"* ]]
+        [[ "$reason" != *"CLAUDE_GIT_GUARD=0"* ]]
+        [[ "$reason" != *"with Edit"* ]]
+    done
 }
 
 # ── fail-open robustness (a broken guard must never block) ─────────────
@@ -400,4 +408,57 @@ copilot_guard() {
     [[ "$(jq -r '.hooks.preToolUse[0].type' <<<"$rendered")" == "command" ]]
     [[ "$(jq -r '.hooks.preToolUse[0].matcher' <<<"$rendered")" == "bash|shell" ]]
     [[ "$(jq -r '.hooks.preToolUse[0].bash' <<<"$rendered")" == */.copilot/hooks/git-guard.sh ]]
+}
+
+# ── wt-git and cd-chains are seen through ─────────────────────────────
+
+# Like guard(), but the event cwd is /tmp, not the repo.
+guard_from_tmp() {
+    local cmd="$1" json
+    json=$(jq -nc --arg c "$cmd" '{tool_name:"Bash", tool_input:{command:$c}, cwd:"/tmp"}')
+    run bash -c "printf '%s' '$json' | '$DEPLOY/hooks/git-guard.sh'"
+    [ "$status" -eq 0 ]
+    if [[ -z "$output" ]]; then echo "allow"; else
+        jq -r '.hookSpecificOutput.permissionDecision' <<<"$output"
+    fi
+}
+
+@test "wt-git <dirty repo> reset --hard is denied from another cwd" {
+    dirty_tracked
+    [[ "$(guard_from_tmp "wt-git $REPO reset --hard")" == "deny" ]]
+}
+
+@test "wt-git <clean repo> reset --hard is allowed" {
+    [[ "$(guard_from_tmp "wt-git $REPO reset --hard")" == "allow" ]]
+}
+
+@test "wt-git <dirty repo> status is allowed" {
+    dirty_tracked
+    [[ "$(guard_from_tmp "wt-git $REPO status")" == "allow" ]]
+}
+
+@test "cd <dirty repo> && git reset --hard is denied from another cwd" {
+    dirty_tracked
+    [[ "$(guard_from_tmp "cd $REPO && git reset --hard")" == "deny" ]]
+}
+
+@test "cd <clean repo> && git reset --hard is allowed" {
+    [[ "$(guard_from_tmp "cd $REPO && git reset --hard")" == "allow" ]]
+}
+
+@test "cd chain resolves each cd against the previous one" {
+    dirty_tracked
+    local parent base
+    parent=$(dirname "$REPO") base=$(basename "$REPO")
+    [[ "$(guard_from_tmp "cd $parent && cd $base && git reset --hard")" == "deny" ]]
+}
+
+@test "cd <dirty repo> && git status is allowed" {
+    dirty_tracked
+    [[ "$(guard_from_tmp "cd $REPO && git status")" == "allow" ]]
+}
+
+@test "git -C <dirty repo> reset --hard is denied from another cwd" {
+    dirty_tracked
+    [[ "$(guard_from_tmp "git -C $REPO reset --hard")" == "deny" ]]
 }
