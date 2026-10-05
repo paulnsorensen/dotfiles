@@ -6,7 +6,7 @@ Safety hooks that block dangerous tool calls. The design principle is **one clas
 
 Blocks destructive git ops that silently discard uncommitted work — `git checkout -- <path>` / `git checkout .` / `git checkout -f`, `git restore <path>`, `git reset --hard`, `git clean -f` — but **only when the targeted paths actually have uncommitted changes**. A clean tree has nothing to lose, so the op is allowed and the guard never nags. This dirty-check is the whole reason a static command-pattern deny won't do: it would nag on a clean tree.
 
-The classifier (`agents/lib/git-guard.js`, exporting `shouldBlock(command, cwd)` + `denyReason`) handles `sudo`/`env` prefixes, `-C` / `-c` global options, `--` pathspec separation, and `&&` / `||` / `;` / `|` / newline command segmentation. It is **fail-open everywhere**: a missing lib, absent `node`, malformed input, or a non-repo `cwd` always allows. Opt out for a session with `CLAUDE_GIT_GUARD=0`.
+The classifier (`agents/lib/git-guard.js`, exporting `shouldBlock(command, cwd)` + `denyReason`) handles `sudo`/`env` prefixes, `-C` / `-c` global options, `--` pathspec separation, and `&&` / `||` / `;` / `|` / newline command segmentation. It is **fail-open everywhere**: a missing lib, absent `node`, malformed input, or a non-repo `cwd` always allows. The operator can opt out with `CLAUDE_GIT_GUARD=0`. Agents need explicit user approval before changing this control.
 
 One classifier, four harness adapters:
 
@@ -60,11 +60,23 @@ It denies each call below and names the Tilth MCP call to make instead:
 - Shell reads: `cat`, `head`, `tail`, `sed`, `awk`, `nl`, `less`, `bat`, and `tac` with a file operand. `sed -i` names `tilth_write`.
 - Shell write-redirects by `echo`, `printf`, or `cat` to any file, in the tree or outside it. Only stream devices, `/proc`, and `/sys` pass.
 
-The shell denies apply outside the checkout too, for example in `/tmp` or a scratchpad. Tilth takes absolute paths, so no shell file read or write is needed for a path that the active Tilth write guard allows. On Codex, that guard denies a `tilth_write` outside the allowed roots (see Codex specifics); add the root to `DOTFILES_WRITE_GUARD_ALLOW` first. The redirect deny names this variable on Codex. Stream devices pass: `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty`, and `/dev/fd/N`. Writes to `/proc` and `/sys` also pass, because Tilth cannot write kernel interfaces. The device match is exact, and a `..` segment denies, so `/dev/shm/x` and `/dev/../tmp/x` deny. An earlier design let out-of-tree writes through but still denied out-of-tree reads, so an agent could write a log that it could not read back. Do not reopen that exemption. A command that writes its own output (`just check > log`) still runs; read the log back with `tilth_read`.
+The shell denies apply outside the checkout too, for example in `/tmp` or a scratchpad. Tilth takes absolute paths, so no shell file read or write is needed for a path that the active Tilth write guard allows. On Codex, that guard denies a `tilth_write` outside the allowed roots (see Codex specifics); ask the user before adding a root to `DOTFILES_WRITE_GUARD_ALLOW`. The redirect deny names the allowed-root constraint on Codex. Stream devices pass: `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty`, and `/dev/fd/N`. Writes to `/proc` and `/sys` also pass, because Tilth cannot write kernel interfaces. The device match is exact, and a `..` segment denies, so `/dev/shm/x` and `/dev/../tmp/x` deny. An earlier design let out-of-tree writes through but still denied out-of-tree reads, so an agent could write a log that it could not read back. Do not reopen that exemption. A command that writes its own output (`just check > log`) still runs; read the log back with `tilth_read`.
 
 Calls that read no file run unchanged: pipe filters such as `git log | grep fix`, here-doc bodies sent to a non-interpreter, `tail -f`, reads of `/dev`, `/proc`, and `/sys`, `find`, and `rg --files`. A piped `sed -f rules.sed` also runs: the script file runs but does not print, and Tilth cannot run it. The lexer looks through wrappers (`xargs`, `command`, `time`, `nice`, `timeout`, `sudo`, `env`, `find -exec`, backticks, `bash -c`) and ignores `#` comments. The hook still rewrites `cd <path> && git …` to `wt-git`.[^reroute-tests]
 
-The hook fails open. `DOTFILES_TOOL_REROUTE=0` turns it off, for example when the Tilth MCP server does not connect. Every deny reason names this switch when it fits.
+The hook fails open. The operator can set `DOTFILES_TOOL_REROUTE=0` when Tilth cannot connect. Denial feedback names the compliant tool, not an override command. Agents ask for explicit user approval before changing guard controls.[^guard-feedback]
+
+### Denial feedback and approval
+
+Task approval does not approve disabling a guard or expanding its allowlist. The operator controls remain available for explicit exceptions.[^guard-policy]
+
+Codex transcripts show five immediate override attempts after git or sensitive-file denials in July and August 2026. The preceding user messages approve tasks, but do not explicitly approve guard changes. The denial text itself advertises override commands. This feedback encourages retries that weaken policy, even when the hook blocks them again.[^guard-history]
+
+Feedback therefore keeps safe recovery steps and asks for explicit approval when no compliant route exists. Git feedback preserves work first. Sensitive-file feedback uses templates or operator-run actions that return only non-secret results. This change improves guidance; it does not create a mechanical approval boundary.[^guard-feedback]
+
+[^guard-feedback]: `agents/lib/git-guard.js` (`denyReason`); `agents/lib/sensitive-file-guard.js` (`denyReason`); `agents/lib/tool-reroute.js` (`denyText`); `agents/lib/tool-reroute/native.js` (`outOfTreeReason`); `agents/lib/tool-reroute/io.js` (`writeReason`).
+[^guard-policy]: `agents/AGENTS.md` (`Scope`).
+[^guard-history]: Native Codex transcripts: `rollout-2026-08-20T18-11-22-01a0205e-da69-76f0-b805-c278bef1af34.jsonl:166-170`; `rollout-2026-07-31T08-21-21-019fb743-7c74-7a93-89ca-216060ec40ae.jsonl:119-123`; `rollout-2026-08-01T07-28-18-019fbc39-4958-70a2-9764-6a6f9f4cedd0.jsonl:104-108`; `rollout-2026-07-26T08-53-38-019f9da1-3fe3-78a0-b3bd-efca459374a0.jsonl:98-106`. Verified 2026-10-05.
 
 ### Why deny, and why two layers on Claude
 

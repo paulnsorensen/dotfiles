@@ -149,7 +149,7 @@ function outOfTreeReason(blocked, roots) {
   return `Blocked: tilth_write targets outside the checkout: ${blocked.join(', ')}.
 
 Allowed roots: ${roots.join(', ')}, any .cheese/ directory.
-Add a root with DOTFILES_WRITE_GUARD_ALLOW=/abs/path (comma-separated).`;
+Ask the user for explicit approval before changing allowed roots. Do not retry through another tool.`;
 }
 
 function detectTilthWrite(input, eventCwd) {

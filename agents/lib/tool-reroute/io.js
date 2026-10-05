@@ -39,12 +39,11 @@ READERS.gawk = READERS.awk;
 READERS.mawk = READERS.awk;
 READERS.gsed = READERS.sed;
 
-// On Codex, native.js denies a tilth_write outside the allowed roots, so the
-// hint names the variable that adds a root.
+// On Codex, native.js denies tilth_write outside the allowed roots.
 function writeReason(target, cwd, harness) {
   const p = suggestPath(target, cwd);
   const codex = harness === 'codex'
-    ? ' On Codex, a path outside the checkout, /tmp, and .cheese/ also needs its root in DOTFILES_WRITE_GUARD_ALLOW.'
+    ? ' On Codex, a path outside the allowed roots remains blocked. Ask the user before changing allowed roots.'
     : '';
   // The lexer ends a `$(mktemp)` target at `(`, so it records a bare `$`.
   const shown = target === '$' ? '$(…)' : target;

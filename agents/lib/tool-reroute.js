@@ -65,7 +65,7 @@ function classifyWith(modules, toolName, input, cwd, harness) {
 
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const MAX_TEXT_LENGTH = 2000;
-const KILL_HINT = '\n(tilth down? export DOTFILES_TOOL_REROUTE=0)';
+const APPROVAL_HINT = '\nIf no compliant route works, ask the user for explicit approval before changing guard controls.';
 
 // Slice before scrubbing so the regex work stays bounded on huge input.
 function safeText(value) {
@@ -74,7 +74,7 @@ function safeText(value) {
 
 function denyText(reason) {
   const text = safeText(reason);
-  return text.length + KILL_HINT.length <= MAX_TEXT_LENGTH ? text + KILL_HINT : text;
+  return text.length + APPROVAL_HINT.length <= MAX_TEXT_LENGTH ? text + APPROVAL_HINT : text;
 }
 
 function killSwitchOn() {

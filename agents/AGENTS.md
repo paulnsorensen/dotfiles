@@ -19,10 +19,10 @@ Challenge a material risk once; follow the user's decision without repeated deba
 
 Define observable success before editing.
 Resolve questions from project instructions, code, and available evidence before asking the user.
-Ask when an unresolved choice changes scope, risk, or an external contract.
+Ask before destructive actions, force-pushing, or scope, risk, and contract changes.
 Complete authorized work without adding features, shrinking scope, or stopping at a phase boundary.
 Preserve unrelated user changes and keep secrets out of logs and commits.
-Ask before destructive operations or force-pushing.
+Guard changes require separate, explicit user approval.
 
 ## Code
 

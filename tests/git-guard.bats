@@ -252,15 +252,23 @@ guard() {
     [[ "$(guard Edit 'git reset --hard')" == "allow" ]]
 }
 
-@test "deny payload is a valid PreToolUse decision (claude + codex schema)" {
+@test "deny payload guides Claude and Codex without guard-bypass advice" {
     dirty_tracked
-    local json
+    local json harness reason
     json=$(jq -nc --arg w "$REPO" '{tool_name:"Bash", tool_input:{command:"git reset --hard"}, cwd:$w}')
-    run bash -c "printf '%s' '$json' | '$DEPLOY/hooks/git-guard.sh'"
-    [ "$status" -eq 0 ]
-    [[ "$(jq -r '.hookSpecificOutput.hookEventName' <<<"$output")" == "PreToolUse" ]]
-    [[ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$output")" == "deny" ]]
-    [[ -n "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$output")" ]]
+    for harness in claude codex; do
+        # shellcheck disable=SC2016  # $1/$2 expand inside the inner bash, by design
+        run env DOTFILES_HARNESS="$harness" bash -c 'printf "%s" "$1" | "$2"' bash "$json" "$DEPLOY/hooks/git-guard.sh"
+        [ "$status" -eq 0 ]
+        [[ "$(jq -r '.hookSpecificOutput.hookEventName' <<<"$output")" == "PreToolUse" ]]
+        [[ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$output")" == "deny" ]]
+        reason=$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$output")
+        [[ "$reason" == *"Tilth"* ]]
+        [[ "$reason" == *"stash"* ]]
+        [[ "$reason" == *"ask the user for explicit approval"* ]]
+        [[ "$reason" != *"CLAUDE_GIT_GUARD=0"* ]]
+        [[ "$reason" != *"with Edit"* ]]
+    done
 }
 
 # ── fail-open robustness (a broken guard must never block) ─────────────

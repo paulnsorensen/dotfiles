@@ -226,10 +226,9 @@ function denyReason(toolName, hit) {
 These hold secrets (.env values, private keys, credentials) and must not be
 read into the agent context or modified by an automated tool.
 
-- Need a real value? Pull it yourself and paste only what's required.
-- Reading a checked-in template? Use the .env.example/.sample variant.
-- Genuinely need access this session? export CLAUDE_SENSITIVE_GUARD=0
-- Allow specific paths only: export CLAUDE_SENSITIVE_GUARD_ALLOW=/abs/path,substr`;
+- For structure, use a checked-in template such as .env.example or .env.sample.
+- For a real value, ask the operator to run the action and return only a non-secret result.
+- If no compliant route works, ask the user for explicit approval before changing guard controls.`;
 }
 
 let stdin = '';
