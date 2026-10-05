@@ -57,7 +57,7 @@
       "matchStrings": [
         'OMP_PIN="(?<currentValue>[^"]+)"'
       ],
-      "datasourceTemplate": "github-tags",
+      "datasourceTemplate": "github-releases",
       "depNameTemplate": "can1357/oh-my-pi"
     }
   ],
