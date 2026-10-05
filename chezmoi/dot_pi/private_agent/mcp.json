@@ -1,15 +1,14 @@
 {
-  "settings": {
-    "hostConfigDiscovery": "off",
-    "freezeDirectTools": true
-  },
   "mcpServers": {
     "tilth": {
       "command": "tilth",
       "args": ["--mcp", "--edit"],
-      "directTools": ["tilth_search", "tilth_read", "tilth_write"],
-      "approveTools": ["tilth_write"],
-      "toolPrefix": "none"
+      "description": "Structural code search, reads, and tagged edits",
+      "toolExposure": {
+        "tilth_search": "direct",
+        "tilth_read": "direct",
+        "tilth_write": "direct"
+      }
     },
     "context7": {
       "command": "/usr/local/libexec/dotfiles/agent-secret-proxy",

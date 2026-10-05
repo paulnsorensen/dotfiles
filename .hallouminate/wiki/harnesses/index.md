@@ -32,7 +32,7 @@ Pi reads the shared `~/.agents/skills` cache directly. It does not receive a cop
 
 | Surface | Source of truth | Destinations |
 |---|---|---|
-| MCP servers | shared and native registries | harness-native MCP files; Pi uses `agent/mcp-adapter.json` through `pi-mcp-adapter` |
+| MCP servers | shared and native registries | harness-native MCP files; Pi uses built-in MCP from `agent/mcp.json` |
 | Hooks | `agents/hooks/registry.yaml` plus native extensions | harness-native hooks and OMP/Pi TypeScript extensions |
 | Sub-agents | `agents/registry.yaml` plus native packages | rendered definitions and native agent packages |
 | Skills | `skills/` plus `skills/_registry.yaml` | native trees and the shared `~/.agents/skills` cache |
