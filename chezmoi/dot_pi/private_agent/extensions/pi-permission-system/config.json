@@ -4,7 +4,10 @@
   "yoloMode": true,
   "permission": {
     "*": "allow",
-    "tilth_write": "allow",
+    "mcp": {
+      "*": "allow",
+      "mcp__tilth__tilth_write": "allow"
+    },
     "path": {
       "*": "allow",
       "*.env": "deny",

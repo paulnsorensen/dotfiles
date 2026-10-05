@@ -18,7 +18,6 @@ Pi reads shared skills directly from `~/.agents/skills`. Chezmoi does not copy a
 
 Pi uses pinned mainstream packages:
 
-- `pi-mcp-adapter` for token-efficient MCP access;
 - `pi-subagents` for isolated child sessions;
 - `pi-web-access` for web search and extraction;
 - `@gotgenes/pi-permission-system` for deterministic tool and path gates;
@@ -26,7 +25,13 @@ Pi uses pinned mainstream packages:
 
 `sync_pi_packages` runs `pi update --extensions` after chezmoi applies the managed settings. Exact package sources remain pinned. Renovate owns package updates in `pi.yaml`.
 
-The permission configuration replaces a harness-specific secret guard. It denies secret-bearing paths across built-in tools, Bash, MCP, and extension tools while allowing known public companion files. It explicitly allows `tilth_write`. Global `yoloMode` auto-approves `ask` decisions, but explicit `deny` rules still block access.
+The permission configuration replaces a harness-specific secret guard. It denies secret-bearing paths across built-in tools, Bash, MCP, and extension tools while allowing known public companion files. Its `mcp` rules explicitly allow `mcp__tilth__tilth_write`. Global `yoloMode` auto-approves `ask` decisions, but explicit `deny` rules still block access.
+
+## MCP
+
+Pi uses its built-in MCP support (Pi 0.99 and later). `~/.pi/agent/mcp.json` lists the servers. Tilth's search, read, and write tools have `direct` exposure. Other tools use the default `codemode` exposure. Pi names each tool `mcp__<server>__<tool>`, the same as Claude.
+
+The repo retired `pi-mcp-adapter` in October 2026. Pi 1.0 built-in MCP covers direct exposure, OAuth, and resources. The adapter also caused drift: it wrote `"-builtin:mcp"` to `settings.json`, and its Pi peer range lagged Pi releases. The registry sets `extensions: []`, which removes that live entry. Its `toolPrefix: none` naming has no built-in equivalent.
 
 ## Shared resources
 

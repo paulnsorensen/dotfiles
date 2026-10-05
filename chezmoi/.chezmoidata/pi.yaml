@@ -23,6 +23,9 @@ pi:
     defaultProjectTrust: ask
     hideThinkingBlock: true
     quietStartup: true
+    # Empty keeps Pi's built-in MCP on. pi-mcp-adapter once wrote
+    # "-builtin:mcp" here; the registry value overwrites it.
+    extensions: []
     compaction:
       enabled: true
       reserveTokens: 16384
@@ -34,8 +37,6 @@ pi:
         maxRetries: 0
         maxRetryDelayMs: 60000
     packages:
-      # renovate: datasource=npm depName=pi-mcp-adapter
-      - npm:pi-mcp-adapter@5.0.0
       # renovate: datasource=npm depName=pi-subagents
       - npm:pi-subagents@0.76.0
       # renovate: datasource=npm depName=pi-web-access
