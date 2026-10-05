@@ -102,6 +102,16 @@ A compatibility adapter also has unresolved semantic and loading problems:
 
 Do not build that adapter unless native-looking Todo behavior becomes a requirement. If it does, prefer the upstream backend/MCP facade seam over maintaining a private second MCP transport.
 
+
+
+## Native binary pin
+
+`OMP_PIN` in `packages/sync.sh` selects the native `omp` release asset that `dots sync` downloads.
+
+Renovate tracks this pin with the `github-releases` datasource, not `github-tags`. Upstream can push a tag before it publishes a release with binaries. A tag-only version gives a 404 on download, and `dots sync` fails.
+
+History: #1180 reverted a tag-only v18.6.2 bump. Renovate #1181 re-applied it hours later because the datasource was `github-tags`. #1183 changed the datasource to stop the loop.
+
 ## Verification surface
 
 `tests/omp-config.bats` protects the deployment contract:
