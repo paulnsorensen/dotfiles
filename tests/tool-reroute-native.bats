@@ -161,6 +161,14 @@ tilth_write_input() {
     [ "$(decision)" = "deny" ]
 }
 
+@test "codex tilth_write: out-of-tree deny names roots and requires user approval" {
+    hook codex mcp__tilth__tilth_write "$(tilth_write_input /etc/blocked/x)"
+    [ "$(decision)" = "deny" ]
+    [[ "$(reason)" == *"Allowed roots:"* ]]
+    [[ "$(reason)" == *"ask the user for explicit approval"* ]]
+    [[ "$(reason)" != *"DOTFILES_WRITE_GUARD_ALLOW"* ]]
+}
+
 @test "claude tilth_write is untouched (worktree-guard owns it)" {
     hook claude mcp__tilth__tilth_write "$(tilth_write_input /etc/x)"
     [ -z "$output" ]
@@ -204,9 +212,16 @@ tilth_write_input() {
     [ "$(decision)" = "deny" ]
 }
 
-@test "deny reasons carry the kill-switch hint when they fit" {
-    hook claude Grep '{"pattern":"foo"}'
-    [[ "$(reason)" == *"DOTFILES_TOOL_REROUTE=0"* ]]
+@test "deny reasons retain Tilth guidance without kill-switch advice" {
+    local harness guidance
+    for harness in claude codex; do
+        hook "$harness" Grep '{"pattern":"foo"}'
+        [ "$(decision)" = "deny" ]
+        guidance=$(reason)
+        [[ "$guidance" == *"mcp__tilth__tilth_search"* ]]
+        [[ "$guidance" == *"ask the user"* ]]
+        [[ "$guidance" != *"DOTFILES_TOOL_REROUTE=0"* ]]
+    done
 }
 
 # The bound is the 5 s hook timeout, not a speed target: the quadratic scrub
@@ -229,10 +244,24 @@ tilth_write_input() {
     [[ "$(reason)" == *'Append #start-end'* ]]
 }
 
-# ── Codex: the shell write-redirect hint names the write-guard variable ──
+@test "near-cap Read deny keeps the complete Tilth call" {
+    local p="/$(head -c 920 /dev/zero | tr '\0' 'd')/f.txt" guidance expected cwd
+    expected="mcp__tilth__tilth_read(paths:[$(jq -nc --arg p "$p" '$p')], cwd:\"<checkout>\")"
+    for cwd in "/tmp/$(printf '%027d' 0)" "/var/folders/$(printf '%059d' 0)"; do
+        hook claude Read "$(jq -nc --arg p "$p" '{file_path:$p}')" "$cwd"
+        [ "$(decision)" = "deny" ]
+        guidance=$(reason)
+        [[ "$guidance" == *"$expected"* ]]
+        [ "${#guidance}" -le 2000 ]
+    done
+}
 
-@test "io: a Codex write-redirect deny names DOTFILES_WRITE_GUARD_ALLOW" {
+# ── Codex: shell write-redirect guidance respects root approval ──────
+
+@test "io: a Codex write-redirect deny keeps Tilth guidance without root-bypass advice" {
     hook codex Bash '{"command":"echo hi > /tmp/zzz.txt"}'
     [ "$(decision)" = "deny" ]
-    [[ "$(reason)" == *DOTFILES_WRITE_GUARD_ALLOW* ]]
+    [[ "$(reason)" == *"mcp__tilth__tilth_write(edits:"* ]]
+    [[ "$(reason)" == *"ask the user"* ]]
+    [[ "$(reason)" != *"DOTFILES_WRITE_GUARD_ALLOW"* ]]
 }

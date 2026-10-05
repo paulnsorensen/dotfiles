@@ -241,13 +241,22 @@ guard() {
 
 # ── protocol / robustness ─────────────────────────────────────────────
 
-@test "deny payload is a valid Claude PreToolUse decision" {
-    local json='{"tool_name":"Read","tool_input":{"file_path":".env"}}'
-    run bash -c "printf '%s' '$json' | '$DEPLOY/hooks/sensitive-file-guard.sh'"
-    [ "$status" -eq 0 ]
-    [[ "$(jq -r '.hookSpecificOutput.hookEventName' <<<"$output")" == "PreToolUse" ]]
-    [[ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$output")" == "deny" ]]
-    [[ -n "$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$output")" ]]
+@test "deny payload guides Claude and Codex without secret or guard-bypass advice" {
+    local json='{"tool_name":"Read","tool_input":{"file_path":".env"}}' harness reason
+    for harness in claude codex; do
+        # shellcheck disable=SC2016  # $1/$2 expand inside the inner bash, by design
+        run env DOTFILES_HARNESS="$harness" bash -c 'printf "%s" "$1" | "$2"' bash "$json" "$DEPLOY/hooks/sensitive-file-guard.sh"
+        [ "$status" -eq 0 ]
+        [[ "$(jq -r '.hookSpecificOutput.hookEventName' <<<"$output")" == "PreToolUse" ]]
+        [[ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$output")" == "deny" ]]
+        reason=$(jq -r '.hookSpecificOutput.permissionDecisionReason' <<<"$output")
+        [[ "$reason" == *"checked-in template"* ]]
+        [[ "$reason" == *"non-secret result"* ]]
+        [[ "$reason" == *"ask the user for explicit approval"* ]]
+        [[ "$reason" != *"paste"* ]]
+        [[ "$reason" != *"CLAUDE_SENSITIVE_GUARD=0"* ]]
+        [[ "$reason" != *"CLAUDE_SENSITIVE_GUARD_ALLOW="* ]]
+    done
 }
 
 @test "malformed stdin fails open (allow, exit 0)" {

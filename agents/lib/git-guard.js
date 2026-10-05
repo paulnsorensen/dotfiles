@@ -264,12 +264,11 @@ staged or committed anywhere — they would be unrecoverable. This is exactly ho
 working-tree work gets wiped by a whole-file revert.
 
 Before re-running:
-  • To undo a single edit you just made, put it back with Edit — not git.
-  • To keep the work, commit it (git add -p && git commit) or git stash first.
-  • To genuinely discard, stash/commit first so it stays recoverable, then run
-    this — or run it yourself outside the agent.
+  • To undo one edit, use a targeted Tilth edit instead of a whole-file revert.
+  • To preserve the work, commit it (git add -p && git commit) or git stash first.
+  • To discard work, preserve it first so recovery remains possible.
 
-Or export CLAUDE_GIT_GUARD=0 to disable this guard for the session.`;
+If no compliant route works, ask the user for explicit approval before changing guard controls.`;
 }
 
 // True when the Bash command should be blocked given the working tree.

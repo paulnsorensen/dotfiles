@@ -1625,13 +1625,15 @@ YAML
 }
 
 @test "Darwin signing failure fails convergence and does not save cache" {
-    write_mock_uname Darwin
+    write_mock_uname Darwin x86_64
+    write_mock_sysctl ""
     write_mock_codesign 1
     write_test_yaml
 
     run_sync
     assert_failure
     assert_output_contains "omp ad-hoc signing failed"
+    [[ -s "$CODESIGN_LOG" ]]
     assert_output_not_contains "Native harness sync complete"
     assert_output_contains "cache NOT saved"
     [[ ! -f "$CACHE_FILE" ]] || [[ ! -s "$CACHE_FILE" ]]
