@@ -18,3 +18,11 @@ rustc-wrapper = "sccache"
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+# Linux (this box): point openssl-sys at the distro OpenSSL. Homebrew's
+# pkg-config otherwise resolves Homebrew's linked `openssl` (now 4.x), and
+# build scripts linked against it fail to load libssl.so.4 at runtime.
+# Target-prefixed, so macOS builds ignore these.
+[env]
+X86_64_UNKNOWN_LINUX_GNU_OPENSSL_LIB_DIR = "/usr/lib/x86_64-linux-gnu"
+X86_64_UNKNOWN_LINUX_GNU_OPENSSL_INCLUDE_DIR = "/usr/include"
