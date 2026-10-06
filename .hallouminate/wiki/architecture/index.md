@@ -37,6 +37,7 @@ How this dotfiles repo configures AI coding agents: shared registries rendered b
 - [[review-profile-write-deny]] — the `review` profile must deny `MultiEdit` explicitly: Claude names it separately, so denying `Edit`/`Write` does not cover it.
 - [[explorer-artifact-contract]] — read-only explorers may still write an optional `.cheese/explore/` evidence artifact unless the caller requests no-write; a reachable `tilth_write` tool makes the renderer classify Explorer as writable, so the read-only path restriction is an instruction contract, not an OS boundary.
 - [[saved-workflows]] — `claude/workflows/*.js` is the source; `chezmoi/dot_claude/exact_workflows/` is a gitignored assembled artifact. The whole dir syncs, so no registry entry is needed.
+- [[hill-climb-ratchet]] — the `hill-climb` skill (one measured iteration per invocation, loopable from Claude `/loop` or a Codex `codex exec` shell loop) and the `hill-climb-threads` workflow, plus the **ratchet gate**: a CI threshold per deterministic count that only tightens. Method from [[sources/how-we-made-claude-ai-faster]].
 - [[move-my-cheese-workflow]] — the incremental PR-age marker workflow: why convoy's combine/consolidate phases were dropped (background runs cannot pause for an approval gate) and why the marker is a PR comment rather than a git note.
 
 ## Conventions and retirements

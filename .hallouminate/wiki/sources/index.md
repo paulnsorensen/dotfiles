@@ -8,4 +8,5 @@
 - [bitwarden-secrets-manager-quick-start](./bitwarden-secrets-manager-quick-start.md) — Secrets Manager Quick Start
 - [bitwarden-secrets](./bitwarden-secrets.md) — Secrets
 - [bws-2-1-0-output-rendering](./bws-2-1-0-output-rendering.md) — BWS 2.1.0 Output Rendering
+- [how-we-made-claude-ai-faster](./how-we-made-claude-ai-faster.md) — How We Made Claude.ai 3x Faster
 <!-- HALLOUMINATE:INDEX-END -->

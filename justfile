@@ -17,7 +17,7 @@ lint-shell:
     shellcheck -x -e SC1091 -s bash tests/workflows-test.sh
     @echo "shellcheck: ok"
 
-PYTHON_LINT_PATHS := "skills/session-analytics/scripts/ skills/ci-optimize/scripts/ skills/bash-shortening/scripts/ tests/ci_optimize/ tests/lib/"
+PYTHON_LINT_PATHS := "skills/session-analytics/scripts/ skills/ci-optimize/scripts/ skills/bash-shortening/scripts/ skills/hill-climb/scripts/ tests/ci_optimize/ tests/hill_climb/ tests/lib/"
 
 # ruff on python files
 lint-python:
