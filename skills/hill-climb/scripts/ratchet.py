@@ -13,6 +13,7 @@ import json
 import math
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,9 @@ METRIC_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 PASS = 0
 GATE_FAILURE = 1
 INPUT_ERROR = 2
+
+DEFAULT_TIMEOUT = 600.0
+NEW_FILE_MODE = 0o644
 
 
 class InputError(ValueError):
@@ -107,6 +111,8 @@ def _load(path: Path, *, create: bool = False) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise InputError(f"{path}: ratchet file not found") from None
+    except (OSError, UnicodeDecodeError) as exc:
+        raise InputError(f"{path}: cannot read ratchet file: {exc}") from None
     except json.JSONDecodeError as exc:
         raise InputError(f"{path}: invalid JSON: {exc}") from None
     return _validate(data, path)
@@ -114,12 +120,22 @@ def _load(path: Path, *, create: bool = False) -> dict[str, Any]:
 
 def _save(data: dict[str, Any], path: Path) -> None:
     text = json.dumps(data, indent=2, sort_keys=True) + "\n"
-    directory = path.parent if str(path.parent) else Path(".")
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else NEW_FILE_MODE
+        fd, tmp = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+        )
+    except OSError as exc:
+        raise InputError(f"{path}: cannot write ratchet file: {exc}") from None
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
+        os.chmod(tmp, mode)
         os.replace(tmp, path)
+    except OSError as exc:
+        Path(tmp).unlink(missing_ok=True)
+        raise InputError(f"{path}: cannot write ratchet file: {exc}") from None
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
@@ -145,6 +161,16 @@ def _verdict(entry: dict[str, Any], value: float) -> str:
     return "pass"
 
 
+def _known_values(
+    path: Path, metrics: dict[str, Any], raw: list[str]
+) -> dict[str, int | float]:
+    values = _pairs(raw)
+    unknown = sorted(set(values) - set(metrics))
+    if unknown:
+        raise InputError(f"{path}: unknown metric(s): {', '.join(unknown)}")
+    return values
+
+
 def cmd_add(args: argparse.Namespace) -> int:
     path = Path(args.file)
     data = _load(path, create=True)
@@ -168,10 +194,7 @@ def cmd_add(args: argparse.Namespace) -> int:
 def cmd_check(args: argparse.Namespace) -> int:
     path = Path(args.file)
     metrics = _load(path)["metrics"]
-    values = _pairs(args.value)
-    unknown = sorted(set(values) - set(metrics))
-    if unknown:
-        raise InputError(f"{path}: unknown metric(s): {', '.join(unknown)}")
+    values = _known_values(path, metrics, args.value)
     results = []
     for name in sorted(metrics):
         entry = metrics[name]
@@ -200,10 +223,7 @@ def cmd_tighten(args: argparse.Namespace) -> int:
     path = Path(args.file)
     data = _load(path)
     metrics = data["metrics"]
-    values = _pairs(args.value)
-    unknown = sorted(set(values) - set(metrics))
-    if unknown:
-        raise InputError(f"{path}: unknown metric(s): {', '.join(unknown)}")
+    values = _known_values(path, metrics, args.value)
     results = []
     refused = False
     for name, value in sorted(values.items()):
@@ -217,20 +237,24 @@ def cmd_tighten(args: argparse.Namespace) -> int:
             status = "refused"
             refused = True
         results.append({"metric": name, "status": status, "from": before, "to": value})
-    if not refused:
-        for result in results:
-            if result["status"] == "tightened":
-                entry = metrics[result["metric"]]
-                entry["threshold"] = result["to"]
-                if args.revision:
-                    entry["revision"] = args.revision
+    tightened = [r for r in results if r["status"] == "tightened"]
+    written = bool(tightened) and not refused
+    if written:
+        for result in tightened:
+            entry = metrics[result["metric"]]
+            entry["threshold"] = result["to"]
+            if args.revision:
+                entry["revision"] = args.revision
         _save(data, path)
     print(
-        json.dumps(
-            {"written": not refused, "results": results}, indent=2, sort_keys=True
-        )
+        json.dumps({"written": written, "results": results}, indent=2, sort_keys=True)
     )
     return GATE_FAILURE if refused else PASS
+
+
+def _print_failed_run(run: int, detail: dict[str, Any]) -> None:
+    report = {"deterministic": False, "failed_run": run, **detail}
+    print(json.dumps(report, indent=2, sort_keys=True))
 
 
 def cmd_measure(args: argparse.Namespace) -> int:
@@ -239,25 +263,32 @@ def cmd_measure(args: argparse.Namespace) -> int:
         raise InputError("measure requires a command after --")
     if args.runs < 1:
         raise InputError("--runs must be at least 1")
+    if not args.timeout > 0:
+        raise InputError("--timeout must be greater than 0")
     tolerance = _tolerance(args.tolerance)
     values: list[int | float] = []
     for run in range(1, args.runs + 1):
         try:
-            proc = subprocess.run(command, capture_output=True, text=True, check=False)
+            proc = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=args.timeout,
+            )
+        except subprocess.TimeoutExpired:
+            _print_failed_run(run, {"error": "timeout", "timeout": args.timeout})
+            return GATE_FAILURE
         except OSError as exc:
             raise InputError(f"cannot run {command[0]!r}: {exc}") from None
         if proc.returncode != 0:
-            print(
-                json.dumps(
-                    {
-                        "deterministic": False,
-                        "failed_run": run,
-                        "exit": proc.returncode,
-                        "stderr": proc.stderr[-2000:],
-                    },
-                    indent=2,
-                    sort_keys=True,
-                )
+            _print_failed_run(
+                run,
+                {
+                    "error": "command-failed",
+                    "exit": proc.returncode,
+                    "stderr": proc.stderr[-2000:],
+                },
             )
             return GATE_FAILURE
         lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
@@ -317,6 +348,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     measure.add_argument("--runs", type=int, default=5)
     measure.add_argument("--tolerance", type=float, default=0.0)
+    measure.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_TIMEOUT,
+        help="seconds allowed per run (default %(default)s)",
+    )
     measure.add_argument("command", nargs=argparse.REMAINDER)
     measure.set_defaults(func=cmd_measure)
     return parser

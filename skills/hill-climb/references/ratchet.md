@@ -6,7 +6,8 @@ This keeps every gain after the thread ends.
 
 ## Ratchet file
 
-The file is JSON. Commit it beside the code it protects, for example `perf/ratchet.json`.
+The file is JSON. Commit it beside the code it protects, for example `perf/ratchet/<thread>.json`.
+Keep one ratchet file per thread in `perf/ratchet/`.
 
 ```json
 {
@@ -26,14 +27,17 @@ The file is JSON. Commit it beside the code it protects, for example `perf/ratch
 
 - `direction` is `lower` or `higher`. It names the better direction.
 - `tolerance` is relative slack for `check` only. Use 0 for deterministic counts.
-- `revision` records the commit that set the threshold.
+- `revision` records the base commit that the gain was measured against.
+- Tolerance is relative to the absolute threshold. A threshold of 0 therefore gets no slack, even with a nonzero tolerance.
 
 ## Commands
 
 - `add` records a new metric. It refuses an existing name.
 - `check` is the gate. It fails on a regression or a missing metric. `--partial` permits a subset.
 - `tighten` moves thresholds to better values. It refuses a worse value and writes nothing.
+  It also writes nothing when no metric improved.
 - `measure` runs the benchmark N times. It fails when the spread exceeds the tolerance.
+  It also fails on a nonzero exit (`error: command-failed`) or after `--timeout` seconds (`error: timeout`).
 
 `check` reports `improved` when a value beats its threshold. Run `tighten` in the same change.
 
@@ -43,9 +47,16 @@ Use the repository's existing gate recipe. Do not add a new task runner.
 Copy `ratchet.py` into the repository, for example `tools/ratchet.py`. CI must not depend on a home-directory skill path.
 
 ```bash
-value=$(node --predictable bench/message-tree.js | tail -n 1)
-python3 tools/ratchet.py check --file perf/ratchet.json --value "message-tree.instructions=$value"
+set -e
+for file in perf/ratchet/*.json; do
+  thread=$(basename "$file" .json)
+  value=$(bash "perf/bench/$thread.sh" | tail -n 1)
+  python3 tools/ratchet.py check --file "$file" --value "$thread=$value"
+done
 ```
+
+The example assumes that each metric name equals its file name and that `perf/bench/<thread>.sh` prints the metric.
+Adjust both to the repository. The loop checks every ratchet file, so a new thread needs no CI change.
 
 Run the gate on every pull request. A failing gate blocks merge.
 

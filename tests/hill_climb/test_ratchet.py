@@ -114,6 +114,36 @@ class AddTests(RatchetCase):
         self.assertEqual(nan.returncode, 2)
         self.assertFalse(self.file.exists())
 
+    def test_add_creates_nested_parent_directories(self) -> None:
+        self.file = self.dir / "perf" / "ratchet" / "thread.json"
+        self.add("a", "10")
+        self.assertEqual(self.data()["metrics"]["a"]["threshold"], 10)
+
+    def test_new_file_is_world_readable(self) -> None:
+        self.add("a", "10")
+        self.assertEqual(self.file.stat().st_mode & 0o444, 0o444)
+
+    def test_directory_path_is_input_error(self) -> None:
+        result = run_cli(
+            "add",
+            "--file",
+            str(self.dir),
+            "--metric",
+            "a",
+            "--direction",
+            "lower",
+            "--value",
+            "1",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_unreadable_or_undecodable_file_is_input_error(self) -> None:
+        self.file.write_bytes(b"\xff\xfe\x00bad")
+        result = run_cli("check", "--file", str(self.file), "--value", "a=1")
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("Traceback", result.stderr)
+
 
 class CheckTests(RatchetCase):
     def check(self, *values: str, partial: bool = False) -> tuple[int, dict[str, Any]]:
@@ -147,6 +177,11 @@ class CheckTests(RatchetCase):
         self.add("ms", "100", "lower", "--tolerance", "0.05")
         self.assertEqual(self.check("ms=105")[0], 0)
         self.assertEqual(self.check("ms=105.1")[0], 1)
+
+    def test_higher_tolerance_boundary(self) -> None:
+        self.add("fps", "100", "higher", "--tolerance", "0.05")
+        self.assertEqual(self.check("fps=95")[0], 0)
+        self.assertEqual(self.check("fps=94.9")[0], 1)
 
     def test_missing_metric_fails_unless_partial(self) -> None:
         self.add("a", "10")
@@ -202,6 +237,24 @@ class TightenTests(RatchetCase):
         self.assertEqual(self.data()["metrics"]["fps"]["threshold"], 120)
         self.assertEqual(self.tighten("fps=90")[0], 1)
 
+    def test_tighten_is_idempotent_and_skips_write_when_unchanged(self) -> None:
+        self.add("a", "100")
+        self.assertEqual(self.tighten("a=80")[0], 0)
+        self.file.chmod(0o640)
+        before = self.file.stat().st_mtime_ns
+        code, report = self.tighten("a=80")
+        self.assertEqual(code, 0)
+        self.assertEqual(report["results"][0]["status"], "unchanged")
+        self.assertFalse(report["written"])
+        self.assertEqual(self.file.stat().st_mtime_ns, before)
+        self.assertEqual(self.data()["metrics"]["a"]["threshold"], 80)
+
+    def test_tighten_preserves_file_mode(self) -> None:
+        self.add("a", "100")
+        self.file.chmod(0o664)
+        self.assertEqual(self.tighten("a=80")[0], 0)
+        self.assertEqual(self.file.stat().st_mode & 0o777, 0o664)
+
 
 class MeasureTests(RatchetCase):
     def measure(
@@ -235,6 +288,21 @@ class MeasureTests(RatchetCase):
         code, report = self.measure("import sys; sys.exit(3)")
         self.assertEqual(code, 1)
         self.assertEqual(report["exit"], 3)
+        self.assertEqual(report["error"], "command-failed")
+
+    def test_timeout_is_a_failed_run(self) -> None:
+        code, report = self.measure(
+            "import time; time.sleep(30)", "1", "--timeout", "0.5"
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(report["error"], "timeout")
+        self.assertEqual(report["failed_run"], 1)
+
+    def test_non_positive_timeout_is_input_error(self) -> None:
+        result = run_cli(
+            "measure", "--timeout", "0", "--", sys.executable, "-c", "print(1)"
+        )
+        self.assertEqual(result.returncode, 2)
 
     def test_non_numeric_output_is_input_error(self) -> None:
         result = run_cli(

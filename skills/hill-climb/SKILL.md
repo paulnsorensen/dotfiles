@@ -44,6 +44,11 @@ State lives in `.hill-climb/<thread>/` in the consumer repository:
 
 Commit the ratchet file. Do not commit `.hill-climb/` unless the repository already tracks it.
 
+## Adopt
+
+Run this step once, before the first iteration. Skip it when CI already runs `ratchet.py check`.
+Wire `ratchet.py check` into CI as described in ratchet.md. The gate covers every file in the ratchet directory.
+
 ## Iteration
 
 1. If `STOP` exists, report its reason and end. Under Claude `/loop`, stop the loop.
@@ -52,16 +57,15 @@ Commit the ratchet file. Do not commit `.hill-climb/` unless the repository alre
 4. Run `ratchet.py measure --runs 5 -- <benchmark>`. Require `deterministic: true`.
 5. On first adoption, prove correlation with user latency, and prove red on base and green on a fix.
 6. If the ratchet file lacks the metric, run `ratchet.py add` with the measured value.
-7. If CI does not run `ratchet.py check`, wire it as described in ratchet.md.
-8. Trace the hot path. List candidate changes with an estimate in metric units.
-9. Select the candidate with the largest estimate per unit of risk. Skip ledger false leads.
-10. Confirm that tests cover the affected behavior. Add tests first if they do not.
-11. Make the smallest change. Put user-visible changes behind a short-lived flag.
-12. Measure again with the same protocol. Run the repository gates.
-13. If the metric did not improve or a gate fails, revert the change and log a false lead.
-14. If it improved, run `ratchet.py tighten`. Commit the change and the ratchet file together.
-15. Append the ledger line. Name the next candidate in the same journey.
-16. Write `STOP` when a stop condition occurs.
+7. Trace the hot path. List candidate changes with an estimate in metric units.
+8. Select the candidate with the largest estimate per unit of risk. Skip ledger false leads.
+9. Confirm that tests cover the affected behavior. Add tests first if they do not.
+10. Make the smallest change. Put user-visible changes behind a short-lived flag.
+11. Measure again with the same protocol. Run the repository gates.
+12. If the metric did not improve or a gate fails, revert the change and log a false lead.
+13. If it improved, run `ratchet.py tighten`. Commit the change and the ratchet file together.
+14. Append the ledger line. Name the next candidate in the same journey.
+15. Write `STOP` when a stop condition occurs.
 
 Size each commit or pull request for review. Several small changes are better than one large change.
 When deploy telemetry exists, read field data after release. If the field metric did not improve, turn off the flag and log it.
@@ -110,14 +114,17 @@ Resolve `RATCHET` from the directory of the loaded `SKILL.md`: `<skill-dir>/scri
 Resolve symlinks first. Do not derive the path from the consumer repository.
 
 ```text
-python3 "$RATCHET" measure --runs 5 [--tolerance T] -- COMMAND ARGS
-python3 "$RATCHET" add --file FILE --metric NAME --direction lower|higher --value V [--unit U] [--command CMD]
+python3 "$RATCHET" measure --runs 5 [--tolerance T] [--timeout SECONDS] -- COMMAND ARGS
+python3 "$RATCHET" add --file FILE --metric NAME --direction lower|higher --value V [--tolerance T] [--unit U] [--command CMD] [--revision REV]
 python3 "$RATCHET" check --file FILE --value NAME=V [--value NAME=V ...] [--partial]
 python3 "$RATCHET" tighten --file FILE --value NAME=V [--revision REV]
 ```
 
 Exit 0 is pass. Exit 1 is a gate failure. Exit 2 is an input error.
+`measure` stops a run after `--timeout` seconds (default 600). A timeout is a failed run with `error: timeout`.
+A nonzero benchmark exit is a failed run with `error: command-failed`.
 
 ## Report
 
-Return no more than 150 words: thread, iteration, change, before and after values, ratchet status, gates, next candidate, and loop status.
+Return no more than 150 words. Include the thread, iteration, change, and before and after values.
+Include the ratchet status, gates, next candidate, and loop status.

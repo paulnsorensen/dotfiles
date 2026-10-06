@@ -35,7 +35,7 @@ Example: message-tree assembly lost 48% of instructions and 78% of wall-clock ti
 A sidebar layout-shift test ran red 20 of 20 times on main and green 20 of 20 on the PR. Field data then showed 31% of loads moved content after the page was usable.
 
 **Horizontal scale.** By week two, more than 150 threads ran at once and more than 200 changes merged per day. One thread produced 50 to 100 PRs. About a third of PRs added telemetry or guardrails, which opened more threads.
-Census finds included 6,900 hooks on one typing path, a `:root:has()` selector that cost 24 ms per DOM change, and a UTF-16 regex slow path triggered by em dashes.
+Census finds included 6,900 hooks on one typing path. Others were a `:root:has()` selector that cost 24 ms per DOM change and a UTF-16 regex slow path that em dashes triggered.
 
 ## Guardrails
 

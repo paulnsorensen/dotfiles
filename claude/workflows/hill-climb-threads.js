@@ -4,6 +4,7 @@ export const meta = {
   whenToUse: 'A performance or efficiency goal with several independent journeys or metrics to drive down at once. Use /hill-climb under /loop for one thread.',
   phases: [
     { title: 'Survey', detail: 'one read-only agent splits the goal into narrow threads, each with one journey and one deterministic metric' },
+    { title: 'Adopt', detail: 'once, one agent wires the ratchet check into CI for every ratchet file when CI does not already run it' },
     { title: 'Climb', detail: 'per thread, one /hill-climb iteration per round in its own worktree; threads never wait for each other' },
     { title: 'Verify', detail: 'a skeptic re-measures every claimed gain and runs the ratchet gate; a refuted gain is reverted next round' },
     { title: 'Publish', detail: 'only when publish=true: one draft PR per thread with a verified gain, via /plate' },
@@ -26,6 +27,8 @@ export const meta = {
 // (<ratchetDir>/<slug>.json), so thread branches do not conflict on one JSON
 // file. Round 1 creates the worktree; later rounds cd into the returned path
 // rather than re-isolating (a second checkout of the same branch fails).
+// Adopt runs once before Climb, in its own worktree and branch, so CI wiring
+// never touches a thread branch.
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,40}$/
 const SAFE_PATH = /^[A-Za-z0-9._/-]+$/
@@ -42,7 +45,6 @@ const THREAD_SCHEMA = {
     metric: { type: 'string', description: 'the deterministic count to ratchet' },
     direction: { type: 'string', enum: ['lower', 'higher'] },
     benchmark: { type: 'string', description: 'existing command that prints the count, or empty when one must be built' },
-    estimate: { type: 'string', description: 'expected gain in metric units, with the reason' },
   },
 }
 
@@ -54,7 +56,7 @@ const SURVEY_SCHEMA = {
 
 const CLIMB_SCHEMA = {
   type: 'object',
-  required: ['status', 'worktree_path', 'change', 'next_candidate'],
+  required: ['status', 'worktree_path', 'change'],
   properties: {
     status: { type: 'string', enum: ['improved', 'no-gain', 'stopped', 'blocked'] },
     worktree_path: { type: 'string' },
@@ -63,7 +65,8 @@ const CLIMB_SCHEMA = {
     change: { type: 'string' },
     commit: { type: 'string' },
     stop_reason: { type: 'string' },
-    next_candidate: { type: 'string' },
+    reverted: { type: 'boolean', description: 'true only after you reverted the refuted commit named in the prompt' },
+    benchmark: { type: 'string', description: 'the benchmark command, when you built or changed it' },
   },
 }
 
@@ -72,8 +75,16 @@ const VERIFY_SCHEMA = {
   required: ['confirmed', 'note'],
   properties: {
     confirmed: { type: 'boolean' },
-    measured: { type: 'number' },
-    gate_passed: { type: 'boolean' },
+    note: { type: 'string' },
+  },
+}
+
+const ADOPT_SCHEMA = {
+  type: 'object',
+  required: ['status', 'note'],
+  properties: {
+    status: { type: 'string', enum: ['wired', 'already-gated', 'skipped', 'failed'] },
+    branch: { type: 'string' },
     note: { type: 'string' },
   },
 }
@@ -91,8 +102,12 @@ const PUBLISH_SCHEMA = {
 // ── args ─────────────────────────────────────────────────────────────────
 
 function coerceArgs(a) {
-  if (typeof a === 'string') return { goal: a.trim() }
+  if (typeof a === 'string') return { goal: a }
   return a && typeof a === 'object' && !Array.isArray(a) ? a : {}
+}
+
+function errorText(e) {
+  return e && e.message ? e.message : String(e)
 }
 
 function clampInt(value, fallback, max) {
@@ -126,7 +141,7 @@ const explicit = Array.isArray(opts.threads) ? opts.threads : null
 const threadCount = clampInt(opts.threads, 3, MAX_THREADS)
 const rounds = clampInt(opts.rounds, 4, MAX_ROUNDS)
 const dryLimit = clampInt(opts.dryLimit, 3, MAX_ROUNDS)
-const ratchetDir = typeof opts.ratchetDir === 'string' && SAFE_PATH.test(opts.ratchetDir) && !opts.ratchetDir.includes('..')
+const ratchetDir = typeof opts.ratchetDir === 'string' && SAFE_PATH.test(opts.ratchetDir) && !opts.ratchetDir.startsWith('/') && !opts.ratchetDir.includes('..')
   ? opts.ratchetDir.replace(/\/+$/, '')
   : 'perf/ratchet'
 const publish = opts.publish === true
@@ -144,7 +159,7 @@ function surveyPrompt() {
     'Find the user journeys the goal names. Find existing benchmarks, profilers, and telemetry in the repository.',
     'Each thread has ONE journey and ONE deterministic count (not wall-clock time). Threads must not edit the same hot path.',
     'Set benchmark to an existing command that prints the count on its last stdout line, or to an empty string when the thread must build one.',
-    'Rank threads by estimated user impact. Put the estimate in metric units and give the reason.',
+    'Rank threads by expected user impact.',
   ].join('\n')
 }
 
@@ -166,13 +181,20 @@ function climbPrompt(t, round) {
         `Work in the existing worktree at ${t.worktree}. Set your working directory there first.`,
         `If that path no longer exists (an unchanged worktree is reaped), recreate it: \`git worktree add ${t.worktree} ${branch}\` when the branch exists, else \`git worktree add -b ${branch} ${t.worktree}\`.`,
         `Halt with status blocked unless \`git rev-parse --show-toplevel\` equals ${t.worktree} and the branch is ${branch}.`,
+        `This round has no isolation, so your shell can start in the main checkout. Run every git command as \`git -C ${t.worktree}\`. Use absolute paths under ${t.worktree} for every file edit and command.`,
       ]
-    : [`First command: \`git checkout -B ${branch}\` in this fresh worktree. Report its path from \`git rev-parse --show-toplevel\`.`]
+    : [
+        `You run in a fresh worktree. Check whether branch ${branch} exists with \`git rev-parse --verify --quiet refs/heads/${branch}\`.`,
+        `If it exists, run \`git checkout ${branch}\`. Halt with status blocked if git refuses because another worktree holds the branch.`,
+        `If it does not exist, run \`git checkout -b ${branch}\`.`,
+        'Report the worktree path from `git rev-parse --show-toplevel`.',
+      ]
   const refuted = t.refuted
     ? [
         '',
         `The previous round claimed a gain in commit ${t.refuted.commit || '(unknown)'}, and the verifier refuted it: ${t.refuted.note}`,
         'Revert that commit and its ratchet tighten before you try anything else. Log it as a false lead.',
+        'Set reverted to true only after the revert is committed. Otherwise leave reverted false.',
       ]
     : []
   const history = t.history.length
@@ -190,6 +212,9 @@ function climbPrompt(t, round) {
     `Invoke the hill-climb skill through the Skill tool with args "${t.slug}". Run exactly ONE iteration.`,
     'Commit locally on the thread branch only. Do not push, open a PR, or merge.',
     'Do not edit files outside this thread\'s hot path, its tests, its benchmark, and its ratchet file.',
+    'CI wiring for the ratchet is already done by the workflow. It is outside this thread\'s scope. Skip the CI step.',
+    `The workflow owns the dry-streak stop (${dryLimit} dry round(s)). Do not write STOP for diminishing returns.`,
+    'If you build or change the benchmark, return its command in benchmark.',
     '',
     'Return status improved only when the benchmark beat the ratchet threshold, the gates passed, and you committed the change with the tightened ratchet file.',
     'Return no-gain when you reverted the attempt. Return stopped when the skill wrote STOP; put its reason in stop_reason. Return blocked on any setup failure.',
@@ -202,16 +227,31 @@ function verifyPrompt(t, climb) {
     'Do not edit, commit, or revert anything.',
     '',
     threadContext(t),
-    `Worktree: ${climb.worktree_path}. Set your working directory there first.`,
+    `Worktree: ${t.worktree}. Set your working directory there first.`,
     `Claimed: ${climb.before} -> ${climb.after} in commit ${climb.commit || '(unknown)'}: ${climb.change}`,
     '',
     'Steps:',
     '1. Read the commit diff. Confirm it does not remove a check, a test, or behavior to win the number.',
     '2. Run the benchmark through `python3 ~/.claude/skills/hill-climb/scripts/ratchet.py measure --runs 5 -- <benchmark>`.',
-    `3. Run \`ratchet.py check --file ${ratchetDir}/${t.slug}.json\` with the measured value.`,
+    `3. Run \`~/.claude/skills/hill-climb/scripts/ratchet.py check --file ${ratchetDir}/${t.slug}.json\` with the measured value.`,
     '4. Run the repository test gate that covers the changed files.',
     '',
     'Set confirmed=true only when the measurement is deterministic, it matches the claim, the gate passes, and tests pass.',
+  ].join('\n')
+}
+
+function adoptPrompt() {
+  return [
+    'Wire the hill-climb ratchet gate into CI. Do this once for the whole run.',
+    '',
+    `Ratchet files: every ${ratchetDir}/*.json file. Threads create them later, so the gate covers the whole directory.`,
+    'Read the Adopt section of ~/.claude/skills/hill-climb/SKILL.md and follow it. Do not run the climb iteration steps.',
+    '',
+    'If CI already runs ratchet.py check over this directory, change nothing and return already-gated.',
+    'If the repository has no CI, change nothing and return skipped.',
+    'If branch hill-climb-adopt already exists, change nothing and return already-gated with a note that names the unmerged branch.',
+    'Commit the change on the new branch hill-climb-adopt in this worktree. Do not push, open a PR, or touch any hill-climb/<slug> branch.',
+    'Return the branch name and a one-line note that says what you wired.',
   ].join('\n')
 }
 
@@ -242,7 +282,7 @@ if (explicit) {
 } else {
   phase('Survey')
   const survey = await agent(surveyPrompt(), { label: 'survey', phase: 'Survey', agentType: 'explorer', schema: SURVEY_SCHEMA })
-  threads = cleanThreads((survey && survey.threads) || [])
+  threads = cleanThreads((survey && survey.threads) || []).slice(0, threadCount)
 }
 
 if (!threads.length) {
@@ -250,6 +290,14 @@ if (!threads.length) {
   return { goal, threads: [] }
 }
 log(`Climbing ${threads.length} thread(s), up to ${rounds} round(s) each, stop after ${dryLimit} dry round(s).`)
+
+phase('Adopt')
+const adopt = await agent(adoptPrompt(), { label: 'adopt', phase: 'Adopt', isolation: 'worktree', schema: ADOPT_SCHEMA })
+  .catch((e) => {
+    log(`Adopt failed: ${errorText(e)}`)
+    return { status: 'failed', note: errorText(e) }
+  })
+log(`Adopt: ${adopt.status} — ${adopt.note}`)
 
 for (const t of threads) Object.assign(t, { worktree: null, dry: 0, history: [], refuted: null, outcome: 'rounds-exhausted' })
 
@@ -265,7 +313,10 @@ async function climb(t) {
       phase: 'Climb',
       schema: CLIMB_SCHEMA,
       ...(t.worktree ? {} : { isolation: 'worktree' }),
-    }).catch(() => null)
+    }).catch((e) => {
+      log(`${t.slug}: climb agent failed in round ${round}: ${errorText(e)}`)
+      return null
+    })
     if (!result) {
       t.outcome = 'agent-failed'
       return t
@@ -277,8 +328,13 @@ async function climb(t) {
         return t
       }
       t.worktree = result.worktree_path
+    } else if (result.worktree_path !== t.worktree) {
+      t.outcome = 'blocked: worktree path changed'
+      log(`${t.slug}: climb returned worktree ${JSON.stringify(result.worktree_path)}, expected ${t.worktree}; stopping thread.`)
+      return t
     }
-    t.refuted = null
+    if (result.reverted === true) t.refuted = null
+    if (!t.benchmark && typeof result.benchmark === 'string' && result.benchmark.trim()) t.benchmark = result.benchmark.trim()
 
     let status = result.status
     if (status === 'improved') {
@@ -286,7 +342,10 @@ async function climb(t) {
         label: `verify:${t.slug}#${round}`,
         phase: 'Verify',
         schema: VERIFY_SCHEMA,
-      }).catch(() => null)
+      }).catch((e) => {
+        log(`${t.slug}: verify agent failed in round ${round}: ${errorText(e)}`)
+        return null
+      })
       if (!verdict || !verdict.confirmed) {
         status = 'refuted'
         t.refuted = { commit: result.commit, note: verdict ? verdict.note : 'verifier failed to return' }
@@ -310,9 +369,10 @@ async function climb(t) {
 
 await parallel(threads.map((t) => () => climb(t)))
 
-// A refuted gain on the last round stays committed on the branch. Never
-// publish such a thread; the next run's first round reverts it.
-const publishable = threads.filter((t) => t.worktree && !t.refuted && t.history.some((h) => h.status === 'improved'))
+// A refuted gain stays committed on the branch until a later round reports
+// reverted=true. Nothing reverts it automatically, so a thread that ends with a
+// pending refutation is never published and the result reports pendingRefutation.
+const publishable = threads.filter((t) => !t.refuted && t.history.some((h) => h.status === 'improved'))
 const skipped = threads.filter((t) => !publishable.includes(t))
 if (skipped.length) log(`Not publishable (no verified gain or a pending refutation): ${skipped.map((t) => t.slug).join(', ')}`)
 
@@ -321,13 +381,18 @@ if (publish && publishable.length) {
   phase('Publish')
   const results = await parallel(publishable.map((t) => () =>
     agent(publishPrompt(t), { label: `publish:${t.slug}`, phase: 'Publish', schema: PUBLISH_SCHEMA })
-      .then((r) => ({ slug: t.slug, ...(r || { status: 'failed' }) }))))
-  for (const r of results.filter(Boolean)) published[r.slug] = r
+      .then((r) => ({ slug: t.slug, ...(r || { status: 'failed', note: 'publish agent returned nothing' }) }))
+      .catch((e) => {
+        log(`${t.slug}: publish agent failed: ${errorText(e)}`)
+        return { slug: t.slug, status: 'failed', note: errorText(e) }
+      })))
+  for (const r of results) published[r.slug] = r
 }
 
 return {
   goal,
   ratchetDir,
+  adopt,
   threads: threads.map((t) => ({
     slug: t.slug,
     metric: t.metric,
