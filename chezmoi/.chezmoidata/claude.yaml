@@ -236,8 +236,9 @@ claude:
       # context; the tool-reroute hook is the second layer.
       # Write/Edit stay available because plan mode and auto-memory can write
       # only through them. tool-reroute denies them outside ~/.claude/plans/,
-      # ~/.claude/projects/*/memory/, and the session scratchpad
-      # (/tmp/claude-<uid>/).
+      # ~/.claude/projects/*/memory/, and the scratch roots (/tmp, /private/tmp,
+      # and $TMPDIR, each + claude-<uid>/). Plain reads of files up to 16 KiB
+      # that write no file also pass the shell reroute.
       # Read stays: it is the only viewer for images, PDFs, and notebooks, so
       # tool-reroute denies it on text files instead.
       - "Glob"

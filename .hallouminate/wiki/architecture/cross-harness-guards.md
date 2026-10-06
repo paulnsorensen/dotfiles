@@ -48,7 +48,7 @@ Claude receives `additionalContext`. Codex receives a one-shot block continuatio
 
 ## tool-reroute
 
-`agents/lib/tool-reroute.js` is the `PreToolUse` dispatcher that makes Tilth the only file tool on Claude and Codex. Its matcher is `Bash|Read|Write|Edit|MultiEdit|Grep|Glob|apply_patch|mcp__tilth__tilth_write`.[^reroute-wiring]
+`agents/lib/tool-reroute.js` is the `PreToolUse` dispatcher that routes file operations through Tilth on Claude and Codex, with the bounded exemptions below. Its matcher is `Bash|Read|Write|Edit|MultiEdit|Grep|Glob|apply_patch|mcp__tilth__tilth_write`.[^reroute-wiring]
 
 It denies each call below and names the Tilth MCP call to make instead:
 
@@ -60,7 +60,40 @@ It denies each call below and names the Tilth MCP call to make instead:
 - Shell reads: `cat`, `head`, `tail`, `sed`, `awk`, `nl`, `less`, `bat`, and `tac` with a file operand. `sed -i` names `tilth_write`.
 - Shell write-redirects by `echo`, `printf`, or `cat` to any file, in the tree or outside it. Only stream devices, `/proc`, and `/sys` pass.
 
-The shell denies apply outside the checkout too, for example in `/tmp` or a scratchpad. Tilth takes absolute paths, so no shell file read or write is needed for a path that the active Tilth write guard allows. On Codex, that guard denies a `tilth_write` outside the allowed roots (see Codex specifics); ask the user before adding a root to `DOTFILES_WRITE_GUARD_ALLOW`. The redirect deny names the allowed-root constraint on Codex. Stream devices pass: `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty`, and `/dev/fd/N`. Writes to `/proc` and `/sys` also pass, because Tilth cannot write kernel interfaces. The device match is exact, and a `..` segment denies, so `/dev/shm/x` and `/dev/../tmp/x` deny. An earlier design let out-of-tree writes through but still denied out-of-tree reads, so an agent could write a log that it could not read back. Do not reopen that exemption. A command that writes its own output (`just check > log`) still runs; read the log back with `tilth_read`.
+Shell routing applies outside the checkout too. Two bounded exemptions reduce friction without making an unresolved path look safe.[^reroute-exemptions]
+
+- Claude scratch paths under `/tmp`, `/private/tmp`, or `$TMPDIR`, each followed by `claude-<uid>/`, pass after destination checks.
+- Plain shell reads and searches pass when every target is a literal regular file of at most 16 KiB.
+
+Scratch checks preserve raw `..` components, resolve symlinks through existing ancestors, reject dangling links, and reject multiply linked files.
+New subdirectories can qualify when their existing ancestors resolve inside scratch.
+The shared helpers live in `agents/lib/tool-reroute/exempt.js`; the hook registry deploys this runtime dependency.[^reroute-exemptions]
+
+A relative-path exemption needs the command's actual working directory.
+Unsupported compound commands make that directory unknown because their prefixes can hide `cd`.
+Known absolute paths remain independently checkable.
+An unknown directory produces a placeholder in recovery hints, not a path resolved against the original event directory.[^reroute-path-context]
+
+Expansion markers must remain visible on concatenated path tokens.
+A backtick substitution can append `..` components to an apparently safe scratch prefix.
+Checking only that prefix grants an exemption to a different destination.[^reroute-path-context]
+
+A small input file does not make its reader harmless.
+Inline `sed` and `awk` programs must match known read-only forms before the small-file exemption applies.
+Unknown script effects keep the deny; shell redirects alone cannot detect writes inside programs.[^reroute-script-effects]
+
+Stream devices pass: `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty`, and `/dev/fd/N`.
+Writes to `/proc` and `/sys` also pass because Tilth cannot write kernel interfaces.
+The device match is exact; `..` components prevent escaping these interfaces.
+A command that writes its own output, such as `just check > log`, still runs.
+Read that log through `tilth_read`.
+On Codex, ask before adding an allowed root to `DOTFILES_WRITE_GUARD_ALLOW`.[^reroute-wiring]
+
+[^reroute-exemptions]: `agents/lib/tool-reroute/exempt.js` (`isScratchPath`, `allSmallFiles`); `agents/hooks/registry.yaml` (`tool-reroute.shared_assets`); `tests/tool-reroute-native.bats`.
+[^reroute-path-context]: `agents/lib/tool-reroute/shell.js` (`parse`, `commandsWithCwd`); `agents/lib/tool-reroute/io.js` (`suggestPath`); `tests/tool-reroute.bats`.
+[^reroute-script-effects]: `agents/lib/tool-reroute/io.js` (`readerScripts`, `scriptUnsafe`); `tests/tool-reroute.bats` (script writes and read-only controls).
+
+_Source: PR #1190 review and approved guard fixes · Updated: 2026-10-06 · Supersedes: blanket scratch denial and event-cwd-only exemption checks._
 
 Calls that read no file run unchanged: pipe filters such as `git log | grep fix`, here-doc bodies sent to a non-interpreter, `tail -f`, reads of `/dev`, `/proc`, and `/sys`, `find`, and `rg --files`. A piped `sed -f rules.sed` also runs: the script file runs but does not print, and Tilth cannot run it. The lexer looks through wrappers (`xargs`, `command`, `time`, `nice`, `timeout`, `sudo`, `env`, `find -exec`, backticks, `bash -c`) and ignores `#` comments. The hook still rewrites `cd <path> && git …` to `wt-git`.[^reroute-tests]
 

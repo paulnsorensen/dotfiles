@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { isLiteralPath } = require('./exempt');
 // shell.js — a minimal shell-ish lexer shared by the tool-reroute modules.
 //
 // `parse(command)` splits a Bash command line into pipeline/command segments on
@@ -114,7 +115,8 @@ function parse(command) {
       }
       if (j < n && command[j - 1] === ')') { cur += command.slice(i, j + 1); hasTok = true; i = j + 1; continue; }
     }
-    if (c === ';' || c === '(' || c === ')' || c === '`') { endSeg(';'); i += 1; continue; }
+    if (c === '`') { cur += '`'; hasTok = true; endSeg(';'); i += 1; continue; }
+    if (c === ';' || c === '(' || c === ')') { endSeg(';'); i += 1; continue; }
     if (c === '&' && command[i + 1] === '>') { endTok(); i += 1; continue; } // `&>` / `&>>` write stdout
     if (c === '|' || c === '&') { // a run of | / & is one operator boundary
       endTok();
@@ -239,45 +241,50 @@ function commands(command, depth = 0) {
   return parse(command).flatMap((seg) => expand(seg, depth));
 }
 
-// Attach a cwd only for simple shell contexts. The lexer loses scope and quote
-// details, so substitutions, compound commands, and wrappers get no exemptions.
+// Words that change the shell's cwd or run commands somewhere else. A command
+// run through a wrapper (`env -C dir`, `xargs`) or an interpreter (`bash -c`)
+// is unknown too.
+const CWD_CHANGERS = new Set(['pushd', 'popd', 'chdir', 'source', '.', 'eval', 'find', ...INTERPRETERS]);
+const FUNCTION_DEF = /\bfunction\b|\w\s*\(\s*\)/;
+const COMPOUND_WORDS = new Set(['if', 'then', 'elif', 'else', 'fi', 'for', 'while', 'until', 'case', 'esac', 'do', 'done', 'select', '!', '{', '}']);
+
+// Attach the cwd each segment runs in, or null when it is unknown. Only a
+// relative path needs a known cwd; exempt.js judges an absolute path without it.
+// Only `cd <abs-or-./ literal> &&` keeps a known cwd. The lexer loses scope, so
+// a group, a subshell, or a function definition makes every `cd` unknown.
 function commandsWithCwd(command, cwd) {
   const segs = commands(command);
-  let current = cwd || process.cwd();
+  let current = FUNCTION_DEF.test(command) ? null : (cwd || process.cwd());
+  const grouped = /[(){}`]/.test(command);
   let changed = false;
-  if (/[(){}$`\\]/.test(command)) current = null;
   return segs.map((seg, k) => {
     if (changed && seg.sep !== '&&') current = null;
     const { word, args } = commandWord(seg.argv);
-    const direct = seg.argv[0] === word;
-    if (!direct && seg.argv.length) current = null;
-    const result = { ...seg, cwd: current };
+    const first = seg.argv.find((t) => !ASSIGN.test(t));
+    const wrapped = first !== undefined && Object.hasOwn(WRAPPERS, first.slice(first.lastIndexOf('/') + 1));
+    if (COMPOUND_WORDS.has(first)) current = null;
+    const result = { ...seg, cwd: wrapped ? null : current };
     if (word === 'cd') {
       // Only && guarantees that the next command sees a successful cd.
       // Bare relative names depend on CDPATH; options and expansions are unknown.
       const target = args[0];
       const next = segs[k + 1];
-      if (current && direct && args.length === 1 && isLiteralPath(target)
+      if (current && !wrapped && !grouped && args.length === 1 && isLiteralPath(target)
           && (path.isAbsolute(target) || target.startsWith('./'))
-          && !pipedIn(seg) && next && next.sep === '&&') {
+          && (seg.sep === null || seg.sep === ';' || seg.sep === '&&')
+          && next && next.sep === '&&') {
         try {
           const resolved = fs.realpathSync(path.resolve(current, target));
           current = fs.statSync(resolved).isDirectory() ? resolved : null;
         } catch { current = null; }
       } else current = null;
       changed = true;
-    } else if (!CWD_STABLE.has(word)) {
-      // source, eval, functions, directory-stack builtins, and derived commands
-      // can change cwd or run in a different directory.
+    } else if (wrapped || CWD_CHANGERS.has(word)) {
       current = null;
     }
     return result;
   });
 }
-
-const CWD_STABLE = new Set(['cat', 'tac', 'head', 'tail', 'less', 'more', 'nl',
-  'bat', 'batcat', 'sed', 'gsed', 'awk', 'gawk', 'mawk', 'grep', 'egrep',
-  'fgrep', 'rg', 'ag', 'ack', 'echo', 'printf', 'tee', 'true', 'false', ':']);
 
 function expand(seg, depth) {
   const out = [seg];
@@ -357,74 +364,4 @@ function inputFiles(seg) {
   return realFiles(seg.inputTargets.filter((_, k) => seg.inputRedirects[k] === '<'));
 }
 
-// Exemptions shared by the reroute modules (the registry deploys this file):
-//   isScratchPath  a path inside Claude's per-session scratch root
-//                  <root>/claude-<uid>/, where root is /tmp, /private/tmp, or
-//                  $TMPDIR. The harness owns that directory.
-//   allSmallFiles  every target is a literal path to an existing regular file
-//                  of at most SMALL_FILE_BYTES.
-// Both fail closed (false) on any doubt. A stat error never throws.
-const SMALL_FILE_BYTES = 16 * 1024;
-
-// A shell expansion has no literal value; a `..` segment can climb out of the root.
-function isLiteralPath(p) {
-  return typeof p === 'string' && p !== '' && !/[$`*?\[\]{}~]/.test(p) && !p.split('/').includes('..');
-}
-
-function scratchRoots() {
-  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
-  if (uid === null) return [];
-  const roots = ['/tmp', '/private/tmp'];
-  const tmpdir = (process.env.TMPDIR || '').replace(/\/+$/, '');
-  if (tmpdir && path.isAbsolute(tmpdir)) roots.push(tmpdir);
-  return roots.map((r) => `${r}/claude-${uid}/`);
-}
-
-// Keep unresolved components out of realpath: only a new final filename is safe.
-function canonicalDestination(p) {
-  try { return fs.realpathSync(p); } catch (err) {
-    if (err.code !== 'ENOENT') return null;
-    try {
-      fs.lstatSync(p); // A dangling symlink is not a new file.
-      return null;
-    } catch (missing) {
-      if (missing.code !== 'ENOENT') return null;
-    }
-    try { return path.join(fs.realpathSync(path.dirname(p)), path.basename(p)); }
-    catch { return null; }
-  }
-}
-
-function isScratchPath(p, cwd) {
-  if (cwd === null || !isLiteralPath(p)) return false;
-  const resolved = canonicalDestination(path.resolve(cwd || process.cwd(), p));
-  if (!resolved) return false;
-  return scratchRoots().some((root) => {
-    try {
-      const canonicalRoot = fs.realpathSync(root) + path.sep;
-      return resolved.startsWith(canonicalRoot) && resolved.length > canonicalRoot.length;
-    } catch { return false; }
-  });
-}
-
-function isSmallFile(p, cwd) {
-  if (cwd === null || typeof p !== 'string' || p === '' || /[$`*?\[\]{}~]/.test(p)) return false;
-  try {
-    // Preserve symlink/.. traversal as the filesystem sees it.
-    const target = path.isAbsolute(p) ? p : `${cwd || process.cwd()}/${p}`;
-    const st = fs.statSync(target);
-    return st.isFile() && st.size <= SMALL_FILE_BYTES;
-  } catch {
-    return false;
-  }
-}
-
-function allScratch(files, cwd) {
-  return files.length > 0 && files.every((f) => isScratchPath(f, cwd));
-}
-
-function allSmallFiles(files, cwd) {
-  return files.length > 0 && files.every((f) => isSmallFile(f, cwd));
-}
-
-module.exports = { parse, commands, commandsWithCwd, commandWord, shQuote, splitArgs, realFiles, pipedIn, inputFiles, SMALL_FILE_BYTES, isScratchPath, allScratch, allSmallFiles };
+module.exports = { parse, commands, commandsWithCwd, commandWord, shQuote, splitArgs, realFiles, pipedIn, inputFiles };

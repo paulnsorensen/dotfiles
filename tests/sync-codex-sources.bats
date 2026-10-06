@@ -98,7 +98,7 @@ EOF
     [ "$(yq -p=toml -oy -r '.sandbox_workspace_write.writable_roots[0]' "$out")" = "$HOME/.cache/codex-tmp" ]
     [ "$(yq -p=toml -oy -r '.shell_environment_policy.set.TMPDIR' "$out")" = "$HOME/.cache/codex-tmp" ]
     # TOML cannot expand `~`; no tilde may reach the live file.
-    ! grep -q '"~' "$out"
+    run ! grep -q '"~' "$out"
     # network_access and unrelated runtime state survive.
     [ "$(yq -p=toml -oy -r '.sandbox_workspace_write.network_access' "$out")" = "true" ]
     [ "$(yq -p=toml -oy -r '.projects."/home/u/Dev/thing".trust_level' "$out")" = "trusted" ]
