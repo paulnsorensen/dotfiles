@@ -21,6 +21,21 @@ test('validate rejects fixture drift at the schema path', async () => {
   )
 })
 
+test('a null response still rejects an unsupported schema keyword', async () => {
+  const runtime = createRuntime({ respond: () => null })
+
+  await assert.rejects(
+    runtime.globals.agent('prompt', { schema: { type: 'string', minLength: 1 } }),
+    /unsupported schema keyword "minLength"/,
+  )
+})
+
+test('a null response passes a supported schema', async () => {
+  const runtime = createRuntime({ respond: () => null })
+
+  assert.equal(await runtime.globals.agent('prompt', { schema: { type: 'object', required: ['a'] } }), null)
+})
+
 test('validate rejects unsupported schema keywords', () => {
   assert.throws(
     () => validate('x', { type: 'string', minLength: 1 }),

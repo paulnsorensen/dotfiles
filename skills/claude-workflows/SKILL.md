@@ -3,10 +3,10 @@ name: claude-workflows
 model: opus
 effort: high
 description: >
-  Designs or reviews a Claude Workflow script (a Workflow tool script, an Agent SDK orchestrator,
-  or a sub-agent pipeline) against cited best practices. Use when the user says "write a Claude Workflow
-  script", "design an orchestration", "fan out agents", "review this workflow script", "agents keep running
-  out of context", "make this Claude Workflow script cheaper", or invokes /claude-workflows. Do NOT use for one
+  Designs or reviews a multi-agent workflow (a Workflow tool script, an Agent SDK orchestrator,
+  or a sub-agent pipeline) against cited best practices. Use when the user says "write a multi-agent
+  workflow", "design an orchestration", "fan out agents", "review this workflow", "agents keep running
+  out of context", "make this multi-agent workflow cheaper", or invokes /claude-workflows. Do NOT use for one
   sub-agent call (/cook), a review of ordinary code (/age), the Workflow script API reference
   alone (workflow-authoring), or GitHub Actions (/ci-optimize).
 ---

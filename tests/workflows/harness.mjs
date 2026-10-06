@@ -112,7 +112,10 @@ export function createRuntime({ respond = () => { throw new Error('agent fixture
       const call = { prompt, opts, index: trace.agents.length }
       trace.agents.push(call)
       const response = await respond(call)
-      if (opts.schema && response !== null) validate(response, opts.schema)
+      if (opts.schema) {
+        validateSchema(opts.schema, '$')
+        if (response !== null) validateValue(response, opts.schema, '$')
+      }
       return response
     },
     parallel: (thunks) => Promise.all(thunks.map(async (thunk) => {

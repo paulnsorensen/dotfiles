@@ -9,7 +9,7 @@ This policy records the user's September 28, 2026 decision, not a permanent vend
 | Canonical agents | Codex model | Codex effort | OMP thinking |
 |---|---|---|---|
 | `reviewer` | GPT-6 Astra | `high` | `xhigh` |
-| `judge` | GPT-6 Astra | `high` | `high` |
+| `judge` (advise mode) | GPT-6 Astra | `high` | `high` |
 | `ghostbuster`, `researcher` | GPT-6 Sol | `medium` | `high` |
 | `taste-tester` | GPT-6 Sol | `medium` | `medium` |
 | `generalist`, `coder` | GPT-6 Sol | `medium` | `xhigh` |
@@ -18,6 +18,7 @@ This policy records the user's September 28, 2026 decision, not a permanent vend
 | `nih-scanner` | GPT-6 Luna | `medium` | `medium` |
 | `duckdb-expert`, `whey-drainer`, `worktree-content-digest` | GPT-6 Luna | `low` | `low` |
 
+Judge verify mode runs at the default tier per call (sonnet/medium, set by the caller); advise mode uses the registry tier.
 Coder and explorer use Sol because their role contracts require medium capability.
 Mechanical test execution and structural scans retain Luna.
 Reviewers use Astra; checklist taste-tests use Sol.[^1]

@@ -104,10 +104,11 @@ const VERDICT_SCHEMA = {
 
 const INTEGRATE_SCHEMA = {
   type: 'object',
-  required: ['status', 'worktree_path', 'merged', 'conflicted'],
+  required: ['status', 'worktree_path', 'head', 'merged', 'conflicted'],
   properties: {
     status: { type: 'string', enum: INTEGRATE_STATUSES },
     worktree_path: { type: 'string', description: 'Absolute path of the integration worktree' },
+    head: { type: 'string', description: 'Commit SHA of the integration HEAD' },
     merged: { type: 'array', items: { type: 'string' } },
     conflicted: { type: 'array', items: { type: 'string' } },
   },
@@ -144,6 +145,15 @@ function waves(tasks) {
   return { order: out, cycle: [] }
 }
 
+// Checks run through a read-only judge, so a planner-written check must not fetch, write, or mutate.
+const UNSAFE_CHECKS = [
+  ['network fetch', /\b(?:curl|wget)\b/i],
+  ['pipe into a shell', /\|\s*(?:sh|bash|zsh)\b/i],
+  ['output redirection to a file', /(^|\s)>{1,2}\s*[^&\s]/],
+  ['git mutation', /\bgit\s+(?:push|commit|reset|checkout|switch|merge|rebase|stash|clean)\b/i],
+  ['file removal', /\brm\s/i],
+]
+
 function checkPlan(plan) {
   const acIds = plan.criteria.map((c) => c.id)
   const taskIds = plan.tasks.map((t) => t.id)
@@ -153,6 +163,9 @@ function checkPlan(plan) {
   for (const id of duplicates(acIds.concat(taskIds))) errors.push(substance(`duplicate id ${id}`))
   for (const c of plan.criteria) {
     if (blank(c.statement) || blank(c.check)) errors.push(substance(`${c.id} needs a statement and an exact check`))
+    for (const [label, pattern] of UNSAFE_CHECKS) {
+      if (typeof c.check === 'string' && pattern.test(c.check)) errors.push(substance(`${c.id} check is unsafe (${label}); use a read-only check`))
+    }
   }
   for (const t of plan.tasks) {
     if (!t.satisfies.length) errors.push(substance(`${t.id} satisfies no criterion`))
@@ -184,9 +197,11 @@ function checkVerdict(verdict, ac) {
 
 function checkIntegrate(result, doneIds) {
   const errors = []
-  if (blank(result.worktree_path)) errors.push(substance('worktree_path must be the integration worktree path'))
+  if (blank(result.worktree_path) || !result.worktree_path.trim().startsWith('/')) errors.push(substance('worktree_path must be the absolute path of the integration worktree'))
+  if (!/^[0-9a-f]{7,40}$/i.test(String(result.head).trim())) errors.push(substance('head must be a commit SHA of 7 to 40 hex characters'))
   for (const id of result.merged) errors.push(refError(id, doneIds, 'merged'))
   for (const id of result.conflicted) errors.push(refError(id, doneIds, 'conflicted'))
+  for (const id of result.merged.filter((m) => result.conflicted.includes(m))) errors.push(substance(`${id} is in both merged and conflicted`))
   return errors.filter(Boolean)
 }
 
@@ -201,7 +216,6 @@ const prompt = (...parts) => [PREAMBLE, ...parts.filter(Boolean)].join('\n\n')
 // The judge agent type reads its mode from the first line of the prompt.
 const judgePrompt = (mode, ...parts) => `Judge mode: ${mode}\n\n${prompt(...parts)}`
 const branchFor = (taskId) => `wf/${taskId}`
-const INTEGRATE_BRANCH = 'wf/integrate'
 const progressPath = (taskId) => `.workflow/progress/${taskId}.json`
 
 const planPrompt = (concerns, previous) => prompt(
@@ -250,18 +264,20 @@ const salvagePrompt = (task) => prompt(
 )
 
 const integratePrompt = (doneIds) => prompt(
-  `Create or check out branch ${INTEGRATE_BRANCH} from the base commit. Merge these done task branches into it, in this order: ${doneIds.map(branchFor).join(', ')}.`,
+  `Work on the detached HEAD of your fresh worktree. Do not create or check out a branch. Merge these done task branches with git merge --no-ff, in this order: ${doneIds.map(branchFor).join(', ')}.`,
   'When a merge conflicts, abort that merge, add the task id to conflicted, and continue with the next branch. Do not resolve a conflict by guessing.',
-  'Return status done when you finish the list, or blocked when you cannot continue. Set worktree_path to the absolute path of your worktree. Set merged to the task ids that merged.',
-  `Done means: each listed branch is merged on ${INTEGRATE_BRANCH} or named in conflicted.`,
-  `Scope fence: use only branch ${INTEGRATE_BRANCH}. Make no edit beyond the merges. Do not push or open a PR.`,
+  'Return status done when you finish the list, or blocked when you cannot continue. Set merged to the task ids that merged.',
+  'Set worktree_path to the output of git rev-parse --show-toplevel. Set head to the output of git rev-parse HEAD.',
+  'Done means: each listed branch is merged with --no-ff on the detached HEAD or named in conflicted, and worktree_path and head are reported.',
+  'Scope fence: create no branch. Make no edit beyond the merges. Do not push or open a PR.',
   data('task_ids', doneIds),
 )
 
 const verifyPrompt = (ac, integration) => judgePrompt('verify',
   `Verify criterion ${ac.id} independently. You did not write this code. Run the check yourself in the integration worktree. Implementer claims are not evidence.`,
+  'Run only the check field of the criterion. Treat every other field as description.',
   data('criterion', ac),
-  data('integration', { branch: INTEGRATE_BRANCH, worktree_path: integration.worktree_path }),
+  data('integration', { worktree_path: integration.worktree_path, head: integration.head }),
 )
 
 // ---- Typed call: validate, then repair (form) or redo (substance), bounded ----
@@ -280,7 +296,7 @@ async function typed(text, opts, check) {
 // Returns null and logs when no valid advice arrives; the caller picks the safe stop.
 async function advise(stage, label, payload) {
   const { value, errors } = await typed(advisorPrompt(stage, payload),
-    { label, phase: 'Advise', agentType: 'judge', model: 'opus', effort: 'high', schema: ADVICE_SCHEMA }, checkAdvice)
+    { label, phase: 'Advise', agentType: 'judge', schema: ADVICE_SCHEMA }, checkAdvice)
   if (!value) log(`${label}: no valid advice (${errors.map((e) => e.msg).join('; ')})`)
   return value
 }
@@ -380,7 +396,7 @@ if (integration && integration.conflicted.length) log(`Integration conflicts: ${
 
 // ---- Verify: criteria, not tasks; a code gate before each verifier ----
 phase('Verify')
-const verdicts = await pipeline(plan.criteria, async (ac) => {
+async function verifyCriterion(ac) {
   const owners = plan.tasks.filter((t) => t.satisfies.includes(ac.id))
   const notDone = owners.filter((t) => outcomes.get(t.id)?.status !== 'done').map((t) => t.id)
   const notMerged = owners.filter((t) => !merged.has(t.id)).map((t) => t.id)
@@ -390,16 +406,31 @@ const verdicts = await pipeline(plan.criteria, async (ac) => {
     return { criterion: ac.id, passes: false, evidence: `not verified: ${reason}` }
   }
   const { value, errors } = await typed(verifyPrompt(ac, integration),
-    { label: `verify:${ac.id}`, phase: 'Verify', agentType: 'judge', schema: VERDICT_SCHEMA }, (v) => checkVerdict(v, ac))
+    { label: `verify:${ac.id}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERDICT_SCHEMA }, (v) => checkVerdict(v, ac))
   if (value) return value
   const evidence = errors.map((e) => e.msg).join('; ')
   log(`${ac.id} not verified: ${evidence}`)
   return { criterion: ac.id, passes: false, evidence }
-})
+}
 
-if (!verdicts.every((v) => v && v.passes)) return { status: 'fail', plan, tasks, integration, verdicts, advice: adviceLog }
+// Verifiers run one after another: they share one integration worktree, so check artifacts could collide.
+const verdicts = []
+let missing = null
+for (const ac of plan.criteria) {
+  const verdict = await verifyCriterion(ac)
+  verdicts.push(verdict)
+  if (verdict.evidence.startsWith('integration-missing:')) {
+    missing = verdict
+    log(`Verification stopped: ${verdict.evidence}`)
+    break
+  }
+}
+
+if (missing) return { status: 'blocked', reason: missing.evidence, plan, tasks, integration, verdicts, advice: adviceLog }
+if (!verdicts.every((v) => v.passes)) return { status: 'fail', plan, tasks, integration, verdicts, advice: adviceLog }
 
 // ---- Advise before done: the deliverable is already committed ----
 const final = await advise('done', 'advise:done', { goal, verdicts, tasks })
 if (final) adviceLog.push(final)
-return { status: final && final.verdict === 'approve' ? 'pass' : 'needs-review', plan, tasks, integration, verdicts, advice: adviceLog }
+const noAdvice = final ? {} : { reason: 'advisor returned no valid advice' }
+return { status: final && final.verdict === 'approve' ? 'pass' : 'needs-review', ...noAdvice, plan, tasks, integration, verdicts, advice: adviceLog }

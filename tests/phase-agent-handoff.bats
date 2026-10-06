@@ -197,6 +197,7 @@ block_sha() {
     # Allowlist with no edit or write tool.
     [[ "$(yq -r '.agents.judge.tools | join(",")' "$registry")" == 'Bash,ToolSearch,mcp__tilth__tilth_read,mcp__tilth__tilth_search' ]]
     [[ "$(yq -r '.agents.judge.disallowedTools // "" | length' "$registry")" == 0 ]]
+    [[ "$(yq --front-matter=extract -r '.tools' "$omp")" == 'read,grep,glob,bash' ]]
     for file in "$body" "$omp"; do
         run grep -Fq -- "$gate" "$file"
         assert_success

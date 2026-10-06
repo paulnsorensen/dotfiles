@@ -235,7 +235,8 @@ agents:
   judge:
     # Read-only judge for Workflow scripts. `powerful` tier on every harness:
     # Claude opus/high, Codex Astra, OMP `@strong`. Allowlist, not a denylist,
-    # so no edit or write tool reaches the spawn.
+    # so no edit or write tool is granted. Bash remains a write path that the
+    # prompt guards.
     description: >-
       Read-only judge for Workflow scripts. `Judge mode: advise` approves, revises, or stops an approach before implementation and before done. `Judge mode: verify` independently runs one acceptance criterion's check against a named worktree. Never edits. Do NOT use for code review (use `reviewer`) or taste-tests (use `taste-tester`).
     models:
