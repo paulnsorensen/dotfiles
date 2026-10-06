@@ -40,15 +40,15 @@ defaults write com.cmuxterm.app browserOpenTerminalLinksInCmuxBrowser -bool fals
 # plist booleans/integers. An ASCII dictionary passed to defaults serializes
 # these leaves as strings, which Tahoe treats as enabled.
 #
+# ID 64 shows Spotlight. It uses ⌘Space when Alfred is absent, else ⌃⌘Space
+# so Alfred keeps ⌘Space (see macos_spotlight_modifiers).
+#
 # ID 160 shows Launchpad on ⌘⇧Space: parameters = (32 = space char,
 # 49 = space keycode, 1179648 = ⌘+⇧).
 # shellcheck disable=SC2119 # The helper's default domain is intentional.
 macos_write_symbolic_hotkeys
 
 # NOT scriptable here (managed elsewhere, left untouched by this script):
-#   - Spotlight's ⌘Space (Tahoe "Super Spotlight") lives in an opaque
-#     SSActionKeyboardAliasStore — change it in System Settings > Keyboard >
-#     Keyboard Shortcuts… > Spotlight. (We moved Spotlight to ⌃⌘Space there.)
 #   - Alfred's launcher hotkey (⌘Space) is set in the Alfred app; to version it,
 #     point Alfred's sync folder at $DOTFILES/alfred/ (see alfred/.sync).
 
