@@ -313,6 +313,7 @@ claude:
     - explorer
     - generalist
     - ghostbuster
+    - judge
     - nih-scanner
     - researcher
     - reviewer

@@ -71,8 +71,8 @@ codex:
   # the assembler fails loud otherwise.
   # Model per agent comes from registry `models.codex`. Tier ladder: Astra =
   # `powerful`, Sol = `default`, Luna = `cheap`. Agent definitions own these
-  # bindings. reviewer Astra; taste-tester, researcher, generalist, ghostbuster,
-  # coder, explorer Sol; nih-scanner, duckdb-expert, whey-drainer,
+  # bindings. reviewer, judge Astra; taste-tester, researcher, generalist,
+  # ghostbuster, coder, explorer Sol; nih-scanner, duckdb-expert, whey-drainer,
   # roquefort-wrecker, worktree-content-digest Luna. This config has no
   # per-spawn model override, so a taste-test dispatches `taste-tester`.
   agents:
@@ -81,6 +81,7 @@ codex:
     - explorer
     - generalist
     - ghostbuster
+    - judge
     - nih-scanner
     - researcher
     - reviewer

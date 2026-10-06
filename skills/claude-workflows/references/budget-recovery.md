@@ -33,7 +33,9 @@ Normalize contradictions in code. A `done` result with items in `remaining` beco
 4. Stop with `exhausted` after `LIMITS.continuations` rounds.
 5. Mark each dependent task `skipped` with the reason. Log it and return it.
 
-The local exemplar is `claude/workflows/cheese-factory.js` (checkpoint coordinator, fingerprint guard, continuation limit).
+The template guard compares implementer-reported SHAs. This is the minimal form. Uncommitted progress reads as `stalled`, and code does not check that the SHA exists.
+Use a fingerprint guard when work can progress without a commit, or when you cannot trust the reported SHA. Hash the worktree state in code and compare it between rounds.
+The local exemplar is `claude/workflows/cheese-factory.js` in the dotfiles repository (checkpoint coordinator, fingerprint guard, continuation limit).
 
 ## Workflow runtime facts
 

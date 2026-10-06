@@ -9,6 +9,7 @@ This policy records the user's September 28, 2026 decision, not a permanent vend
 | Canonical agents | Codex model | Codex effort | OMP thinking |
 |---|---|---|---|
 | `reviewer` | GPT-6 Astra | `high` | `xhigh` |
+| `judge` | GPT-6 Astra | `high` | `high` |
 | `ghostbuster`, `researcher` | GPT-6 Sol | `medium` | `high` |
 | `taste-tester` | GPT-6 Sol | `medium` | `medium` |
 | `generalist`, `coder` | GPT-6 Sol | `medium` | `xhigh` |

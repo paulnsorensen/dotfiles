@@ -80,6 +80,7 @@ repo-root `agents/registry.yaml` (metadata) with bodies under
 | `roquefort-wrecker` | Adversarial test writer |
 | `whey-drainer` | Runs existing tests, returns concise summary |
 | `taste-tester` | Seven-lens handoff check over one artifact (`default` tier on every harness) |
+| `judge` | Read-only Workflow judge: `Judge mode: advise` vets an approach, `Judge mode: verify` re-runs one acceptance check (`powerful` tier) |
 | `nih-scanner` | Structural NIH pattern scanner |
 | `worktree-content-digest` | Read-only per-worktree content digest (fanned out by the worktree-triage skill) |
 | `duckdb-expert` | Read-only DuckDB analyst (session-analytics query packs; used by tool-efficiency, prompt-analytics, and work-recovery) |

@@ -3,12 +3,12 @@ name: claude-workflows
 model: opus
 effort: high
 description: >
-  Designs or reviews a Claude multi-agent workflow (a Workflow tool script, an Agent SDK orchestrator,
-  or a sub-agent pipeline) against cited best practices. Use when the user says "write a workflow",
-  "design an orchestration", "fan out agents", "review this workflow script", "agents keep running
-  out of context", "make this workflow cheaper", or invokes /claude-workflows. Do NOT use for one
-  sub-agent call (/cook), a review of ordinary code (/age), or the Workflow script API reference
-  alone (workflow-authoring).
+  Designs or reviews a Claude Workflow script (a Workflow tool script, an Agent SDK orchestrator,
+  or a sub-agent pipeline) against cited best practices. Use when the user says "write a Claude Workflow
+  script", "design an orchestration", "fan out agents", "review this workflow script", "agents keep running
+  out of context", "make this Claude Workflow script cheaper", or invokes /claude-workflows. Do NOT use for one
+  sub-agent call (/cook), a review of ordinary code (/age), the Workflow script API reference
+  alone (workflow-authoring), or GitHub Actions (/ci-optimize).
 ---
 
 # claude-workflows
@@ -38,9 +38,10 @@ Parse the text after the skill name.
 5. **Add repair.** Route validator errors through `references/repair.md`. Done when each invalid output takes a bounded repair or redo path.
 6. **Plan for exhaustion.** Size tasks and add checkpoints from `references/budget-recovery.md`. Done when a null or partial result resumes from durable state. A no-progress guard stops the loop.
 7. **Move work into code.** Apply `references/determinism.md`. Done when no prompt asks a model to count, sort, deduplicate, or cross-check a list.
-8. **Verify independently.** Give each criterion its own verifier that did not write the code. Call the advisor before done. Done when each criterion has a pass or fail verdict with evidence.
+8. **Verify independently.** Merge the done task branches in a code-gated integrate step. Give each criterion its own verifier that did not write the code. Call the advisor before done. Done when each criterion has a pass or fail verdict with evidence.
 
-In `design` mode, start from `assets/workflow-template.js`. It implements steps 2 to 8. The test `tests/workflows/claude-workflows-template.test.mjs` proves its control flow.
+In `design` mode, start from `assets/workflow-template.js`. It implements steps 2 to 8.
+In the dotfiles repository, `tests/workflows/claude-workflows-template.test.mjs` proves its control flow. That path does not exist in other repositories.
 In `review` mode, run steps 2 to 8 as checks against the target.
 
 ## Output

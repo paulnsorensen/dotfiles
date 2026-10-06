@@ -31,19 +31,9 @@ Give the formatter the same schema as the producer.
 
 ## The typed call
 
-```js
-async function typed(text, opts, check) {
-  let value = await agent(text, opts)
-  for (let round = 1; ; round++) {
-    const errors = value == null ? [substance('agent returned no output')] : check(value)
-    if (!errors.length) return { value, errors }
-    if (round > LIMITS.fixRounds) return { value: null, errors }
-    value = errors.every((e) => e.kind === 'form')
-      ? await agent(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' })
-      : await agent(redoPrompt(text, errors), { ...opts, label: `${opts.label}:redo${round}` })
-  }
-}
-```
+The template function `typed()` in `assets/workflow-template.js` implements this loop. Copy that function; do not retype it.
+It validates each value, then repairs `form` errors with a `haiku` formatter or redoes `substance` errors with the producer. It stops after `LIMITS.fixRounds`.
+The repair labels are `<label>:repair<round>`. The redo labels are `<label>:redo<round>`.
 
 ## Format split
 

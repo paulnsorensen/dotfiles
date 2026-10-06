@@ -25,18 +25,7 @@ A validator takes the parsed object and returns a list of errors. Each error is 
 
 The message names the exact fix. `repair.md` routes each error on `kind`.
 
-```js
-function checkVerdict(verdict, ac) {
-  const errors = []
-  if (verdict.criterion !== ac.id) {
-    errors.push(norm(verdict.criterion) === ac.id
-      ? form(`criterion '${verdict.criterion}' should be '${ac.id}'`)
-      : substance(`verdict is for '${verdict.criterion}', not '${ac.id}'`))
-  }
-  if (blank(verdict.evidence)) errors.push(substance('evidence must name the check run and its result'))
-  return errors
-}
-```
+See `checkVerdict()` and `refError()` in `assets/workflow-template.js`. `checkVerdict()` reuses `refError()` for the criterion ID, so one rule covers case drift and unknown IDs.
 
 ## Outside the Workflow tool
 

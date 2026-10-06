@@ -232,6 +232,25 @@ agents:
     skills: []
     maxTurns: 30
     body_path: agents/agent_definitions/taste-tester.md
+  judge:
+    # Read-only judge for Workflow scripts. `powerful` tier on every harness:
+    # Claude opus/high, Codex Astra, OMP `@strong`. Allowlist, not a denylist,
+    # so no edit or write tool reaches the spawn.
+    description: >-
+      Read-only judge for Workflow scripts. `Judge mode: advise` approves, revises, or stops an approach before implementation and before done. `Judge mode: verify` independently runs one acceptance criterion's check against a named worktree. Never edits. Do NOT use for code review (use `reviewer`) or taste-tests (use `taste-tester`).
+    models:
+      claude: opus
+      codex: gpt-6-astra
+    tools:
+    - Bash
+    - ToolSearch
+    - mcp__tilth__tilth_read
+    - mcp__tilth__tilth_search
+    color: purple
+    effort: high
+    skills: []
+    maxTurns: 40
+    body_path: agents/agent_definitions/judge.md
   coder:
     # Codex uses Sol for medium-capability work. OMP's native coder pairs the
     # same family with xhigh thinking; registry effort selects Codex effort too.
