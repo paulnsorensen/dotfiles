@@ -1,4 +1,6 @@
 'use strict';
+const fs = require('fs');
+const path = require('path');
 // shell.js — a minimal shell-ish lexer shared by the tool-reroute modules.
 //
 // `parse(command)` splits a Bash command line into pipeline/command segments on
@@ -315,4 +317,51 @@ function inputFiles(seg) {
   return realFiles(seg.inputTargets.filter((_, k) => seg.inputRedirects[k] === '<'));
 }
 
-module.exports = { parse, commands, commandWord, shQuote, splitArgs, realFiles, pipedIn, inputFiles };
+// Exemptions shared by the reroute modules (the registry deploys this file):
+//   isScratchPath  a path inside Claude's per-session scratch root
+//                  <root>/claude-<uid>/, where root is /tmp, /private/tmp, or
+//                  $TMPDIR. The harness owns that directory.
+//   allSmallFiles  every target is a literal path to an existing regular file
+//                  of at most SMALL_FILE_BYTES.
+// Both fail closed (false) on any doubt. A stat error never throws.
+const SMALL_FILE_BYTES = 16 * 1024;
+
+// A shell expansion has no literal value; a `..` segment can climb out of the root.
+function isLiteralPath(p) {
+  return typeof p === 'string' && p !== '' && !/[$`]/.test(p) && !p.split('/').includes('..');
+}
+
+function scratchRoots() {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (uid === null) return [];
+  const roots = ['/tmp', '/private/tmp'];
+  const tmpdir = (process.env.TMPDIR || '').replace(/\/+$/, '');
+  if (tmpdir && path.isAbsolute(tmpdir)) roots.push(tmpdir);
+  return roots.map((r) => `${r}/claude-${uid}/`);
+}
+
+function isScratchPath(p, cwd) {
+  if (!isLiteralPath(p)) return false;
+  const resolved = path.resolve(cwd || process.cwd(), p);
+  return scratchRoots().some((root) => resolved.startsWith(root) && resolved.length > root.length);
+}
+
+function isSmallFile(p, cwd) {
+  if (typeof p !== 'string' || p === '' || /[$`]/.test(p)) return false;
+  try {
+    const st = fs.statSync(path.resolve(cwd || process.cwd(), p));
+    return st.isFile() && st.size <= SMALL_FILE_BYTES;
+  } catch {
+    return false;
+  }
+}
+
+function allScratch(files, cwd) {
+  return files.length > 0 && files.every((f) => isScratchPath(f, cwd));
+}
+
+function allSmallFiles(files, cwd) {
+  return files.length > 0 && files.every((f) => isSmallFile(f, cwd));
+}
+
+module.exports = { parse, commands, commandWord, shQuote, splitArgs, realFiles, pipedIn, inputFiles, SMALL_FILE_BYTES, isScratchPath, allScratch, allSmallFiles };

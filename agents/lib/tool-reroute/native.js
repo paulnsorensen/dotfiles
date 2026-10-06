@@ -11,6 +11,9 @@
 // Claude plan mode and auto-memory can only write through the built-in Write
 // and Edit tools. Read, Write, Edit, and MultiEdit therefore pass when every
 // target sits under ~/.claude/plans/ or ~/.claude/projects/*/memory/.
+// Claude's session scratch directory (<tmp>/claude-<uid>/, see shell.js) is
+// harness-owned too, so the same four tools pass there. A `..` segment or a
+// shell expansion in the path never qualifies.
 // Claude removes Grep/Glob through permissions.deny; this deny is the second
 // layer. MultiEdit stays in the set for older Claude builds.
 // Codex approves tilth_write without a prompt and tilth_write accepts absolute
@@ -22,6 +25,7 @@
 const path = require('path');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
+const { isScratchPath } = require('./shell');
 
 const MEDIA_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.pdf', '.ipynb']);
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'apply_patch']);
@@ -173,13 +177,13 @@ function detect(toolName, input, cwd, harness) {
   if (toolName === 'Read') {
     const file = input && typeof input.file_path === 'string' ? input.file_path : '';
     if (MEDIA_EXT.has(path.extname(file).toLowerCase())) return null;
-    if (file && isHarnessOwnedPath(toolFilePath(input, eventCwd))) return null;
+    if (file && (isHarnessOwnedPath(toolFilePath(input, eventCwd)) || isScratchPath(file, eventCwd))) return null;
     return { reason: readReason(file), module: 'native' };
   }
   if (WRITE_TOOLS.has(toolName)) {
     if (toolName !== 'apply_patch') {
       const target = toolFilePath(input, eventCwd);
-      if (target && isHarnessOwnedPath(target)) return null;
+      if (target && (isHarnessOwnedPath(target) || isScratchPath(input.file_path, eventCwd))) return null;
     }
     return { reason: writeReason(toolName), module: 'native' };
   }

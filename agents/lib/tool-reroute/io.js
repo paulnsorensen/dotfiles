@@ -15,10 +15,18 @@
 // device (/dev/null, /dev/stderr, /dev/fd/N) or to /proc or /sys runs. A `>`
 // inside a quoted string is not a redirect (the lexer resolves quotes).
 // `cmd | tee log` captures command output, like `cmd > log`, and runs.
+//
+// Two exemptions let a command run unchanged. First, Claude's session scratch
+// directory (<tmp>/claude-<uid>/, see shell.js): every write, tee, read, and
+// in-place edit there runs, because the harness owns it and it is not part of
+// the tree. A `..` segment or a shell expansion never counts as scratch.
+// Second, a plain read (not an in-place edit) runs when every target is an
+// existing regular file of at most 16 KiB. A directory, a missing file, an
+// xargs feed, or a shell expansion keeps the deny.
 
 const os = require('os');
 const path = require('path');
-const { commands, commandWord, splitArgs, realFiles, pipedIn, inputFiles } = require('./shell');
+const { commands, commandWord, splitArgs, realFiles, pipedIn, inputFiles, isScratchPath, allScratch, allSmallFiles } = require('./shell');
 
 const WRITE_BINS = new Set(['echo', 'printf', 'cat']);
 
@@ -93,8 +101,9 @@ tilth_read the file first to get the [path#TAG], then:
 // segment denies, so `/dev/../tmp/x` and `/proc/../tmp/x` cannot escape.
 // An fd duplication such as `>&2` has no target and never reaches this check.
 const STREAM_DEVICES = new Set(['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty']);
-function isFileWrite(target) {
+function isFileWrite(target, cwd) {
   if (!target) return false;
+  if (isScratchPath(target, cwd)) return false;
   if (STREAM_DEVICES.has(target) || /^\/dev\/fd\/\d+$/.test(target)) return false;
   return !(/^\/(proc|sys)\//.test(target) && !target.split('/').includes('..'));
 }
@@ -102,14 +111,14 @@ function isFileWrite(target) {
 // The first file a `tee` segment writes when it copies authored content: a
 // pipe from echo/printf/cat, or a here-doc/here-string on its stdin. `tee`
 // takes no valued short flags; `--output-error=MODE` is fused.
-function teeTarget(segs, k) {
+function teeTarget(segs, k, cwd) {
   const seg = segs[k];
   const { word, args } = commandWord(seg.argv);
   if (word !== 'tee') return null;
   const fromHeredoc = seg.inputRedirects.some((r) => r !== '<');
   const fromWriter = pipedIn(seg) && k > 0 && WRITE_BINS.has(commandWord(segs[k - 1].argv).word);
   if (!fromHeredoc && !fromWriter) return null;
-  return splitArgs(args).operands.find((f) => f !== '-' && isFileWrite(f)) || null;
+  return splitArgs(args).operands.find((f) => f !== '-' && isFileWrite(f, cwd)) || null;
 }
 
 // `awk -i inplace` loads gawk's in-place library; `-i` takes the library name.
@@ -150,14 +159,14 @@ function detect(toolName, input, cwd, harness) {
     if (!word || !WRITE_BINS.has(word)) continue;
     for (let j = 0; j < seg.redirectFds.length; j++) {
       const fd = seg.redirectFds[j];
-      if ((fd === null || fd === '1') && isFileWrite(seg.redirectTargets[j])) {
+      if ((fd === null || fd === '1') && isFileWrite(seg.redirectTargets[j], cwd)) {
         return { reason: writeReason(seg.redirectTargets[j], cwd, harness), module: 'io' };
       }
     }
   }
 
   for (let k = 0; k < segs.length; k++) {
-    const target = teeTarget(segs, k);
+    const target = teeTarget(segs, k, cwd);
     if (target) return { reason: writeReason(target, cwd, harness, 'tee write'), module: 'io' };
   }
 
@@ -167,6 +176,8 @@ function detect(toolName, input, cwd, harness) {
     if (!spec) continue;
     const hit = readTargets(seg, spec, args, xargs);
     if (!hit) continue;
+    if (allScratch(hit.files, cwd)) continue;
+    if (!hit.inPlace && allSmallFiles(hit.files, cwd)) continue;
     const reason = hit.inPlace ? editReason(word, hit.files, cwd) : readReason(word, hit.files, cwd);
     return { reason, module: 'io' };
   }

@@ -51,7 +51,14 @@ setup() {
     # + <root>/lib/tool-reroute/<modules>. The bridge defaults to Claude.
     DEPLOY="$TEST_HOME/.claude"
     deploy_reroute "$DEPLOY"
-    W="$REAL_DOTFILES_DIR"   # a real dir to stand in as the event cwd
+    # A real dir stands in as the event cwd. README.md is over the 16 KiB
+    # small-file limit, so shell reads of it still deny; small.txt is under it.
+    W="$BATS_TEST_TMPDIR/cwd"
+    mkdir -p "$W/dir"
+    head -c 20480 /dev/zero | tr '\0' 'x' > "$W/README.md"
+    printf 'tiny\n' > "$W/small.txt"
+    printf 'tiny\n' > "$W/dir/inner.txt"
+    SCRATCH="/tmp/claude-$(id -u)/session"
     export CLAUDE_TOOL_REROUTE_LOG_DIR="$BATS_TEST_TMPDIR/reroute-log"
 }
 
@@ -1192,4 +1199,49 @@ NODE
     ' "$REAL_DOTFILES_DIR/agents/lib/jsonl-log.js" "$path"
     [ "$status" -eq 0 ]
     [[ "$output" == "ok" ]]
+}
+
+# ── scratch exemption and small-file read loosening ───────────────────────
+
+@test "tool-reroute/io: Claude scratch writes, tees, reads, and in-place edits pass" {
+    local cmd
+    for cmd in "echo hi > $SCRATCH/a.txt" "printf x >> $SCRATCH/a.txt" "echo hi | tee $SCRATCH/a.txt" \
+        "cat $SCRATCH/a.txt" "head -5 $SCRATCH/a.txt" "sed -n 1,5p $SCRATCH/a.txt" \
+        "sed -i s/a/b/ $SCRATCH/a.txt" "grep -r foo $SCRATCH" "rg foo $SCRATCH/a.txt" \
+        "echo hi > /private/tmp/claude-$(id -u)/x"; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: a TMPDIR scratch root passes" {
+    export TMPDIR="$BATS_TEST_TMPDIR/tmproot/"
+    [[ -z "$(out_for_safe "echo hi > $BATS_TEST_TMPDIR/tmproot/claude-$(id -u)/a.txt")" ]]
+}
+
+@test "tool-reroute/io: scratch lookalikes still deny" {
+    local cmd uid; uid=$(id -u)
+    # shellcheck disable=SC2016 # a literal $UID is the unexpanded-path case under test
+    for cmd in "cat $SCRATCH/../../etc/hosts" "echo hi > /tmp/claude-$uid/../x" \
+        "cat /tmp/claude-$((uid + 1))/a.txt" "cat /tmp/claude-$uid" 'cat /tmp/claude-$UID/a.txt' \
+        "cat /tmp/claude-$uid-evil/a.txt" "cat $SCRATCH/a.txt README.md"; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: a small existing file passes cat, head, sed, grep, rg" {
+    local cmd
+    for cmd in 'cat small.txt' 'head -n 3 small.txt' "sed -n 1p small.txt" 'grep tiny small.txt' \
+        'rg tiny small.txt' 'cat < small.txt' 'cat small.txt dir/inner.txt'; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: a 20 KiB file, directory, missing file, or mixed targets still deny" {
+    local cmd
+    # shellcheck disable=SC2016 # a literal $F is the unexpanded-path case under test
+    for cmd in 'cat README.md' 'grep x README.md' 'grep -r tiny dir' 'grep -r tiny' 'cat missing.txt' \
+        'cat small.txt README.md' 'grep tiny small.txt README.md' 'cat small.txt missing.txt' \
+        'cat dir' 'cat $F' 'xargs cat' 'sed -i s/a/b/ small.txt' 'echo hi > small.txt'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
 }

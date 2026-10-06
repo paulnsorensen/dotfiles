@@ -265,3 +265,19 @@ tilth_write_input() {
     [[ "$(reason)" == *"ask the user"* ]]
     [[ "$(reason)" != *"DOTFILES_WRITE_GUARD_ALLOW"* ]]
 }
+
+@test "native: Claude scratch Read, Write, Edit, and MultiEdit pass; lookalikes deny" {
+    local tool uid scratch; uid=$(id -u); scratch="/tmp/claude-$uid/session/a.txt"
+    for tool in Read Write Edit MultiEdit; do
+        hook claude "$tool" "$(jq -nc --arg f "$scratch" '{file_path:$f}')"
+        [[ -z "$output" ]] || { echo "expected pass: $tool" >&2; return 1; }
+    done
+    local bad
+    # shellcheck disable=SC2016 # a literal $UID is the unexpanded-path case under test
+    for bad in "/tmp/claude-$uid/../a.txt" "/tmp/claude-$((uid + 1))/a.txt" "/tmp/claude-$uid" '/tmp/claude-$UID/a.txt'; do
+        hook claude Write "$(jq -nc --arg f "$bad" '{file_path:$f}')"
+        [[ "$(decision)" == "deny" ]] || { echo "expected deny: $bad" >&2; return 1; }
+    done
+    hook claude Write '{"file_path":"../../tmp/claude-1/x"}' "$REPO"
+    [[ "$(decision)" == "deny" ]]
+}
