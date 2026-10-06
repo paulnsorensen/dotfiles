@@ -12,6 +12,8 @@ setup() {
     export HOTKEY_DOMAIN="$TEST_HOME/com.apple.symbolichotkeys"
     export COMMAND_LOG="$TEST_HOME/commands.log"
     export LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+    export ALFRED_APP="$TEST_HOME/Applications/Alfred.app"
+    export ALFRED_APP_5="$TEST_HOME/Applications/Alfred 5.app"
     mkdir -p "$MOCK_BIN"
 
     /usr/bin/plutil -create xml1 "$HOTKEY_DOMAIN.plist"
@@ -73,6 +75,36 @@ teardown() { teardown_test_env; }
     run /usr/bin/plutil -extract AppleSymbolicHotKeys.160.value.type raw -expect string "$prefs"
     assert_success
     [ "$output" = "standard" ]
+}
+
+assert_spotlight_modifiers() {
+    local prefs="$HOTKEY_DOMAIN.plist"
+    run /usr/bin/plutil -extract AppleSymbolicHotKeys.64.enabled raw -expect bool "$prefs"
+    assert_success
+    [ "$output" = "true" ]
+    [ "$( /usr/bin/plutil -extract AppleSymbolicHotKeys.64.value.parameters.0 raw -expect integer "$prefs" )" = "32" ]
+    [ "$( /usr/bin/plutil -extract AppleSymbolicHotKeys.64.value.parameters.1 raw -expect integer "$prefs" )" = "49" ]
+    [ "$( /usr/bin/plutil -extract AppleSymbolicHotKeys.64.value.parameters.2 raw -expect integer "$prefs" )" = "$1" ]
+}
+
+@test "macos sync binds Spotlight to Command-Space when Alfred is absent" {
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_spotlight_modifiers 1048576
+}
+
+@test "macos sync moves Spotlight to Control-Command-Space when Alfred 5 is installed" {
+    mkdir -p "$ALFRED_APP_5"
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_spotlight_modifiers 1310720
+}
+
+@test "macos sync moves Spotlight to Control-Command-Space when Alfred is installed" {
+    mkdir -p "$ALFRED_APP"
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    assert_spotlight_modifiers 1310720
 }
 
 @test "macos sync installs and bootstraps the Caps Lock to Control LaunchAgent" {
