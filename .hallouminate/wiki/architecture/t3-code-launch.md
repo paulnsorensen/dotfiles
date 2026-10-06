@@ -17,12 +17,13 @@ T3 sessions route file work through tilth like every other harness.
   `auto-accept-edits` → `acceptEdits`), but the decode falls back to bypass
   whenever `--dangerously-skip-permissions` is absent from launch args. An
   explicit `--permission-mode` in `providers.claudeAgent.launchArgs`
-  overrides every path.
+  overrides every path, including the mode picked in the T3 UI. The
+  registry pins `auto` (since 2026-10-06; `acceptEdits` before).
 
 Everything else (claude.ai connectors, plugins, tilth, context7) loads from
 `~/.claude` as in an interactive session.
 
-## Why bypass mode matters
+## Why the permission mode matters
 
 Under bypass mode Claude Code itself injects a preamble that says to prefer
 Bash (`cat`, `grep`, `sed`) over Read/Edit/Write. The text lives in the
@@ -30,6 +31,14 @@ claude binary, not in T3. It contradicts the tilth server instructions in
 the same prompt. Session analytics for 2026-09-26/27 showed the effect:
 short T3 sessions made zero tilth calls and 43% of their Bash calls were
 file reads, against 35% in non-T3 sessions.
+
+`acceptEdits` avoided that preamble, but it approves file edits only. Bash
+and MCP calls still prompted, so T3 threads stalled on permission asks.
+
+`auto` approves safe actions without prompts. It also injects a "prefer
+Bash" preamble (observed 2026-10-06, Claude Code 2.1.289). The tilth
+PreToolUse hooks block the shell reads it suggests, so agents fall back to
+tilth after one blocked call. Accept that cost over constant prompts.
 
 ## Why hallouminate timed out only in T3
 
