@@ -1803,6 +1803,17 @@ MOCKMISE
 }
 
 # A real git remote and a tracked manifest. Only gh is mocked, to capture pr create.
+# The origin URL looks like GitHub so the repo parses; insteadOf maps it to the bare repo.
+PIN_BUMP_URL="https://github.com/example/dotfiles.git"
+
+point_origin_at() {
+    local work="$TEST_HOME/work" base
+    while IFS= read -r base; do
+        git -C "$work" config --unset-all "$base"
+    done < <(git -C "$work" config --name-only --get-regexp '^url\..*\.insteadof$')
+    git -C "$work" config "url.$1.insteadOf" "$PIN_BUMP_URL"
+}
+
 setup_pin_bump_repo() {
     local origin="$TEST_HOME/origin.git" work="$TEST_HOME/work"
     git init -q --bare -b main "$origin"
@@ -1812,17 +1823,28 @@ setup_pin_bump_repo() {
     printf '[tools]\n' > "$work/mise-config.toml"
     git -C "$work" add mise-config.toml
     git -C "$work" commit -qm "init"
-    git -C "$work" remote add origin "$origin"
+    git -C "$work" remote add origin "$PIN_BUMP_URL"
+    point_origin_at "$origin"
     git -C "$work" push -q -u origin main
     export MISE_CONFIG_FILE="$work/mise-config.toml"
 }
 
+# gh mock with state: `pr list` answers with a URL once `pr create` ran.
+# GH_CREATE_FAIL=1 makes `pr create` fail.
 write_mock_gh_pr() {
     rm -f "$MOCK_BIN/gh"
     cat > "$MOCK_BIN/gh" << MOCKGH
 #!/bin/bash
+state="\$TEST_HOME/gh-pr-exists"
+if [[ "\$1 \$2" == "pr list" ]]; then
+    echo "gh \$*" >> "\$GH_LOG"
+    [[ -f "\$state" ]] && echo "https://github.com/example/dotfiles/pull/1"
+    exit 0
+fi
 if [[ "\$1 \$2" == "pr create" ]]; then
     echo "gh \$*" >> "\$GH_LOG"
+    [[ "\${GH_CREATE_FAIL:-}" == "1" ]] && exit 1
+    touch "\$state"
     echo "https://github.com/example/dotfiles/pull/1"
 fi
 exit 0
@@ -1830,30 +1852,137 @@ MOCKGH
     chmod +x "$MOCK_BIN/gh"
 }
 
-@test "UPGRADE_MODE pushes the mise pin bump to a PR branch off origin/main" {
+# Tracked manifest, live copy, bumping mise, and stateful gh in one step.
+prepare_pin_bump() {
     write_test_yaml
     setup_pin_bump_repo
-    local live="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
-    mkdir -p "$(dirname "$live")"
-    cp "$MISE_CONFIG_FILE" "$live"
-    write_mock_mise_bumping_live "$live"
+    PIN_LIVE="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
+    mkdir -p "$(dirname "$PIN_LIVE")"
+    cp "$MISE_CONFIG_FILE" "$PIN_LIVE"
+    write_mock_mise_bumping_live "$PIN_LIVE"
     write_mock_gh_pr
-    local origin="$TEST_HOME/origin.git" work="$TEST_HOME/work"
+}
+
+pin_branches() {
+    git -C "$TEST_HOME/origin.git" for-each-ref --format='%(refname:short)' 'refs/heads/chore/*'
+}
+
+@test "UPGRADE_MODE pushes the mise pin bump to the fixed PR branch off origin/main" {
+    prepare_pin_bump
+    local origin="$TEST_HOME/origin.git" work="$TEST_HOME/work" branch="chore/mise-pins"
 
     UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
 
-    local branch
-    branch="$(git -C "$origin" for-each-ref --format='%(refname:short)' 'refs/heads/chore/mise-pins-*')"
-    [[ -n "$branch" ]]
+    [[ "$(pin_branches)" == "$branch" ]]
     [[ "$(git -C "$origin" show "$branch:mise-config.toml")" == *'aqua:example/tool'* ]]
     [[ "$(git -C "$origin" diff --name-only main "$branch")" == "mise-config.toml" ]]
     [[ "$(git -C "$origin" rev-parse "$branch^")" == "$(git -C "$origin" rev-parse main)" ]]
-    grep -q -- "--base main --head $branch" "$GH_LOG"
+    grep -q -- "--repo example/dotfiles --base main --head $branch" "$GH_LOG"
     [[ "$output" == *"mise pin bump PR: https://github.com/example/dotfiles/pull/1"* ]]
+    [[ "$output" == *"stays modified until the PR merges"* ]]
     # The checkout stays on main and keeps the bumped manifest.
     [[ "$(git -C "$work" branch --show-current)" == "main" ]]
     grep -q 'aqua:example/tool' "$MISE_CONFIG_FILE"
+}
+
+@test "a second pin bump reuses the fixed branch and the open PR" {
+    prepare_pin_bump
+    local work="$TEST_HOME/work"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    # Reset to the unbumped state, as if main moved on and pins went stale again.
+    git -C "$work" checkout -q -- mise-config.toml
+    cp "$MISE_CONFIG_FILE" "$PIN_LIVE"
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    [[ "$(pin_branches)" == "chore/mise-pins" ]]
+    [[ "$(grep -c 'pr create' "$GH_LOG")" == "1" ]]
+    [[ "$output" == *"mise pin bump PR updated: https://github.com/example/dotfiles/pull/1"* ]]
+}
+
+@test "UPGRADE_MODE does not publish a manifest that differs from origin/main" {
+    prepare_pin_bump
+    local work="$TEST_HOME/work"
+    printf '# local only\n' >> "$MISE_CONFIG_FILE"
+    cp "$MISE_CONFIG_FILE" "$PIN_LIVE"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"differs from origin/main"* ]]
+    [[ -z "$(pin_branches)" ]]
+    ! grep -qs 'pr create' "$GH_LOG"
+    # The local bump stays.
+    grep -q 'aqua:example/tool' "$work/mise-config.toml"
+}
+
+@test "UPGRADE_MODE warns and publishes nothing when the manifest is untracked" {
+    prepare_pin_bump
+    git -C "$TEST_HOME/work" rm --cached -q mise-config.toml
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"not a tracked file in a git repo"* ]]
+    [[ -z "$(pin_branches)" ]]
+    ! grep -qs 'pr create' "$GH_LOG"
+}
+
+@test "UPGRADE_MODE warns and publishes nothing when the fetch fails" {
+    prepare_pin_bump
+    point_origin_at "$TEST_HOME/no-such-remote.git"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"fetch of origin/main failed"* ]]
+    [[ -z "$(pin_branches)" ]]
+    ! grep -qs 'pr create' "$GH_LOG"
+}
+
+@test "UPGRADE_MODE warns and creates no PR when the push fails" {
+    prepare_pin_bump
+    git -C "$TEST_HOME/work" config remote.origin.pushurl "$TEST_HOME/no-such-remote.git"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"pin bump commit or push failed"* ]]
+    [[ -z "$(pin_branches)" ]]
+    ! grep -qs 'pr create' "$GH_LOG"
+}
+
+@test "UPGRADE_MODE pushes the branch and warns when gh is missing" {
+    prepare_pin_bump
+    rm -f "$MOCK_BIN/gh"
+    # Rebuild PATH without gh: dirs that hold gh become symlink farms minus gh.
+    local d f n=0 clean=""
+    while IFS= read -r d; do
+        if [[ -x "$d/gh" ]]; then
+            n=$((n + 1))
+            mkdir -p "$TEST_HOME/nogh$n"
+            for f in "$d"/*; do
+                [[ "${f##*/}" == "gh" ]] || ln -sf "$f" "$TEST_HOME/nogh$n/${f##*/}"
+            done
+            d="$TEST_HOME/nogh$n"
+        fi
+        clean="$clean$d:"
+    done < <(printf '%s\n' "$PATH" | tr ':' '\n')
+
+    PATH="${clean%:}" UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"gh not found"* ]]
+    [[ "$(pin_branches)" == "chore/mise-pins" ]]
+}
+
+@test "UPGRADE_MODE keeps the pushed branch and warns when gh pr create fails" {
+    prepare_pin_bump
+
+    GH_CREATE_FAIL=1 UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"gh pr create failed"* ]]
+    [[ "$(pin_branches)" == "chore/mise-pins" ]]
+    grep -q 'pr create' "$GH_LOG"
 }
 
 @test "UPGRADE_MODE pushes no branch when mise leaves the pins unchanged" {
