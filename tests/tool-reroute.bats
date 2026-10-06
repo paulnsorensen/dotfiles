@@ -332,6 +332,33 @@ no_permission_decision() { jq -e '.hookSpecificOutput | has("permissionDecision"
     [[ "$out" != *'"permissionDecision":"deny"'* ]]
 }
 
+# ── tee: an authored-content copy is a write; an output capture runs ──────
+
+@test "tool-reroute/io: printf piped to tee FILE denies and names tilth_write" {
+    local out; out=$(out_for 'printf x | tee out.txt')
+    [[ "$(decision "$out")" == "deny" ]]
+    [[ "$(reason "$out")" == *'tee write to out.txt'* ]]
+    [[ "$out" == *tilth_write* ]]
+}
+
+@test "tool-reroute/io: tee -a fed by echo denies" {
+    [[ "$(decision "$(out_for 'echo x | tee -a notes.md')")" == "deny" ]]
+}
+
+@test "tool-reroute/io: a here-doc into tee FILE denies" {
+    local out; out=$(out_for $'tee out.txt <<EOF\nhello\nEOF')
+    [[ "$(decision "$out")" == "deny" ]]
+}
+
+@test "tool-reroute/io: tee capturing command output does not deny" {
+    ! denied "$(out_for 'just check 2>&1 | tee /tmp/check.log')"
+}
+
+@test "tool-reroute/io: tee to a stream device or with no file does not deny" {
+    ! denied "$(out_for 'echo x | tee /dev/stderr')"
+    ! denied "$(out_for 'echo x | tee')"
+}
+
 # ── tool-reroute/passthrough: non-reroute Bash runs unchanged ────────────
 
 @test "tool-reroute/passthrough: plain git is not touched (exit 0, empty)" {

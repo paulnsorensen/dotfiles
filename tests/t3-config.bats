@@ -22,7 +22,7 @@ setup() {
 @test "t3 registry forces an explicit permission mode and a settings file" {
     run yq -r '.t3.settings.providers.claudeAgent.launchArgs' "$REGISTRY"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"--permission-mode acceptEdits"* ]]
+    [[ "$output" == *"--permission-mode auto"* ]]
     [[ "$output" == *"--settings \$HOME/.t3/userdata/claude-settings.json"* ]]
     [[ "$output" != *"bypassPermissions"* ]]
     [[ "$output" != *"dangerously-skip-permissions"* ]]
@@ -44,7 +44,7 @@ setup() {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
     run jq -r '.providers.claudeAgent.launchArgs' <<<"$output"
-    [ "$output" = "--permission-mode acceptEdits --settings /home/tester/.t3/userdata/claude-settings.json" ]
+    [ "$output" = "--permission-mode auto --settings /home/tester/.t3/userdata/claude-settings.json" ]
 }
 
 @test "t3 settings preserve UI state and reset managed drift" {
@@ -65,7 +65,7 @@ JSON
     run jq -c '[.projectSettingsFolded, .sidebarAutoSettleAfterDays, .defaultThreadEnvMode, .providers.cursor.enabled, .providers.claudeAgent.enabled]' <<<"$rendered"
     [ "$output" = '[true,null,"worktree",false,true]' ]
     run jq -r '.providers.claudeAgent.launchArgs' <<<"$rendered"
-    [ "$output" = "--permission-mode acceptEdits --settings /home/tester/.t3/userdata/claude-settings.json" ]
+    [ "$output" = "--permission-mode auto --settings /home/tester/.t3/userdata/claude-settings.json" ]
 }
 
 @test "t3 settings keep unknown live keys with a warning" {
@@ -127,5 +127,5 @@ TOML
     run jq -r '.defaultThreadEnvMode, .providers.cursor.enabled, .providers.claudeAgent.launchArgs' "$destination/.t3/userdata/settings.json"
     [ "${lines[0]}" = "worktree" ]
     [ "${lines[1]}" = "false" ]
-    [ "${lines[2]}" = "--permission-mode acceptEdits --settings $destination/.t3/userdata/claude-settings.json" ]
+    [ "${lines[2]}" = "--permission-mode auto --settings $destination/.t3/userdata/claude-settings.json" ]
 }

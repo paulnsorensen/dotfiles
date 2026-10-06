@@ -2,6 +2,7 @@
 // io.js — reroute module: file I/O via the shell.
 //
 //   write-redirect (`echo`/`printf`/`cat` … `>` / `>>`) to a file    → DENY → tilth_write
+//   `tee FILE` fed by echo/printf/cat or a here-doc/here-string      → DENY → tilth_write
 //   file read by cat/head/tail/less/more/nl/tac/bat/sed/awk          → DENY → tilth_read
 //   in-place edit (`sed -i`)                                          → DENY → tilth_write
 //
@@ -13,10 +14,11 @@
 // follow) and a read of /dev, /proc, or /sys. A write-redirect to a stream
 // device (/dev/null, /dev/stderr, /dev/fd/N) or to /proc or /sys runs. A `>`
 // inside a quoted string is not a redirect (the lexer resolves quotes).
+// `cmd | tee log` captures command output, like `cmd > log`, and runs.
 
 const os = require('os');
 const path = require('path');
-const { commands, commandWord, splitArgs, realFiles, inputFiles } = require('./shell');
+const { commands, commandWord, splitArgs, realFiles, pipedIn, inputFiles } = require('./shell');
 
 const WRITE_BINS = new Set(['echo', 'printf', 'cat']);
 
@@ -40,14 +42,14 @@ READERS.mawk = READERS.awk;
 READERS.gsed = READERS.sed;
 
 // On Codex, native.js denies tilth_write outside the allowed roots.
-function writeReason(target, cwd, harness) {
+function writeReason(target, cwd, harness, kind = 'write-redirect') {
   const p = suggestPath(target, cwd);
   const codex = harness === 'codex'
     ? ' On Codex, a path outside the allowed roots remains blocked. Ask the user before changing allowed roots.'
     : '';
   // The lexer ends a `$(mktemp)` target at `(`, so it records a bare `$`.
   const shown = target === '$' ? '$(…)' : target;
-  return `Blocked: shell write-redirect to ${shown} — write files with mcp__tilth__tilth_write, not echo/printf/cat with > / >>.
+  return `Blocked: shell ${kind} to ${shown} — write files with mcp__tilth__tilth_write, not echo/printf/cat with > / >> or tee.
 
 New file (omit tag):
   mcp__tilth__tilth_write(edits:[{path:${JSON.stringify(p)}, ops:[{op:"create_file", content:"…"}]}], cwd:"<checkout>")
@@ -97,6 +99,19 @@ function isFileWrite(target) {
   return !(/^\/(proc|sys)\//.test(target) && !target.split('/').includes('..'));
 }
 
+// The first file a `tee` segment writes when it copies authored content: a
+// pipe from echo/printf/cat, or a here-doc/here-string on its stdin. `tee`
+// takes no valued short flags; `--output-error=MODE` is fused.
+function teeTarget(segs, k) {
+  const seg = segs[k];
+  const { word, args } = commandWord(seg.argv);
+  if (word !== 'tee') return null;
+  const fromHeredoc = seg.inputRedirects.some((r) => r !== '<');
+  const fromWriter = pipedIn(seg) && k > 0 && WRITE_BINS.has(commandWord(segs[k - 1].argv).word);
+  if (!fromHeredoc && !fromWriter) return null;
+  return splitArgs(args).operands.find((f) => f !== '-' && isFileWrite(f)) || null;
+}
+
 // `awk -i inplace` loads gawk's in-place library; `-i` takes the library name.
 function awkInPlace(args) {
   return args.some((a, k) => (a === '-i' && args[k + 1] === 'inplace') || a === '-iinplace');
@@ -139,6 +154,11 @@ function detect(toolName, input, cwd, harness) {
         return { reason: writeReason(seg.redirectTargets[j], cwd, harness), module: 'io' };
       }
     }
+  }
+
+  for (let k = 0; k < segs.length; k++) {
+    const target = teeTarget(segs, k);
+    if (target) return { reason: writeReason(target, cwd, harness, 'tee write'), module: 'io' };
   }
 
   for (const seg of segs) {
