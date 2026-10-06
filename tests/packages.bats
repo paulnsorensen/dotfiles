@@ -1802,6 +1802,74 @@ MOCKMISE
     [[ "$(cat "$MISE_CONFIG_FILE")" == "[tools]" ]]
 }
 
+# A real git remote and a tracked manifest. Only gh is mocked, to capture pr create.
+setup_pin_bump_repo() {
+    local origin="$TEST_HOME/origin.git" work="$TEST_HOME/work"
+    git init -q --bare -b main "$origin"
+    git init -q -b main "$work"
+    git -C "$work" config user.name "Test"
+    git -C "$work" config user.email "test@example.com"
+    printf '[tools]\n' > "$work/mise-config.toml"
+    git -C "$work" add mise-config.toml
+    git -C "$work" commit -qm "init"
+    git -C "$work" remote add origin "$origin"
+    git -C "$work" push -q -u origin main
+    export MISE_CONFIG_FILE="$work/mise-config.toml"
+}
+
+write_mock_gh_pr() {
+    rm -f "$MOCK_BIN/gh"
+    cat > "$MOCK_BIN/gh" << MOCKGH
+#!/bin/bash
+if [[ "\$1 \$2" == "pr create" ]]; then
+    echo "gh \$*" >> "\$GH_LOG"
+    echo "https://github.com/example/dotfiles/pull/1"
+fi
+exit 0
+MOCKGH
+    chmod +x "$MOCK_BIN/gh"
+}
+
+@test "UPGRADE_MODE pushes the mise pin bump to a PR branch off origin/main" {
+    write_test_yaml
+    setup_pin_bump_repo
+    local live="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
+    mkdir -p "$(dirname "$live")"
+    cp "$MISE_CONFIG_FILE" "$live"
+    write_mock_mise_bumping_live "$live"
+    write_mock_gh_pr
+    local origin="$TEST_HOME/origin.git" work="$TEST_HOME/work"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    local branch
+    branch="$(git -C "$origin" for-each-ref --format='%(refname:short)' 'refs/heads/chore/mise-pins-*')"
+    [[ -n "$branch" ]]
+    [[ "$(git -C "$origin" show "$branch:mise-config.toml")" == *'aqua:example/tool'* ]]
+    [[ "$(git -C "$origin" diff --name-only main "$branch")" == "mise-config.toml" ]]
+    [[ "$(git -C "$origin" rev-parse "$branch^")" == "$(git -C "$origin" rev-parse main)" ]]
+    grep -q -- "--base main --head $branch" "$GH_LOG"
+    [[ "$output" == *"mise pin bump PR: https://github.com/example/dotfiles/pull/1"* ]]
+    # The checkout stays on main and keeps the bumped manifest.
+    [[ "$(git -C "$work" branch --show-current)" == "main" ]]
+    grep -q 'aqua:example/tool' "$MISE_CONFIG_FILE"
+}
+
+@test "UPGRADE_MODE pushes no branch when mise leaves the pins unchanged" {
+    write_test_yaml
+    setup_pin_bump_repo
+    local live="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
+    mkdir -p "$(dirname "$live")"
+    cp "$MISE_CONFIG_FILE" "$live"
+    write_mock_gh_pr
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ -z "$(git -C "$TEST_HOME/origin.git" for-each-ref 'refs/heads/chore/*')" ]]
+    ! grep -qs 'pr create' "$GH_LOG"
+}
+
 @test "non-upgrade sync never bumps mise pins" {
     write_test_yaml
     local live="${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml"
