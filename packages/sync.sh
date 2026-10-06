@@ -36,6 +36,8 @@ source "$SCRIPT_DIR/lib-linux-bootstrap.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib-gh-resolve.sh"
 # shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-mise-pins.sh"
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib-t3-service.sh"
 
 if [[ ! -f "$PACKAGES_FILE" ]]; then
@@ -386,6 +388,9 @@ bump_mise_manifest() {
         return 0
     fi
 
+    # Blob id of the manifest as it stands before the bump, for the publish guard.
+    local pre_blob
+    pre_blob="$(git hash-object -- "$source" 2>/dev/null)" || pre_blob=""
     log_info "Bumping mise pins (mise upgrade --bump)..."
     if ! env -u MISE_GLOBAL_CONFIG_FILE mise -C "$HOME" upgrade --bump --yes </dev/null; then
         log_warning "mise upgrade --bump failed — pins unchanged"
@@ -413,7 +418,8 @@ bump_mise_manifest() {
         log_error "mise pins bumped in $live but the mirror into $source failed — the final chezmoi apply reverts the live file; re-run dots sync"
         return 0
     fi
-    log_success "mise pins bumped in $source — commit the manifest (dots update refuses a dirty tree)"
+    log_success "mise pins bumped in $source"
+    publish_mise_pin_bump "$source" "$pre_blob"
 }
 
 sync_mise() {
