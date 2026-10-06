@@ -87,3 +87,17 @@ The parent must not implement the remainder automatically.
 The coordinator's verified response remains an agent trust boundary; deterministic workflow tests verify routing, not model execution.[^recovery-20260919]
 
 [^recovery-20260919]: `claude/workflows/cheese-factory.js` (`checkpointPrompt`, `validCheckpointResult`, Cook pipeline stage); `tests/workflows/cheese-factory.test.mjs`; [[operations/subagent-dispatch-analytics]]. Decision: September 19, 2026.
+
+## ADR-015: Edit cheese-factory in place with one global handback gate [status: accepted]
+
+This decision applies the proposals ADR-011, ADR-013, and ADR-014 (PR #1133) to `cheese-factory.js` itself. It replaces the agent-scoped hooks of ADR-012, and ADR-010 no longer applies.
+
+- **Context:** The prototype `cheese-factory-next` (PR #1137) added three factory-only agents, a registry `hooks:` field, and changes to both agent renderers. Their only unique job was to scope the hooks; their prompts fit in the workflow. A workflow `agent()` call cannot attach hooks. Agent-frontmatter hooks need workspace trust and may not fire for workflow agents (U-1, U-2). The resume cache replays only the longest unchanged prefix of `agent()` calls.
+- **Decision:** One settings `PreToolUse(StructuredOutput)` hook, `claude/hooks/factory-handback-gate.js`, acts only on a handback that carries `role` (`boss`, `coder`, or `reviewer`) and a `wheypoint:<project>/factory-…` ref. It checks the contract and writes the handback as one revision. The boss runs as `generalist` on Opus. Coders and reviewers are the existing `coder` and `reviewer` agents. Prompts carry the unpinned curd ref, and agents pin it from `show`.
+- **Resume:** Forks park the curd. A first pass never reads answers, so it replays the original calls from the cache. A second pass continues answered forks and their dependents. The k-th answer for a curd settles its k-th fork.
+- **Removed:** Mold owns the curd plan, so the decomposer and mini-specs go. The boss loop replaces the ADR-010 checkpoint coordinator and the taste loop. The `SubagentStop` backstop goes, because a schema agent must call `StructuredOutput`.
+- **Barriers:** Press runs once per finished curd after the Curds barrier. A `gated` or `halt` press or cure status keeps the curd out of plate. A curd whose dependency leaves the run is blocked. A dependent curd branches from its first dependency and merges the rest.
+- **Alternatives:** The agent-scoped prototype (more surface; trust and workflow behavior unverified). A global hook keyed on `agent_type` (cannot tell factory dispatches from other `coder` dispatches).
+- **Consequences:** No registry, renderer, or agent changes. The gate runs on every `StructuredOutput` call but returns at once for non-factory input. When it does not run, the script still schedules from the handbacks and logs once that the records may lag. The script does not depend on `updatedInput` reaching it (U-4). Open: in a repository without a git remote, a curd worktree can resolve a different Wheypoint project key, because `checkpoint` takes no `--project` flag.[^factory-inplace-20261002]
+
+[^factory-inplace-20261002]: `claude/workflows/cheese-factory.js`; `claude/hooks/factory-handback-gate.js`; `tests/workflows/cheese-factory.test.mjs`; `tests/factory-handback-gate.bats`; spec `specs/cheese-factory-linked-wheypoints.md`. Decision: October 2, 2026.

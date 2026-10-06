@@ -6,1338 +6,294 @@ import { createRuntime, loadWorkflow } from './harness.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
-// ---- fixture builders (match each phase agent's response schema) ----
+// ---- fixtures (each matches its phase agent's response schema) ----
 
-function resolveCandidates(candidates = ['spec-a', 'spec-b']) {
-  return { mode: 'candidates', candidates }
+function curd(slug, depends_on = []) {
+  return { slug, brief: `build ${slug}`, depends_on }
 }
 
-function resolveMissing(usage = 'Usage: /cheese-factory { spec: <slug-or-path> } — spec not found at /nowhere.md') {
-  return { mode: 'missing', usage }
+function plan(curds, landing_shape = '') {
+  return { mode: 'resolved', spec_path: '/specs/parent.md', slug: 'parent', landing_shape, curds }
 }
 
-function resolveResolved({ spec_path = '/specs/parent.md', spec_text = 'spec body', slug = 'parent', candidate_curds = 1, blast_radius = 'medium' } = {}) {
-  return { mode: 'resolved', spec_path, spec_text, curd_count: { slug, candidate_curds, blast_radius } }
-}
+const REF = (slug) => `wheypoint:acme/factory-parent--${slug}@rev-0123456789ab`
+const CLEAN = ['dispatch_coder', 'dispatch_review', 'finish']
+const FORK = { question: 'Which base?', options: [{ option: 'main', breaks: 'imports' }, { option: 'stack', breaks: 'bookkeeping' }] }
 
-function decompose(curds) {
-  return { curds }
-}
-
-function miniSpecs(entries) {
-  return { curds: entries }
-}
-
-function cook(slug, { status = 'ok', worktree_path = `/tmp/worktrees/${slug}` } = {}) {
-  return { status, worktree_path, artifact: `.cheese/cook/${slug}.md`, orientation: 'implemented' }
-}
-
-function taste(verdict, { issues = verdict === 'revise' ? ['fix this'] : [] } = {}) {
-  return { verdict, lenses: [{ lens: 'drift', verdict, note: '' }], issues, recommendation: verdict }
-}
-
-function correction(committed = true) {
-  return { status: 'fixed', summary: 'fixed', committed }
-}
-
-function phaseOk(slug, phase) {
-  return { status: 'ok', artifact: `.cheese/${phase}/${slug}.md`, orientation: `${phase} done` }
-}
-
-function plate(results) {
-  return { results }
-}
-
-function integrateResult({ worktree_path = '/tmp/worktrees/integration', merged = [], conflicted = [], files_changed = 5, lines_changed = 50 } = {}) {
-  return { worktree_path, merged, conflicted, files_changed, lines_changed }
-}
-
-function ageBarrierResult({ hasMediumPlus = false, perCurd = [], artifact = '.cheese/age/barrier.md' } = {}) {
-  return { status: 'ok', artifact, has_medium_plus_findings: hasMediumPlus, per_curd: perCurd }
-}
-
-function cureResult({ status = 'ok', committed = true, artifact = '.cheese/cure/x.md' } = {}) {
-  return { status, committed, artifact }
-}
-
-// A full clean single-curd chain: cook -> taste pass -> press -> integrate -> age:barrier clean -> plate.
-function respondCleanChain({ slug = 'parent' } = {}) {
+// A scripted run. `boss[slug]` is a queue of actions; each boss turn pops one.
+// `over[label]` replaces the default response for one agent label.
+function responder({ curds, boss, landing = '', coder = () => ({}), over = {}, gate = true }) {
+  const queues = Object.fromEntries(Object.entries(boss).map(([k, v]) => [k, [...v]]))
+  const stamp = gate ? { record_status: 'active' } : {}
   return ({ opts }) => {
-    if (opts.label === 'resolve') return resolveResolved({ slug })
-    if (opts.label === `cook:${slug}`) return cook(slug)
-    if (opts.label === `taste:${slug}`) return taste('pass')
-    if (opts.label === `press:${slug}`) return phaseOk(slug, 'press')
-    if (opts.label === 'integrate') return integrateResult({ merged: [slug] })
-    if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug, has_medium_plus_findings: false, findings: [] }] })
-    if (opts.label === 'plate') return plate([{ slug, status: 'plated', pr_url: `https://example.test/pr/${slug}` }])
-    throw new Error(`unexpected agent ${opts.label}`)
+    const label = opts.label || ''
+    if (Object.hasOwn(over, label)) return typeof over[label] === 'function' ? over[label]() : over[label]
+    const slug = label.split(':')[1]
+    if (label === 'resolve') return plan(curds, landing)
+    if (label === 'graph') return { project: 'acme' }
+    if (label.startsWith('boss:')) {
+      const action = queues[slug].shift()
+      if (!action) throw new Error(`boss queue for ${slug} is empty`)
+      const base = { role: 'boss', action, wheypoint_ref: REF(slug), ...stamp }
+      if (action === 'raise_fork') return { ...base, fork: FORK }
+      return action === 'dispatch_coder' ? { ...base, brief: `implement ${slug}` } : base
+    }
+    if (label.startsWith('code:')) return { role: 'coder', status: 'ok', next: 'age', wheypoint_ref: REF(slug), orientation: 'implemented', worktree_path: `/tmp/wt/${slug}`, ...stamp, ...coder(slug) }
+    if (label.startsWith('review:')) return { role: 'reviewer', status: 'ok', next: 'done', wheypoint_ref: REF(slug), orientation: 'reviewed', findings: [], ...stamp }
+    if (label.startsWith('press:')) return { status: 'ok', artifact: `.cheese/press/${slug}.md` }
+    if (label === 'integrate' || label === 're-merge') return { worktree_path: '/tmp/wt/integration', merged: curds.map((c) => c.slug), conflicted: [], files_changed: 4, lines_changed: 40 }
+    if (label === 'age:barrier' || label === 'age:reage') return { status: 'ok', has_medium_plus_findings: false, per_curd: [] }
+    if (label.startsWith('cure:')) return { status: 'ok', committed: true }
+    if (label === 'plate') return { results: curds.map((c) => ({ slug: c.slug, status: 'plated', pr_url: `https://example.test/pr/${c.slug}` })) }
+    throw new Error(`unexpected agent label ${label}`)
   }
 }
 
-test('no spec arg returns candidates and dispatches no phase agent', async () => {
+async function run(respond, args, extra = {}) {
   const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveCandidates(['alpha', 'beta'])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
+  const { globals, trace } = createRuntime({ respond })
+  const result = await workflow.run({ ...globals, ...extra, args })
+  return { result, trace, labels: trace.agents.map((a) => a.opts.label) }
+}
 
-  const result = await workflow.run({ ...globals, args: {} })
+// Workflow values come from a vm realm; compare their plain JSON form.
+const same = (actual, expected, message) => assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected, message)
+const call = (trace, label) => trace.agents.find((a) => a.opts.label === label)
+const status = (result, slug) => result.curds.find((c) => c.slug === slug).status
 
-  assert.deepEqual(result.candidates, ['alpha', 'beta'])
-  assert.equal(trace.agents.length, 1)
-  assert.equal(trace.agents[0].opts.label, 'resolve')
+// ---- Resolve ----
+
+test('no spec lists candidates and dispatches nothing else', async () => {
+  const { result, labels } = await run(({ opts }) => {
+    assert.equal(opts.label, 'resolve')
+    return { mode: 'candidates', candidates: ['spec-a'] }
+  }, {})
+  same(result, { candidates: ['spec-a'] })
+  same(labels, ['resolve'])
 })
 
-test('missing spec file fails loud with a usage message', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveMissing('Usage: /cheese-factory { spec: <slug-or-path> } — spec not found at /nowhere.md')
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'nowhere' } })
-
-  assert.match(result.error, /Usage:.*spec not found/)
-  assert.equal(trace.agents.length, 1)
+test('a missing spec fails loud with the usage line', async () => {
+  const { result, labels } = await run(() => ({ mode: 'missing', usage: 'Usage: /cheese-factory <spec> — spec not found at /x.md' }), { spec: 'x' })
+  assert.match(result.error, /^Usage:/)
+  same(labels, ['resolve'])
 })
 
-test('single-pass chain runs when candidate_curds < 2, no decompose call', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({ respond: respondCleanChain({ slug: 'parent' }) })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('decompose')), false)
-  assert.equal(result.curds.length, 1)
-  assert.equal(result.curds[0].slug, 'parent')
-  assert.equal(result.curds[0].status, 'clean')
-  assert.equal(result.curds[0].branch, 'curd/parent')
-  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['resolve', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate'])
-})
-
-test('decompose merges file-overlapping curds, writes mini-specs, and fans out only disjoint curds', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 3 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'a', brief: 'do a', files: ['shared.js'] },
-          { slug: 'b', brief: 'do b', files: ['shared.js'] },
-          { slug: 'c', brief: 'do c', files: ['only-c.js'] },
-        ])
-      }
-      if (opts.label === 'decompose:write-minispecs') {
-        return miniSpecs([
-          { slug: 'a', spec_path: '/specs/parent--a.md' },
-          { slug: 'c', spec_path: '/specs/parent--c.md' },
-        ])
-      }
-      if (opts.label === 'cook:a') return cook('a')
-      if (opts.label === 'taste:a') return taste('pass')
-      if (opts.label === 'press:a') return phaseOk('a', 'press')
-      if (opts.label === 'cook:c') return cook('c')
-      if (opts.label === 'taste:c') return taste('pass')
-      if (opts.label === 'press:c') return phaseOk('c', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['a', 'c'] })
-      if (opts.label === 'age:barrier') {
-        return ageBarrierResult({
-          hasMediumPlus: false,
-          perCurd: [
-            { slug: 'a', has_medium_plus_findings: false, findings: [] },
-            { slug: 'c', has_medium_plus_findings: false, findings: [] },
-          ],
-        })
-      }
-      if (opts.label === 'plate') return plate([{ slug: 'a', status: 'plated', pr_url: 'https://example.test/pr/a' }, { slug: 'c', status: 'plated', pr_url: 'https://example.test/pr/c' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'cook:b'), false)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'cook:a'), true)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'cook:c'), true)
-
-  const slugs = result.curds.map((c) => c.slug).sort()
-  assert.deepEqual(slugs, ['a', 'c'])
-  assert.ok(result.curds.every((c) => c.status === 'clean'))
-
-  const labelSet = new Set(trace.agents.map(({ opts }) => opts.label))
-  assert.deepEqual([...labelSet].sort(), [
-    'age:barrier', 'cook:a', 'cook:c', 'decompose:plan', 'decompose:write-minispecs',
-    'integrate', 'plate', 'press:a', 'press:c', 'resolve', 'taste:a', 'taste:c',
-  ])
-})
-
-test('mini-spec agent dropping a curd slug fails loud before any cook agent spawns', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 3 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'a', brief: 'do a', files: ['shared.js'] },
-          { slug: 'b', brief: 'do b', files: ['shared.js'] },
-          { slug: 'c', brief: 'do c', files: ['only-c.js'] },
-        ])
-      }
-      if (opts.label === 'decompose:write-minispecs') {
-        return miniSpecs([
-          { slug: 'a', spec_path: '/specs/parent--a.md' },
-        ])
-      }
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.match(result.error, /Unresolved mini-spec path/)
-  assert.match(result.error, /c/)
-  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cook:')), false)
-})
-
-test('phase order and per-phase model/agentType/isolation assertions', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({ respond: respondCleanChain({ slug: 'parent' }) })
-
-  await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  const labels = trace.agents.map(({ opts }) => opts.label)
-  assert.deepEqual(labels, ['resolve', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate'])
-  assert.deepEqual(trace.phases, ['Resolve', 'Cook', 'Integrate', 'Age', 'Plate', 'Report'])
-
-  const byLabel = Object.fromEntries(trace.agents.map((call) => [call.opts.label, call.opts]))
-  assert.equal(byLabel['cook:parent'].model, 'sonnet')
-  assert.equal(byLabel['cook:parent'].agentType, 'coder')
-  assert.equal(byLabel['cook:parent'].isolation, 'worktree')
-
-  assert.equal(byLabel['taste:parent'].model, 'opus')
-  assert.equal(byLabel['taste:parent'].agentType, 'reviewer')
-  assert.equal(byLabel['taste:parent'].isolation, undefined)
-
-  assert.equal(byLabel['press:parent'].model, 'sonnet')
-  assert.equal(byLabel['press:parent'].agentType, 'coder')
-
-  assert.equal(byLabel['integrate'].model, 'sonnet')
-  assert.equal(byLabel['integrate'].agentType, 'coder')
-  assert.equal(byLabel['integrate'].isolation, 'worktree')
-
-  assert.equal(byLabel['age:barrier'].model, 'opus')
-  assert.equal(byLabel['age:barrier'].agentType, 'reviewer')
-
-  assert.equal(byLabel['plate'].model, 'opus')
-  assert.equal(byLabel['plate'].agentType, 'coder')
-})
-
-test('cure is skipped when age reports no medium+ findings', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({ respond: respondCleanChain({ slug: 'parent' }) })
-
-  await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cure:')), false)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 're-merge'), false)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:reage'), false)
-})
-
-test('cure runs and a clean re-age keeps the curd in plate', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('pass')
-      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
-      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: true, perCurd: [{ slug: 'parent', has_medium_plus_findings: true, findings: [] }] })
-      if (opts.label === 'cure:parent') return cureResult({ committed: true })
-      if (opts.label === 're-merge') return integrateResult({ merged: ['parent'] })
-      if (opts.label === 'age:reage') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
-      if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'plated', pr_url: 'https://example.test/pr/parent' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  const labels = trace.agents.map(({ opts }) => opts.label)
-  assert.ok(labels.includes('cure:parent'))
-  assert.ok(labels.includes('re-merge'))
-  assert.ok(labels.includes('age:reage'))
-  assert.equal(result.curds[0].status, 'clean')
-  assert.equal(result.curds[0].pr_url, 'https://example.test/pr/parent')
-})
-
-test('re-age still medium+ marks the curd dirty and excludes it from plate', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('pass')
-      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
-      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: true, perCurd: [{ slug: 'parent', has_medium_plus_findings: true, findings: [] }] })
-      if (opts.label === 'cure:parent') return cureResult({ committed: true })
-      if (opts.label === 're-merge') return integrateResult({ merged: ['parent'] })
-      if (opts.label === 'age:reage') return ageBarrierResult({ hasMediumPlus: true, perCurd: [{ slug: 'parent', has_medium_plus_findings: true, findings: [] }] })
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(result.curds[0].status, 'dirty')
-  assert.match(result.curds[0].excluded_reason, /re-age/)
-  assert.equal(result.curds[0].pr_url, undefined)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'plate'), false)
-})
-
-test('bounded corrective taste loop caps at correctiveRounds and excludes the curd from plate', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label.startsWith('taste:parent')) return taste('revise')
-      if (opts.label.startsWith('correct:parent')) return correction(true)
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent', correctiveRounds: 2 } })
-
-  const labels = trace.agents.map(({ opts }) => opts.label)
-  assert.deepEqual(labels, [
-    'resolve', 'cook:parent', 'taste:parent', 'correct:parent:r1', 'taste:parent:r1', 'correct:parent:r2', 'taste:parent:r2',
-  ])
-  assert.equal(labels.some((l) => l.startsWith('press:')), false)
-  assert.equal(result.curds[0].status, 'failed')
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'plate'), false)
-})
-
-test('correctiveRounds above the max of 3 clamps to 3', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label.startsWith('taste:parent')) return taste('revise')
-      if (opts.label.startsWith('correct:parent')) return correction(true)
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  await workflow.run({ ...globals, args: { spec: 'parent', correctiveRounds: 10 } })
-
-  assert.match(trace.logs.join('\n'), /clamping to 3/)
-  const correctCalls = trace.agents.filter(({ opts }) => opts.label.startsWith('correct:parent')).length
-  assert.equal(correctCalls, 3)
-})
-
-test('plate runs exactly once, after all chains, with only clean curds', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 2 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'good', brief: 'do good', files: ['good.js'] },
-          { slug: 'bad', brief: 'do bad', files: ['bad.js'] },
-        ])
-      }
-      if (opts.label === 'decompose:write-minispecs') {
-        return miniSpecs([
-          { slug: 'good', spec_path: '/specs/parent--good.md' },
-          { slug: 'bad', spec_path: '/specs/parent--bad.md' },
-        ])
-      }
-      if (opts.label === 'cook:good') return cook('good')
-      if (opts.label === 'taste:good') return taste('pass')
-      if (opts.label === 'press:good') return phaseOk('good', 'press')
-      if (opts.label === 'cook:bad') return cook('bad', { status: 'blocked' })
-      if (opts.label === 'cook:bad:c1') return cook('bad', { status: 'blocked' })
-      if (opts.label === 'cook:bad:c2') return cook('bad', { status: 'blocked' })
-      if (opts.label === 'integrate') return integrateResult({ merged: ['good'] })
-      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'good', has_medium_plus_findings: false, findings: [] }] })
-      if (opts.label === 'plate') return plate([{ slug: 'good', status: 'plated', pr_url: 'https://example.test/pr/good' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  const plateCalls = trace.agents.filter(({ opts }) => opts.label === 'plate')
-  assert.equal(plateCalls.length, 1)
-  assert.match(plateCalls[0].prompt, /"slug":"good"/)
-  assert.doesNotMatch(plateCalls[0].prompt, /"slug":"bad"/)
-
-  const integrateCall = trace.agents.find(({ opts }) => opts.label === 'integrate')
-  assert.ok(integrateCall)
-  assert.doesNotMatch(integrateCall.prompt, /bad/)
-
-  const ageBarrierCall = trace.agents.find(({ opts }) => opts.label === 'age:barrier')
-  assert.doesNotMatch(ageBarrierCall.prompt, /"slug":"bad"/)
-
-  const bySlug = Object.fromEntries(result.curds.map((c) => [c.slug, c]))
-  assert.equal(bySlug.good.status, 'clean')
-  assert.equal(bySlug.bad.status, 'failed')
-})
-
-test('report shape carries curds[] and summary', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals } = createRuntime({ respond: respondCleanChain({ slug: 'parent' }) })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.ok(Array.isArray(result.curds))
-  assert.equal(result.curds[0].slug, 'parent')
-  assert.equal(result.curds[0].branch, 'curd/parent')
-  assert.equal(result.curds[0].status, 'clean')
-  assert.equal(result.curds[0].pr_url, 'https://example.test/pr/parent')
-  assert.equal(result.curds[0].excluded_reason, undefined)
-  assert.deepEqual({ ...result.summary }, { clean: 1, dirty: 0, failed: 0 })
-  assert.deepEqual(JSON.parse(JSON.stringify(result.integration)), { merged: ['parent'], conflicted: [] })
-  assert.deepEqual(JSON.parse(JSON.stringify(result.curds[0].age)), { mode: 'single', has_medium_plus_findings: false })
-})
-
-test('args arrive as a JSON string', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals } = createRuntime({ respond: respondCleanChain({ slug: 'parent' }) })
-
-  const result = await workflow.run({ ...globals, args: JSON.stringify({ spec: 'parent' }) })
-
-  assert.equal(result.curds[0].status, 'clean')
-})
-
-test('invalid decomposed curd slug is rejected before any phase agent spawns', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 2 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'bad slug!', brief: 'nope', files: ['a.js'] },
-          { slug: 'fine', brief: 'ok', files: ['b.js'] },
-        ])
-      }
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.match(result.error, /Invalid curd slug/)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'decompose:write-minispecs'), false)
-  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cook:')), false)
-})
-
-test('duplicate decomposed curd slugs are rejected before any phase agent spawns', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 2 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'dup', brief: 'one', files: ['a.js'] },
-          { slug: 'dup', brief: 'two', files: ['b.js'] },
-        ])
-      }
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.match(result.error, /Duplicate curd slug/)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'decompose:write-minispecs'), false)
-  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cook:')), false)
-})
-
-test('curds that all overlap transitively merge to one and fall back to single-pass', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 3 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'a', brief: 'do a', files: ['a.js', 'shared-ab.js'] },
-          { slug: 'b', brief: 'do b', files: ['shared-ab.js', 'shared-bc.js'] },
-          { slug: 'c', brief: 'do c', files: ['shared-bc.js'] },
-        ])
-      }
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('pass')
-      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
-      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
-      if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'plated', pr_url: 'https://example.test/pr/parent' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'decompose:write-minispecs'), false)
-  assert.equal(result.curds.length, 1)
-  assert.equal(result.curds[0].slug, 'parent')
-  assert.equal(result.curds[0].status, 'clean')
-  assert.match(trace.logs.join('\n'), /single-pass/)
-})
-
-test('correctiveRounds 0 fails a revise verdict immediately with no corrective pass', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('revise')
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent', correctiveRounds: 0 } })
-
-  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('correct:')), false)
-  assert.equal(result.curds[0].status, 'failed')
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'plate'), false)
-})
-
-test('an uncommitted correction stops the taste loop and the curd fails', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('revise')
-      if (opts.label === 'correct:parent:r1') return correction(false)
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent', correctiveRounds: 2 } })
-
-  const labels = trace.agents.map(({ opts }) => opts.label)
-  assert.deepEqual(labels, ['resolve', 'cook:parent', 'taste:parent', 'correct:parent:r1'])
-  assert.match(trace.logs.join('\n'), /uncommitted correction/)
-  assert.equal(result.curds[0].status, 'failed')
-})
-
-test('a mid-chain agent error becomes a structured stage failure, not a lost curd', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('pass')
-      if (opts.label === 'press:parent') throw new Error('press agent died')
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(result.curds.length, 1)
-  assert.equal(result.curds[0].status, 'failed')
-  assert.match(result.curds[0].excluded_reason, /press/)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'plate'), false)
-})
-
-test('candidates mode tolerates a missing candidates array', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return { mode: 'candidates' }
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: {} })
-
-  assert.deepEqual(Array.from(result.candidates), [])
-  assert.equal(trace.agents.length, 1)
-})
-
-test('an invalid parent slug from the resolver fails loud before any phase agent spawns', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'bad slug; rm -rf /' })
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.match(result.error, /Invalid parent slug/)
-  assert.equal(trace.agents.length, 1)
-  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cook:')), false)
-})
-
-test('an invalid spec arg fails loud before any phase agent spawns', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'bad slug; rm -rf /' } })
-
-  assert.match(result.error, /Invalid spec arg/)
-  assert.equal(trace.agents.length, 0)
-})
-
-test('integrate receives slug-sorted curds and small diffs skip the age-fanout workflow', async () => {
-  const workflow = await loadWorkflow(path)
-  const workflowCalls = []
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 2 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'b', brief: 'do b', files: ['b.js'] },
-          { slug: 'a', brief: 'do a', files: ['a.js'] },
-        ])
-      }
-      if (opts.label === 'decompose:write-minispecs') {
-        return miniSpecs([
-          { slug: 'b', spec_path: '/specs/parent--b.md' },
-          { slug: 'a', spec_path: '/specs/parent--a.md' },
-        ])
-      }
-      if (opts.label === 'cook:a') return cook('a')
-      if (opts.label === 'taste:a') return taste('pass')
-      if (opts.label === 'press:a') return phaseOk('a', 'press')
-      if (opts.label === 'cook:b') return cook('b')
-      if (opts.label === 'taste:b') return taste('pass')
-      if (opts.label === 'press:b') return phaseOk('b', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['a', 'b'], files_changed: 4, lines_changed: 40 })
-      if (opts.label === 'age:barrier') {
-        return ageBarrierResult({
-          hasMediumPlus: false,
-          perCurd: [
-            { slug: 'a', has_medium_plus_findings: false, findings: [] },
-            { slug: 'b', has_medium_plus_findings: false, findings: [] },
-          ],
-        })
-      }
-      if (opts.label === 'plate') return plate([{ slug: 'a', status: 'plated', pr_url: 'https://example.test/pr/a' }, { slug: 'b', status: 'plated', pr_url: 'https://example.test/pr/b' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const workflowOverride = (name, opts) => {
-    workflowCalls.push({ name, opts })
-    throw new Error('workflow override should not be called for small diffs')
-  }
-
-  await workflow.run({ ...globals, args: { spec: 'parent' }, workflow: workflowOverride })
-
-  const integrateCalls = trace.agents.filter(({ opts }) => opts.label === 'integrate')
-  assert.equal(integrateCalls.length, 1)
-  const prompt = integrateCalls[0].prompt
-  assert.ok(prompt.indexOf('"slug":"a"') < prompt.indexOf('"slug":"b"'))
-
-  assert.equal(workflowCalls.length, 0)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:barrier'), true)
-})
-
-test('a large integrated diff dispatches age-fanout with exact workflow args', async () => {
-  const workflow = await loadWorkflow(path)
-  const fanoutCalls = []
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'a' })
-      if (opts.label === 'cook:a') return cook('a')
-      if (opts.label === 'taste:a') return taste('pass')
-      if (opts.label === 'press:a') return phaseOk('a', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['a'], files_changed: 20, lines_changed: 900 })
-      if (opts.label === 'plate') return plate([{ slug: 'a', status: 'plated', pr_url: 'https://example.test/pr/a' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const workflowOverride = async (name, opts) => {
-    fanoutCalls.push({ name, opts: JSON.parse(JSON.stringify(opts)) })
-    return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'a', has_medium_plus_findings: false, findings: [] }] })
-  }
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' }, workflow: workflowOverride })
-
-  assert.equal(fanoutCalls.length, 1)
-  assert.equal(fanoutCalls[0].name, 'age-fanout')
-  assert.deepEqual(fanoutCalls[0].opts, {
-    worktree_path: '/tmp/worktrees/integration',
-    range: 'origin/main...HEAD',
-    slug: 'a',
-    route_curds: [{ slug: 'a', branch: 'curd/a' }],
-  })
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:barrier'), false)
-  assert.equal(result.curds[0].age.mode, 'fanout')
-})
-
-test('fanout per-curd findings drive cure only for the flagged curd', async () => {
-  const workflow = await loadWorkflow(path)
-  const CLAIM = 'unbounded recursion in parseTree'
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 2 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'a', brief: 'do a', files: ['a.js'] },
-          { slug: 'b', brief: 'do b', files: ['b.js'] },
-        ])
-      }
-      if (opts.label === 'decompose:write-minispecs') {
-        return miniSpecs([
-          { slug: 'a', spec_path: '/specs/parent--a.md' },
-          { slug: 'b', spec_path: '/specs/parent--b.md' },
-        ])
-      }
-      if (opts.label === 'cook:a') return cook('a')
-      if (opts.label === 'taste:a') return taste('pass')
-      if (opts.label === 'press:a') return phaseOk('a', 'press')
-      if (opts.label === 'cook:b') return cook('b')
-      if (opts.label === 'taste:b') return taste('pass')
-      if (opts.label === 'press:b') return phaseOk('b', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['a', 'b'], files_changed: 20, lines_changed: 900 })
-      if (opts.label === 'cure:a') return cureResult({ committed: true })
-      if (opts.label === 're-merge') return integrateResult({ merged: ['a', 'b'] })
-      if (opts.label === 'age:reage') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'a', has_medium_plus_findings: false, findings: [] }] })
-      if (opts.label === 'plate') return plate([{ slug: 'a', status: 'plated', pr_url: 'https://example.test/pr/a' }, { slug: 'b', status: 'plated', pr_url: 'https://example.test/pr/b' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const workflowOverride = async () => ageBarrierResult({
-    hasMediumPlus: true,
-    perCurd: [
-      { slug: 'a', has_medium_plus_findings: true, findings: [{ claim: CLAIM }] },
-      { slug: 'b', has_medium_plus_findings: false, findings: [] },
-    ],
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' }, workflow: workflowOverride })
-
-  const cureCall = trace.agents.find(({ opts }) => opts.label === 'cure:a')
-  assert.ok(cureCall)
-  assert.match(cureCall.prompt, new RegExp(CLAIM))
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'cure:b'), false)
-
-  const bySlug = Object.fromEntries(result.curds.map((c) => [c.slug, c]))
-  assert.equal(bySlug.a.status, 'clean')
-  assert.equal(bySlug.b.status, 'clean')
-})
-
-test('workflow() throwing falls back to age:barrier', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('pass')
-      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'], files_changed: 20, lines_changed: 900 })
-      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
-      if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'plated', pr_url: 'https://example.test/pr/parent' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const workflowOverride = async () => { throw new Error('age-fanout dispatch failed') }
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' }, workflow: workflowOverride })
-
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:barrier'), true)
-  assert.match(trace.logs.join('\n'), /age-fanout unavailable/)
-  assert.equal(result.curds[0].status, 'clean')
-  assert.equal(result.curds[0].age.mode, 'single')
-})
-
-test('cure that does not commit marks the curd dirty and skips re-merge, re-age, and plate', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('pass')
-      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
-      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: true, perCurd: [{ slug: 'parent', has_medium_plus_findings: true, findings: [] }] })
-      if (opts.label === 'cure:parent') return cureResult({ committed: false })
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(result.curds[0].status, 'dirty')
-  assert.match(result.curds[0].excluded_reason, /cure did not commit a fix/)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 're-merge'), false)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:reage'), false)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'plate'), false)
-})
-
-test('mixed cure outcome: one curd clears re-age, the other stays dirty', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 2 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'x', brief: 'do x', files: ['x.js'] },
-          { slug: 'y', brief: 'do y', files: ['y.js'] },
-        ])
-      }
-      if (opts.label === 'decompose:write-minispecs') {
-        return miniSpecs([
-          { slug: 'x', spec_path: '/specs/parent--x.md' },
-          { slug: 'y', spec_path: '/specs/parent--y.md' },
-        ])
-      }
-      if (opts.label === 'cook:x') return cook('x')
-      if (opts.label === 'taste:x') return taste('pass')
-      if (opts.label === 'press:x') return phaseOk('x', 'press')
-      if (opts.label === 'cook:y') return cook('y')
-      if (opts.label === 'taste:y') return taste('pass')
-      if (opts.label === 'press:y') return phaseOk('y', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['x', 'y'] })
-      if (opts.label === 'age:barrier') {
-        return ageBarrierResult({
-          hasMediumPlus: true,
-          perCurd: [
-            { slug: 'x', has_medium_plus_findings: true, findings: [] },
-            { slug: 'y', has_medium_plus_findings: true, findings: [] },
-          ],
-        })
-      }
-      if (opts.label === 'cure:x') return cureResult({ committed: true })
-      if (opts.label === 'cure:y') return cureResult({ committed: true })
-      if (opts.label === 're-merge') return integrateResult({ merged: ['x', 'y'] })
-      if (opts.label === 'age:reage') {
-        return ageBarrierResult({
-          hasMediumPlus: true,
-          perCurd: [
-            { slug: 'x', has_medium_plus_findings: false, findings: [] },
-            { slug: 'y', has_medium_plus_findings: true, findings: [] },
-          ],
-        })
-      }
-      if (opts.label === 'plate') return plate([{ slug: 'x', status: 'plated', pr_url: 'https://example.test/pr/x' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  const bySlug = Object.fromEntries(result.curds.map((c) => [c.slug, c]))
-  assert.equal(bySlug.x.status, 'clean')
-  assert.equal(bySlug.x.pr_url, 'https://example.test/pr/x')
-  assert.equal(bySlug.y.status, 'dirty')
-  assert.match(bySlug.y.excluded_reason, /re-age still reports medium\+ findings/)
-
-  const plateCall = trace.agents.find(({ opts }) => opts.label === 'plate')
-  assert.match(plateCall.prompt, /"slug":"x"/)
-  assert.doesNotMatch(plateCall.prompt, /"slug":"y"/)
-})
-
-test('an integrate conflict fails the conflicting curd and keeps the merged one clean', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 2 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'ok', brief: 'do ok', files: ['ok.js'] },
-          { slug: 'clash', brief: 'do clash', files: ['clash.js'] },
-        ])
-      }
-      if (opts.label === 'decompose:write-minispecs') {
-        return miniSpecs([
-          { slug: 'ok', spec_path: '/specs/parent--ok.md' },
-          { slug: 'clash', spec_path: '/specs/parent--clash.md' },
-        ])
-      }
-      if (opts.label === 'cook:ok') return cook('ok')
-      if (opts.label === 'taste:ok') return taste('pass')
-      if (opts.label === 'press:ok') return phaseOk('ok', 'press')
-      if (opts.label === 'cook:clash') return cook('clash')
-      if (opts.label === 'taste:clash') return taste('pass')
-      if (opts.label === 'press:clash') return phaseOk('clash', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['ok'], conflicted: ['clash'] })
-      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'ok', has_medium_plus_findings: false, findings: [] }] })
-      if (opts.label === 'plate') return plate([{ slug: 'ok', status: 'plated', pr_url: 'https://example.test/pr/ok' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  const bySlug = Object.fromEntries(result.curds.map((c) => [c.slug, c]))
-  assert.equal(bySlug.clash.status, 'failed')
-  assert.match(bySlug.clash.excluded_reason, /integrate: merge conflict/)
-  assert.equal(bySlug.ok.status, 'clean')
-
-  const ageBarrierCall = trace.agents.find(({ opts }) => opts.label === 'age:barrier')
-  assert.doesNotMatch(ageBarrierCall.prompt, /"slug":"clash"/)
-})
-
-test('an integrate failure fails the whole chain before age:barrier', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('pass')
-      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
-      if (opts.label === 'integrate') throw new Error('integrate agent died')
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(result.curds[0].status, 'failed')
-  assert.match(result.curds[0].excluded_reason, /integrate: barrier integration failed/)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'age:barrier'), false)
-  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cure:')), false)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'plate'), false)
-})
-
-test('a generic blocked or halt cook does not get a continuation', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent', { status: 'blocked' })
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cook:parent:c')), false)
-  assert.equal(result.curds[0].status, 'failed')
-  assert.match(result.curds[0].excluded_reason, /last status: blocked/)
-})
-
-test('a needs-context cook coordinates an authoritative checkpoint before one continuation', async () => {
-  const workflow = await loadWorkflow(path)
-  const checkpointRef = 'parent-cook'
-  const worktreePath = '/tmp/worktrees/parent'
-  const observations = {
-    completed: 'implemented the parser',
-    remaining: 'run the focused gate',
-    grounded: 'src/parser.js#10-20',
-    gates: 'node --test tests/parser.test.mjs: pass',
-    worktree_base: `${worktreePath} @ 39abaa4`,
-    source_ranges: ['src/parser.js#10-20'],
-    locked_decisions: 'retry the same phase only',
-    known_false_leads: 'do not use the legacy cook path',
-  }
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return { status: 'needs-context', worktree_path: worktreePath, checkpoint_observations: observations, orientation: 'partial' }
-      if (opts.label === 'cook:parent:checkpoint') return { status: 'ok', checkpoint_ref: checkpointRef, working_context: ['src/parser.js#10-20'], worktree_fingerprint: 'fp1' }
-      if (opts.label === 'cook:parent:c1') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('pass')
-      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
-      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
-      if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'plated', pr_url: 'https://example.test/pr/parent' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-  const labels = trace.agents.map(({ opts }) => opts.label)
-  const checkpoint = trace.agents.find(({ opts }) => opts.label === 'cook:parent:checkpoint')
-  const continuation = trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1')
-
-  assert.deepEqual(labels, ['resolve', 'cook:parent', 'cook:parent:checkpoint', 'cook:parent:c1', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate'])
-  assert.equal(checkpoint.opts.agentType, 'generalist')
-  assert.equal(checkpoint.opts.isolation, undefined)
-  assert.equal(checkpoint.opts.workdir, worktreePath)
-  assert.match(checkpoint.prompt, /working directory/i)
-  assert.match(checkpoint.prompt, /retry the same phase only/)
-  assert.match(checkpoint.prompt, /do not use the legacy cook path/)
-  assert.match(checkpoint.prompt, /python3 ~\/\.claude\/skills\/wheypoint\/scripts\/wheypoint\.pyz/)
-  assert.doesNotMatch(checkpoint.prompt, /skills\/cook\//)
-  assert.match(checkpoint.prompt, /do not mutate source/i)
-  // One exact fingerprint command: untracked contents count, .cheese/ checkpoint notes do not.
-  assert.ok(checkpoint.prompt.includes("git ls-files -z --others --exclude-standard -- . ':(exclude).cheese' | xargs -0 git hash-object --; } | git hash-object --stdin"))
-  assert.match(checkpoint.prompt, /return its single output line verbatim as worktree_fingerprint/)
-  assert.match(continuation.prompt, new RegExp(`resolve --ref ${checkpointRef}`))
-  assert.match(continuation.prompt, /src\/parser\.js#10-20/)
-  assert.equal(result.curds[0].status, 'clean')
-})
-
-test('a needs-context cook without observations halts before checkpoint dispatch', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return { status: 'needs-context', worktree_path: '/tmp/worktrees/parent', orientation: 'partial' }
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['resolve', 'cook:parent'])
-  assert.equal(result.curds[0].status, 'failed')
-  assert.match(result.curds[0].excluded_reason, /observations/i)
-})
-
-test('a failed, empty, or wrong-worktree checkpoint halts without a coder retry', async () => {
-  for (const checkpoint of [
-    { status: 'blocked', worktree_path: '/tmp/worktrees/parent', checkpoint_ref: '', working_context: [] },
-    { status: 'ok', worktree_path: '/tmp/worktrees/parent', checkpoint_ref: 'parent-cook', working_context: [] },
-    { status: 'ok', worktree_path: '/tmp/worktrees/other', checkpoint_ref: 'parent-cook', working_context: ['src/parser.js#10-20'] },
-    { status: 'ok', checkpoint_ref: 'parent-cook', working_context: ['../parser.js#10-20'] },
-    { status: 'ok', checkpoint_ref: 'parent-cook', working_context: Array.from({ length: 17 }, (_, i) => `src/file-${i}.js#1-2`) },
-    { status: 'ok', worktree_path: '/tmp/worktrees/parent', checkpoint_ref: 'parent-cook', working_context: ['src/parser.js#10-20'] },
-  ]) {
-    const workflow = await loadWorkflow(path)
-    const { globals, trace } = createRuntime({
-      respond: ({ opts }) => {
-        if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-        if (opts.label === 'cook:parent') return {
-          status: 'needs-context',
-          worktree_path: '/tmp/worktrees/parent',
-          checkpoint_observations: {
-            completed: 'implemented the parser',
-            remaining: 'run the focused gate',
-            grounded: 'src/parser.js#10-20',
-            gates: 'node --test tests/parser.test.mjs: pass',
-            worktree_base: '/tmp/worktrees/parent @ 39abaa4',
-            source_ranges: ['src/parser.js#10-20'],
-            locked_decisions: 'retry the same phase only',
-            known_false_leads: 'none',
-          },
-          orientation: 'partial',
-        }
-        if (opts.label === 'cook:parent:checkpoint') return checkpoint
-        throw new Error(`unexpected agent ${opts.label}`)
-      },
-    })
-
-    const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-    assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['resolve', 'cook:parent', 'cook:parent:checkpoint'])
-    assert.equal(result.curds[0].status, 'failed')
-    assert.match(result.curds[0].excluded_reason, /checkpoint/i)
+test('an invalid spec arg fails before any agent; bare and JSON-quoted strings are the spec', async () => {
+  const none = await run(() => { throw new Error('no agent expected') }, { spec: '../etc/passwd' })
+  assert.match(none.result.error, /^Invalid spec arg/)
+  assert.equal(none.labels.length, 0)
+  for (const args of ['parent', '"parent"', '~/specs/parent.md']) {
+    const { trace } = await run(responder({ curds: [curd('alpha')], boss: { alpha: CLEAN } }), args)
+    assert.match(call(trace, 'resolve').prompt, new RegExp(`A spec was given: "${args.replace(/"/g, '')}"`))
   }
 })
 
-test('a needs-context observation missing locked fields halts before checkpoint dispatch', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return {
-        status: 'needs-context',
-        worktree_path: '/tmp/worktrees/parent',
-        checkpoint_observations: {
-          completed: 'implemented the parser',
-          remaining: 'run the focused gate',
-          grounded: 'src/parser.js#10-20',
-          gates: 'node --test tests/parser.test.mjs: pass',
-          worktree_base: '/tmp/worktrees/parent @ 39abaa4',
-          source_ranges: ['src/parser.js#10-20'],
-        },
-      }
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['resolve', 'cook:parent'])
-  assert.equal(result.curds[0].status, 'failed')
-  assert.match(result.curds[0].excluded_reason, /required|locked|observations/i)
-})
-
-test('oversized needs-context observations halt without truncation or checkpoint dispatch', async () => {
-  const workflow = await loadWorkflow(path)
-  const oversized = 'x'.repeat(1500)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return {
-        status: 'needs-context',
-        worktree_path: '/tmp/worktrees/parent',
-        checkpoint_observations: {
-          completed: oversized,
-          remaining: oversized,
-          grounded: oversized,
-          gates: oversized,
-          worktree_base: '/tmp/worktrees/parent @ ' + oversized,
-          source_ranges: ['src/parser.js#10-20'],
-          locked_decisions: oversized,
-          known_false_leads: oversized,
-        },
-      }
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['resolve', 'cook:parent'])
-  assert.equal(result.curds[0].status, 'failed')
-  assert.match(result.curds[0].excluded_reason, /observations/i)
-})
-
-test('a second needs-context cook with a changed fingerprint dispatches another fresh continuation', async () => {
-  const workflow = await loadWorkflow(path)
-  const observations = {
-    completed: 'implemented the parser',
-    remaining: 'run the focused gate',
-    grounded: 'src/parser.js#10-20',
-    gates: 'node --test tests/parser.test.mjs: pass',
-    worktree_base: '/tmp/worktrees/parent @ 39abaa4',
-    source_ranges: ['src/parser.js#10-20'],
-    locked_decisions: 'retry the same phase only',
-    known_false_leads: 'none',
+test('an invalid curd plan stops before the graph', async () => {
+  const plans = [
+    [curd('alpha', ['beta']), curd('beta', ['alpha'])],
+    [curd('alpha', ['ghost'])],
+    [curd('alpha'), curd('alpha')],
+    [curd('Bad Slug')],
+  ]
+  for (const curds of plans) {
+    const { result, labels } = await run(responder({ curds, boss: {} }), { spec: 'parent' })
+    assert.match(result.error, /^invalid curd plan/)
+    same(labels, ['resolve'])
   }
-  let checkpointCalls = 0
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent' || opts.label === 'cook:parent:c1') return { status: 'needs-context', worktree_path: '/tmp/worktrees/parent', checkpoint_observations: observations, orientation: 'partial' }
-      if (opts.label === 'cook:parent:checkpoint') {
-        checkpointCalls++
-        return { status: 'ok', checkpoint_ref: 'parent-cook', worktree_path: '/tmp/worktrees/parent', working_context: ['src/parser.js#10-20'], worktree_fingerprint: `fp${checkpointCalls}` }
-      }
-      if (opts.label === 'cook:parent:c2') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('pass')
-      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
-      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
-      if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'plated', pr_url: 'https://example.test/pr/parent' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-  const labels = trace.agents.map(({ opts }) => opts.label)
-
-  assert.deepEqual(labels, ['resolve', 'cook:parent', 'cook:parent:checkpoint', 'cook:parent:c1', 'cook:parent:checkpoint', 'cook:parent:c2', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate'])
-  assert.equal(result.curds[0].status, 'clean')
 })
 
-test('a needs-context cook whose worktree fingerprint does not change halts with no progress and no further coder', async () => {
-  const workflow = await loadWorkflow(path)
-  const observations = {
-    completed: 'implemented the parser',
-    remaining: 'run the focused gate',
-    grounded: 'src/parser.js#10-20',
-    gates: 'node --test tests/parser.test.mjs: pass',
-    worktree_base: '/tmp/worktrees/parent @ 39abaa4',
-    source_ranges: ['src/parser.js#10-20'],
-    locked_decisions: 'retry the same phase only',
-    known_false_leads: 'none',
+// ---- Curd boss loop ----
+
+test('a clean curd runs boss -> coder -> boss -> reviewer -> boss, then press, integrate, age, and plate', async () => {
+  const { result, trace, labels } = await run(responder({ curds: [curd('alpha')], boss: { alpha: CLEAN } }), { spec: 'parent' })
+  same(labels, ['resolve', 'graph', 'boss:alpha:t1', 'code:alpha:t1', 'boss:alpha:t2', 'review:alpha:t2', 'boss:alpha:t3', 'press:alpha', 'integrate', 'age:barrier', 'plate'])
+  assert.equal(result.status, 'done')
+  same(result.summary, { clean: 1 })
+  assert.equal(result.curds[0].pr_url, 'https://example.test/pr/alpha')
+  const roles = Object.fromEntries(trace.agents.map((a) => [a.opts.label, [a.opts.agentType, a.opts.model]]))
+  same(roles['boss:alpha:t1'], ['generalist', 'opus'])
+  same(roles['code:alpha:t1'], ['coder', 'sonnet'])
+  same(roles['review:alpha:t2'], ['reviewer', 'opus'])
+  assert.match(call(trace, 'review:alpha:t2').prompt, /^Review mode: severity-report\n/)
+  assert.match(call(trace, 'age:barrier').prompt, /^Review mode: severity-report\n/)
+})
+
+test('a coder gets only the curd ref and the boss brief, never prior handback JSON (AC-5)', async () => {
+  const { trace } = await run(responder({ curds: [curd('alpha')], boss: { alpha: ['dispatch_coder', 'dispatch_coder', 'dispatch_review', 'finish'] } }), { spec: 'parent' })
+  const coders = trace.agents.filter((a) => a.opts.label.startsWith('code:'))
+  assert.equal(coders.length, 2)
+  for (const c of coders) {
+    assert.match(c.prompt, /Curd record: wheypoint:acme\/factory-parent--alpha\./)
+    assert.match(c.prompt, /Brief: implement alpha/)
+    assert.doesNotMatch(c.prompt, /"orientation":"implemented"|Last worker result/)
   }
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent' || opts.label === 'cook:parent:c1') return { status: 'needs-context', worktree_path: '/tmp/worktrees/parent', checkpoint_observations: observations, orientation: 'partial' }
-      if (opts.label === 'cook:parent:checkpoint') return { status: 'ok', checkpoint_ref: 'parent-cook', worktree_path: '/tmp/worktrees/parent', working_context: ['src/parser.js#10-20'], worktree_fingerprint: 'same-fp' }
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-  const labels = trace.agents.map(({ opts }) => opts.label)
-
-  assert.deepEqual(labels, ['resolve', 'cook:parent', 'cook:parent:checkpoint', 'cook:parent:c1', 'cook:parent:checkpoint'])
-  assert.equal(labels.filter((label) => label === 'cook:parent:c2').length, 0)
-  assert.equal(result.curds[0].status, 'failed')
-  assert.match(result.curds[0].excluded_reason, /no progress/i)
+  assert.equal(coders[0].opts.isolation, 'worktree')
+  assert.match(coders[0].prompt, /git checkout -B curd\/alpha origin\/main/)
+  assert.equal(coders[1].opts.isolation, undefined)
+  assert.match(coders[1].prompt, /cd \/tmp\/wt\/alpha first/)
+  assert.match(call(trace, 'boss:alpha:t2').prompt, /Last worker result: \{"action":"dispatch_coder","status":"ok","next":"age"/)
 })
 
-test('a needs-context cook that never resolves halts at the continuation limit', async () => {
-  const workflow = await loadWorkflow(path)
-  const observations = {
-    completed: 'implemented the parser',
-    remaining: 'run the focused gate',
-    grounded: 'src/parser.js#10-20',
-    gates: 'node --test tests/parser.test.mjs: pass',
-    worktree_base: '/tmp/worktrees/parent @ 39abaa4',
-    source_ranges: ['src/parser.js#10-20'],
-    locked_decisions: 'retry the same phase only',
-    known_false_leads: 'none',
+test('a dependent curd branches from its dependency and stacks on it at plate', async () => {
+  const curds = [curd('alpha'), curd('beta', ['alpha'])]
+  const { result, trace, labels } = await run(responder({ curds, boss: { alpha: CLEAN, beta: CLEAN }, landing: 'stacked_linear' }), { spec: 'parent' })
+  assert.ok(labels.indexOf('boss:alpha:t3') < labels.indexOf('boss:beta:t1'), 'beta waits for alpha to finish')
+  assert.match(call(trace, 'code:beta:t1').prompt, /git checkout -B curd\/beta curd\/alpha/)
+  assert.match(call(trace, 'review:beta:t2').prompt, /dependency branches \["curd\/alpha"\] were reviewed already/)
+  assert.match(call(trace, 'integrate').prompt, /\["curd\/alpha","curd\/beta"\]/)
+  const plate = call(trace, 'plate').prompt
+  assert.match(plate, /landing shape "stacked_linear"/)
+  assert.match(plate, /\{"slug":"beta","branch":"curd\/beta","base":"curd\/alpha"\}/)
+  same(result.summary, { clean: 2 })
+})
+
+test('a curd with no finish after the turn cap stalls and is not plated', async () => {
+  const { result, labels } = await run(responder({ curds: [curd('alpha')], boss: { alpha: Array(12).fill('dispatch_coder') } }), { spec: 'parent' })
+  assert.equal(status(result, 'alpha'), 'stalled')
+  assert.equal(labels.filter((l) => l.startsWith('boss:')).length, 12)
+  assert.ok(!labels.includes('plate'))
+})
+
+test('a boss review before any coder, or a dispatch without a brief, fails the curd', async () => {
+  const early = await run(responder({ curds: [curd('alpha')], boss: { alpha: ['dispatch_review'] } }), { spec: 'parent' })
+  assert.match(early.result.curds[0].reason, /review before any coder/)
+  const blank = await run(responder({ curds: [curd('alpha')], boss: { alpha: ['dispatch_coder'] }, over: { 'boss:alpha:t1': { role: 'boss', action: 'dispatch_coder', wheypoint_ref: REF('alpha'), brief: ' ' } } }), { spec: 'parent' })
+  assert.match(blank.result.curds[0].reason, /without a brief/)
+})
+
+test('a missing gate stamp logs once and does not stop the run', async () => {
+  const { result, trace } = await run(responder({ curds: [curd('alpha')], boss: { alpha: CLEAN }, gate: false }), { spec: 'parent' })
+  assert.equal(result.status, 'done')
+  assert.equal(trace.logs.filter((l) => l.includes('handback gate did not report')).length, 1)
+})
+
+// ---- Forks: park, return, resume ----
+
+test('a boss fork parks its curd, siblings finish, and the run returns before press (AC-6)', async () => {
+  const curds = [curd('alpha'), curd('beta'), curd('gamma', ['alpha'])]
+  const { result, labels } = await run(responder({ curds, boss: { alpha: ['raise_fork'], beta: CLEAN, gamma: CLEAN } }), { spec: 'parent' })
+  assert.equal(result.status, 'gated')
+  same(result.forks, [{ slug: 'alpha', record: 'wheypoint:acme/factory-parent--alpha', fork: FORK }])
+  same(result.curds.map((c) => [c.slug, c.state]), [['alpha', 'parked'], ['beta', 'finished'], ['gamma', 'blocked']])
+  assert.ok(!labels.some((l) => l.includes(':gamma:')), 'a dependent of a parked curd never dispatches')
+  assert.ok(!labels.some((l) => l.startsWith('press:') || l === 'integrate'))
+})
+
+test('resume replays the original calls first, then continues the answered fork and its dependents (AC-7)', async () => {
+  const curds = [curd('alpha'), curd('beta'), curd('gamma', ['alpha'])]
+  const boss = { alpha: ['dispatch_coder', 'raise_fork', 'dispatch_review', 'finish'], beta: CLEAN, gamma: CLEAN }
+  const first = await run(responder({ curds, boss }), { spec: 'parent' })
+  assert.equal(first.result.status, 'gated')
+
+  const resumed = await run(responder({ curds, boss }), { spec: 'parent', answers: { alpha: 'stack on main' } })
+  const prefix = first.trace.agents.map((a) => [a.opts.label, a.prompt])
+  same(resumed.trace.agents.slice(0, prefix.length).map((a) => [a.opts.label, a.prompt]), prefix, 'pass 1 is a cache-identical replay')
+  const live = resumed.labels.slice(prefix.length)
+  same(live.slice(0, 3), ['boss:alpha:t3', 'review:alpha:t3', 'boss:alpha:t4'])
+  assert.ok(live.includes('boss:gamma:t1'), 'the blocked dependent runs after its dependency finishes')
+  assert.match(call(resumed.trace, 'boss:alpha:t3').prompt, /The user answered your open fork: "stack on main"/)
+  assert.doesNotMatch(call(resumed.trace, 'boss:alpha:t4').prompt, /The user answered/)
+  assert.equal(resumed.result.status, 'done')
+  same(resumed.result.summary, { clean: 3 })
+})
+
+test('a second fork on a resumed curd parks again and takes the next answer in order', async () => {
+  const curds = [curd('alpha')]
+  const boss = () => ({ alpha: ['raise_fork', 'raise_fork', 'dispatch_coder', 'dispatch_review', 'finish'] })
+  const once = await run(responder({ curds, boss: boss() }), { spec: 'parent', answers: { alpha: 'first' } })
+  assert.equal(once.result.status, 'gated')
+  assert.equal(once.result.forks[0].slug, 'alpha')
+  const twice = await run(responder({ curds, boss: boss() }), { spec: 'parent', answers: { alpha: ['first', 'second'] } })
+  assert.equal(twice.result.status, 'done')
+  assert.match(call(twice.trace, 'boss:alpha:t3').prompt, /answered your open fork: "second"/)
+})
+
+test('a gated coder parks the curd; the answer goes to the next boss turn', async () => {
+  const curds = [curd('alpha')]
+  const coder = () => ({ status: 'gated: which schema version?', next: 'hold' })
+  const parked = await run(responder({ curds, boss: { alpha: ['dispatch_coder'] }, coder }), { spec: 'parent' })
+  assert.equal(parked.result.status, 'gated')
+  assert.equal(parked.result.forks[0].fork.question, 'which schema version?')
+  const resumed = await run(responder({ curds, boss: { alpha: ['dispatch_coder', 'finish'] }, coder }), { spec: 'parent', answers: { alpha: 'v2' } })
+  assert.match(call(resumed.trace, 'boss:alpha:t2').prompt, /answered your open fork: "v2"/)
+  assert.match(call(resumed.trace, 'boss:alpha:t2').prompt, /"status":"gated: which schema version\?"/)
+})
+
+// ---- Stop statuses and barriers (AC-8) ----
+
+test('a coder halt keeps the curd out of integrate and plate', async () => {
+  const curds = [curd('alpha'), curd('beta')]
+  const coder = (slug) => (slug === 'beta' ? { status: 'halt: gate failed', next: 'hold' } : {})
+  const { result, trace } = await run(responder({ curds, boss: { alpha: CLEAN, beta: CLEAN }, coder }), { spec: 'parent' })
+  assert.equal(status(result, 'beta'), 'halted')
+  assert.doesNotMatch(call(trace, 'integrate').prompt, /curd\/beta/)
+  assert.doesNotMatch(call(trace, 'plate').prompt, /curd\/beta/)
+})
+
+test('a press halt marks the curd dirty and blocks its dependent', async () => {
+  const curds = [curd('alpha'), curd('beta', ['alpha']), curd('gamma')]
+  const { result, trace } = await run(responder({ curds, boss: { alpha: CLEAN, beta: CLEAN, gamma: CLEAN }, over: { 'press:alpha': { status: 'halt: tests would not go red' } } }), { spec: 'parent' })
+  assert.equal(status(result, 'alpha'), 'dirty')
+  assert.equal(status(result, 'beta'), 'blocked')
+  assert.equal(status(result, 'gamma'), 'clean')
+  assert.match(call(trace, 'integrate').prompt, /\["curd\/gamma"\]/)
+})
+
+test('an integrate conflict fails that curd and keeps the merged one clean', async () => {
+  const curds = [curd('alpha'), curd('beta')]
+  const over = { integrate: { worktree_path: '/tmp/wt/integration', merged: ['alpha'], conflicted: ['beta'], files_changed: 2, lines_changed: 10 } }
+  const { result } = await run(responder({ curds, boss: { alpha: CLEAN, beta: CLEAN }, over }), { spec: 'parent' })
+  assert.equal(status(result, 'alpha'), 'clean')
+  assert.equal(status(result, 'beta'), 'failed')
+  assert.match(result.curds.find((c) => c.slug === 'beta').reason, /merge conflict/)
+})
+
+// ---- Age, Cure, Re-age ----
+
+const flagged = (slugs) => ({ status: 'ok', has_medium_plus_findings: true, per_curd: slugs.map((slug) => ({ slug, has_medium_plus_findings: true, findings: [{ severity: 'high', file: `${slug}.js`, claim: 'bug' }] })) })
+
+test('a routed finding cures that curd, and a clean re-age keeps it in plate', async () => {
+  const curds = [curd('alpha'), curd('beta')]
+  const { result, labels, trace } = await run(responder({ curds, boss: { alpha: CLEAN, beta: CLEAN }, over: { 'age:barrier': flagged(['alpha']) } }), { spec: 'parent' })
+  same(labels.slice(labels.indexOf('age:barrier')), ['age:barrier', 'cure:alpha', 're-merge', 'age:reage', 'plate'])
+  assert.match(call(trace, 'cure:alpha').prompt, /cd \/tmp\/wt\/alpha first/)
+  assert.match(call(trace, 'age:reage').prompt, /"claim":"bug"/)
+  same(result.summary, { clean: 2 })
+})
+
+test('a cure that halts or commits nothing marks the curd dirty and skips re-age', async () => {
+  for (const cure of [{ status: 'halt: cannot fix', committed: true }, { status: 'ok', committed: false }]) {
+    const { result, labels } = await run(responder({ curds: [curd('alpha')], boss: { alpha: CLEAN }, over: { 'age:barrier': flagged(['alpha']), 'cure:alpha': cure } }), { spec: 'parent' })
+    assert.equal(status(result, 'alpha'), 'dirty')
+    assert.ok(!labels.includes('age:reage'))
+    assert.ok(!labels.includes('plate'))
   }
-  let checkpointCalls = 0
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent' || /^cook:parent:c\d+$/.test(opts.label)) return { status: 'needs-context', worktree_path: '/tmp/worktrees/parent', checkpoint_observations: observations, orientation: 'partial' }
-      if (opts.label === 'cook:parent:checkpoint') {
-        checkpointCalls++
-        return { status: 'ok', checkpoint_ref: 'parent-cook', worktree_path: '/tmp/worktrees/parent', working_context: ['src/parser.js#10-20'], worktree_fingerprint: `fp${checkpointCalls}` }
-      }
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-  const labels = trace.agents.map(({ opts }) => opts.label)
-
-  assert.equal(labels.filter((label) => /^cook:parent:c\d+$/.test(label)).length, 8)
-  assert.equal(labels.includes('cook:parent:c9'), false)
-  assert.equal(result.curds[0].status, 'failed')
-  assert.match(result.curds[0].excluded_reason, /exhausted/i)
-  assert.match(result.curds[0].excluded_reason, /8/)
 })
 
-test('age:barrier reporting medium+ with no per-curd routing marks the curd dirty', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('pass')
-      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
-      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: true, perCurd: [] })
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(result.curds[0].status, 'dirty')
-  assert.match(result.curds[0].excluded_reason, /age reported medium\+ findings without per-curd routing/)
-  assert.match(trace.logs.join('\n'), /no per-curd routing/)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'plate'), false)
+test('a re-age that still flags a curd marks it dirty', async () => {
+  const curds = [curd('alpha'), curd('beta')]
+  const over = { 'age:barrier': flagged(['alpha', 'beta']), 'age:reage': flagged(['beta']) }
+  const { result } = await run(responder({ curds, boss: { alpha: CLEAN, beta: CLEAN }, over }), { spec: 'parent' })
+  assert.equal(status(result, 'alpha'), 'clean')
+  assert.equal(status(result, 'beta'), 'dirty')
 })
 
-test('a bare non-JSON string spec arg runs resolve in spec mode with the arg quoted in the prompt', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveMissing('Usage: /cheese-factory { spec: <slug-or-path> } — spec not found at /specs/parent.md')
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  await workflow.run({ ...globals, args: '/specs/parent.md' })
-
-  assert.equal(trace.agents.length, 1)
-  assert.match(trace.agents[0].prompt, /A spec was given: "\/specs\/parent\.md"/)
+test('medium+ findings without per-curd routing mark every integrated curd dirty', async () => {
+  const over = { 'age:barrier': { status: 'ok', has_medium_plus_findings: true, per_curd: [] } }
+  const { result, labels } = await run(responder({ curds: [curd('alpha')], boss: { alpha: CLEAN }, over }), { spec: 'parent' })
+  assert.equal(status(result, 'alpha'), 'dirty')
+  assert.ok(!labels.includes('plate'))
 })
 
-test('a JSON-quoted string spec arg behaves like a bare string', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals } = createRuntime({ respond: respondCleanChain({ slug: 'parent' }) })
+test('a large integrated diff dispatches age-fanout and falls back to one reviewer when it throws', async () => {
+  const over = { integrate: { worktree_path: '/tmp/wt/integration', merged: ['alpha'], conflicted: [], files_changed: 20, lines_changed: 900 } }
+  const calls = []
+  const fanout = async (name, args) => { calls.push([name, args]); return { status: 'ok', has_medium_plus_findings: false, per_curd: [] } }
+  const used = await run(responder({ curds: [curd('alpha')], boss: { alpha: CLEAN }, over }), { spec: 'parent' }, { workflow: fanout })
+  same(calls, [['age-fanout', { worktree_path: '/tmp/wt/integration', range: 'origin/main...HEAD', slug: 'parent', route_curds: [{ slug: 'alpha', branch: 'curd/alpha', depends_on: [] }] }]])
+  assert.ok(!used.labels.includes('age:barrier'))
 
-  const result = await workflow.run({ ...globals, args: JSON.stringify('parent') })
-
-  assert.equal(result.curds[0].status, 'clean')
-})
-
-test('absolute and ~/ spec paths pass validation; a spec arg with .. is rejected', async () => {
-  const workflow = await loadWorkflow(path)
-
-  for (const spec of ['/abs/path.md', '~/x/y.md']) {
-    const { globals } = createRuntime({ respond: respondCleanChain({ slug: 'parent' }) })
-    const result = await workflow.run({ ...globals, args: { spec } })
-    assert.equal(result.curds[0].status, 'clean')
-  }
-
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => { throw new Error(`unexpected agent ${opts.label}`) },
-  })
-  const result = await workflow.run({ ...globals, args: { spec: 'a/../b' } })
-
-  assert.match(result.error, /Invalid spec arg/)
-  assert.equal(trace.agents.length, 0)
-})
-
-test('two curds coupled purely by depends_on merge into one and fall back to single-pass', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 2 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'a', brief: 'do a', files: ['a.js'] },
-          { slug: 'b', brief: 'do b', files: ['b.js'], depends_on: ['a'] },
-        ])
-      }
-      if (opts.label === 'cook:parent') return cook('parent')
-      if (opts.label === 'taste:parent') return taste('pass')
-      if (opts.label === 'press:parent') return phaseOk('parent', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
-      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
-      if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'plated', pr_url: 'https://example.test/pr/parent' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'decompose:write-minispecs'), false)
-  assert.equal(result.curds.length, 1)
-  assert.equal(result.curds[0].slug, 'parent')
-  assert.equal(result.curds[0].status, 'clean')
-  assert.match(trace.logs.join('\n'), /single-pass/)
-})
-
-test('a depends_on edge merges two of three curds, leaving the third independent and fanning out', async () => {
-  const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 3 })
-      if (opts.label === 'decompose:plan') {
-        return decompose([
-          { slug: 'a', brief: 'do a', files: ['a.js'] },
-          { slug: 'b', brief: 'do b', files: ['b.js'], depends_on: ['a'] },
-          { slug: 'c', brief: 'do c', files: ['c.js'] },
-        ])
-      }
-      if (opts.label === 'decompose:write-minispecs') {
-        return miniSpecs([
-          { slug: 'a', spec_path: '/specs/parent--a.md' },
-          { slug: 'c', spec_path: '/specs/parent--c.md' },
-        ])
-      }
-      if (opts.label === 'cook:a') return cook('a')
-      if (opts.label === 'taste:a') return taste('pass')
-      if (opts.label === 'press:a') return phaseOk('a', 'press')
-      if (opts.label === 'cook:c') return cook('c')
-      if (opts.label === 'taste:c') return taste('pass')
-      if (opts.label === 'press:c') return phaseOk('c', 'press')
-      if (opts.label === 'integrate') return integrateResult({ merged: ['a', 'c'] })
-      if (opts.label === 'age:barrier') {
-        return ageBarrierResult({
-          hasMediumPlus: false,
-          perCurd: [
-            { slug: 'a', has_medium_plus_findings: false, findings: [] },
-            { slug: 'c', has_medium_plus_findings: false, findings: [] },
-          ],
-        })
-      }
-      if (opts.label === 'plate') return plate([{ slug: 'a', status: 'plated', pr_url: 'https://example.test/pr/a' }, { slug: 'c', status: 'plated', pr_url: 'https://example.test/pr/c' }])
-      throw new Error(`unexpected agent ${opts.label}`)
-    },
-  })
-
-  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
-
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'cook:b'), false)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'cook:a'), true)
-  assert.equal(trace.agents.some(({ opts }) => opts.label === 'cook:c'), true)
-  assert.match(trace.logs.join('\n'), /Merged coupled curd group\(s\): a\+b/)
+  const fallback = await run(responder({ curds: [curd('alpha')], boss: { alpha: CLEAN }, over }), { spec: 'parent' })
+  assert.ok(fallback.labels.includes('age:barrier'))
+  assert.equal(fallback.result.status, 'done')
 })
