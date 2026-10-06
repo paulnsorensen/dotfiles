@@ -58,7 +58,9 @@ setup() {
     head -c 20480 /dev/zero | tr '\0' 'x' > "$W/README.md"
     printf 'tiny\n' > "$W/small.txt"
     printf 'tiny\n' > "$W/dir/inner.txt"
-    SCRATCH="/tmp/claude-$(id -u)/session"
+    export TMPDIR="$BATS_TEST_TMPDIR/tmp"
+    SCRATCH="$TMPDIR/claude-$(id -u)/session"
+    mkdir -p "$SCRATCH"
     export CLAUDE_TOOL_REROUTE_LOG_DIR="$BATS_TEST_TMPDIR/reroute-log"
 }
 
@@ -1207,14 +1209,14 @@ NODE
     local cmd
     for cmd in "echo hi > $SCRATCH/a.txt" "printf x >> $SCRATCH/a.txt" "echo hi | tee $SCRATCH/a.txt" \
         "cat $SCRATCH/a.txt" "head -5 $SCRATCH/a.txt" "sed -n 1,5p $SCRATCH/a.txt" \
-        "sed -i s/a/b/ $SCRATCH/a.txt" "grep -r foo $SCRATCH" "rg foo $SCRATCH/a.txt" \
-        "echo hi > /private/tmp/claude-$(id -u)/x"; do
+        "sed -i s/a/b/ $SCRATCH/a.txt" "grep -r foo $SCRATCH" "rg foo $SCRATCH/a.txt"; do
         [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
     done
 }
 
 @test "tool-reroute/io: a TMPDIR scratch root passes" {
     export TMPDIR="$BATS_TEST_TMPDIR/tmproot/"
+    mkdir -p "$TMPDIR/claude-$(id -u)"
     [[ -z "$(out_for_safe "echo hi > $BATS_TEST_TMPDIR/tmproot/claude-$(id -u)/a.txt")" ]]
 }
 
@@ -1244,4 +1246,62 @@ NODE
         'cat dir' 'cat $F' 'xargs cat' 'sed -i s/a/b/ small.txt' 'echo hi > small.txt'; do
         [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
     done
+}
+
+@test "tool-reroute: exemptions use the cwd after successful cd chains" {
+    cp "$W/README.md" "$W/dir/small.txt"
+    local cmd
+    for cmd in "cd $W/dir && cat small.txt" "cd $W/dir && grep x small.txt" \
+        "cd $SCRATCH && cd $W && echo hi > a.txt" \
+        "cd $SCRATCH && cd $W && echo hi | tee a.txt" \
+        "cd $SCRATCH && cd $W && sed -i s/a/b/ a.txt"; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+    for cmd in "cd $W/dir && cat inner.txt" "cd ./dir && grep tiny inner.txt" \
+        "cd $SCRATCH && echo hi > a.txt" "cd $SCRATCH && sed -i s/a/b/ a.txt"; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute: uncertain shell cwd withholds exemptions" {
+    local cmd
+    for cmd in 'cd "$DEST" && cat small.txt' 'cd dir; cat small.txt' \
+        'cd /missing || cat small.txt' '(cd dir); cat small.txt' \
+        'pushd dir && cat small.txt' 'source change-dir.sh; cat small.txt' \
+        'env -C dir cat small.txt' 'bash -c "cd dir; cat small.txt"' \
+        'find dir -execdir cat small.txt \;' 'cd dir | cat small.txt' \
+        "echo x | cd $SCRATCH && echo hi > a.txt" \
+        "cd $SCRATCH; echo hi > a.txt" "cd $W/dir && true; cat small.txt"; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute: scratch symlinks cannot exempt outside destinations" {
+    ln -s "$W" "$SCRATCH/outside"
+    ln -s "$W/README.md" "$SCRATCH/linked.txt"
+    ln -s "$W/new.txt" "$SCRATCH/dangling.txt"
+    local cmd
+    for cmd in "echo x > $SCRATCH/outside/new.txt" "echo x | tee $SCRATCH/outside/new.txt" \
+        "echo x > $SCRATCH/linked.txt" "echo x > $SCRATCH/dangling.txt" \
+        "cat $SCRATCH/linked.txt" "grep x $SCRATCH/linked.txt" \
+        "sed -i s/a/b/ $SCRATCH/linked.txt" "echo x > $SCRATCH/missing/new.txt"; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+    mkdir "$SCRATCH/inside"
+    ln -s "$SCRATCH/inside" "$SCRATCH/link"
+    [[ -z "$(out_for_safe "echo x > $SCRATCH/link/new.txt")" ]]
+    ln -s "$TMPDIR" "$BATS_TEST_TMPDIR/tmp-alias"
+    export TMPDIR="$BATS_TEST_TMPDIR/tmp-alias"
+    [[ -z "$(out_for_safe "echo x > $SCRATCH/new.txt")" ]]
+}
+
+@test "tool-reroute: literal glob filenames cannot exempt expanded targets" {
+    local token cmd
+    for token in '*.txt' '?.txt' '[ab].txt' '{a,b}.txt' '~file'; do
+        printf 'tiny\n' > "$W/$token"
+        for cmd in "cat $token" "grep x $token" "cat < $token"; do
+            [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+        done
+    done
+    [[ "$(decision "$(out_for_safe "echo x > $SCRATCH/*.txt")")" == "deny" ]]
 }

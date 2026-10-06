@@ -267,7 +267,9 @@ tilth_write_input() {
 }
 
 @test "native: Claude scratch Read, Write, Edit, and MultiEdit pass; lookalikes deny" {
-    local tool uid scratch; uid=$(id -u); scratch="/tmp/claude-$uid/session/a.txt"
+    export TMPDIR="$BATS_TEST_TMPDIR/tmp"
+    local tool uid scratch; uid=$(id -u); scratch="$TMPDIR/claude-$uid/session/a.txt"
+    mkdir -p "${scratch%/*}"
     for tool in Read Write Edit MultiEdit; do
         hook claude "$tool" "$(jq -nc --arg f "$scratch" '{file_path:$f}')"
         [[ -z "$output" ]] || { echo "expected pass: $tool" >&2; return 1; }
@@ -280,4 +282,19 @@ tilth_write_input() {
     done
     hook claude Write '{"file_path":"../../tmp/claude-1/x"}' "$REPO"
     [[ "$(decision)" == "deny" ]]
+}
+
+@test "native: scratch symlinks to outside files and new files deny" {
+    export TMPDIR="$BATS_TEST_TMPDIR/tmp"
+    local scratch="$TMPDIR/claude-$(id -u)" tool target
+    mkdir -p "$scratch"
+    ln -s "$REPO" "$scratch/outside"
+    printf 'x\n' > "$REPO/existing.txt"
+    ln -s "$REPO/new.txt" "$scratch/dangling.txt"
+    for tool in Read Write Edit MultiEdit; do
+        for target in "$scratch/outside/existing.txt" "$scratch/outside/new.txt" "$scratch/dangling.txt"; do
+            hook claude "$tool" "$(jq -nc --arg f "$target" '{file_path:$f}')"
+            [[ "$(decision)" == "deny" ]] || { echo "expected deny: $tool $target" >&2; return 1; }
+        done
+    done
 }

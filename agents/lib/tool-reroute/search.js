@@ -17,7 +17,7 @@
 // recursive search with no file operand, an xargs feed, or a shell expansion
 // keeps the deny.
 
-const { commands, commandWord, splitArgs, realFiles, pipedIn, inputFiles, allScratch, allSmallFiles } = require('./shell');
+const { commandsWithCwd, commandWord, splitArgs, realFiles, pipedIn, inputFiles, allScratch, allSmallFiles } = require('./shell');
 
 // Per-binary option grammar: which flags take a value, which flags make the
 // search recursive, which supply the pattern (so every operand is a path), and
@@ -89,12 +89,12 @@ function searchTargets(seg, spec, args, xargs) {
 function detect(toolName, input, cwd) {
   if (toolName !== 'Bash') return null;
   cwd = cwd || process.cwd();
-  for (const seg of commands((input && input.command) || '')) {
+  for (const seg of commandsWithCwd((input && input.command) || '', cwd)) {
     const { word, args, xargs } = commandWord(seg.argv);
     const spec = word && Object.hasOwn(BINS, word) && BINS[word];
     if (!spec) continue;
     const hit = searchTargets(seg, spec, args, xargs);
-    if (hit && (allScratch(hit.targets, cwd) || allSmallFiles(hit.targets, cwd))) continue;
+    if (hit && (allScratch(hit.targets, seg.cwd) || allSmallFiles(hit.targets, seg.cwd))) continue;
     if (hit) return { reason: reason(`\`${word}\``, hit.pattern, hit.targets), pattern: hit.pattern, module: 'search' };
   }
   return null;

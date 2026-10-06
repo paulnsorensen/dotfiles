@@ -26,7 +26,7 @@
 
 const os = require('os');
 const path = require('path');
-const { commands, commandWord, splitArgs, realFiles, pipedIn, inputFiles, isScratchPath, allScratch, allSmallFiles } = require('./shell');
+const { commandsWithCwd, commandWord, splitArgs, realFiles, pipedIn, inputFiles, isScratchPath, allScratch, allSmallFiles } = require('./shell');
 
 const WRITE_BINS = new Set(['echo', 'printf', 'cat']);
 
@@ -148,7 +148,7 @@ function readTargets(seg, spec, args, xargs) {
 function detect(toolName, input, cwd, harness) {
   if (toolName !== 'Bash') return null;
   cwd = cwd || process.cwd();
-  const segs = commands((input && input.command) || '');
+  const segs = commandsWithCwd((input && input.command) || '', cwd);
 
   // write-redirect: a stdout content write (`>`/`>>`, bare or `1>`) by a write
   // bin. An fd redirect (`2>`, `N>`, `2>&1`) writes no file content, so it must
@@ -159,15 +159,15 @@ function detect(toolName, input, cwd, harness) {
     if (!word || !WRITE_BINS.has(word)) continue;
     for (let j = 0; j < seg.redirectFds.length; j++) {
       const fd = seg.redirectFds[j];
-      if ((fd === null || fd === '1') && isFileWrite(seg.redirectTargets[j], cwd)) {
-        return { reason: writeReason(seg.redirectTargets[j], cwd, harness), module: 'io' };
+      if ((fd === null || fd === '1') && isFileWrite(seg.redirectTargets[j], seg.cwd)) {
+        return { reason: writeReason(seg.redirectTargets[j], seg.cwd, harness), module: 'io' };
       }
     }
   }
 
   for (let k = 0; k < segs.length; k++) {
-    const target = teeTarget(segs, k, cwd);
-    if (target) return { reason: writeReason(target, cwd, harness, 'tee write'), module: 'io' };
+    const target = teeTarget(segs, k, segs[k].cwd);
+    if (target) return { reason: writeReason(target, segs[k].cwd, harness, 'tee write'), module: 'io' };
   }
 
   for (const seg of segs) {
@@ -176,9 +176,9 @@ function detect(toolName, input, cwd, harness) {
     if (!spec) continue;
     const hit = readTargets(seg, spec, args, xargs);
     if (!hit) continue;
-    if (allScratch(hit.files, cwd)) continue;
-    if (!hit.inPlace && allSmallFiles(hit.files, cwd)) continue;
-    const reason = hit.inPlace ? editReason(word, hit.files, cwd) : readReason(word, hit.files, cwd);
+    if (allScratch(hit.files, seg.cwd)) continue;
+    if (!hit.inPlace && allSmallFiles(hit.files, seg.cwd)) continue;
+    const reason = hit.inPlace ? editReason(word, hit.files, seg.cwd) : readReason(word, hit.files, seg.cwd);
     return { reason, module: 'io' };
   }
   return null;

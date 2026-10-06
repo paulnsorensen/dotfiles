@@ -239,6 +239,46 @@ function commands(command, depth = 0) {
   return parse(command).flatMap((seg) => expand(seg, depth));
 }
 
+// Attach a cwd only for simple shell contexts. The lexer loses scope and quote
+// details, so substitutions, compound commands, and wrappers get no exemptions.
+function commandsWithCwd(command, cwd) {
+  const segs = commands(command);
+  let current = cwd || process.cwd();
+  let changed = false;
+  if (/[(){}$`\\]/.test(command)) current = null;
+  return segs.map((seg, k) => {
+    if (changed && seg.sep !== '&&') current = null;
+    const { word, args } = commandWord(seg.argv);
+    const direct = seg.argv[0] === word;
+    if (!direct && seg.argv.length) current = null;
+    const result = { ...seg, cwd: current };
+    if (word === 'cd') {
+      // Only && guarantees that the next command sees a successful cd.
+      // Bare relative names depend on CDPATH; options and expansions are unknown.
+      const target = args[0];
+      const next = segs[k + 1];
+      if (current && direct && args.length === 1 && isLiteralPath(target)
+          && (path.isAbsolute(target) || target.startsWith('./'))
+          && !pipedIn(seg) && next && next.sep === '&&') {
+        try {
+          const resolved = fs.realpathSync(path.resolve(current, target));
+          current = fs.statSync(resolved).isDirectory() ? resolved : null;
+        } catch { current = null; }
+      } else current = null;
+      changed = true;
+    } else if (!CWD_STABLE.has(word)) {
+      // source, eval, functions, directory-stack builtins, and derived commands
+      // can change cwd or run in a different directory.
+      current = null;
+    }
+    return result;
+  });
+}
+
+const CWD_STABLE = new Set(['cat', 'tac', 'head', 'tail', 'less', 'more', 'nl',
+  'bat', 'batcat', 'sed', 'gsed', 'awk', 'gawk', 'mawk', 'grep', 'egrep',
+  'fgrep', 'rg', 'ag', 'ack', 'echo', 'printf', 'tee', 'true', 'false', ':']);
+
 function expand(seg, depth) {
   const out = [seg];
   if (depth > 4) return out;
@@ -328,7 +368,7 @@ const SMALL_FILE_BYTES = 16 * 1024;
 
 // A shell expansion has no literal value; a `..` segment can climb out of the root.
 function isLiteralPath(p) {
-  return typeof p === 'string' && p !== '' && !/[$`]/.test(p) && !p.split('/').includes('..');
+  return typeof p === 'string' && p !== '' && !/[$`*?\[\]{}~]/.test(p) && !p.split('/').includes('..');
 }
 
 function scratchRoots() {
@@ -340,16 +380,39 @@ function scratchRoots() {
   return roots.map((r) => `${r}/claude-${uid}/`);
 }
 
+// Keep unresolved components out of realpath: only a new final filename is safe.
+function canonicalDestination(p) {
+  try { return fs.realpathSync(p); } catch (err) {
+    if (err.code !== 'ENOENT') return null;
+    try {
+      fs.lstatSync(p); // A dangling symlink is not a new file.
+      return null;
+    } catch (missing) {
+      if (missing.code !== 'ENOENT') return null;
+    }
+    try { return path.join(fs.realpathSync(path.dirname(p)), path.basename(p)); }
+    catch { return null; }
+  }
+}
+
 function isScratchPath(p, cwd) {
-  if (!isLiteralPath(p)) return false;
-  const resolved = path.resolve(cwd || process.cwd(), p);
-  return scratchRoots().some((root) => resolved.startsWith(root) && resolved.length > root.length);
+  if (cwd === null || !isLiteralPath(p)) return false;
+  const resolved = canonicalDestination(path.resolve(cwd || process.cwd(), p));
+  if (!resolved) return false;
+  return scratchRoots().some((root) => {
+    try {
+      const canonicalRoot = fs.realpathSync(root) + path.sep;
+      return resolved.startsWith(canonicalRoot) && resolved.length > canonicalRoot.length;
+    } catch { return false; }
+  });
 }
 
 function isSmallFile(p, cwd) {
-  if (typeof p !== 'string' || p === '' || /[$`]/.test(p)) return false;
+  if (cwd === null || typeof p !== 'string' || p === '' || /[$`*?\[\]{}~]/.test(p)) return false;
   try {
-    const st = fs.statSync(path.resolve(cwd || process.cwd(), p));
+    // Preserve symlink/.. traversal as the filesystem sees it.
+    const target = path.isAbsolute(p) ? p : `${cwd || process.cwd()}/${p}`;
+    const st = fs.statSync(target);
     return st.isFile() && st.size <= SMALL_FILE_BYTES;
   } catch {
     return false;
@@ -364,4 +427,4 @@ function allSmallFiles(files, cwd) {
   return files.length > 0 && files.every((f) => isSmallFile(f, cwd));
 }
 
-module.exports = { parse, commands, commandWord, shQuote, splitArgs, realFiles, pipedIn, inputFiles, SMALL_FILE_BYTES, isScratchPath, allScratch, allSmallFiles };
+module.exports = { parse, commands, commandsWithCwd, commandWord, shQuote, splitArgs, realFiles, pipedIn, inputFiles, SMALL_FILE_BYTES, isScratchPath, allScratch, allSmallFiles };
