@@ -31,6 +31,17 @@ codex:
     service_tier: "default"
     sandbox_workspace_write:
       network_access: true
+      # Keep Codex's temp dir off /tmp: its bubblewrap helper leaks empty
+      # /tmp/.git placeholders on crashes, which break git discovery for
+      # every other tool under /tmp. TMPDIR is unset in Codex processes, so
+      # point it at a private dir (made by dot_cache/private_codex-tmp).
+      # The merge script expands a leading `~/` to $HOME.
+      exclude_slash_tmp: true
+      writable_roots:
+        - "~/.cache/codex-tmp"
+    shell_environment_policy:
+      set:
+        TMPDIR: "~/.cache/codex-tmp"
     agents:
       max_threads: 32
       max_depth: 1

@@ -10,15 +10,22 @@ The managed bindings are:
 
 - ID 60 (Control-Space): boolean `false`, existing `value` preserved.
 - ID 61 (Control-Option-Space): boolean `false`, existing `value` preserved.
+- ID 64 (Spotlight): boolean `true`; Command-Space (`1048576`) without Alfred, Control-Command-Space (`1310720`) with Alfred.
 - ID 160 (Launchpad): boolean `true`; parameters `[32, 49, 1179648]` are integers.
 
 Apple documents Control-Space and Control-Option-Space as the previous/next input-source shortcuts.[^3]
 
+## Alfred fallback
+
+Alfred binds Command-Space in its own preferences. `macos_spotlight_modifiers` checks `/Applications/Alfred.app` and `/Applications/Alfred 5.app`, the same paths as `alfred/lib.sh`.[^5] If neither exists, Spotlight takes Command-Space, so the quick-search key works without Alfred. On macOS 26.5.2, System Settings mirrors a manual Spotlight shortcut change into ID 64.[^6]
+
 ## Regression seam
 
-`tests/macos.bats` runs the real `macos/.sync` entry point against an isolated preference domain. It asserts boolean enabled flags, integer Launchpad parameters, and preservation of the input-source binding payloads.[^4]
+`tests/macos.bats` runs the real `macos/.sync` entry point against an isolated preference domain. It asserts boolean enabled flags, integer Launchpad parameters, preservation of the input-source binding payloads, and the Alfred-dependent Spotlight modifier.[^4]
 
 [^1]: Reproduced on macOS 26.5.1 with `defaults write /tmp/prefs AppleSymbolicHotKeys -dict-add 60 '{enabled = 0;}'`; `plutil -type AppleSymbolicHotKeys.60.enabled` returned `string`.
-[^2]: macos/.sync:35-55; macos/lib.sh:4-27
+[^2]: macos/.sync:35-49; macos/lib.sh:4-51
 [^3]: <https://support.apple.com/en-us/102650>
-[^4]: tests/macos.bats:46-76
+[^4]: tests/macos.bats:48-108
+[^5]: macos/lib.sh:4-14; alfred/lib.sh:10-11
+[^6]: Observed 2026-10-06: after a manual move to Control-Command-Space, ID 64 held parameters `[32, 49, 1310720]`.

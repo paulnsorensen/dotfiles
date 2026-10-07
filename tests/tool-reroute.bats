@@ -51,7 +51,16 @@ setup() {
     # + <root>/lib/tool-reroute/<modules>. The bridge defaults to Claude.
     DEPLOY="$TEST_HOME/.claude"
     deploy_reroute "$DEPLOY"
-    W="$REAL_DOTFILES_DIR"   # a real dir to stand in as the event cwd
+    # A real dir stands in as the event cwd. README.md is over the 16 KiB
+    # small-file limit, so shell reads of it still deny; small.txt is under it.
+    W="$BATS_TEST_TMPDIR/cwd"
+    mkdir -p "$W/dir"
+    head -c 20480 /dev/zero | tr '\0' 'x' > "$W/README.md"
+    printf 'tiny\n' > "$W/small.txt"
+    printf 'tiny\n' > "$W/dir/inner.txt"
+    export TMPDIR="$BATS_TEST_TMPDIR/tmp"
+    SCRATCH="$TMPDIR/claude-$(id -u)/session"
+    mkdir -p "$SCRATCH"
     export CLAUDE_TOOL_REROUTE_LOG_DIR="$BATS_TEST_TMPDIR/reroute-log"
 }
 
@@ -1192,4 +1201,217 @@ NODE
     ' "$REAL_DOTFILES_DIR/agents/lib/jsonl-log.js" "$path"
     [ "$status" -eq 0 ]
     [[ "$output" == "ok" ]]
+}
+
+# ── scratch exemption and small-file read loosening ───────────────────────
+
+@test "tool-reroute/io: Claude scratch writes, tees, reads, and in-place edits pass" {
+    local cmd
+    for cmd in "echo hi > $SCRATCH/a.txt" "printf x >> $SCRATCH/a.txt" "echo hi | tee $SCRATCH/a.txt" \
+        "cat $SCRATCH/a.txt" "head -5 $SCRATCH/a.txt" "sed -n 1,5p $SCRATCH/a.txt" \
+        "sed -i s/a/b/ $SCRATCH/a.txt" "grep -r foo $SCRATCH" "rg foo $SCRATCH/a.txt"; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: a TMPDIR scratch root passes" {
+    export TMPDIR="$BATS_TEST_TMPDIR/tmproot/"
+    mkdir -p "$TMPDIR/claude-$(id -u)"
+    [[ -z "$(out_for_safe "echo hi > $BATS_TEST_TMPDIR/tmproot/claude-$(id -u)/a.txt")" ]]
+}
+
+@test "tool-reroute/io: scratch lookalikes still deny" {
+    local cmd uid; uid=$(id -u)
+    # shellcheck disable=SC2016 # a literal $UID is the unexpanded-path case under test
+    for cmd in "cat $SCRATCH/../../etc/hosts" "echo hi > /tmp/claude-$uid/../x" \
+        "cat /tmp/claude-$((uid + 1))/a.txt" "cat /tmp/claude-$uid" 'cat /tmp/claude-$UID/a.txt' \
+        "cat /tmp/claude-$uid-evil/a.txt" "cat $SCRATCH/a.txt README.md"; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: a small existing file passes cat, head, sed, grep, rg" {
+    local cmd
+    for cmd in 'cat small.txt' 'head -n 3 small.txt' "sed -n 1p small.txt" 'grep tiny small.txt' \
+        'rg tiny small.txt' 'cat < small.txt' 'cat small.txt dir/inner.txt'; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: a 20 KiB file, directory, missing file, or mixed targets still deny" {
+    local cmd
+    # shellcheck disable=SC2016 # a literal $F is the unexpanded-path case under test
+    for cmd in 'cat README.md' 'grep x README.md' 'grep -r tiny dir' 'grep -r tiny' 'cat missing.txt' \
+        'cat small.txt README.md' 'grep tiny small.txt README.md' 'cat small.txt missing.txt' \
+        'cat dir' 'cat $F' 'xargs cat' 'sed -i s/a/b/ small.txt' 'echo hi > small.txt'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute: exemptions use the cwd after successful cd chains" {
+    cp "$W/README.md" "$W/dir/small.txt"
+    local cmd
+    for cmd in "cd $W/dir && cat small.txt" "cd $W/dir && grep x small.txt" \
+        "cd $SCRATCH && cd $W && echo hi > a.txt" \
+        "cd $SCRATCH && cd $W && echo hi | tee a.txt" \
+        "cd $SCRATCH && cd $W && sed -i s/a/b/ a.txt"; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+    for cmd in "cd $W/dir && cat inner.txt" "cd ./dir && grep tiny inner.txt" \
+        "cd $SCRATCH && echo hi > a.txt" "cd $SCRATCH && sed -i s/a/b/ a.txt"; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute: uncertain shell cwd withholds exemptions" {
+    local cmd
+    # shellcheck disable=SC2016 # The test passes literal $DEST to the guard.
+    for cmd in 'cd "$DEST" && cat small.txt' 'cd dir; cat small.txt' \
+        'cd /missing || cat small.txt' '(cd dir); cat small.txt' \
+        'pushd dir && cat small.txt' 'source change-dir.sh; cat small.txt' \
+        'env -C dir cat small.txt' 'bash -c "cd dir; cat small.txt"' \
+        'find dir -execdir cat small.txt \;' 'cd dir | cat small.txt' \
+        "echo x | cd $SCRATCH && echo hi > a.txt" \
+        "cd $SCRATCH; echo hi > a.txt" "cd $W/dir && true; cat small.txt"; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute: scratch symlinks cannot exempt outside destinations" {
+    ln -s "$W" "$SCRATCH/outside"
+    ln -s "$W/README.md" "$SCRATCH/linked.txt"
+    ln -s "$W/new.txt" "$SCRATCH/dangling.txt"
+    local cmd
+    for cmd in "echo x > $SCRATCH/outside/new.txt" "echo x | tee $SCRATCH/outside/new.txt" \
+        "echo x > $SCRATCH/linked.txt" "echo x > $SCRATCH/dangling.txt" \
+        "cat $SCRATCH/linked.txt" "grep x $SCRATCH/linked.txt" \
+        "sed -i s/a/b/ $SCRATCH/linked.txt"; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+    mkdir "$SCRATCH/inside"
+    ln -s "$SCRATCH/inside" "$SCRATCH/link"
+    [[ -z "$(out_for_safe "echo x > $SCRATCH/link/new.txt")" ]]
+    ln -s "$TMPDIR" "$BATS_TEST_TMPDIR/tmp-alias"
+    export TMPDIR="$BATS_TEST_TMPDIR/tmp-alias"
+    [[ -z "$(out_for_safe "echo x > $SCRATCH/new.txt")" ]]
+}
+
+@test "tool-reroute: literal glob filenames cannot exempt expanded targets" {
+    local token cmd
+    for token in '*.txt' '?.txt' '[ab].txt' '{a,b}.txt' '~file'; do
+        printf 'tiny\n' > "$W/$token"
+        for cmd in "cat $token" "grep x $token" "cat < $token"; do
+            [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+        done
+    done
+    [[ "$(decision "$(out_for_safe "echo x > $SCRATCH/*.txt")")" == "deny" ]]
+}
+
+@test "tool-reroute/io: a scratch symlink followed by .. cannot reach outside the scratch root" {
+    ln -s "$W" "$SCRATCH/link"
+    local cmd
+    for cmd in "echo x > $SCRATCH/link/../new.txt" "echo x | tee $SCRATCH/link/../new.txt" \
+        "sed -i s/a/b/ $SCRATCH/link/../small.txt"; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: a hard link in scratch cannot exempt the shared inode" {
+    ln "$W/small.txt" "$SCRATCH/hard.txt"
+    local cmd
+    for cmd in "echo x > $SCRATCH/hard.txt" "echo x >> $SCRATCH/hard.txt" "sed -i s/a/b/ $SCRATCH/hard.txt"; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: a scratch destination under a new directory passes; a dangling parent denies" {
+    ln -s "$W/missing-dir" "$SCRATCH/dangling-dir"
+    [[ -z "$(out_for_safe "echo x > $SCRATCH/newdir/new.txt")" ]]
+    [[ "$(decision "$(out_for_safe "echo x > $SCRATCH/dangling-dir/new.txt")")" == "deny" ]]
+}
+
+@test "tool-reroute/io: a small-file read that also writes a file still denies" {
+    local cmd
+    for cmd in 'sed s/a/b/ small.txt > small.tmp && mv small.tmp small.txt' "sed 's/a/b/w out.txt' small.txt" \
+        "sed -n '/tiny/W out.txt' small.txt" "sed 's/a/b/e' small.txt" 'sed -f script.sed small.txt' \
+        'head small.txt > new.js' 'tail small.txt >> new.js' 'grep tiny small.txt > found.txt' \
+        'rg tiny small.txt 2> err.log'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+    local ok
+    for ok in 'head small.txt > /dev/null' 'cat small.txt 2>/dev/null' 'grep tiny small.txt 2>&1' \
+        "sed -n 's/a/web/p' small.txt" "echo hi > $SCRATCH/a.txt"; do
+        [[ -z "$(out_for_safe "$ok")" ]] || { echo "expected pass: $ok" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute: a known-absolute or literal path keeps its exemption despite unrelated shell syntax" {
+    local cmd
+    # shellcheck disable=SC2016 # `$` is literal shell text under test
+    for cmd in 'git status && cat small.txt' "rg 'foo\$' small.txt" "echo \"\$x\" > $SCRATCH/out" \
+        "cd \"\$DEST\"; cat $W/small.txt" "echo \$(date) > $SCRATCH/out" 'make test | grep ok'; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+    # An unknown cwd still denies a relative path.
+    # shellcheck disable=SC2016
+    for cmd in 'cd "$DEST"; cat small.txt' 'pushd dir; cat small.txt' 'f() { cd dir; }; f; cat small.txt' \
+        'true || cd ./dir && cat inner.txt' 'x=$(pwd) && cat $x/small.txt'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: an unknown shell cwd gives no fabricated absolute hint" {
+    local cmd out why
+    # `|| return 1` keeps each check fatal under bash 3.2, which ignores a
+    # failed `[[ ]]` before the last line of a bats test.
+    for cmd in 'cat ../zz.txt' 'echo hi > ../zz.txt' 'echo hi | tee ../zz.txt'; do
+        out=$(out_for_safe "cd \"\$DEST\"; $cmd")
+        why=$(reason "$out")
+        [[ "$(decision "$out")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+        [[ "$why" == *'"<absolute path>"'* ]] || { echo "expected placeholder: $cmd" >&2; return 1; }
+        [[ "$why" != *"$(dirname "$W")/zz.txt"* ]] || { echo "fabricated path: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute/io: sed script writes cannot use the small-file exemption" {
+    local cmd
+    for cmd in "sed -e'w new.txt' small.txt" "sed --expression='w new.txt' small.txt" \
+        "sed 's#a#b#w new.txt' small.txt" "sed 'wnew.txt' small.txt" \
+        "sed -ne'w new.txt' small.txt" "awk '{print > \"new.txt\"}' small.txt" \
+        "awk '{print > \"new.txt\"}' $W/small.txt" \
+        "awk '{print | \"tee new.txt\"}' $W/small.txt" "sed '/x/ wnew.txt' small.txt" \
+        "sed -e p -e 'w new.txt' small.txt" "gsed -e p -ue'w new.txt' small.txt" \
+        "gawk -i library '{print}' small.txt"; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+    for cmd in "sed -e 's#a#b#p' small.txt" "sed --expression='s/a/b/' small.txt" \
+        "sed ' s#a#b#p' small.txt" "awk '{print \$1}' small.txt"; do
+        [[ -z "$(out_for_safe "$cmd")" ]] || { echo "expected pass: $cmd" >&2; return 1; }
+    done
+}
+
+@test "tool-reroute: compound cwd changes cannot exempt relative reads or searches" {
+    local cmd
+    mkdir -p "$W/../dir"
+    head -c 20480 /dev/zero | tr '\0' 'x' > "$W/../dir/small.txt"
+    for cmd in 'if cd ../dir; then :; fi; cat small.txt' \
+        '{ cd ../dir && cat small.txt; }' 'if cd ../dir; then :; fi; rg tiny small.txt' \
+        '! cd ../dir; cat small.txt' 'chdir ../dir; cat small.txt'; do
+        [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+    done
+    [[ -z "$(out_for_safe 'if cd ../dir; then :; fi; cat '"$W"'/small.txt')" ]]
+}
+
+@test "tool-reroute/io: backtick-adjacent scratch redirects cannot escape the scratch exemption" {
+    local cmd="echo hi > $SCRATCH/sub/\`printf /../../../../outside\`"
+    mkdir -p "$SCRATCH/sub"
+    [[ "$(realpath "$SCRATCH/sub/../../../..")" != "$(realpath "$TMPDIR/claude-$(id -u)")"* ]]
+    [[ "$(decision "$(out_for_safe "$cmd")")" == "deny" ]]
+}
+
+@test "tool-reroute/io: the small-file limit is 16384 bytes" {
+    head -c 16384 /dev/zero | tr '\0' 'x' > "$W/exact.txt"
+    head -c 16385 /dev/zero | tr '\0' 'x' > "$W/over.txt"
+    [[ -z "$(out_for_safe 'cat exact.txt')" ]]
+    [[ "$(decision "$(out_for_safe 'cat over.txt')")" == "deny" ]]
 }

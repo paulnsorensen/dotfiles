@@ -209,6 +209,9 @@ claude:
       - "Bash(pytest:*)"
       - "Bash(python3:*)"
       - "Bash(realpath:*)"
+      # Exact path only: a crashed Codex sandbox can leave an empty /tmp/.git,
+      # which breaks git discovery under /tmp. rmdir refuses a non-empty dir.
+      - "Bash(rmdir /tmp/.git)"
       - "Bash(sd:*)"
       - "Bash(sg:*)"
       - "Bash(tail:*)"
@@ -232,8 +235,10 @@ claude:
       # Tilth owns searches. A bare tool name removes the tool from Claude's
       # context; the tool-reroute hook is the second layer.
       # Write/Edit stay available because plan mode and auto-memory can write
-      # only through them. tool-reroute denies them outside ~/.claude/plans/
-      # and ~/.claude/projects/*/memory/.
+      # only through them. tool-reroute denies them outside ~/.claude/plans/,
+      # ~/.claude/projects/*/memory/, and the scratch roots (/tmp, /private/tmp,
+      # and $TMPDIR, each + claude-<uid>/). Plain reads of files up to 16 KiB
+      # that write no file also pass the shell reroute.
       # Read stays: it is the only viewer for images, PDFs, and notebooks, so
       # tool-reroute denies it on text files instead.
       - "Glob"

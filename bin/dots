@@ -129,7 +129,7 @@ do_update() {
     elif [[ "$LOCAL" == "$BASE" ]]; then
         # Pull changes
         echo -e "${BLUE}Pulling changes...${NC}"
-        git pull --rebase
+        git pull --rebase --autostash
 
         echo -e "${GREEN}✅ Updated successfully!${NC}"
         echo
@@ -495,7 +495,7 @@ case "${1:-status}" in
     upgrade|up)
         echo -e "${BLUE}⬆️  Updating dotfiles, then upgrading unpinned channels...${NC}"
         cd_dotfiles
-        git pull --rebase
+        git pull --rebase --autostash
         # UPGRADE_MODE bypasses the package cache, but pinned installers still
         # converge to their recorded versions. `do_sync` also refreshes
         # unpinned external skills for non-Claude harnesses.

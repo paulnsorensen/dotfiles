@@ -15,10 +15,20 @@
 // device (/dev/null, /dev/stderr, /dev/fd/N) or to /proc or /sys runs. A `>`
 // inside a quoted string is not a redirect (the lexer resolves quotes).
 // `cmd | tee log` captures command output, like `cmd > log`, and runs.
+//
+// Two exemptions let a command run unchanged. First, Claude's session scratch
+// directory (<tmp>/claude-<uid>/, see exempt.js): every write, tee, read, and
+// in-place edit there runs, because the harness owns it and it is not part of
+// the tree. A `..` segment or a shell expansion never counts as scratch.
+// Second, a plain read runs when every target is an existing regular file of
+// at most 16 KiB and the segment writes no file (no file redirect, no sed
+// `w`/`W`/`e` command, no `-i`). A directory, a missing file, an xargs feed,
+// or a shell expansion keeps the deny.
 
 const os = require('os');
 const path = require('path');
-const { commands, commandWord, splitArgs, realFiles, pipedIn, inputFiles } = require('./shell');
+const { commandsWithCwd, commandWord, splitArgs, realFiles, pipedIn, inputFiles } = require('./shell');
+const { allScratch, allSmallFiles, isFileWrite, segWritesFile } = require('./exempt');
 
 const WRITE_BINS = new Set(['echo', 'printf', 'cat']);
 
@@ -66,6 +76,7 @@ This applies outside the checkout too (for example /tmp): use an absolute path.$
 function suggestPath(f, cwd) {
   if (/[$`]/.test(f)) return '<absolute path>';
   if (f === '~' || f.startsWith('~/')) return os.homedir() + f.slice(1);
+  if (!path.isAbsolute(f) && !cwd) return '<absolute path>';
   return cwd && f.split('/').includes('..') ? path.resolve(cwd, f) : f;
 }
 
@@ -86,35 +97,85 @@ tilth_read the file first to get the [path#TAG], then:
   mcp__tilth__tilth_write(edits:[{path:${JSON.stringify(suggestPath(files[0], cwd))}, tag:"<TAG>", ops:[{op:"replace_text", old:"…", new:"…"}]}], cwd:"<checkout>")`;
 }
 
-// A write-redirect writes a file unless its target is a stream device or a
-// kernel interface. The device match is exact, so `/dev/shm/x` (a regular
-// file) denies. /proc and /sys writes (`echo 1 > /proc/sys/...`) pass,
-// because tilth cannot write them; the reader side exempts them too. A `..`
-// segment denies, so `/dev/../tmp/x` and `/proc/../tmp/x` cannot escape.
-// An fd duplication such as `>&2` has no target and never reaches this check.
-const STREAM_DEVICES = new Set(['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty']);
-function isFileWrite(target) {
-  if (!target) return false;
-  if (STREAM_DEVICES.has(target) || /^\/dev\/fd\/\d+$/.test(target)) return false;
-  return !(/^\/(proc|sys)\//.test(target) && !target.split('/').includes('..'));
-}
-
 // The first file a `tee` segment writes when it copies authored content: a
 // pipe from echo/printf/cat, or a here-doc/here-string on its stdin. `tee`
 // takes no valued short flags; `--output-error=MODE` is fused.
-function teeTarget(segs, k) {
+function teeTarget(segs, k, cwd) {
   const seg = segs[k];
   const { word, args } = commandWord(seg.argv);
   if (word !== 'tee') return null;
   const fromHeredoc = seg.inputRedirects.some((r) => r !== '<');
   const fromWriter = pipedIn(seg) && k > 0 && WRITE_BINS.has(commandWord(segs[k - 1].argv).word);
   if (!fromHeredoc && !fromWriter) return null;
-  return splitArgs(args).operands.find((f) => f !== '-' && isFileWrite(f)) || null;
+  return splitArgs(args).operands.find((f) => f !== '-' && isFileWrite(f, cwd)) || null;
 }
 
 // `awk -i inplace` loads gawk's in-place library; `-i` takes the library name.
 function awkInPlace(args) {
   return args.some((a, k) => (a === '-i' && args[k + 1] === 'inplace') || a === '-iinplace');
+}
+
+// Decode inline and valued scripts before granting a small-file exemption.
+// A script file hides its effects, so it cannot qualify.
+function readerScripts(word, args) {
+  if (!/^(g?sed|[gm]?awk)$/.test(word)) return [];
+  const scripts = [];
+  const operands = [];
+  const sed = /^(g?sed)$/.test(word);
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--') { operands.push(...args.slice(i + 1)); break; }
+    if (a === '-f' || a === '--file' || a.startsWith('--file=') || /^-[a-zA-Z]*f(?:.|$)/.test(a)) return null;
+    const long = sed ? '--expression' : '--source';
+    if (a === '-e' || a === long) { if (args[++i] === undefined) return null; scripts.push(args[i]); continue; }
+    if (a.startsWith(long + '=')) { scripts.push(a.slice(long.length + 1)); continue; }
+    const fused = sed ? /^-[nErus]*e(.*)$/.exec(a) : /^-e(.*)$/.exec(a);
+    if (fused) {
+      if (fused[1]) scripts.push(fused[1]);
+      else if (args[++i] !== undefined) scripts.push(args[i]);
+      else return null;
+      continue;
+    }
+    if (!sed && a === '-i') return null;
+    if (!sed && (a === '-v' || a === '-F' || a === '--assign' || a === '--field-separator')) { i++; continue; }
+    if (sed && (/^-[nErus]+$/.test(a) || ['--quiet', '--silent', '--regexp-extended', '--unbuffered', '--separate'].includes(a))) continue;
+    if (!sed && (/^-[Fv].+/.test(a) || a.startsWith('--assign=') || a.startsWith('--field-separator='))) continue;
+    if (a.startsWith('-')) return null;
+    operands.push(a);
+  }
+  if (!scripts.length) scripts.push(operands[0] || '');
+  return scripts;
+}
+
+// A small-file script must fit a known read-only form. Other script effects
+// can write files or run commands, so they keep the deny.
+function sedScriptSafe(script) {
+  const text = script.trim();
+  if (/^(?:\d+(?:,\d+)?)?\s*[pPdDqQnN]$/.test(text)) return true;
+  const start = /^(?:\d+(?:,\d+)?)?\s*s/.exec(text);
+  if (!start) return false;
+  const delimiter = text[start[0].length];
+  if (!delimiter || /[\w\s]/.test(delimiter)) return false;
+  let end = start[0].length + 1;
+  for (let part = 0; part < 2; part++) {
+    while (end < text.length && text[end] !== delimiter) {
+      if (text[end] === '\\') end++;
+      end++;
+    }
+    if (end >= text.length) return false;
+    end++;
+  }
+  return /^[0-9gpiImM]*$/.test(text.slice(end));
+}
+
+function scriptUnsafe(word, args) {
+  const scripts = readerScripts(word, args);
+  if (scripts === null) return true;
+  if (/^g?sed$/.test(word)) return !scripts.every(sedScriptSafe);
+  if (/^[gm]?awk$/.test(word)) {
+    return !scripts.every((script) => /^\s*\{\s*(?:print|printf)(?:\s+\$[0-9]+)?\s*\}\s*$/.test(script));
+  }
+  return false;
 }
 
 // The files a reader segment reads, plus whether it edits them in place. With
@@ -139,7 +200,7 @@ function readTargets(seg, spec, args, xargs) {
 function detect(toolName, input, cwd, harness) {
   if (toolName !== 'Bash') return null;
   cwd = cwd || process.cwd();
-  const segs = commands((input && input.command) || '');
+  const segs = commandsWithCwd((input && input.command) || '', cwd);
 
   // write-redirect: a stdout content write (`>`/`>>`, bare or `1>`) by a write
   // bin. An fd redirect (`2>`, `N>`, `2>&1`) writes no file content, so it must
@@ -150,15 +211,15 @@ function detect(toolName, input, cwd, harness) {
     if (!word || !WRITE_BINS.has(word)) continue;
     for (let j = 0; j < seg.redirectFds.length; j++) {
       const fd = seg.redirectFds[j];
-      if ((fd === null || fd === '1') && isFileWrite(seg.redirectTargets[j])) {
-        return { reason: writeReason(seg.redirectTargets[j], cwd, harness), module: 'io' };
+      if ((fd === null || fd === '1') && isFileWrite(seg.redirectTargets[j], seg.cwd)) {
+        return { reason: writeReason(seg.redirectTargets[j], seg.cwd, harness), module: 'io' };
       }
     }
   }
 
   for (let k = 0; k < segs.length; k++) {
-    const target = teeTarget(segs, k);
-    if (target) return { reason: writeReason(target, cwd, harness, 'tee write'), module: 'io' };
+    const target = teeTarget(segs, k, segs[k].cwd);
+    if (target) return { reason: writeReason(target, segs[k].cwd, harness, 'tee write'), module: 'io' };
   }
 
   for (const seg of segs) {
@@ -167,7 +228,12 @@ function detect(toolName, input, cwd, harness) {
     if (!spec) continue;
     const hit = readTargets(seg, spec, args, xargs);
     if (!hit) continue;
-    const reason = hit.inPlace ? editReason(word, hit.files, cwd) : readReason(word, hit.files, cwd);
+    if (allScratch(hit.files, seg.cwd)) continue;
+    // The small-file exemption covers a plain read only.
+    if (!hit.inPlace && !segWritesFile(seg, seg.cwd) && !scriptUnsafe(word, args)
+        && allSmallFiles(hit.files, seg.cwd)) continue;
+    const hintCwd = seg.cwd;
+    const reason = hit.inPlace ? editReason(word, hit.files, hintCwd) : readReason(word, hit.files, hintCwd);
     return { reason, module: 'io' };
   }
   return null;

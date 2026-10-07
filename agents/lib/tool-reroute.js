@@ -7,6 +7,11 @@
 // in the tree. Each deny names the tilth call to make instead. On Codex it
 // also denies tilth_write outside the checkout. The hook rewrites worktree
 // command shapes to wt-git. Every other command runs unchanged.
+// Exemptions (plain English): Claude's per-session scratch directory
+// <tmp>/claude-<uid>/ is harness-owned, so shell and built-in file access there
+// passes. A shell read or search passes when every target is an existing
+// regular file of at most 16 KiB and the command writes no file. See
+// tool-reroute/exempt.js.
 // Kill switch: DOTFILES_TOOL_REROUTE=0|false|off|no disables the hook.
 //
 // Five detection modules run in order; the FIRST hit wins:

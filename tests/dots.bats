@@ -69,14 +69,14 @@ STUB
     stub_upgrade_dotfiles "$stub_dir"
     PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
     assert_success
-    assert_output_contains "stub-git pull --rebase"
+    assert_output_contains "stub-git pull --rebase --autostash"
     assert_output_contains "stub-dotsync args="
     assert_output_contains "stub-sync UPGRADE_MODE=true"
     assert_output_contains "stub-skill-sync args=[$stub_dir/skills/_registry.yaml --force] exclude=claude-code"
     assert_output_not_contains "args=refresh"
 
     local pull_line sync_line
-    pull_line=$(printf '%s\n' "$output" | grep -n 'stub-git pull --rebase' | head -1 | cut -d: -f1)
+    pull_line=$(printf '%s\n' "$output" | grep -n 'stub-git pull --rebase --autostash' | head -1 | cut -d: -f1)
     sync_line=$(printf '%s\n' "$output" | grep -n 'stub-dotsync args=' | head -1 | cut -d: -f1)
     [[ "$pull_line" -lt "$sync_line" ]] || {
         echo "Expected git pull before upgrade sync; got pull=$pull_line sync=$sync_line" >&2
@@ -98,7 +98,7 @@ STUB
     stub_upgrade_dotfiles "$stub_dir"
     PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" up
     assert_success
-    assert_output_contains "stub-git pull --rebase"
+    assert_output_contains "stub-git pull --rebase --autostash"
     assert_output_contains "stub-sync UPGRADE_MODE=true"
     assert_output_contains "stub-skill-sync args=[$stub_dir/skills/_registry.yaml --force] exclude=claude-code"
     assert_output_not_contains "args=refresh"
@@ -109,7 +109,7 @@ STUB
     stub_upgrade_dotfiles "$stub_dir"
     GIT_PULL_FAIL=true PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" upgrade
     assert_failure
-    assert_output_contains "stub-git pull --rebase"
+    assert_output_contains "stub-git pull --rebase --autostash"
     assert_output_not_contains "stub-dotsync"
 }
 

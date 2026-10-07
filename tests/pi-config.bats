@@ -106,7 +106,7 @@ JSON
 @test "pi registry pins the selected mainstream packages" {
     run yq -o=json -I=0 '.pi.settings.packages' "$REGISTRY"
     [ "$status" -eq 0 ]
-    [ "$output" = '["npm:pi-subagents@0.76.0","npm:pi-web-access@0.36.0","npm:@gotgenes/pi-permission-system@39.0.4","npm:pi-vim@0.14.2"]' ]
+    [ "$output" = '["npm:pi-subagents@0.76.1","npm:pi-web-access@0.37.0","npm:@gotgenes/pi-permission-system@39.1.2","npm:pi-vim@0.14.2"]' ]
 }
 
 @test "pi uses shared agent skills instead of a copied skill tree" {
@@ -168,6 +168,6 @@ TOML
 
 @test "pi CLI install is pinned and lifecycle scripts are disabled" {
     [ "$(yq -r '.packages[] | select(has("pi")) | .pi.pkg' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "@earendil-works/pi-coding-agent" ]
-    [ "$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "1.0.3" ]
+    [ "$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "1.0.4" ]
     [ "$(yq -o=json -I=0 '.packages[] | select(has("pi")) | .pi.flags' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = '["--ignore-scripts"]' ]
 }
