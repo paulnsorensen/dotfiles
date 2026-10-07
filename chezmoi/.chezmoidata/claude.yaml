@@ -288,6 +288,7 @@ claude:
     - git-risk
     - grok-codebase
     - harness-doctor
+    - hill-climb
     - land
     - nih-audit
     - prompt-analytics

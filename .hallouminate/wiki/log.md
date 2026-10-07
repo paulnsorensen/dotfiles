@@ -83,3 +83,7 @@
 2026-10-01 · fb5237314daff339 · merged · architecture/mcp-secret-handling.md · Supersede Haiku default with pinned Jev through explicit OpenRouter endpoint. Preserve file-backed credentials and text-model overrides. All three frozen retrieval probes return the page at rank 1.
 
 2026-10-06 · e91e26d44753117a · merged · architecture/cross-harness-guards.md · Record bounded scratch and small-file exemptions. Preserve uncertain path context and require known read-only script forms.
+
+2026-10-06 · hill-climb-20261006 · new-page · sources/how-we-made-claude-ai-faster.md · Ingested the Anthropic post on the claude.ai 3x speedup: deterministic counts over wall-clock, the per-thread loop, ratcheting CI thresholds, flags, and steering.
+2026-10-06 · hill-climb-20261006 · new-page · architecture/hill-climb-ratchet.md · Recorded the hill-climb skill, the hill-climb-threads workflow, and the ratchet gate: no loosen command, STOP file as the cross-harness loop signal, one ratchet file per parallel thread, skeptic verify per gain.
+2026-10-06 · hill-climb-20261006 · merged · domain-model.md, architecture/index.md · Added the Ratchet gate and Hill-climb thread terms and the architecture index entry.

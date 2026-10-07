@@ -76,3 +76,11 @@ _Code_: `bin/agent-secretctl`
 **MCP firewall** — the broker enforcement point that filters the advertised and callable MCP tool surface and gates mutations without exposing credentials.
 _Avoid_: credential proxy, secret API
 _Code_: `scripts/agent-secret-broker.py`
+
+**Ratchet gate** — a CI check that fails when a deterministic metric is worse than its recorded threshold; the threshold moves only toward the better value, and only a human edit loosens it.
+_Avoid_: perf budget, benchmark check
+_Code_: skills/hill-climb/scripts/ratchet.py (`check`, `tighten`)
+
+**Hill-climb thread** — one narrow optimization loop over one journey and one deterministic metric, with state in `.hill-climb/<thread>/` and a `STOP` file that ends any loop driver.
+_Avoid_: perf task, optimization ticket
+_Code_: skills/hill-climb/SKILL.md; claude/workflows/hill-climb-threads.js
