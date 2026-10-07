@@ -17,7 +17,9 @@ basename when it is unique in the repository, else `parent/basename` (and
 A test that calls a `tests/*.bash` helper function observes the helper's paths.
 A changed file also selects the tests of each non-Markdown file that names it
 as a word (a source, an import, a run by path, an `includeTemplate`),
-transitively. Unmatched changed paths run the whole `test` leg.
+transitively. A module also matches as `parent/stem`. Data files, tests, and
+gate files never join that closure. A file with more than 10 users joins it
+but does not expand further. Unmatched changed paths run the whole `test` leg.
 
 Usage:
     affected.py plan [--all] [--base REF]      tab-separated plan lines
@@ -284,9 +286,10 @@ def source_closure(
     A file uses a path when any non-Markdown line names a needle of the path
     (a source, an import, a run by path, an `includeTemplate`), or when a
     source or import line names its basename or module stem from the same
-    directory. Data files, tests, and gate files never join the closure, nor
-    does a hub: a file with more than `_HUB_FAN_IN` users. A test that names
-    the changed file itself still runs.
+    directory. Data files, tests, and gate files never join the closure.
+    A hub, a file with more than `_HUB_FAN_IN` users, joins it but passes the
+    change to no one. A changed hub still expands. A test that names the
+    changed file itself always runs.
     """
 
     def users_of(path: str) -> set[str]:
@@ -310,10 +313,11 @@ def source_closure(
             for name in sorted(users_of(path)):
                 if name in origin or is_hub(name):
                     continue
-                if len(users_of(name)) > _HUB_FAN_IN:
-                    continue
                 origin[name] = origin[path]
-                found.append(name)
+                # A hub joins the origin, so tests that exercise the change
+                # through it run. Nothing expands past it.
+                if len(users_of(name)) <= _HUB_FAN_IN:
+                    found.append(name)
         if not found:
             break
         frontier = found

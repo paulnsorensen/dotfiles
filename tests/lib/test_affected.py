@@ -166,20 +166,56 @@ class WordTest(unittest.TestCase):
         )
 
 
+def _closure(changed: list[str], users: dict[str, set[str]]) -> dict[str, str]:
+    return affected.source_closure(
+        changed, [], affected.Counter(), lambda word: users.get(word, set())
+    )
+
+
+def _many(n: int) -> set[str]:
+    return {f"bin/u{i}" for i in range(n)}
+
+
 class ClosureHubTest(unittest.TestCase):
-    def test_a_file_with_many_users_does_not_pass_the_change_on(self) -> None:
-        users = {"a": {"bin/b"}, "b": {f"bin/u{i}" for i in range(11)}}
-        closure = affected.source_closure(
-            ["bin/a"], [], affected.Counter(), lambda word: users.get(word, set())
+    def test_a_hub_joins_the_origin_but_passes_the_change_on_to_no_one(self) -> None:
+        closure = _closure(["bin/a"], {"a": {"bin/b"}, "b": _many(11)})
+        self.assertEqual(set(closure), {"bin/a", "bin/b"})
+
+    def test_a_hub_own_test_is_selected(self) -> None:
+        # A lib sourced by a hub: the hub's test exercises the lib through it.
+        closure = _closure(["bin/a"], {"a": {"bin/b"}, "b": _many(11)})
+        tests = {"tests/b.bats": "run b\n", "tests/other.bats": "run zzz\n"}
+        selected, _ = affected.select_tests(
+            tests, closure, TOPS, affected.Counter(), {}
         )
-        self.assertEqual(closure, {"bin/a": "bin/a"})
+        self.assertEqual(selected, {"tests/b.bats"})
+
+    def test_the_fan_in_boundary_is_ten_users(self) -> None:
+        ten = _closure(["bin/a"], {"a": {"bin/b"}, "b": _many(10)})
+        self.assertTrue(_many(10) <= set(ten))
+        eleven = _closure(["bin/a"], {"a": {"bin/b"}, "b": _many(11)})
+        self.assertFalse(_many(11) & set(eleven))
+
+    def test_a_changed_hub_still_expands(self) -> None:
+        closure = _closure(["bin/b"], {"b": _many(11)})
+        self.assertTrue(_many(11) <= set(closure))
 
     def test_a_file_with_few_users_passes_the_change_on(self) -> None:
-        users = {"a": {"bin/b"}, "b": {"bin/c"}}
-        closure = affected.source_closure(
-            ["bin/a"], [], affected.Counter(), lambda word: users.get(word, set())
-        )
+        closure = _closure(["bin/a"], {"a": {"bin/b"}, "b": {"bin/c"}})
         self.assertEqual(set(closure), {"bin/a", "bin/b", "bin/c"})
+
+    def test_test_gate_and_data_files_never_join(self) -> None:
+        excluded = {
+            "tests/x.bats",
+            "tests/workflows/x.test.mjs",
+            "tests/helper.bash",
+            "justfile",
+            "tests/run-tests.sh",
+            "data/w.tsv",
+            "cfg/x.yaml",
+        }
+        closure = _closure(["bin/a"], {"a": excluded | {"bin/c"}})
+        self.assertEqual(set(closure), {"bin/a", "bin/c"})
 
 
 class BuildPlanTest(FixtureRepo):
