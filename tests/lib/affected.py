@@ -231,7 +231,11 @@ def source_lines(root: Path) -> list[tuple[str, str]]:
     except subprocess.CalledProcessError:
         return []
     lines = []
-    for row in out.splitlines():
+    # Each -z record is "path NUL line" and ends at a newline. splitlines()
+    # also splits at CR, VT, FF, and other separators inside a line.
+    for row in out.split("\n"):
+        if not row:
+            continue
         name, _, line = row.partition("\0")
         if not name.endswith(".md"):
             lines.append((name, line))
@@ -292,6 +296,7 @@ def source_closure(
     changed file itself always runs.
     """
 
+    @functools.cache
     def users_of(path: str) -> set[str]:
         local = _local_words(path)
         directory = path.rpartition("/")[0]

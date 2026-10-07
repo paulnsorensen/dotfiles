@@ -348,6 +348,11 @@ class SpecialPathTest(FixtureRepo):
         self.assertEqual(affected.changed_paths(self.root, None), [name])
         self.assertEqual(self.plan(name), {"lint-markdown": {name}})
 
+    def test_a_form_feed_does_not_split_a_source_line(self) -> None:
+        line = 'x\x0csource "${0%/*}/lib/common.sh"'
+        (self.root / "bin/ff").write_text(line + "\n")
+        self.assertIn(("bin/ff", line), affected.source_lines(self.root))
+
 
 class CommandLinesTest(unittest.TestCase):
     def test_commands_are_ordered_quoted_and_relative_to_runners(self) -> None:
