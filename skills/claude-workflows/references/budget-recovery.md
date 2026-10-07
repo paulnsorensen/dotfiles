@@ -37,12 +37,13 @@ The template guard compares implementer-reported SHAs. This is the minimal form.
 Use a fingerprint guard when work can progress without a commit, or when you cannot trust the reported SHA. Hash the worktree state in code and compare it between rounds.
 The local exemplar is `claude/workflows/cheese-factory.js` in the dotfiles repository (checkpoint coordinator, fingerprint guard, continuation limit).
 
-## Workflow runtime facts
+## Workflow runtime
 
-- `agent()` returns `null` when the user skips it or the subagent dies. `parallel()` turns a throw into `null`.
-- `budget.remaining()` is a hard ceiling when the user sets a target. Check a floor before each wave.
-- `resumeFromRunId` reuses the longest unchanged prefix of `agent()` calls. Keep prompts and labels deterministic.
-- `Date.now()`, `Math.random()`, and argless `new Date()` throw. Pass timestamps in through `args`.
+The workflow-authoring skill owns the runtime facts: `null` results, the `budget` ceiling, resume, and the banned clock calls.
+Two design rules follow from them:
+
+1. Treat each `null` from `agent()` or `parallel()` as a failed result. Send it through the recovery loop.
+2. Check `budget.total && budget.remaining() < LIMITS.minBudget` before each wave.
 
 ## Agent SDK and API facts
 
