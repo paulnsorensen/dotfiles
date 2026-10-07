@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Offline dynamic-workflow smoke suite. Run via: just smoke.
+# Offline dynamic-workflow smoke suite. Run via: just smoke [test-file ...].
+# With no arguments, it runs every tests/workflows/*.test.mjs file.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "${0%/*}" && pwd)"
@@ -14,4 +15,7 @@ if ! command -v node >/dev/null 2>&1; then
     exit 0
 fi
 
+if (($#)); then
+    exec node --test "$@"
+fi
 exec node --test "$REPO_ROOT"/tests/workflows/*.test.mjs

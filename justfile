@@ -7,15 +7,24 @@ default:
 # run all linters
 lint: lint-shell lint-python lint-js lint-markdown
 
-# shellcheck on shell scripts
+# shellcheck on shell scripts: one process per file, fanned across all cores
 lint-shell:
-    shellcheck -x -e SC1091 $(find bin -type f) .sync
-    shellcheck -x -e SC1091 -s bash agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/claude-mcp-reconcile.sh chezmoi/lib/claude-plugin-reconcile.sh chezmoi/lib/install-agents-doc.sh chezmoi/lib/install-shared-assets.sh
-    shellcheck -x -s sh chezmoi/private_dot_codex/modify_private_config.toml
-    shellcheck -x -e SC1091 -s bash agents/hooks/session-start-cheese-flair.sh macos/.sync macos/lib.sh
-    shellcheck -x -e SC1091 -s bash tests/run-tests.sh tests/install-bats.sh tests/lib/shard.sh
-    shellcheck -x -e SC1091 -s bash tests/workflows-test.sh
-    @echo "shellcheck: ok"
+    #!/usr/bin/env bash
+    set -uo pipefail
+    jobs=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+    check() { xargs -P "$jobs" -n 1 shellcheck -x "$@"; }
+    { find bin -type f; echo .sync; } | check -e SC1091 & bin=$!
+    printf '%s\n' agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh \
+        claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/claude-mcp-reconcile.sh \
+        chezmoi/lib/claude-plugin-reconcile.sh chezmoi/lib/install-agents-doc.sh \
+        chezmoi/lib/install-shared-assets.sh agents/hooks/session-start-cheese-flair.sh \
+        macos/.sync macos/lib.sh tests/run-tests.sh tests/install-bats.sh tests/lib/shard.sh \
+        tests/workflows-test.sh tests/check-affected.sh | check -e SC1091 -s bash & lib=$!
+    echo chezmoi/private_dot_codex/modify_private_config.toml | check -s sh & sh=$!
+    rc=0
+    for pid in "$bin" "$lib" "$sh"; do wait "$pid" || rc=1; done
+    (( rc == 0 )) && echo "shellcheck: ok"
+    exit "$rc"
 
 PYTHON_LINT_PATHS := "skills/session-analytics/scripts/ skills/ci-optimize/scripts/ skills/bash-shortening/scripts/ skills/hill-climb/scripts/ tests/ci_optimize/ tests/hill_climb/ tests/lib/"
 
@@ -28,9 +37,10 @@ lint-python:
 lint-js:
     cd claude/hooks && eslint *.js
 
-# markdownlint on markdown files
-lint-markdown:
-    markdownlint-cli2 '**/*.md'
+# markdownlint on markdown files (all, or the given files)
+[positional-arguments]
+lint-markdown *FILES:
+    if [ "$#" -eq 0 ]; then set -- '**/*.md'; fi; markdownlint-cli2 "$@"
 
 # autofix where supported (shellcheck has no autofix)
 lint-fix: lint-python-fix lint-js-fix lint-markdown-fix
@@ -59,9 +69,10 @@ test *ARGS:
 test-python *ARGS:
     cd agent-profile && uv run pytest -n auto {{ARGS}}
 
-# smoke tests — execute workflow definitions offline
-smoke:
-    ./tests/workflows-test.sh
+# smoke tests — execute workflow definitions offline (all, or the given files)
+[positional-arguments]
+smoke *FILES:
+    ./tests/workflows-test.sh "$@"
 
 # validate the opt-in local-llm stack — shellcheck scripts + parse configs
 check-llm:
@@ -70,14 +81,15 @@ check-llm:
     yq -e '.' chezmoi/local-llm/configs/llama-swap.yaml > /dev/null
     @echo "check-llm: ok"
 
-# pre-push gate: all lint and test legs are independent and IO/CPU-bound.
+# pre-push gate: run only the lint legs and test files that the change affects,
+# compared with the merge base of origin/main. tests/lib/affected.py owns the
+# selection; `just check --plan` prints it. CI still runs every leg.
 # This gate stays read-only against source files; use `just lint-fix` explicitly
 # when you want supported formatters to modify files.
-# GNU parallel fans out the legs; bats (test) goes last since it is slowest.
-check:
-    @mkdir -p "$HOME/.parallel" && touch "$HOME/.parallel/will-cite"
-    # GNU parallel exports XDG_CACHE_HOME to its jobs even when it is unset in
-    # the parent, and an empty value makes mise resolve its cache dir to a
-    # *relative* `mise`, dumping aqua bin_paths caches into the repo root. Pin
-    # a real value so the shimmed tools every leg runs cache under $HOME.
-    XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" parallel -k --group just ::: lint-shell lint-python lint-js lint-markdown test-python smoke test
+[positional-arguments]
+check *ARGS:
+    ./tests/check-affected.sh "$@"
+
+# full pre-push gate: every lint and test leg, fanned out by GNU parallel
+check-all:
+    ./tests/check-affected.sh --all

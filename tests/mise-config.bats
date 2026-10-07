@@ -109,9 +109,8 @@ tool_version() {
     # cache dir — every `just check` then dropped mise/aqua-*/bin_paths caches
     # into the repo root. The bats sandbox alone can't cover this: the leak
     # comes from the gate's own fan-out, outside any test's environment.
-    local recipe
-    recipe=$(awk '/^check:/{f=1} f' "$DOTFILES_DIR/justfile")
-    [[ -n "$recipe" ]]
+    # `just check` dispatches its legs through tests/check-affected.sh.
+    grep -qF 'tests/check-affected.sh' <(awk '/^check \*ARGS:/{f=1} f' "$DOTFILES_DIR/justfile")
     # shellcheck disable=SC2016  # a literal grep pattern, not an expansion
-    echo "$recipe" | grep -qF 'XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" parallel'
+    grep -qF 'XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" parallel' "$DOTFILES_DIR/tests/check-affected.sh"
 }

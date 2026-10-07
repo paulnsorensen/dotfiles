@@ -87,3 +87,6 @@
 2026-10-06 · hill-climb-20261006 · new-page · sources/how-we-made-claude-ai-faster.md · Ingested the Anthropic post on the claude.ai 3x speedup: deterministic counts over wall-clock, the per-thread loop, ratcheting CI thresholds, flags, and steering.
 2026-10-06 · hill-climb-20261006 · new-page · architecture/hill-climb-ratchet.md · Recorded the hill-climb skill, the hill-climb-threads workflow, and the ratchet gate: no loosen command, STOP file as the cross-harness loop signal, one ratchet file per parallel thread, skeptic verify per gain.
 2026-10-06 · hill-climb-20261006 · merged · domain-model.md, architecture/index.md · Added the Ratchet gate and Hill-climb thread terms and the architecture index entry.
+
+2026-10-07 · just-fixes-affected-check · new-page · operations/affected-check-gate.md · Recorded the affected-only `just check` gate: selection rules, the rejected sibling and mention closures, the BDD research verdict, and selection measured over 60 commits.
+2026-10-07 · just-fixes-affected-check · merged · operations/index.md · Registered affected-check-gate.md under Repo-local traps.

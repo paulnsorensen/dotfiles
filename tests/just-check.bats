@@ -23,11 +23,21 @@ run_markdownlint() {
 @test "just check uses read-only lint and test legs" {
     run just --justfile "$DOTFILES_DIR/justfile" --dry-run check
     [[ "$status" -eq 0 ]]
-    [[ "$output" != *"lint-fix"* ]]
-    [[ "$output" != *"--fix"* ]]
+    [[ "$output" == *"tests/check-affected.sh"* ]]
 
+    run just --justfile "$DOTFILES_DIR/justfile" --dry-run check-all
+    [[ "$status" -eq 0 ]]
+    [[ "$output" == *"tests/check-affected.sh --all"* ]]
+
+    # Every leg the gate can select stays read-only.
+    run "$DOTFILES_DIR/tests/check-affected.sh" --all --plan
+    [[ "$status" -eq 0 ]]
+    local plan="$output"
     for leg in lint-shell lint-python lint-js lint-markdown test-python smoke test; do
-        [[ "$output" == *"$leg"* ]]
+        [[ "$plan" == *"$leg"* ]]
+        run just --justfile "$DOTFILES_DIR/justfile" --dry-run "$leg"
+        [[ "$status" -eq 0 ]]
+        [[ "$output" != *"--fix"* ]]
     done
 
     run just --justfile "$DOTFILES_DIR/justfile" --dry-run lint-python
