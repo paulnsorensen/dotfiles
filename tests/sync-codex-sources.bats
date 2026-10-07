@@ -78,6 +78,33 @@ EOF
     [ "$(yq -p=toml -oy -r '.model' "$out")" != "stale-model" ]
 }
 
+@test "modify_config.toml moves the sandbox temp dir off /tmp with absolute paths" {
+    local live="$TEST_HOME/live.toml"
+    cat >"$live" <<'EOF'
+[projects."/home/u/Dev/thing"]
+trust_level = "trusted"
+
+[hooks.state."/home/u/.codex/hooks.json:pre_tool_use:0:0"]
+trusted_hash = "sha256:deadbeef"
+EOF
+
+    run --separate-stderr sh "$MERGE" <"$live"
+    [ "$status" -eq 0 ]
+    local out="$TEST_HOME/out.toml"
+    printf '%s' "$output" >"$out"
+
+    [ "$(yq -p=toml -oy -r '.sandbox_workspace_write.exclude_slash_tmp' "$out")" = "true" ]
+    [ "$(yq -p=toml -oy -r '.sandbox_workspace_write.writable_roots | length' "$out")" = "1" ]
+    [ "$(yq -p=toml -oy -r '.sandbox_workspace_write.writable_roots[0]' "$out")" = "$HOME/.cache/codex-tmp" ]
+    [ "$(yq -p=toml -oy -r '.shell_environment_policy.set.TMPDIR' "$out")" = "$HOME/.cache/codex-tmp" ]
+    # TOML cannot expand `~`; no tilde may reach the live file.
+    run ! grep -q '"~' "$out"
+    # network_access and unrelated runtime state survive.
+    [ "$(yq -p=toml -oy -r '.sandbox_workspace_write.network_access' "$out")" = "true" ]
+    [ "$(yq -p=toml -oy -r '.projects."/home/u/Dev/thing".trust_level' "$out")" = "trusted" ]
+    [ "$(yq -p=toml -oy -r '.hooks.state."/home/u/.codex/hooks.json:pre_tool_use:0:0".trusted_hash' "$out")" = "sha256:deadbeef" ]
+}
+
 @test "modify_config.toml bounds runtime agents without colliding with selected agents" {
     local live="$TEST_HOME/live.toml"
     cat >"$live" <<'EOF'

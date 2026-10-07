@@ -9,8 +9,16 @@
 // no file and runs unchanged, as do file-listing modes (`rg --files`, `ag -g`,
 // `ack -f`). The deny names the tilth_search MCP tool; it does not depend on a
 // tilth CLI.
+//
+// Two exemptions let a search run unchanged. A search whose targets all sit in
+// Claude's session scratch directory (<tmp>/claude-<uid>/, see exempt.js) runs,
+// because the harness owns it. A search also runs when every target is an
+// existing regular file of at most 16 KiB and the command writes no file. A directory, a missing file, a
+// recursive search with no file operand, an xargs feed, or a shell expansion
+// keeps the deny.
 
-const { commands, commandWord, splitArgs, realFiles, pipedIn, inputFiles } = require('./shell');
+const { commandsWithCwd, commandWord, splitArgs, realFiles, pipedIn, inputFiles } = require('./shell');
+const { allScratch, allSmallFiles, segWritesFile } = require('./exempt');
 
 // Per-binary option grammar: which flags take a value, which flags make the
 // search recursive, which supply the pattern (so every operand is a path), and
@@ -79,13 +87,16 @@ function searchTargets(seg, spec, args, xargs) {
   return null;
 }
 
-function detect(toolName, input) {
+function detect(toolName, input, cwd) {
   if (toolName !== 'Bash') return null;
-  for (const seg of commands((input && input.command) || '')) {
+  cwd = cwd || process.cwd();
+  for (const seg of commandsWithCwd((input && input.command) || '', cwd)) {
     const { word, args, xargs } = commandWord(seg.argv);
     const spec = word && Object.hasOwn(BINS, word) && BINS[word];
     if (!spec) continue;
     const hit = searchTargets(seg, spec, args, xargs);
+    if (hit && (allScratch(hit.targets, seg.cwd)
+        || (!segWritesFile(seg, seg.cwd) && allSmallFiles(hit.targets, seg.cwd)))) continue;
     if (hit) return { reason: reason(`\`${word}\``, hit.pattern, hit.targets), pattern: hit.pattern, module: 'search' };
   }
   return null;

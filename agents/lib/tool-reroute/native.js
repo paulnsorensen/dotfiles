@@ -11,6 +11,9 @@
 // Claude plan mode and auto-memory can only write through the built-in Write
 // and Edit tools. Read, Write, Edit, and MultiEdit therefore pass when every
 // target sits under ~/.claude/plans/ or ~/.claude/projects/*/memory/.
+// Claude's session scratch directory (<tmp>/claude-<uid>/, see exempt.js) is
+// harness-owned too, so the same four tools pass there. A `..` segment or a
+// shell expansion in the path never qualifies.
 // Claude removes Grep/Glob through permissions.deny; this deny is the second
 // layer. MultiEdit stays in the set for older Claude builds.
 // Codex approves tilth_write without a prompt and tilth_write accepts absolute
@@ -20,8 +23,8 @@
 // PDFs, and notebooks, which tilth_read does not render.
 
 const path = require('path');
-const fs = require('fs');
 const { execFileSync } = require('child_process');
+const { isScratchPath, isHarnessOwnedPath, canonicalize } = require('./exempt');
 
 const MEDIA_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.pdf', '.ipynb']);
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'apply_patch']);
@@ -33,16 +36,6 @@ function home() {
 
 function resolveFrom(cwd, p) {
   return path.isAbsolute(p) ? path.resolve(p) : path.resolve(cwd, p);
-}
-
-// Plan files and auto-memory: the only built-in writes that stay open.
-function isHarnessOwnedPath(resolved) {
-  const claude = path.join(home(), '.claude');
-  if (resolved.startsWith(path.join(claude, 'plans') + '/')) return true;
-  const projects = path.join(claude, 'projects') + '/';
-  if (!resolved.startsWith(projects)) return false;
-  const rest = resolved.slice(projects.length).split('/');
-  return rest.length >= 3 && rest[0] !== '' && rest[1] === 'memory';
 }
 
 function readReason(file) {
@@ -120,28 +113,12 @@ function allowedRoots(eventCwd) {
   return roots.filter(Boolean);
 }
 
-// Resolve symlinks on the longest existing ancestor (macOS /var → /private/var).
-function realish(p) {
-  const tail = [];
-  let cur = p;
-  for (;;) {
-    try {
-      return path.join(fs.realpathSync(cur), ...tail);
-    } catch {
-      const parent = path.dirname(cur);
-      if (parent === cur) return p;
-      tail.unshift(path.basename(cur));
-      cur = parent;
-    }
-  }
-}
-
 // Judge the real path only: a symlink inside the checkout that points outside
 // it must not pass. Roots match in raw and real form (/tmp → /private/tmp).
 function underRoot(resolved, roots) {
-  const real = realish(resolved);
+  const real = canonicalize(resolved, false);
   if (/(^|\/)\.cheese(\/|$)/.test(real)) return true;
-  const allRoots = roots.flatMap((r) => [r.replace(/\/+$/, ''), realish(r.replace(/\/+$/, ''))]);
+  const allRoots = roots.flatMap((r) => [r.replace(/\/+$/, ''), canonicalize(r.replace(/\/+$/, ''), false)]);
   return allRoots.some((r) => real === r || real.startsWith(r + '/'));
 }
 
@@ -173,13 +150,13 @@ function detect(toolName, input, cwd, harness) {
   if (toolName === 'Read') {
     const file = input && typeof input.file_path === 'string' ? input.file_path : '';
     if (MEDIA_EXT.has(path.extname(file).toLowerCase())) return null;
-    if (file && isHarnessOwnedPath(toolFilePath(input, eventCwd))) return null;
+    if (file && (isHarnessOwnedPath(toolFilePath(input, eventCwd), home()) || isScratchPath(file, eventCwd))) return null;
     return { reason: readReason(file), module: 'native' };
   }
   if (WRITE_TOOLS.has(toolName)) {
     if (toolName !== 'apply_patch') {
       const target = toolFilePath(input, eventCwd);
-      if (target && isHarnessOwnedPath(target)) return null;
+      if (target && (isHarnessOwnedPath(target, home()) || isScratchPath(input.file_path, eventCwd))) return null;
     }
     return { reason: writeReason(toolName), module: 'native' };
   }
