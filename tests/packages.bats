@@ -1829,8 +1829,11 @@ setup_pin_bump_repo() {
     export MISE_CONFIG_FILE="$work/mise-config.toml"
 }
 
-# gh mock with state: `pr list` answers with a URL once `pr create` ran.
-# GH_CREATE_FAIL=1 makes `pr create` fail.
+# gh mock with state: `pr list` answers with a tab-separated PR row once
+# `pr create` ran. The row carries the pin branch head on origin, so it is a
+# same-repo PR at our commit. GH_FORK_PR=1 adds a fork PR row and
+# GH_LIST_SHA overrides the same-repo head.
+# GH_CREATE_FAIL=1 makes `pr create` fail; GH_MERGE_FAIL=1 makes `pr merge` fail.
 write_mock_gh_pr() {
     rm -f "$MOCK_BIN/gh"
     cat > "$MOCK_BIN/gh" << MOCKGH
@@ -1838,7 +1841,11 @@ write_mock_gh_pr() {
 state="\$TEST_HOME/gh-pr-exists"
 if [[ "\$1 \$2" == "pr list" ]]; then
     echo "gh \$*" >> "\$GH_LOG"
-    [[ -f "\$state" ]] && echo "https://github.com/example/dotfiles/pull/1"
+    [[ "\${GH_FORK_PR:-}" == "1" ]] && printf '%s\t%s\t%s\n' "https://github.com/example/dotfiles/pull/9" true "deadbeef"
+    if [[ -f "\$state" ]]; then
+        head="\${GH_LIST_SHA:-\$(git -C "\$TEST_HOME/origin.git" rev-parse refs/heads/chore/mise-pins)}"
+        printf '%s\t%s\t%s\n' "https://github.com/example/dotfiles/pull/1" false "\$head"
+    fi
     exit 0
 fi
 if [[ "\$1 \$2" == "pr create" ]]; then
@@ -1846,6 +1853,10 @@ if [[ "\$1 \$2" == "pr create" ]]; then
     [[ "\${GH_CREATE_FAIL:-}" == "1" ]] && exit 1
     touch "\$state"
     echo "https://github.com/example/dotfiles/pull/1"
+fi
+if [[ "\$1 \$2" == "pr merge" ]]; then
+    echo "gh \$*" >> "\$GH_LOG"
+    [[ "\${GH_MERGE_FAIL:-}" == "1" ]] && exit 1
 fi
 exit 0
 MOCKGH
@@ -1881,6 +1892,8 @@ pin_branches() {
     grep -q -- "--repo example/dotfiles --base main --head $branch" "$GH_LOG"
     [[ "$output" == *"mise pin bump PR: https://github.com/example/dotfiles/pull/1"* ]]
     [[ "$output" == *"stays modified until the PR merges"* ]]
+    grep -qx "gh pr merge https://github.com/example/dotfiles/pull/1 --auto --squash --match-head-commit $(git -C "$origin" rev-parse "$branch")" "$GH_LOG"
+    [[ "$output" == *"auto-merge enabled"* ]]
     # The checkout stays on main and keeps the bumped manifest.
     [[ "$(git -C "$work" branch --show-current)" == "main" ]]
     grep -q 'aqua:example/tool' "$MISE_CONFIG_FILE"
@@ -1902,6 +1915,95 @@ pin_branches() {
     [[ "$(pin_branches)" == "chore/mise-pins" ]]
     [[ "$(grep -c 'pr create' "$GH_LOG")" == "1" ]]
     [[ "$output" == *"mise pin bump PR updated: https://github.com/example/dotfiles/pull/1"* ]]
+    [[ "$(grep -c 'pr merge .* --auto --squash' "$GH_LOG")" == "2" ]]
+}
+
+@test "a pin bump on top of the open PR's bump still publishes" {
+    prepare_pin_bump
+    local origin="$TEST_HOME/origin.git" work="$TEST_HOME/work" branch="chore/mise-pins"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+
+    # The PR is still open: the manifest stays dirty with the first bump, and
+    # the live file matches it. The mock appends one more pin on each bump.
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" != *"not published"* ]]
+    [[ "$(git -C "$origin" show "$branch:mise-config.toml" | grep -c 'aqua:example/tool')" == "2" ]]
+    [[ "$(git -C "$origin" diff --name-only main "$branch")" == "mise-config.toml" ]]
+    [[ "$(git -C "$origin" rev-parse "$branch^")" == "$(git -C "$origin" rev-parse main)" ]]
+    [[ "$(grep -c 'pr create' "$GH_LOG")" == "1" ]]
+    cmp -s <(git -C "$origin" show "$branch:mise-config.toml") "$work/mise-config.toml"
+}
+
+@test "a local edit on top of the open PR's bump is not published" {
+    prepare_pin_bump
+    local origin="$TEST_HOME/origin.git" branch="chore/mise-pins"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    local published
+    published="$(git -C "$origin" rev-parse "$branch")"
+
+    printf '# local only\n' >> "$MISE_CONFIG_FILE"
+    cp "$MISE_CONFIG_FILE" "$PIN_LIVE"
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"differs from origin/main and a current $branch"* ]]
+    [[ "$(git -C "$origin" rev-parse "$branch")" == "$published" ]]
+}
+
+@test "a pin branch that origin/main moved past is not rebuilt over the upstream manifest" {
+    prepare_pin_bump
+    local origin="$TEST_HOME/origin.git" up="$TEST_HOME/up" branch="chore/mise-pins"
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    local published
+    published="$(git -C "$origin" rev-parse "$branch")"
+
+    # Renovate lands a manifest edit on main while the pin PR is still open.
+    git clone -q "$origin" "$up"
+    printf '[tools]\n"aqua:example/upstream" = "9.0.0"\n' > "$up/mise-config.toml"
+    git -C "$up" -c user.name=T -c user.email=t@example.com commit -qam upstream
+    git -C "$up" push -q origin main
+
+    UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"pin bump kept locally, not published"* ]]
+    [[ "$(git -C "$origin" rev-parse "$branch")" == "$published" ]]
+}
+
+@test "UPGRADE_MODE keeps the PR and warns when gh cannot enable auto-merge" {
+    prepare_pin_bump
+
+    GH_MERGE_FAIL=1 UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"gh pr merge --auto failed"* ]]
+    [[ "$output" == *"mise pin bump PR: https://github.com/example/dotfiles/pull/1"* ]]
+    [[ "$(pin_branches)" == "chore/mise-pins" ]]
+}
+
+@test "a cross-repo PR from a same-named branch neither blocks PR creation nor gets merged" {
+    prepare_pin_bump
+
+    GH_FORK_PR=1 UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$(grep -c 'pr create' "$GH_LOG")" == "1" ]]
+    [[ "$output" == *"mise pin bump PR: https://github.com/example/dotfiles/pull/1"* ]]
+    grep -q 'pr merge https://github.com/example/dotfiles/pull/1 ' "$GH_LOG"
+    ! grep -q 'pull/9' "$GH_LOG"
+}
+
+@test "a same-repo PR whose head is not the pushed commit is not auto-merged" {
+    prepare_pin_bump
+    touch "$TEST_HOME/gh-pr-exists"
+
+    GH_LIST_SHA=0000000000000000000000000000000000000000 UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"PR from this repo is not at"* ]]
+    ! grep -q 'pr merge' "$GH_LOG"
 }
 
 @test "UPGRADE_MODE does not publish a manifest that differs from origin/main" {

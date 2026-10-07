@@ -143,6 +143,21 @@ do_update() {
     fi
 }
 
+# Fast-forward main after a merged mise pin PR (packages/lib-mise-pins.sh).
+# The subshell keeps the library's readonly names and log helpers out of dots.
+settle_pin_bump() {
+    local lib="$DOTFILES_DIR/packages/lib-mise-pins.sh"
+    [[ -r "$lib" ]] || return 0
+    (
+        log_info()    { echo -e "${BLUE}[dots]${NC} $1"; }
+        log_success() { echo -e "${GREEN}[dots]${NC} $1"; }
+        log_warning() { echo -e "${YELLOW}[dots]${NC} $1" >&2; }
+        # shellcheck source=packages/lib-mise-pins.sh
+        source "$lib"
+        settle_mise_pin_bump "$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
+    ) || true
+}
+
 # Sync dotfiles
 do_sync() {
     echo -e "${BLUE}🔄 Syncing dotfiles...${NC}"
@@ -165,13 +180,19 @@ do_sync() {
         esac
     done
 
-    "$DOTFILES_DIR/.sync" "${sync_args[@]+"${sync_args[@]}"}"
-
+    local informational=false
     if ((${#sync_args[@]})); then
         case " ${sync_args[*]} " in
-            *" --help "*|*" -h "*|*" --dry-run "*) return 0 ;;
+            *" --help "*|*" -h "*|*" --dry-run "*) informational=true ;;
         esac
     fi
+
+    # Settle before .sync starts, so the fast-forward never rewrites a running script.
+    [[ "$informational" == true ]] || settle_pin_bump
+
+    "$DOTFILES_DIR/.sync" "${sync_args[@]+"${sync_args[@]}"}"
+
+    [[ "$informational" == true ]] && return 0
 
     local skill_exclude_agents="${SKILL_EXCLUDE_AGENTS:+$SKILL_EXCLUDE_AGENTS }claude-code"
     SKILL_EXCLUDE_AGENTS="$skill_exclude_agents" \

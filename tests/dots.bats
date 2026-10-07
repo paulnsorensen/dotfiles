@@ -64,6 +64,17 @@ STUB
     chmod +x "$stub_dir/.sync" "$stub_dir/packages/sync.sh" "$stub_dir/chezmoi/lib/install-external.sh" "$stub_dir/bin/git"
 }
 
+# Source the real pin library in the stub tree, so the subshell log helpers and
+# the library's readonly names are exercised.
+stub_real_pin_library() {
+    cp "$DOTFILES_DIR/packages/lib-mise-pins.sh" "$1/packages/lib-mise-pins.sh"
+    mkdir -p "$1/chezmoi/dot_config/mise"
+    git init -q -b main "$1"
+    printf '[tools]\n' > "$1/chezmoi/dot_config/mise/config.toml"
+    git -C "$1" add chezmoi/dot_config/mise/config.toml
+    git -C "$1" -c user.name=T -c user.email=t@example.com commit -qm init
+}
+
 @test "dots upgrade pulls before an upgrade sync and refreshes remote skills" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
@@ -127,6 +138,60 @@ STUB
     SKILL_EXCLUDE_AGENTS=cursor PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
     assert_success
     assert_output_contains "exclude=cursor claude-code"
+}
+
+# A stub pin library records the settle call, so its order against .sync shows.
+stub_pin_settle() {
+    cat > "$1/packages/lib-mise-pins.sh" <<'STUB'
+settle_mise_pin_bump() { echo "stub-settle manifest=$1"; log_success "settled"; }
+STUB
+}
+
+@test "dots sync settles a merged mise pin PR before .sync runs" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    stub_pin_settle "$stub_dir"
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
+    assert_success
+    assert_output_contains "stub-settle manifest=$stub_dir/chezmoi/dot_config/mise/config.toml"
+    assert_output_contains "[dots]"
+
+    local settle_line sync_line
+    settle_line=$(printf '%s\n' "$output" | grep -n 'stub-settle' | head -1 | cut -d: -f1)
+    sync_line=$(printf '%s\n' "$output" | grep -n 'stub-dotsync args=' | head -1 | cut -d: -f1)
+    [[ "$settle_line" -lt "$sync_line" ]]
+}
+
+@test "dots sync --dry-run does not settle the mise pin PR" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    stub_pin_settle "$stub_dir"
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync --dry-run
+    assert_success
+    assert_output_not_contains "stub-settle"
+}
+
+@test "dots sync still runs .sync when the settle step fails" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    cat > "$stub_dir/packages/lib-mise-pins.sh" <<'STUB'
+settle_mise_pin_bump() { echo "stub-settle-broken $UNSET_BY_DESIGN"; return 1; }
+STUB
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
+    assert_success
+    assert_output_contains "stub-dotsync args="
+}
+
+@test "dots sync runs the real pin library as a no-op on a clean manifest" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    rm "$stub_dir/bin/git"
+    stub_real_pin_library "$stub_dir"
+    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
+    assert_success
+    assert_output_contains "stub-dotsync args="
+    assert_output_not_contains "[dots]"
+    [[ -z "$(git -C "$stub_dir" status --porcelain -- chezmoi/dot_config/mise/config.toml)" ]]
 }
 
 @test "dots sync --dry-run skips the skill refresh" {
