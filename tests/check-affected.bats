@@ -53,6 +53,33 @@ teardown() {
     [ ! -e "$STUB_LOG" ]
 }
 
+@test "check with only a deleted unnamed file does not claim no changes" {
+    printf 'x\n' > "$FIXTURE/gone.txt"
+    git -C "$FIXTURE" add gone.txt
+    git -C "$FIXTURE" -c user.name=t -c user.email=t@t commit -qm gone
+    git -C "$FIXTURE" rm -q gone.txt
+    run "$FIXTURE/tests/check-affected.sh" --base HEAD
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"nothing to run"* ]]
+    [[ "$output" != *"no changes"* ]]
+}
+
+@test "check runs the whole test leg for a path that no leg observes" {
+    printf 'new\n' > "$FIXTURE/stray.txt"
+    run "$FIXTURE/tests/check-affected.sh" --base HEAD
+    [ "$status" -eq 0 ]
+    [ "$(cat "$STUB_LOG")" = "test" ]
+    [[ "$output" == *"stray.txt"* ]]
+}
+
+@test "check runs every leg and says why when no base ref resolves" {
+    git -C "$FIXTURE" branch -m trunk
+    run "$FIXTURE/tests/check-affected.sh"
+    [ "$status" -eq 0 ]
+    [ "$(sort "$STUB_LOG")" = "$(printf '%s\n' lint-js lint-markdown lint-python lint-shell smoke test test-python)" ]
+    [[ "$output" == *"no origin/main or main"* ]]
+}
+
 @test "check runs markdown lint only on a changed Markdown file" {
     printf '# Guide v2\n' > "$FIXTURE/docs/guide.md"
     printf '# New\n' > "$FIXTURE/docs/new.md"

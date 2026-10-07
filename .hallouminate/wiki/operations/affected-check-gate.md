@@ -31,7 +31,7 @@ A test file is selected for a changed path when:
 1. One of its path tokens is the path, or a directory (two or more segments) that contains it. `$VAR` segments become `*`, so `"$DOTFILES_DIR"/skills/*/SKILL.md` is a glob.
 2. It names the file as a word: the basename when it is unique in the repository, else `parent/basename`. This catches bare `bin/` commands, because `test_helper.bash` puts `bin/` on `PATH`.
 3. It calls a `tests/*.bash` helper function whose body names the path (for example `omp_pin_version` reads `packages/sync.sh`).
-4. It selects a file that sources or imports the changed file. The closure follows `source`, `.`, `import`, `from`, and `require(` lines, up to five levels. It also follows same-directory relative sources such as `. "$DIR/lib.sh"`.
+4. It selects a non-Markdown file that names the changed file as a whole word: a source, an import, a run by path, or a chezmoi `includeTemplate`. The closure is transitive, up to five levels. It also follows same-directory relative sources such as `. "$DIR/lib.sh"`. A shared basename also matches as `parent.stem` for Python modules.
 
 `tests/test_helper.bash`, `tests/run-tests.sh`, and `tests/install-bats.sh` select the whole Bats suite.
 `tests/workflows/harness.mjs` and `tests/workflows-test.sh` select the whole smoke suite.
@@ -39,9 +39,9 @@ A test file is selected for a changed path when:
 ## Decisions and why
 
 - **No sibling rule.** An early version also selected tests that named any file in the same directory. Over the last 60 commits, this rule roughly doubled the selection. For example, a `codex.yaml` edit selected every test that reads `claude.yaml` or `omp.yaml`. The source closure finds real users of a library more precisely.
-- **No mention closure.** The selector does not follow arbitrary code files that name a changed data file. A central file such as `agents/registry.yaml` would fan out to most of the suite. CI catches the remaining gaps.
+- **Mention closure follows any naming file.** An early version followed only source and import lines. It missed scripts that run by path, such as `bin/ccw-rm` running `cc-session-name`, and `includeTemplate`. A false negative costs more than a wide selection, so the closure now follows any non-Markdown file that names the changed file. A widely named `bin/` script selects most of the suite.
 - **One-segment tokens match only exactly.** Many tests export `"$DOTFILES_DIR/bin:$PATH"`. A `bin` directory rule would select most of the suite for any `bin/` change.
-- **Unmatched paths are reported, not escalated.** The summary lists each existing changed path that no leg or test observes. Deleted paths are not listed.
+- **Unmatched paths fail closed.** An existing changed path that no leg or test observes runs the whole `test` leg, because a test can read it in a way the selector cannot see. Deleted paths do not trigger this. With no `origin/main` or `main`, every leg runs.
 - **BDD is not the tool for this.** Research on 2026-10-07 found that BDD (Gherkin or Cucumber tags, ShellSpec `--tag`) is a spec style. Its tags are hand-written labels with no mapping from changed files to tests. Path-to-test maps with a run-all fallback (Nx affected, Bazel `rdeps`, test impact analysis) are the standard pattern. bats-core 1.8.0+ supports `# bats file_tags=` and `--filter-tags`, but per-file selection needs no tags.[^bdd]
 
 ## Measured selection
@@ -53,7 +53,7 @@ Over the last 60 non-merge commits, the selector chose a median of 5 and a mean 
 ## Known gaps
 
 - Data files read through paths that a script builds at run time (for example Python `Path` joins) are not tokens. The `test-python` prefix list covers the agent-profile suite by hand.
-- A Bats test that runs a script indirectly, through a script that names a data file, is not selected for a change to that data file.
+- A mise config change runs every lint leg, because the pins that the legs use live there.
 - CI runs every leg, so a gap costs one CI round trip, not a missed regression.
 
 [^bdd]: bats-core docs (writing-tests, usage) and CHANGELOG 1.8.0; nx.dev/ci/features/affected; bazel.build/query/language; martinfowler.com/articles/rise-test-impact-analysis.html; cucumber.io/docs/cucumber/api/#tags; github.com/shellspec/shellspec.

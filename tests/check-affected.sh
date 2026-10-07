@@ -39,7 +39,7 @@ fi
 
 commands="$(python3 tests/lib/affected.py commands ${select_args[@]+"${select_args[@]}"})"
 if [[ -z "$commands" ]]; then
-    echo "check: no changes; nothing to run"
+    echo "check: nothing to run"
     exit 0
 fi
 

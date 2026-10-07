@@ -44,6 +44,16 @@ FIXTURE = {
     ),
     "tests/pin.bats": '@test "pin" {\n    [[ "$(pin_version)" == v1 ]]\n}\n',
     "tests/docs.bats": '@test "docs" {\n    grep -q Guide "$DOTFILES_DIR/docs/guide.md"\n}\n',
+    "bin/inner": "#!/usr/bin/env bash\necho inner\n",
+    "bin/outer": '#!/usr/bin/env bash\nexec "${0%/*}/inner"\n',
+    "tests/outer.bats": '@test "outer" {\n    run outer\n}\n',
+    "chezmoi/.chezmoitemplates/frag": "fragment\n",
+    "chezmoi/page.tmpl": '{{ includeTemplate "frag" . }}\n',
+    "tests/page.bats": '@test "page" {\n    run render chezmoi/page.tmpl\n}\n',
+    "pkg/baz/util.py": "x = 1\n",
+    "pkg/qux/util.py": "x = 2\n",
+    "pkg/use.py": "from baz.util import x\n",
+    "tests/use.bats": '@test "use" {\n    run python3 pkg/use.py\n}\n',
     "tests/workflows/harness.mjs": "export const run = () => 0\n",
     "tests/workflows/a.test.mjs": (
         "const path = resolve(import.meta.dirname, '../../claude/workflows/a.js')\n"
@@ -131,10 +141,15 @@ class WordTest(unittest.TestCase):
         self.assertFalse(affected.has_word("run mytools", "mytool"))
         self.assertFalse(affected.has_word("my_mytool", "mytool"))
 
-    def test_needle_uses_parent_for_shared_basenames(self) -> None:
-        counts = affected.Counter({"lib.sh": 2, "mytool": 1})
-        self.assertEqual(affected.needle("bin/mytool", counts), "mytool")
-        self.assertEqual(affected.needle("agents/hooks/lib.sh", counts), "hooks/lib.sh")
+    def test_needles_use_parent_for_shared_basenames(self) -> None:
+        counts = affected.Counter({"lib.sh": 2, "util.py": 2, "mytool": 1})
+        self.assertEqual(affected.needles("bin/mytool", counts), ["mytool"])
+        self.assertEqual(
+            affected.needles("agents/hooks/lib.sh", counts), ["hooks/lib.sh"]
+        )
+        self.assertEqual(
+            affected.needles("pkg/baz/util.py", counts), ["baz/util.py", "baz.util"]
+        )
 
 
 class BuildPlanTest(FixtureRepo):
@@ -191,12 +206,35 @@ class BuildPlanTest(FixtureRepo):
         self.assertEqual(set(plan), set(affected.LEGS))
         self.assertTrue(all(files is None for files in plan.values()))
 
-    def test_unobserved_change_is_reported(self) -> None:
+    def test_unobserved_change_is_reported_and_runs_the_whole_test_leg(self) -> None:
         plan = affected.build_plan(
             self.root, ["notes.txt", "docs/guide.md", "gone.txt"]
         )
         # gone.txt does not exist: a deletion that no test names needs no report.
         self.assertEqual(plan.unmatched, ["notes.txt"])
+        self.assertIsNone(plan.files["test"])
+        self.assertIn("notes.txt", plan.reason)
+
+    def test_deleted_unnamed_path_runs_nothing(self) -> None:
+        self.assertEqual(self.plan("gone.txt"), {})
+
+    def test_script_run_by_path_selects_tests_of_the_caller(self) -> None:
+        # bin/outer runs bin/inner by path; only outer.bats names `outer`.
+        self.assertEqual(self.plan("bin/inner")["test"], {"tests/outer.bats"})
+
+    def test_include_template_selects_tests_of_the_including_file(self) -> None:
+        plan = self.plan("chezmoi/.chezmoitemplates/frag")
+        self.assertEqual(plan["test"], {"tests/page.bats"})
+
+    def test_dotted_python_import_of_a_shared_basename(self) -> None:
+        plan = self.plan("pkg/baz/util.py")
+        self.assertEqual(plan["test"], {"tests/use.bats"})
+
+    def test_mise_pin_change_runs_every_lint_leg(self) -> None:
+        plan = self.plan("chezmoi/dot_config/mise/config.toml")
+        for leg in affected.LINT_LEGS:
+            with self.subTest(leg=leg):
+                self.assertIsNone(plan[leg])
 
     def test_no_change_runs_nothing(self) -> None:
         self.assertEqual(self.plan(), {})
@@ -230,6 +268,14 @@ class ChangedPathsTest(FixtureRepo):
             affected.changed_paths(self.root, base),
             ["docs/guide.md", "docs/new.md", "notes.txt"],
         )
+
+
+class SpecialPathTest(FixtureRepo):
+    def test_quoted_git_paths_are_kept(self) -> None:
+        name = "docs/café ü.md"
+        (self.root / name).write_text("# Odd\n")
+        self.assertEqual(affected.changed_paths(self.root, None), [name])
+        self.assertEqual(self.plan(name), {"lint-markdown": {name}})
 
 
 class CommandLinesTest(unittest.TestCase):

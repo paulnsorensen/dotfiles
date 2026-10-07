@@ -12,10 +12,12 @@ A test file is selected for a changed path when one of its path tokens:
 - is a glob that matches the path (`$VAR` segments count as `*`).
 
 A test file is also selected when it names the changed file as a word: the
-basename when it is unique in the repository, else `parent/basename`.
+basename when it is unique in the repository, else `parent/basename` (and
+`parent.stem` for modules).
 A test that calls a `tests/*.bash` helper function observes the helper's paths.
-A changed library also selects the tests of each file that sources or imports
-it, transitively.
+A changed file also selects the tests of each non-Markdown file that names it
+as a word (a source, an import, a run by path, an `includeTemplate`),
+transitively. Unmatched changed paths run the whole `test` leg.
 
 Usage:
     affected.py plan [--all] [--base REF]      tab-separated plan lines
@@ -35,6 +37,7 @@ import shlex
 import subprocess
 import sys
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -72,6 +75,11 @@ PYTEST_PREFIXES = (
 LINT_DEPS_PREFIX = ".github/lint-deps/"
 MARKDOWNLINT_CONFIG = ".markdownlint-cli2.yaml"
 PYTHON_CONFIGS = frozenset({"pyproject.toml", "ruff.toml", ".ruff.toml"})
+# Tool pins (shellcheck, ruff, ...) for the lint legs: any change runs every lint leg.
+MISE_CONFIGS = frozenset(
+    {"chezmoi/dot_config/mise/config.toml", "mise.toml", ".mise.toml"}
+)
+LINT_LEGS = ("lint-shell", "lint-markdown", "lint-js", "lint-python")
 SHELL_LINT_EXTRA = frozenset({"chezmoi/private_dot_codex/modify_private_config.toml"})
 
 BATS_GLOB = "tests/*.bats"
@@ -85,6 +93,7 @@ _FUNC_RE = re.compile(
 )
 _SHEBANG_RE = re.compile(r"^#!.*\b(?:ba)?sh\b")
 # Shell `source` and `.`, Python and JS `import`/`from`, and Node `require(`.
+# These lines find same-directory relative sources and module stems.
 _SOURCE_LINE_RE = r"(^|[;&|[:space:]])(source|\.|import|from)[[:space:]]+|require\("
 _MODULE_EXTS = frozenset({"py", "js", "mjs", "cjs"})
 _CLOSURE_ROUNDS = 5
@@ -127,11 +136,18 @@ def merge_base(root: Path, base: str | None) -> str | None:
     return None
 
 
+def _nul_split(out: str) -> list[str]:
+    return [p for p in out.split("\0") if p]
+
+
 def changed_paths(root: Path, base: str | None) -> list[str]:
-    """Committed, staged, unstaged, and untracked paths since `base`."""
-    diff = git(root, "diff", "--name-only", "--no-renames", base or "HEAD")
-    untracked = git(root, "ls-files", "--others", "--exclude-standard")
-    return sorted({p for p in (diff + untracked).splitlines() if p})
+    """Committed, staged, unstaged, and untracked paths since `base`.
+
+    NUL-separated output keeps special names unquoted.
+    """
+    diff = git(root, "diff", "-z", "--name-only", "--no-renames", base or "HEAD")
+    untracked = git(root, "ls-files", "-z", "--others", "--exclude-standard")
+    return sorted(set(_nul_split(diff) + _nul_split(untracked)))
 
 
 def path_tokens(text: str, tops: frozenset[str]) -> set[str]:
@@ -174,12 +190,22 @@ def token_matches(token: str, path: str) -> bool:
     return _token_rule(token).fullmatch(path) is not None
 
 
-def needle(path: str, basename_counts: Counter[str]) -> str | None:
-    """The word a file that uses `path` writes: unique basename or parent/basename."""
+def needles(path: str, basename_counts: Counter[str]) -> list[str]:
+    """The words a file that uses `path` writes.
+
+    A unique basename is enough. A shared basename needs `parent/basename`,
+    plus `parent.stem` for a module that Python imports by dotted name.
+    """
     parts = path.split("/")
     if basename_counts.get(parts[-1], 0) <= 1:
-        return parts[-1]
-    return "/".join(parts[-2:]) if len(parts) >= 2 else None
+        return [parts[-1]]
+    if len(parts) < 2:
+        return []
+    words = ["/".join(parts[-2:])]
+    stem, dot, ext = parts[-1].rpartition(".")
+    if dot and stem and ext in _MODULE_EXTS:
+        words.append(f"{parts[-2]}.{stem}")
+    return words
 
 
 def has_word(text: str, word: str) -> bool:
@@ -198,15 +224,24 @@ def has_word(text: str, word: str) -> bool:
 def source_lines(root: Path) -> list[tuple[str, str]]:
     """(file, line) for every non-Markdown line that sources or imports a file."""
     try:
-        out = git(root, "grep", "-I", "--untracked", "-E", _SOURCE_LINE_RE)
+        out = git(root, "grep", "-z", "-I", "--untracked", "-E", _SOURCE_LINE_RE)
     except subprocess.CalledProcessError:
         return []
     lines = []
     for row in out.splitlines():
-        name, _, line = row.partition(":")
+        name, _, line = row.partition("\0")
         if not name.endswith(".md"):
             lines.append((name, line))
     return lines
+
+
+def referrers(root: Path, word: str) -> set[str]:
+    """Non-Markdown files that name `word` as a whole word."""
+    try:
+        out = git(root, "grep", "-z", "-l", "-I", "--untracked", "-F", "-w", "-e", word)
+    except subprocess.CalledProcessError:
+        return set()
+    return {p for p in _nul_split(out) if not p.endswith(".md")}
 
 
 def _local_words(path: str) -> set[str]:
@@ -217,28 +252,35 @@ def _local_words(path: str) -> set[str]:
 
 
 def source_closure(
-    changed: list[str], lines: list[tuple[str, str]], basename_counts: Counter[str]
+    changed: list[str],
+    lines: list[tuple[str, str]],
+    basename_counts: Counter[str],
+    find_referrers: Callable[[str], set[str]] = lambda word: set(),
 ) -> dict[str, str]:
-    """Map each changed path, and each file that sources one, to its origin.
+    """Map each changed path, and each file that uses one, to its origin.
 
-    A file sources a path when one of its source or import lines names the
-    path's needle, or names its basename or module stem from the same directory.
+    A file uses a path when any non-Markdown line names a needle of the path
+    (a source, an import, a run by path, an `includeTemplate`), or when a
+    source or import line names its basename or module stem from the same
+    directory.
     """
     origin = {p: p for p in changed}
     frontier = list(changed)
     for _ in range(_CLOSURE_ROUNDS):
         found = []
         for path in frontier:
-            word = needle(path, basename_counts)
             local = _local_words(path)
             directory = path.rpartition("/")[0]
+            users = set()
+            for word in needles(path, basename_counts):
+                users |= find_referrers(word)
             for name, line in lines:
-                if name in origin:
-                    continue
-                if (word and has_word(line, word)) or (
-                    name.rpartition("/")[0] == directory
-                    and any(has_word(line, w) for w in local)
+                if name.rpartition("/")[0] == directory and any(
+                    has_word(line, w) for w in local
                 ):
+                    users.add(name)
+            for name in sorted(users):
+                if name not in origin:
                     origin[name] = origin[path]
                     found.append(name)
         if not found:
@@ -271,7 +313,7 @@ def select_tests(
     """Return (selected test files, origins that some test observes)."""
     selected: set[str] = set()
     observed: set[str] = set()
-    words = {p: needle(p, basename_counts) for p in origin}
+    words = {p: needles(p, basename_counts) for p in origin}
     for test, text in tests.items():
         tokens = path_tokens(text, tops)
         for name, found in (helpers or {}).items():
@@ -282,7 +324,7 @@ def select_tests(
             if (
                 path == test
                 or any(token_matches(t, path) for t in tokens)
-                or (word and has_word(text, word))
+                or any(has_word(text, w) for w in word)
             ):
                 selected.add(test)
                 observed.add(root_path)
@@ -320,6 +362,8 @@ def lint_legs(root: Path, path: str) -> dict[str, bool]:
         legs["lint-markdown"] = False
     if path.startswith(PYTEST_PREFIXES):
         legs["test-python"] = True
+    if path in MISE_CONFIGS:
+        legs.update({leg: True for leg in LINT_LEGS})
     return legs
 
 
@@ -342,10 +386,15 @@ def build_plan(root: Path, changed: list[str], run_all: bool = False) -> Plan:
     if not changed:
         return plan
 
-    tracked = git(root, "ls-files").splitlines()
+    tracked = _nul_split(git(root, "ls-files", "-z"))
     tops = frozenset(p.split("/", 1)[0] for p in tracked)
     basename_counts = Counter(p.rsplit("/", 1)[-1] for p in tracked)
-    origin = source_closure(changed, source_lines(root), basename_counts)
+    origin = source_closure(
+        changed,
+        source_lines(root),
+        basename_counts,
+        functools.cache(lambda word: referrers(root, word)),
+    )
 
     observed: set[str] = set()
     for path in changed:
@@ -377,6 +426,15 @@ def build_plan(root: Path, changed: list[str], run_all: bool = False) -> Plan:
 
     # A deleted path that no test names needs no report.
     plan.unmatched = [p for p in changed if p not in observed and (root / p).exists()]
+    if plan.unmatched:
+        # No leg observes these paths, so a test may read them in a way the
+        # selector cannot see. Fail closed: run the whole test leg.
+        plan.run_whole("test")
+        plan.reason = (
+            "no leg or test observes "
+            + " ".join(plan.unmatched)
+            + ": the whole test leg runs"
+        )
     return plan
 
 
@@ -409,6 +467,8 @@ def command_lines(plan: Plan) -> list[str]:
 
 def summary(plan: Plan, source: str) -> list[str]:
     lines = [f"check: {source}; {len(plan.changed)} changed path(s)"]
+    if not plan.changed and not plan.reason:
+        lines.append("check: no changes")
     if plan.reason:
         lines.append(f"check: {plan.reason}")
     for leg in LEGS:
@@ -426,12 +486,6 @@ def summary(plan: Plan, source: str) -> list[str]:
     skipped = [leg for leg in LEGS if leg not in plan.files]
     if skipped:
         lines.append(f"check:   skip: {' '.join(skipped)}")
-    if plan.unmatched:
-        lines.append(
-            "check: no leg or test observes: "
-            + " ".join(plan.unmatched)
-            + " (CI still runs every test)"
-        )
     return lines
 
 
@@ -454,8 +508,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         base = merge_base(root, args.base or os.environ.get("CHECK_BASE"))
         changed = changed_paths(root, base)
-        source = f"base {base[:12]}" if base else "no origin/main or main; vs HEAD"
-    plan = build_plan(root, changed, run_all=args.all)
+        source = f"base {base[:12]}" if base else "no base"
+    # Without a base, committed branch changes are invisible: run every leg.
+    no_base = not args.paths and not args.all and base is None
+    plan = build_plan(root, changed, run_all=args.all or no_base)
+    if no_base:
+        plan.reason = "no origin/main or main to compare against: every leg runs"
 
     if args.format == "plan":
         print("\n".join(plan_lines(plan)))
