@@ -193,18 +193,19 @@ def token_matches(token: str, path: str) -> bool:
 def needles(path: str, basename_counts: Counter[str]) -> list[str]:
     """The words a file that uses `path` writes.
 
-    A unique basename is enough. A shared basename needs `parent/basename`,
-    plus `parent.stem` for a module that Python imports by dotted name.
+    A unique basename is enough. A shared basename needs `parent/basename`.
+    A module also matches as `parent/stem` (an extensionless `require`) and
+    `parent.stem` (a dotted Python import).
     """
     parts = path.split("/")
-    if basename_counts.get(parts[-1], 0) <= 1:
-        return [parts[-1]]
+    words = [parts[-1]] if basename_counts.get(parts[-1], 0) <= 1 else []
     if len(parts) < 2:
-        return []
-    words = ["/".join(parts[-2:])]
+        return words
+    if not words:
+        words.append("/".join(parts[-2:]))
     stem, dot, ext = parts[-1].rpartition(".")
     if dot and stem and ext in _MODULE_EXTS:
-        words.append(f"{parts[-2]}.{stem}")
+        words += [f"{parts[-2]}/{stem}", f"{parts[-2]}.{stem}"]
     return words
 
 
@@ -244,6 +245,27 @@ def referrers(root: Path, word: str) -> set[str]:
     return {p for p in _nul_split(out) if not p.endswith(".md")}
 
 
+_DATA_EXTS = (".tsv", ".yaml", ".yml", ".json", ".toml")
+
+
+def is_hub(path: str) -> bool:
+    """True for files that the closure must not expand through.
+
+    Data files list names, and tests and gate infrastructure name many files.
+    Expanding through them spreads one change across the suite. A test that
+    names a changed file is still selected directly, and a gate file that
+    changes runs whole legs.
+    """
+    if path.endswith(_DATA_EXTS):
+        return True
+    if path in GATE_FILES or path in BATS_ALL or path in SMOKE_ALL:
+        return True
+    return path.startswith("tests/") and path.endswith((".bats", ".bash", ".test.mjs"))
+
+
+_HUB_FAN_IN = 10
+
+
 def _local_words(path: str) -> set[str]:
     """Words that a file in the same directory uses to source or import `path`."""
     base = path.rpartition("/")[2]
@@ -262,27 +284,36 @@ def source_closure(
     A file uses a path when any non-Markdown line names a needle of the path
     (a source, an import, a run by path, an `includeTemplate`), or when a
     source or import line names its basename or module stem from the same
-    directory.
+    directory. Data files, tests, and gate files never join the closure, nor
+    does a hub: a file with more than `_HUB_FAN_IN` users. A test that names
+    the changed file itself still runs.
     """
+
+    def users_of(path: str) -> set[str]:
+        local = _local_words(path)
+        directory = path.rpartition("/")[0]
+        users: set[str] = set()
+        for word in needles(path, basename_counts):
+            users |= find_referrers(word)
+        for name, line in lines:
+            if name.rpartition("/")[0] == directory and any(
+                has_word(line, w) for w in local
+            ):
+                users.add(name)
+        return users
+
     origin = {p: p for p in changed}
     frontier = list(changed)
     for _ in range(_CLOSURE_ROUNDS):
         found = []
         for path in frontier:
-            local = _local_words(path)
-            directory = path.rpartition("/")[0]
-            users = set()
-            for word in needles(path, basename_counts):
-                users |= find_referrers(word)
-            for name, line in lines:
-                if name.rpartition("/")[0] == directory and any(
-                    has_word(line, w) for w in local
-                ):
-                    users.add(name)
-            for name in sorted(users):
-                if name not in origin:
-                    origin[name] = origin[path]
-                    found.append(name)
+            for name in sorted(users_of(path)):
+                if name in origin or is_hub(name):
+                    continue
+                if len(users_of(name)) > _HUB_FAN_IN:
+                    continue
+                origin[name] = origin[path]
+                found.append(name)
         if not found:
             break
         frontier = found

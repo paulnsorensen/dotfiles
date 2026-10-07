@@ -54,6 +54,11 @@ FIXTURE = {
     "pkg/qux/util.py": "x = 2\n",
     "pkg/use.py": "from baz.util import x\n",
     "tests/use.bats": '@test "use" {\n    run python3 pkg/use.py\n}\n',
+    "bin/leaf": "#!/usr/bin/env bash\necho leaf\n",
+    "data/weights.tsv": "leaf\t3\n",
+    "bin/viaweights": "#!/usr/bin/env bash\ncat data/weights.tsv\n",
+    "tests/leaf.bats": '@test "leaf" {\n    run leaf\n}\n',
+    "tests/viaweights.bats": '@test "via" {\n    run viaweights\n}\n',
     "tests/workflows/harness.mjs": "export const run = () => 0\n",
     "tests/workflows/a.test.mjs": (
         "const path = resolve(import.meta.dirname, '../../claude/workflows/a.js')\n"
@@ -148,8 +153,33 @@ class WordTest(unittest.TestCase):
             affected.needles("agents/hooks/lib.sh", counts), ["hooks/lib.sh"]
         )
         self.assertEqual(
-            affected.needles("pkg/baz/util.py", counts), ["baz/util.py", "baz.util"]
+            affected.needles("pkg/baz/util.py", counts),
+            ["baz/util.py", "baz/util", "baz.util"],
         )
+
+    def test_needles_match_an_extensionless_cross_directory_require(self) -> None:
+        counts = affected.Counter({"native.js": 1})
+        words = affected.needles("agents/lib/tool-reroute/native.js", counts)
+        self.assertIn("tool-reroute/native", words)
+        self.assertTrue(
+            any(affected.has_word("require('./tool-reroute/native')", w) for w in words)
+        )
+
+
+class ClosureHubTest(unittest.TestCase):
+    def test_a_file_with_many_users_does_not_pass_the_change_on(self) -> None:
+        users = {"a": {"bin/b"}, "b": {f"bin/u{i}" for i in range(11)}}
+        closure = affected.source_closure(
+            ["bin/a"], [], affected.Counter(), lambda word: users.get(word, set())
+        )
+        self.assertEqual(closure, {"bin/a": "bin/a"})
+
+    def test_a_file_with_few_users_passes_the_change_on(self) -> None:
+        users = {"a": {"bin/b"}, "b": {"bin/c"}}
+        closure = affected.source_closure(
+            ["bin/a"], [], affected.Counter(), lambda word: users.get(word, set())
+        )
+        self.assertEqual(set(closure), {"bin/a", "bin/b", "bin/c"})
 
 
 class BuildPlanTest(FixtureRepo):
@@ -229,6 +259,11 @@ class BuildPlanTest(FixtureRepo):
     def test_dotted_python_import_of_a_shared_basename(self) -> None:
         plan = self.plan("pkg/baz/util.py")
         self.assertEqual(plan["test"], {"tests/use.bats"})
+
+    def test_data_file_hub_does_not_fan_out(self) -> None:
+        # weights.tsv names `leaf`; viaweights reads weights.tsv. The data
+        # file is no bridge from bin/leaf to the tests of viaweights.
+        self.assertEqual(self.plan("bin/leaf")["test"], {"tests/leaf.bats"})
 
     def test_mise_pin_change_runs_every_lint_leg(self) -> None:
         plan = self.plan("chezmoi/dot_config/mise/config.toml")
