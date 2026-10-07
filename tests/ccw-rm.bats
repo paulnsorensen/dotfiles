@@ -68,3 +68,27 @@ teardown() {
     [ "$status" -eq 0 ]
     [ ! -d "$REPO/.worktrees/feat" ]
 }
+
+@test "refuses a parent worktree with a nested child, even with --force" {
+    printf '.worktrees/\n' >>"$REPO/.git/info/exclude"
+    git -C "$REPO/.worktrees/feat" worktree add -q "$REPO/.worktrees/feat/.worktrees/child" -b worktree/child
+    touch "$REPO/.worktrees/feat/.worktrees/child/precious"
+    cd "$REPO"
+    run ccw-rm feat --force
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"nested worktrees"* ]]
+    [[ "$output" == *"ccw-rm child"* ]]
+    [ -f "$REPO/.worktrees/feat/.worktrees/child/precious" ]
+    run git -C "$REPO" show-ref --verify --quiet refs/heads/worktree/feat
+    [ "$status" -eq 0 ]
+}
+
+@test "removes a nested worktree from inside its parent" {
+    git -C "$REPO/.worktrees/feat" worktree add -q "$REPO/.worktrees/feat/.worktrees/child" -b worktree/child
+    cd "$REPO/.worktrees/feat"
+    run ccw-rm child
+    [ "$status" -eq 0 ]
+    [ ! -d "$REPO/.worktrees/feat/.worktrees/child" ]
+    run git -C "$REPO" show-ref --verify --quiet refs/heads/worktree/child
+    [ "$status" -ne 0 ]
+}
