@@ -192,13 +192,13 @@ class ClosureHubTest(unittest.TestCase):
 
     def test_the_fan_in_boundary_is_ten_users(self) -> None:
         ten = _closure(["bin/a"], {"a": {"bin/b"}, "b": _many(10)})
-        self.assertTrue(_many(10) <= set(ten))
+        self.assertLessEqual(_many(10), set(ten))
         eleven = _closure(["bin/a"], {"a": {"bin/b"}, "b": _many(11)})
         self.assertFalse(_many(11) & set(eleven))
 
     def test_a_changed_hub_still_expands(self) -> None:
         closure = _closure(["bin/b"], {"b": _many(11)})
-        self.assertTrue(_many(11) <= set(closure))
+        self.assertLessEqual(_many(11), set(closure))
 
     def test_a_file_with_few_users_passes_the_change_on(self) -> None:
         closure = _closure(["bin/a"], {"a": {"bin/b"}, "b": {"bin/c"}})
