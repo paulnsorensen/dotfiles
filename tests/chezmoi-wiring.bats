@@ -786,6 +786,20 @@ YAML
     fi
 }
 
+@test "gitconfig template routes GitHub HTTPS auth through gh" {
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_gitconfig.tmpl" host
+    for host in github.com gist.github.com; do
+        # Each host clears inherited helpers, then calls the PATH-resolved gh.
+        awk -v hdr="[credential \"https://$host\"]" '
+            $0 == hdr { inside = 1; next }
+            /^\[/ { inside = 0 }
+            inside && /^\thelper = *$/ { cleared = 1 }
+            inside && cleared && $0 == "\thelper = !gh auth git-credential" { ok = 1 }
+            END { exit !ok }
+        ' "$tmpl" || { echo "missing gh credential helper for $host" >&2; return 1; }
+    done
+}
+
 @test "copilot template emits fixed secret proxies with no retired credentials" {
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/private_dot_copilot/mcp-config.json.tmpl"
     local rendered

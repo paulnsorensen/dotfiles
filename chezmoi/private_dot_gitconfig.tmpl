@@ -56,6 +56,15 @@
 
 [http "https://gopkg.in"]
 	followRedirects = true
+# GitHub HTTPS auth goes through the gh CLI login (`gh auth login`).
+# The empty helper clears inherited helpers (e.g. osxkeychain).
+# `gh` resolves on PATH because its install path differs per machine.
+[credential "https://github.com"]
+	helper =
+	helper = !gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !gh auth git-credential
 [rerere]
 	enabled = true
 [include]
