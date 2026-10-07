@@ -41,3 +41,41 @@ teardown() {
     run git -C "$REPO" show-ref --verify --quiet refs/heads/worktree/feature
     [ "$status" -eq 0 ]
 }
+
+@test "nested worktree links its Claude project past the parent's symlink" {
+    local projects="$HOME/.claude/projects"
+    REPO="$(cd -P "$REPO" && pwd)"
+    mkdir -p "$projects/${REPO//[\/.]/-}"
+    cd "$REPO"
+    run "$DOTFILES_DIR/bin/wt" parent
+    [ "$status" -eq 0 ]
+    cd "$REPO/.worktrees/parent"
+    run "$DOTFILES_DIR/bin/wt" child
+    [ "$status" -eq 0 ]
+    local child_key="$REPO/.worktrees/parent/.worktrees/child"
+    child_key="${child_key//[\/.]/-}"
+    [ "$(readlink "$projects/$child_key")" = "$(cd -P "$projects/${REPO//[\/.]/-}" && pwd)" ]
+}
+
+@test "nested worktree names the owner of a colliding branch" {
+    REPO="$(cd -P "$REPO" && pwd)"
+    cd "$REPO"
+    run "$DOTFILES_DIR/bin/wt" shared
+    [ "$status" -eq 0 ]
+    run "$DOTFILES_DIR/bin/wt" parent
+    [ "$status" -eq 0 ]
+    cd "$REPO/.worktrees/parent"
+    run "$DOTFILES_DIR/bin/wt" shared
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"already checked out at $REPO/.worktrees/shared"* ]]
+    [ ! -d "$REPO/.worktrees/parent/.worktrees/shared" ]
+}
+
+@test "reports an existing branch that is not checked out anywhere" {
+    git -C "$REPO" branch worktree/orphan
+    cd "$REPO"
+    run "$DOTFILES_DIR/bin/wt" orphan
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"branch worktree/orphan already exists"* ]]
+    [ ! -d "$REPO/.worktrees/orphan" ]
+}

@@ -13,12 +13,14 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 1
 fi
 
-# Auto-detect slug from cwd
+# Auto-detect slug from the enclosing worktree. Its parent is the checkout one
+# level up, which is itself a worktree when the worktree is nested.
 if [[ -z "$slug" ]]; then
-    cwd="$(pwd)"
-    if [[ "$cwd" == */.worktrees/* ]]; then
-        slug="${cwd##*/.worktrees/}"
-        slug="${slug%%/*}"
+    git_dir="$(cd -P "$(git rev-parse --git-dir)" && pwd)"
+    common_dir="$(cd -P "$(git rev-parse --git-common-dir)" && pwd)"
+    if [[ "$repo_root" == */.worktrees/* && "$git_dir" != "$common_dir" ]]; then
+        slug="${repo_root##*/}"
+        repo_root="${repo_root%/.worktrees/*}"
     else
         echo "Usage: ccw-check <slug>" >&2
         echo "  Or run from inside a worktree directory" >&2
@@ -34,7 +36,7 @@ echo "────────────────────────�
 
 # 1. Worktree exists
 if [[ -d "${wt_dir}" ]]; then
-    echo "✓ Worktree directory exists"; ((ok++))
+    echo "✓ Worktree directory exists"; ok=$((ok + 1))
 else
     echo "✗ Worktree directory missing: ${wt_dir}"
     echo "  Run: ccw ${slug}"
@@ -46,40 +48,44 @@ claude_projects="${HOME}/.claude/projects"
 main_key="${repo_root//[\/.]/-}"
 wt_key="${wt_dir//[\/.]/-}"
 
+# Compare resolved dirs: wt links a nested worktree past its parent's symlink.
 if [[ -L "${claude_projects}/${wt_key}" ]]; then
     target="$(readlink "${claude_projects}/${wt_key}")"
-    if [[ "$target" == "${claude_projects}/${main_key}" ]]; then
-        echo "✓ Permission symlink → main repo"; ((ok++))
+    if [[ -d "${claude_projects}/${wt_key}" ]] \
+        && [[ "$(cd -P "${claude_projects}/${wt_key}" && pwd)" == "$(cd -P "${claude_projects}/${main_key}" 2>/dev/null && pwd)" ]]; then
+        echo "✓ Permission symlink → main repo"; ok=$((ok + 1))
     else
-        echo "⚠ Permission symlink points to unexpected target: ${target}"; ((fail++))
+        echo "⚠ Permission symlink points to unexpected target: ${target}"; fail=$((fail + 1))
     fi
 elif [[ -d "${claude_projects}/${wt_key}" ]]; then
-    echo "⚠ Permission dir exists but is not a symlink (perms not inherited)"; ((fail++))
+    echo "⚠ Permission dir exists but is not a symlink (perms not inherited)"; fail=$((fail + 1))
 else
-    echo "✗ Permission symlink missing"; ((fail++))
-    echo "  Expected: ${claude_projects}/${wt_key} → ${claude_projects}/${main_key}"
+    echo "✗ Permission symlink missing"; fail=$((fail + 1))
+    expected="${claude_projects}/${main_key}"
+    [[ -d "$expected" ]] && expected="$(cd -P "$expected" && pwd)"
+    echo "  Expected: ${claude_projects}/${wt_key} → ${expected}"
 fi
 
 # 3. Local settings (fail loud on parse errors)
 claude_local="${wt_dir}/.claude/settings.local.json"
 if [[ -f "${claude_local}" ]]; then
     if ! sandbox_enabled="$(jq -er '.sandbox.enabled // false' "${claude_local}")"; then
-        echo "✗ Failed to parse ${claude_local} (invalid JSON?)"; ((fail++))
+        echo "✗ Failed to parse ${claude_local} (invalid JSON?)"; fail=$((fail + 1))
     elif [[ "$sandbox_enabled" == "true" ]]; then
-        echo "✓ Sandbox enabled"; ((ok++))
+        echo "✓ Sandbox enabled"; ok=$((ok + 1))
     else
-        echo "✗ Sandbox not enabled"; ((fail++))
+        echo "✗ Sandbox not enabled"; fail=$((fail + 1))
     fi
 
     if ! auto_allow="$(jq -er '.sandbox.autoAllowBashIfSandboxed // false' "${claude_local}")"; then
-        echo "✗ Failed to parse autoAllowBashIfSandboxed (invalid JSON?)"; ((fail++))
+        echo "✗ Failed to parse autoAllowBashIfSandboxed (invalid JSON?)"; fail=$((fail + 1))
     elif [[ "$auto_allow" == "true" ]]; then
-        echo "✓ autoAllowBashIfSandboxed enabled"; ((ok++))
+        echo "✓ autoAllowBashIfSandboxed enabled"; ok=$((ok + 1))
     else
-        echo "⚠ autoAllowBashIfSandboxed not set (you'll get permission prompts)"; ((fail++))
+        echo "⚠ autoAllowBashIfSandboxed not set (you'll get permission prompts)"; fail=$((fail + 1))
     fi
 else
-    echo "✗ Local settings missing: ${claude_local}"; ((fail++))
+    echo "✗ Local settings missing: ${claude_local}"; fail=$((fail + 1))
     echo "  Run: ccw ${slug}  (it seeds settings on first launch)"
 fi
 

@@ -7,6 +7,10 @@
 #   --force  discard uncommitted changes in the worktree (otherwise refuses)
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/worktree.sh
+source "${script_dir}/lib/worktree.sh"
+
 slug=""
 force=false
 for arg in "$@"; do
@@ -39,9 +43,19 @@ if [[ -z "$branch" ]]; then
     exit 1
 fi
 
+# Refuse when nested worktrees live inside this one. Removal deletes them with
+# their work, even without --force, because .worktrees/ is gitignored.
+nested="$(wt_list_nested "$wt_dir")"
+if [[ -n "$nested" ]]; then
+    echo "ccw-rm: ${wt_dir} contains nested worktrees; remove them first:" >&2
+    while IFS= read -r child; do
+        printf '  %s  (cd %q && ccw-rm %q)\n' "$child" "$wt_dir" "${child##*/}" >&2
+    done <<<"$nested"
+    exit 1
+fi
+
 # Kill the worktree's tmux session, if one is running.
 if command -v tmux &>/dev/null; then
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     session="$("${script_dir}/cc-session-name" "$wt_dir")"
     if tmux has-session -t "$session" 2>/dev/null; then
         tmux kill-session -t "$session" && echo "Killed tmux session: ${session}"

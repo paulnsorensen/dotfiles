@@ -44,6 +44,18 @@ start_point=""
 if [[ -d "${wt_dir}" ]]; then
     echo "Resuming worktree: ${wt_dir}" >&2
 else
+    # Branch names are repo-wide, but wt_dir is relative to the current
+    # worktree. A nested worktree can reuse a slug that a sibling owns.
+    if git -C "${repo_root}" show-ref --verify --quiet "refs/heads/${branch}"; then
+        holder="$(git -C "${repo_root}" worktree list --porcelain | awk -v ref="branch refs/heads/${branch}" \
+            '/^worktree /{p=substr($0,10)} $0==ref{print p}')"
+        if [[ -n "${holder}" ]]; then
+            echo "wt: branch ${branch} is already checked out at ${holder}; pick another slug" >&2
+        else
+            echo "wt: branch ${branch} already exists; pick another slug or delete the branch" >&2
+        fi
+        exit 1
+    fi
     start_point="$(git -C "${repo_root}" rev-parse --abbrev-ref HEAD)"
     if [[ "$base_mode" == "origin" ]]; then
         git -C "${repo_root}" fetch origin 1>&2 \
@@ -63,10 +75,14 @@ readonly CLAUDE_PROJECTS_DIR="${HOME}/.claude/projects"
 main_key="${repo_root//[\/.]/-}"
 wt_key="${wt_dir//[\/.]/-}"
 
-if [[ -d "${CLAUDE_PROJECTS_DIR}/${main_key}" ]] && [[ ! -L "${CLAUDE_PROJECTS_DIR}/${wt_key}" ]]; then
+main_project="${CLAUDE_PROJECTS_DIR}/${main_key}"
+if [[ -d "${main_project}" ]] && [[ ! -L "${CLAUDE_PROJECTS_DIR}/${wt_key}" ]]; then
+    # A nested worktree's parent key is itself a symlink. Link to the resolved
+    # dir so the link survives removal of the parent worktree.
+    main_project="$(cd -P "${main_project}" && pwd)"
     rm -rf "${CLAUDE_PROJECTS_DIR}/${wt_key:?}" 2>/dev/null
-    ln -s "${CLAUDE_PROJECTS_DIR}/${main_key}" "${CLAUDE_PROJECTS_DIR}/${wt_key}"
-    echo "Linked permissions: ${wt_key} → ${main_key}" >&2
+    ln -s "${main_project}" "${CLAUDE_PROJECTS_DIR}/${wt_key}"
+    echo "Linked permissions: ${wt_key} → ${main_project##*/}" >&2
 fi
 
 claude_local="${wt_dir}/.claude/settings.local.json"
