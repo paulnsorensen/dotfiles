@@ -31,7 +31,7 @@ Parse the text after the skill name.
 
 ## Flow
 
-1. **Ground.** Load the built-in workflow-authoring skill when the target is a Workflow tool script. That skill owns the runtime API, the runtime limits, and the quality patterns. This skill does not copy them. Read the target or the goal. Done when you can name each stage and the data it passes.
+1. **Ground.** Load the built-in workflow-authoring skill when the target is a Workflow tool script. That skill owns the runtime API, the runtime limits, and the quality patterns. This skill does not copy them. Outside Claude Code, that skill is absent; mark its runtime checks as unverified. Read the target or the goal. Done when you can name each stage and the data it passes.
 2. **Model the work.** Build the ontology from `references/ontology.md`. Done when its code checks pass. Each criterion has an exact check and a task. Each reference resolves. The task graph has no cycle.
 3. **Gate the approach.** Send the plan to a read-only advisor from `references/advisor.md`. Done when the advisor approves, or after one revision round.
 4. **Type the contracts.** Give each agent call a schema constant from `references/schemas.md`. Done when each call has a schema and a code validator.
@@ -46,7 +46,9 @@ In the dotfiles repository, `tests/workflows/claude-workflows-template.test.mjs`
 In `review` mode, run steps 2 to 8 as checks against the target. Also check the target against workflow-authoring:
 
 - A barrier whose next stage does not need all prior results. The fix is a `pipeline()`.
-- A runtime limit that the script can hit: the concurrency cap, the agent cap, the item cap per call, `args` sent as a JSON string, or a nested `workflow()` call.
+- A runtime limit that the script can hit. Check the concurrency, agent, and per-call item caps.
+- `args` sent as a JSON string.
+- A `workflow()` call inside a child workflow. Nesting allows one level only.
 
 ## Output
 

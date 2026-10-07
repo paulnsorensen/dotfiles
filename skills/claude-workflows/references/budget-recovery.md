@@ -42,7 +42,7 @@ The local exemplar is `claude/workflows/cheese-factory.js` in the dotfiles repos
 The workflow-authoring skill owns the runtime facts: `null` results, the `budget` ceiling, resume, and the banned clock calls.
 Two design rules follow from them:
 
-1. Treat each `null` from `agent()` or `parallel()` as a failed result. Send it through the recovery loop.
+1. Treat each `null` from `agent()`, `parallel()`, or a `pipeline()` stage as a failed result. Send it through the recovery loop.
 2. Check `budget.total && budget.remaining() < LIMITS.minBudget` before each wave.
 
 ## Agent SDK and API facts
