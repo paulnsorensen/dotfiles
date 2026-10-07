@@ -290,6 +290,7 @@ claude:
     - grok-codebase
     - harness-doctor
     - hill-climb
+    - interactive-system-diagram
     - land
     - nih-audit
     - prompt-analytics
