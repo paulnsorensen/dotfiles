@@ -501,6 +501,7 @@ def main(argv: list[str] | None = None) -> int:
 
     root = Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip())
     source = "given paths"
+    base: str | None = None
     if args.paths:
         changed = sorted(set(args.paths))
     elif args.all:
