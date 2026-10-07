@@ -1,5 +1,5 @@
 interface:
   display_name: "land"
-  short_description: "Fix the open CodeRabbit comments on a PR, wait for CI, and merge."
+  short_description: "Triage all bot feedback on a PR and verify its merge into main."
 policy:
   allow_implicit_invocation: false

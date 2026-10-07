@@ -117,6 +117,17 @@ Pure-prompt, user-invoked skills marked `disable-model-invocation: true` are the
 
 `disable-model-invocation: true` is a Claude Code field. OMP honors it (normalized to `disableModelInvocation`); Codex ignores it and will auto-invoke the skill from `~/.agents/skills` on a description match. A user-only skill therefore ships **both** the frontmatter flag and `skills/<name>/agents/openai.yaml` with `policy.allow_implicit_invocation: false`. `install-local.sh`, the chezmoi `exact_skills` assembler, and `npx skills add --copy` all carry the nested `agents/` directory, so nothing else is needed. `$ARGUMENTS` substitution is also Claude-only; user-only skills state their grammar in `argument-hint` and parse "the text after the skill name" in prose. First applied to `/skillz` and `/land`. The full matrix and sources live in `skills/skillz/references/harness-layout.md` in `paulnsorensen/skillz-that-grillz`, which `/skillz self-update` re-researches and rewrites (its `Checked:` date is the staleness signal). Research record: `.cheese/research/cross-harness-skill-layout.md`.
 
+#### Shared land workflow
+
+`/land` uses one workflow for Claude and Codex, with their existing user-only invocation controls.[^land-workflow]
+The workflow identifies bot authors by API type instead of a reviewer-name list.
+This prevents one bot's empty summary from hiding another bot's findings.
+Queue entry or auto-merge acceptance is not completion.
+The workflow diagnoses queue removal before repair and requeue.
+It verifies the merge commit against current `main`, because squash and rebase can change the PR head SHA.[^land-workflow]
+
+[^land-workflow]: `skills/land/SKILL.md`; `skills/land/references/gh-recipes.md`; `skills/land/agents/openai.yaml`; user decision, 2026-10-06.
+
 `npx skills add` never prunes: renaming a local skill leaves the old copy under `~/.agents/skills/<old-name>` until it is deleted by hand (seen with `skill-improver` → `skillz`).
 
 #### Vendored skills overwrite local skills of the same name (2026-09-22)
