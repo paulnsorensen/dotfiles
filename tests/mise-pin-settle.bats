@@ -223,6 +223,15 @@ push_pin_branch() {
     grep -q 'aqua:example/upstream' "$MANIFEST"
 }
 
+@test "an own manifest edit on an up-to-date main stays quiet" {
+    printf 'mine\n' > "$MANIFEST"
+
+    run settle_mise_pin_bump "$MANIFEST"
+    assert_success
+    [[ -z "$output" ]]
+    [[ "$(cat "$MANIFEST")" == "mine" ]]
+}
+
 @test "a manifest that matches no public pin bump warns and stays" {
     printf 'mine\n' > "$MANIFEST"
     land_upstream mise-config.toml "$BUMPED"

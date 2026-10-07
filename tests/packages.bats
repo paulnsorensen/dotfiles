@@ -1831,8 +1831,8 @@ setup_pin_bump_repo() {
 
 # gh mock with state: `pr list` answers with a tab-separated PR row once
 # `pr create` ran. The row carries the pin branch head on origin, so it is a
-# same-repo PR at our commit. GH_LIST_CROSS=true marks it as a fork PR and
-# GH_LIST_SHA overrides its head.
+# same-repo PR at our commit. GH_FORK_PR=1 adds a fork PR row and
+# GH_LIST_SHA overrides the same-repo head.
 # GH_CREATE_FAIL=1 makes `pr create` fail; GH_MERGE_FAIL=1 makes `pr merge` fail.
 write_mock_gh_pr() {
     rm -f "$MOCK_BIN/gh"
@@ -1841,9 +1841,10 @@ write_mock_gh_pr() {
 state="\$TEST_HOME/gh-pr-exists"
 if [[ "\$1 \$2" == "pr list" ]]; then
     echo "gh \$*" >> "\$GH_LOG"
+    [[ "\${GH_FORK_PR:-}" == "1" ]] && printf '%s\t%s\t%s\n' "https://github.com/example/dotfiles/pull/9" true "deadbeef"
     if [[ -f "\$state" ]]; then
         head="\${GH_LIST_SHA:-\$(git -C "\$TEST_HOME/origin.git" rev-parse refs/heads/chore/mise-pins)}"
-        printf '%s\t%s\t%s\n' "https://github.com/example/dotfiles/pull/1" "\${GH_LIST_CROSS:-false}" "\$head"
+        printf '%s\t%s\t%s\n' "https://github.com/example/dotfiles/pull/1" false "\$head"
     fi
     exit 0
 fi
@@ -1984,24 +1985,24 @@ pin_branches() {
     [[ "$(pin_branches)" == "chore/mise-pins" ]]
 }
 
-@test "a cross-repo PR from a same-named branch is not auto-merged" {
+@test "a cross-repo PR from a same-named branch neither blocks PR creation nor gets merged" {
     prepare_pin_bump
-    touch "$TEST_HOME/gh-pr-exists"
 
-    GH_LIST_CROSS=true UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    GH_FORK_PR=1 UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
-    [[ "$output" == *"no open chore/mise-pins PR from this repo"* ]]
-    [[ "$output" != *"auto-merge enabled"* ]]
-    ! grep -q 'pr merge' "$GH_LOG"
+    [[ "$(grep -c 'pr create' "$GH_LOG")" == "1" ]]
+    [[ "$output" == *"mise pin bump PR: https://github.com/example/dotfiles/pull/1"* ]]
+    grep -q 'pr merge https://github.com/example/dotfiles/pull/1 ' "$GH_LOG"
+    ! grep -q 'pull/9' "$GH_LOG"
 }
 
-@test "a PR whose head is not the pushed commit is not auto-merged" {
+@test "a same-repo PR whose head is not the pushed commit is not auto-merged" {
     prepare_pin_bump
     touch "$TEST_HOME/gh-pr-exists"
 
     GH_LIST_SHA=0000000000000000000000000000000000000000 UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
     assert_success
-    [[ "$output" == *"no open chore/mise-pins PR from this repo"* ]]
+    [[ "$output" == *"PR from this repo is not at"* ]]
     ! grep -q 'pr merge' "$GH_LOG"
 }
 
