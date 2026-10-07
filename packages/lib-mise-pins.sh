@@ -1,23 +1,42 @@
 #!/bin/bash
 ############################
 # packages/lib-mise-pins.sh
-# Publish a bumped mise manifest as a PR.
+# Publish a bumped mise manifest as an auto-merge PR, then settle the
+# checkout once that PR merges.
 #
-# Sourced by sync.sh, which defines the log_* helpers.
-# Every failure logs and returns 0, so a publish problem never aborts sync.
+# sync.sh and bin/dots source this file. Each defines the log_* helpers.
+# Every failure logs and returns 0, so a pin problem never aborts sync.
 ############################
 
 readonly MISE_PINS_BRANCH="chore/mise-pins"
 
-# Push the bumped manifest to the fixed branch off origin/main and open a PR.
+# Print the commit at the tip of the remote pin branch; fail when it is absent.
+#   mise_pin_branch_tip <top>
+mise_pin_branch_tip() {
+    git -C "$1" fetch --quiet origin "refs/heads/$MISE_PINS_BRANCH" 2>/dev/null || return 1
+    git -C "$1" rev-parse --verify --quiet FETCH_HEAD
+}
+
+# Print the blob id of <rel> at <rev>; print nothing when it does not exist.
+#   mise_pin_blob_at <top> <rev> <rel>
+mise_pin_blob_at() {
+    git -C "$1" rev-parse --verify --quiet "$2:$3" 2>/dev/null || true
+}
+
+# Push the bumped manifest to the fixed branch off origin/main, open a PR,
+# and enable squash auto-merge on it.
 # Plumbing builds the commit in a private index, so the checked-out branch,
 # its index, and unrelated working-tree edits stay untouched.
-# The pre-bump blob guards against publishing local content that origin/main
-# does not hold: unpushed or stale edits would reach a public branch.
+# The pre-bump blob guards against publishing local content that is not
+# public yet. It must match origin/main, or the open pin branch: a second
+# sync before the PR merges starts from the bump that sync already pushed.
+# The commit replaces the whole manifest, so the pin branch only counts while
+# its parent still holds the origin/main manifest. Otherwise the PR would
+# revert manifest edits that reached origin/main after it opened.
 #   publish_mise_pin_bump <manifest> <pre_bump_blob>
 publish_mise_pin_bump() {
     local manifest="$1" pre_blob="${2:-}" top rel branch="$MISE_PINS_BRANCH"
-    local tmpdir index blob tree commit url remote repo upstream_blob
+    local tmpdir index blob tree commit url remote repo upstream_blob tip
     top="$(git -C "$(dirname "$manifest")" rev-parse --show-toplevel 2>/dev/null)" || top=""
     rel="$(git -C "$(dirname "$manifest")" ls-files --full-name -- "$(basename "$manifest")" 2>/dev/null)" || rel=""
     if [[ -z "$top" || -z "$rel" ]]; then
@@ -29,9 +48,15 @@ publish_mise_pin_bump() {
         return 0
     fi
 
-    upstream_blob="$(git -C "$top" rev-parse --verify --quiet "origin/main:$rel" 2>/dev/null)" || upstream_blob=""
+    upstream_blob="$(mise_pin_blob_at "$top" origin/main "$rel")"
+    if [[ -n "$pre_blob" && "$pre_blob" != "$upstream_blob" ]] \
+        && tip="$(mise_pin_branch_tip "$top")" \
+        && [[ "$pre_blob" == "$(mise_pin_blob_at "$top" "$tip" "$rel")" ]] \
+        && [[ "$(mise_pin_blob_at "$top" "$tip^" "$rel")" == "$upstream_blob" ]]; then
+        upstream_blob="$pre_blob"
+    fi
     if [[ -z "$pre_blob" || "$pre_blob" != "$upstream_blob" ]]; then
-        log_warning "local $rel differs from origin/main before the bump — pin bump kept locally, not published"
+        log_warning "local $rel differs from origin/main and a current $branch before the bump — pin bump kept locally, not published"
         return 0
     fi
 
@@ -77,5 +102,69 @@ publish_mise_pin_bump() {
         log_warning "gh pr create failed — $branch is pushed; open the PR by hand"
         return 0
     fi
-    log_info "$rel stays modified until the PR merges; dots up carries it through the pull"
+    if gh pr merge "$url" --auto --squash >/dev/null; then
+        log_success "auto-merge enabled: the PR merges when its checks pass"
+    else
+        log_warning "gh pr merge --auto failed — merge $url by hand"
+    fi
+    log_info "$rel stays modified until the PR merges; the next dots sync after the merge cleans it"
+}
+
+# Fast-forward main to origin/main when the only thing that holds it back is
+# the pin bump. `dots sync` calls this before .sync, so a run never rewrites
+# the scripts it executes. It acts only when the checkout is on main, main is
+# behind origin/main, and the user has not staged the manifest. Two cases:
+#
+# - The pin PR merged: the dirty manifest equals the origin/main manifest.
+#   Staging it makes the index match the incoming tree, so git does not count
+#   it as a local change that blocks the fast-forward.
+# - origin/main changed the manifest while the pin PR was open: the dirty
+#   manifest equals the pin branch tip, whose parent manifest is stale. That
+#   bump is public, so the checkout drops it and fast-forwards. The same sync
+#   then bumps again and pushes a fresh commit on top of origin/main.
+#
+# Git refuses when other local edits overlap the incoming commits; the
+# manifest then goes back to its dirty content, unstaged.
+#   settle_mise_pin_bump <manifest>
+settle_mise_pin_bump() {
+    local manifest="$1" top rel blob upstream_blob tip=""
+    top="$(git -C "$(dirname "$manifest")" rev-parse --show-toplevel 2>/dev/null)" || top=""
+    rel="$(git -C "$(dirname "$manifest")" ls-files --full-name -- "$(basename "$manifest")" 2>/dev/null)" || rel=""
+    [[ -n "$top" && -n "$rel" ]] || return 0
+    git -C "$top" diff --quiet HEAD -- "$rel" && return 0
+    [[ "$(git -C "$top" symbolic-ref --quiet --short HEAD 2>/dev/null)" == "main" ]] || return 0
+    git -C "$top" diff --cached --quiet -- "$rel" || return 0
+    if ! git -C "$top" fetch --quiet origin main; then
+        log_warning "fetch of origin/main failed — cannot check whether the mise pin PR merged"
+        return 0
+    fi
+
+    blob="$(git -C "$top" hash-object -- "$manifest")" || return 0
+    upstream_blob="$(mise_pin_blob_at "$top" origin/main "$rel")"
+    if [[ "$blob" != "$upstream_blob" ]]; then
+        tip="$(mise_pin_branch_tip "$top")" || return 0
+        [[ "$blob" == "$(mise_pin_blob_at "$top" "$tip" "$rel")" ]] || return 0
+        [[ "$(mise_pin_blob_at "$top" "$tip^" "$rel")" != "$upstream_blob" ]] || return 0
+    fi
+    if ! git -C "$top" merge-base --is-ancestor HEAD origin/main; then
+        log_warning "local main has commits origin/main lacks — $rel stays modified"
+        return 0
+    fi
+
+    if [[ -z "$tip" ]]; then
+        git -C "$top" add -- "$rel" || return 0
+    else
+        git -C "$top" checkout --quiet HEAD -- "$rel" || return 0
+    fi
+    if ! git -C "$top" merge --ff-only --quiet origin/main; then
+        [[ -z "$tip" ]] || git -C "$top" checkout --quiet "$tip" -- "$rel" || true
+        git -C "$top" reset --quiet -- "$rel" 2>/dev/null || true
+        log_warning "local edits block the fast-forward to origin/main — $rel stays modified"
+        return 0
+    fi
+    if [[ -z "$tip" ]]; then
+        log_success "mise pin PR merged — main fast-forwarded to origin/main"
+    else
+        log_info "origin/main moved past the open mise pin PR — main fast-forwarded; this sync bumps the pins again"
+    fi
 }
