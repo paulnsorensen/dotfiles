@@ -105,6 +105,11 @@ EOF
     [ "$(yq -p=toml -oy -r '.hooks.state."/home/u/.codex/hooks.json:pre_tool_use:0:0".trusted_hash' "$out")" = "sha256:deadbeef" ]
 }
 
+@test "the codex temp dir source keeps ~/.cache at 0700" {
+    # A plain dot_cache source would make chezmoi chmod ~/.cache to 0775.
+    [ -d "$REAL_DOTFILES_DIR/chezmoi/private_dot_cache/private_codex-tmp" ]
+    [ ! -e "$REAL_DOTFILES_DIR/chezmoi/dot_cache" ]
+}
 @test "modify_config.toml bounds runtime agents without colliding with selected agents" {
     local live="$TEST_HOME/live.toml"
     cat >"$live" <<'EOF'
