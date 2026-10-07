@@ -44,10 +44,11 @@ teardown() {
 }
 
 # Commit <content> to <file> on origin/main, as a merged PR would.
+# The optional third argument is the commit subject.
 land_upstream() {
     printf '%s' "$2" > "$UPSTREAM/$1"
     git -C "$UPSTREAM" add -- "$1"
-    git -C "$UPSTREAM" commit -qm "land $1"
+    git -C "$UPSTREAM" commit -qm "${3:-land $1}"
     git -C "$UPSTREAM" push -q origin main
 }
 
@@ -212,7 +213,7 @@ push_pin_branch() {
 
 @test "a merged pin PR followed by an upstream manifest edit still settles" {
     dirty_bump
-    land_upstream mise-config.toml "$BUMPED"
+    land_upstream mise-config.toml "$BUMPED" "chore(mise): bump pins (#7)"
     land_upstream mise-config.toml $'[tools]\n"aqua:example/upstream" = "9.0.0"\n'
 
     run settle_mise_pin_bump "$MANIFEST"
@@ -221,6 +222,21 @@ push_pin_branch() {
     [[ -z "$(git -C "$WORK" status --porcelain)" ]]
     [[ "$(git -C "$WORK" rev-parse HEAD)" == "$(git -C "$WORK" rev-parse origin/main)" ]]
     grep -q 'aqua:example/upstream' "$MANIFEST"
+}
+
+@test "a local edit equal to a non-pin incoming manifest is kept with a warning" {
+    local older=$'[tools]\n"aqua:example/older" = "1.0.0"\n'
+    printf '%s' "$older" > "$MANIFEST"
+    land_upstream mise-config.toml "$older" "feat: unrelated manifest change"
+    land_upstream mise-config.toml $'[tools]\n"aqua:example/upstream" = "9.0.0"\n'
+    local head
+    head="$(git -C "$WORK" rev-parse HEAD)"
+
+    run settle_mise_pin_bump "$MANIFEST"
+    assert_success
+    [[ "$output" == *"matches no public mise pin bump"* ]]
+    [[ "$(git -C "$WORK" rev-parse HEAD)" == "$head" ]]
+    [[ "$(cat "$MANIFEST")" == "$(printf '%s' "$older")" ]]
 }
 
 @test "an own manifest edit on an up-to-date main stays quiet" {
