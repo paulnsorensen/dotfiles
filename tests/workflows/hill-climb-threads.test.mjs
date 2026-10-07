@@ -77,7 +77,7 @@ test('a refuted gain is not counted, and the next round is told to revert it', a
     respond: ({ opts }) => {
       if (opts.label === 'climb:sidebar#1') return climb('improved', { before: 10, after: 2, commit: 'bad1' })
       if (opts.label === 'verify:sidebar#1') return { confirmed: false, note: 'test deleted' }
-      if (opts.label === 'climb:sidebar#2') return climb('stopped', { stop_reason: 'diminishing-returns', reverted: true })
+      if (opts.label === 'climb:sidebar#2') return climb('stopped', { stop_reason: 'diminishing-returns', reverted_commits: ['bad1'] })
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -85,12 +85,12 @@ test('a refuted gain is not counted, and the next round is told to revert it', a
   const result = await workflow.run({ ...globals, args: { threads: [thread('sidebar')], publish: true } })
 
   const round2 = trace.agents.find(({ opts }) => opts.label === 'climb:sidebar#2')
-  assert.match(round2.prompt, /commit bad1, and the verifier refuted it: test deleted/)
-  assert.match(round2.prompt, /Revert that commit/)
+  assert.match(round2.prompt, /commit bad1: the verifier refuted it: test deleted/)
+  assert.match(round2.prompt, /Revert each commit/)
   assert.equal(result.threads[0].gains, 0)
   assert.equal(result.threads[0].history[0].status, 'refuted')
   assert.equal(publishCount(trace), 0, 'no verified gain means no PR')
-  assert.equal(result.threads[0].pendingRefutation, false, 'reverted=true clears the refutation')
+  assert.equal(result.threads[0].pendingRefutation, false, 'reverted_commits clears the refutation')
 })
 
 test('a confirmed gain followed by a refuted gain is not published', async () => {
@@ -129,7 +129,7 @@ test('a refutation survives a later round that does not report a revert', async 
 
   assert.equal(result.threads[0].pendingRefutation, true)
   assert.equal(publishCount(trace), 0)
-  assert.match(agentFor(trace, 'climb:s#3').prompt, /commit c2, and the verifier refuted it/)
+  assert.match(agentFor(trace, 'climb:s#3').prompt, /commit c2: the verifier refuted it/)
 })
 
 test('alternating gains reset the dry counter, so dryLimit 2 reaches round 4', async () => {
@@ -323,4 +323,133 @@ test('missing goal and threads returns an error without dispatching agents', asy
 
   assert.equal(result.error, 'missing goal')
   assert.equal(trace.agents.length, 0)
+})
+
+test('a null Adopt result becomes a failed Adopt and the climb prompt does not claim CI is wired', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = baseRuntime({ respond: () => climb('no-gain') })
+  const inner = globals.agent
+  globals.agent = (prompt, opts) => (opts.label === 'adopt' ? (trace.agents.push({ prompt, opts }), Promise.resolve(null)) : inner(prompt, opts))
+
+  const result = await workflow.run({ ...globals, args: { threads: [thread('s')], rounds: 1 } })
+
+  assert.equal(result.adopt.status, 'failed')
+  assert.equal(result.adopt.note, 'adopt agent returned nothing')
+  const prompt = agentFor(trace, 'climb:s#1').prompt
+  assert.doesNotMatch(prompt, /already done by the workflow/)
+  assert.match(prompt, /not done \(Adopt failed\)/)
+})
+
+test('a skipped Adopt is not described as done in the climb prompt', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = baseRuntime({
+    respond: ({ opts }) => (opts.label === 'adopt' ? { status: 'skipped', note: 'no CI' } : climb('no-gain')),
+  })
+
+  await workflow.run({ ...globals, args: { threads: [thread('s')], rounds: 1 } })
+
+  assert.match(agentFor(trace, 'climb:s#1').prompt, /not done \(Adopt skipped\)/)
+})
+
+test('existing commits the verifier refutes block publish until a later round reverts them', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'climb:s#1') return climb('no-gain', { existing_commits: ['old1'] })
+      if (opts.label === 'verify-existing:s') return { confirmed: false, note: 'stale' }
+      if (opts.label === 'climb:s#2') return climb('improved', { commit: 'new1' })
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { threads: [thread('s')], rounds: 2, publish: true } })
+
+  assert.match(agentFor(trace, 'climb:s#1').prompt, /git log <default-branch>\.\.hill-climb\/s/)
+  assert.match(agentFor(trace, 'verify-existing:s').prompt, /commit\(s\) old1:/)
+  assert.match(agentFor(trace, 'climb:s#2').prompt, /commit old1: it predates this run and the verifier refuted it: stale/)
+  assert.ok(!agentFor(trace, 'verify:s#2'), 'no gain is verified while an unverified commit sits below it')
+  assert.equal(result.threads[0].gains, 0)
+  assert.equal(result.threads[0].pendingRefutation, true)
+  assert.equal(publishCount(trace), 0)
+})
+
+test('reverting a refuted existing commit clears it and lets a later verified gain publish', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'climb:s#1') return climb('no-gain', { existing_commits: ['old1'] })
+      if (opts.label === 'verify-existing:s') return { confirmed: false, note: 'stale' }
+      if (opts.label === 'climb:s#2') return climb('no-gain', { reverted_commits: ['old1'] })
+      if (opts.label === 'climb:s#3') return climb('improved', { commit: 'new1' })
+      if (opts.label === 'verify:s#3') return { confirmed: true, note: 'ok' }
+      if (opts.label === 'publish:s') return { status: 'opened' }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { threads: [thread('s')], rounds: 3, publish: true } })
+
+  assert.equal(result.threads[0].pendingRefutation, false)
+  assert.equal(publishCount(trace), 1)
+})
+
+test('existing commits the verifier confirms are kept: no revert prompt, and a later verified gain publishes', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'climb:s#1') return climb('no-gain', { existing_commits: ['old1', 'old2'] })
+      if (opts.label === 'verify-existing:s') return { confirmed: true, note: 'ok' }
+      if (opts.label === 'climb:s#2') return climb('improved', { commit: 'new1' })
+      if (opts.label === 'verify:s#2') return { confirmed: true, note: 'ok' }
+      if (opts.label === 'publish:s') return { status: 'opened' }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { threads: [thread('s')], rounds: 2, publish: true } })
+
+  assert.match(agentFor(trace, 'verify-existing:s').prompt, /commit\(s\) old1 old2:/)
+  assert.doesNotMatch(agentFor(trace, 'climb:s#2').prompt, /Revert each commit/)
+  assert.equal(result.threads[0].pendingRefutation, false)
+  assert.equal(result.threads[0].gains, 1)
+  assert.equal(publishCount(trace), 1)
+})
+
+test('two refutations are both tracked and reverting one keeps the thread unpublished', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'climb:s#1') return climb('improved', { commit: 'c1' })
+      if (opts.label === 'verify:s#1') return { confirmed: false, note: 'noisy' }
+      if (opts.label === 'climb:s#2') return climb('improved', { commit: 'c2' })
+      if (opts.label === 'climb:s#3') return climb('no-gain', { reverted_commits: ['c2'] })
+      if (opts.label === 'climb:s#4') return climb('no-gain')
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { threads: [thread('s')], rounds: 4, dryLimit: 4, publish: true } })
+
+  const round3 = agentFor(trace, 'climb:s#3').prompt
+  assert.match(round3, /commit c1: the verifier refuted it: noisy/)
+  assert.match(round3, /commit c2:/)
+  assert.match(agentFor(trace, 'climb:s#4').prompt, /commit c1:/)
+  assert.doesNotMatch(agentFor(trace, 'climb:s#4').prompt, /commit c2:/)
+  assert.equal(result.threads[0].pendingRefutation, true)
+  assert.equal(publishCount(trace), 0)
+})
+
+test('a changed benchmark replaces a preset benchmark before verification', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'climb:s#1') return climb('improved', { commit: 'c1', benchmark: 'node new-bench.js' })
+      if (opts.label === 'verify:s#1') return { confirmed: true, note: 'ok' }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  await workflow.run({ ...globals, args: { threads: [thread('s', { benchmark: 'node old-bench.js' })], rounds: 1 } })
+
+  assert.match(agentFor(trace, 'verify:s#1').prompt, /Benchmark: node new-bench\.js/)
 })

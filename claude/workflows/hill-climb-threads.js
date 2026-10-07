@@ -65,7 +65,8 @@ const CLIMB_SCHEMA = {
     change: { type: 'string' },
     commit: { type: 'string' },
     stop_reason: { type: 'string' },
-    reverted: { type: 'boolean', description: 'true only after you reverted the refuted commit named in the prompt' },
+    reverted_commits: { type: 'array', items: { type: 'string' }, description: 'commits from the prompt that you reverted, with the revert committed' },
+    existing_commits: { type: 'array', items: { type: 'string' }, description: 'round 1 only: commits already on the thread branch before this run' },
     benchmark: { type: 'string', description: 'the benchmark command, when you built or changed it' },
   },
 }
@@ -188,13 +189,15 @@ function climbPrompt(t, round) {
         `If it exists, run \`git checkout ${branch}\`. Halt with status blocked if git refuses because another worktree holds the branch.`,
         `If it does not exist, run \`git checkout -b ${branch}\`.`,
         'Report the worktree path from `git rev-parse --show-toplevel`.',
+        `If the branch existed, list its commits with \`git log <default-branch>..${branch}\` and return their hashes in existing_commits. Return an empty list when there are none.`,
       ]
-  const refuted = t.refuted
+  const refuted = t.refuted.length
     ? [
         '',
-        `The previous round claimed a gain in commit ${t.refuted.commit || '(unknown)'}, and the verifier refuted it: ${t.refuted.note}`,
-        'Revert that commit and its ratchet tighten before you try anything else. Log it as a false lead.',
-        'Set reverted to true only after the revert is committed. Otherwise leave reverted false.',
+        'These commits on the branch are not verified. Do not build on them:',
+        ...t.refuted.map((r) => `- commit ${r.commit || '(unknown)'}: ${r.note}`),
+        'Revert each commit and its ratchet tighten before you try anything else. Log each as a false lead.',
+        'List a commit in reverted_commits only after its revert is committed.',
       ]
     : []
   const history = t.history.length
@@ -212,7 +215,9 @@ function climbPrompt(t, round) {
     `Invoke the hill-climb skill through the Skill tool with args "${t.slug}". Run exactly ONE iteration.`,
     'Commit locally on the thread branch only. Do not push, open a PR, or merge.',
     'Do not edit files outside this thread\'s hot path, its tests, its benchmark, and its ratchet file.',
-    'CI wiring for the ratchet is already done by the workflow. It is outside this thread\'s scope. Skip the CI step.',
+    ...(adopt.status === 'wired' || adopt.status === 'already-gated'
+      ? ['CI wiring for the ratchet is already done by the workflow. It is outside this thread\'s scope. Skip the CI step.']
+      : [`CI wiring for the ratchet is not done (Adopt ${adopt.status}). It is outside this thread\'s scope. Skip the CI step.`]),
     `The workflow owns the dry-streak stop (${dryLimit} dry round(s)). Do not write STOP for diminishing returns.`,
     'If you build or change the benchmark, return its command in benchmark.',
     '',
@@ -228,7 +233,7 @@ function verifyPrompt(t, climb) {
     '',
     threadContext(t),
     `Worktree: ${t.worktree}. Set your working directory there first.`,
-    `Claimed: ${climb.before} -> ${climb.after} in commit ${climb.commit || '(unknown)'}: ${climb.change}`,
+    `Claimed: ${climb.before} -> ${climb.after} in commit(s) ${climb.commit || '(unknown)'}: ${climb.change}`,
     '',
     'Steps:',
     '1. Read the commit diff. Confirm it does not remove a check, a test, or behavior to win the number.',
@@ -292,14 +297,14 @@ if (!threads.length) {
 log(`Climbing ${threads.length} thread(s), up to ${rounds} round(s) each, stop after ${dryLimit} dry round(s).`)
 
 phase('Adopt')
-const adopt = await agent(adoptPrompt(), { label: 'adopt', phase: 'Adopt', isolation: 'worktree', schema: ADOPT_SCHEMA })
+const adopt = (await agent(adoptPrompt(), { label: 'adopt', phase: 'Adopt', isolation: 'worktree', schema: ADOPT_SCHEMA })
   .catch((e) => {
     log(`Adopt failed: ${errorText(e)}`)
     return { status: 'failed', note: errorText(e) }
-  })
+  })) || { status: 'failed', note: 'adopt agent returned nothing' }
 log(`Adopt: ${adopt.status} — ${adopt.note}`)
 
-for (const t of threads) Object.assign(t, { worktree: null, dry: 0, history: [], refuted: null, outcome: 'rounds-exhausted' })
+for (const t of threads) Object.assign(t, { worktree: null, dry: 0, history: [], refuted: [], outcome: 'rounds-exhausted' })
 
 async function climb(t) {
   for (let round = 1; round <= rounds; round++) {
@@ -321,7 +326,8 @@ async function climb(t) {
       t.outcome = 'agent-failed'
       return t
     }
-    if (!t.worktree) {
+    const firstRound = !t.worktree
+    if (firstRound) {
       if (!WORKTREE.test(result.worktree_path)) {
         t.outcome = 'blocked: invalid worktree path'
         log(`${t.slug}: climb returned an invalid worktree path ${JSON.stringify(result.worktree_path)}; stopping thread.`)
@@ -333,11 +339,44 @@ async function climb(t) {
       log(`${t.slug}: climb returned worktree ${JSON.stringify(result.worktree_path)}, expected ${t.worktree}; stopping thread.`)
       return t
     }
-    if (result.reverted === true) t.refuted = null
-    if (!t.benchmark && typeof result.benchmark === 'string' && result.benchmark.trim()) t.benchmark = result.benchmark.trim()
+    const sameCommit = (a, b) => a && b && (a.startsWith(b) || b.startsWith(a))
+    const existing = firstRound && Array.isArray(result.existing_commits)
+      ? result.existing_commits.filter((c) => typeof c === 'string' && c)
+      : []
+    if (existing.length) {
+      const verdict = await agent(verifyPrompt(t, {
+        before: '(base)',
+        after: '(branch head)',
+        commit: existing.join(' '),
+        change: 'commits from an earlier run of this thread',
+      }), {
+        label: `verify-existing:${t.slug}`,
+        phase: 'Verify',
+        schema: VERIFY_SCHEMA,
+      }).catch((e) => {
+        log(`${t.slug}: verify agent failed for existing commits: ${errorText(e)}`)
+        return null
+      })
+      if (verdict && verdict.confirmed) {
+        log(`${t.slug}: the verifier confirmed ${existing.length} commit(s) from an earlier run.`)
+      } else {
+        for (const commit of existing) {
+          if (!t.refuted.some((r) => sameCommit(r.commit, commit))) {
+            t.refuted.push({ commit, note: `it predates this run and the verifier refuted it: ${verdict ? verdict.note : 'verifier failed to return'}` })
+          }
+        }
+      }
+    }
+    if (Array.isArray(result.reverted_commits)) {
+      t.refuted = t.refuted.filter((r) => !result.reverted_commits.some((c) => sameCommit(r.commit, c)))
+    }
+    if (typeof result.benchmark === 'string' && result.benchmark.trim()) t.benchmark = result.benchmark.trim()
 
     let status = result.status
-    if (status === 'improved') {
+    if (status === 'improved' && t.refuted.length) {
+      status = 'refuted'
+      t.refuted.push({ commit: result.commit, note: 'the workflow did not verify it because an earlier unverified commit is still on the branch' })
+    } else if (status === 'improved') {
       const verdict = await agent(verifyPrompt(t, result), {
         label: `verify:${t.slug}#${round}`,
         phase: 'Verify',
@@ -348,7 +387,7 @@ async function climb(t) {
       })
       if (!verdict || !verdict.confirmed) {
         status = 'refuted'
-        t.refuted = { commit: result.commit, note: verdict ? verdict.note : 'verifier failed to return' }
+        t.refuted.push({ commit: result.commit, note: `the verifier refuted it: ${verdict ? verdict.note : 'verifier failed to return'}` })
       }
     }
     t.history.push({ round, status, change: result.change, before: result.before, after: result.after, commit: result.commit })
@@ -369,10 +408,10 @@ async function climb(t) {
 
 await parallel(threads.map((t) => () => climb(t)))
 
-// A refuted gain stays committed on the branch until a later round reports
-// reverted=true. Nothing reverts it automatically, so a thread that ends with a
-// pending refutation is never published and the result reports pendingRefutation.
-const publishable = threads.filter((t) => !t.refuted && t.history.some((h) => h.status === 'improved'))
+// A refuted commit, or a commit from an earlier run, stays on the branch until
+// a later round lists it in reverted_commits. Nothing reverts it automatically.
+// A thread with any pending commit is never published and reports pendingRefutation.
+const publishable = threads.filter((t) => !t.refuted.length && t.history.some((h) => h.status === 'improved'))
 const skipped = threads.filter((t) => !publishable.includes(t))
 if (skipped.length) log(`Not publishable (no verified gain or a pending refutation): ${skipped.map((t) => t.slug).join(', ')}`)
 
@@ -400,7 +439,7 @@ return {
     worktree: t.worktree,
     outcome: t.outcome,
     gains: t.history.filter((h) => h.status === 'improved').length,
-    pendingRefutation: Boolean(t.refuted),
+    pendingRefutation: t.refuted.length > 0,
     history: t.history,
     publish: published[t.slug] || null,
   })),

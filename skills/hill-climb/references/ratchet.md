@@ -47,16 +47,23 @@ Use the repository's existing gate recipe. Do not add a new task runner.
 Copy `ratchet.py` into the repository, for example `tools/ratchet.py`. CI must not depend on a home-directory skill path.
 
 ```bash
-set -e
+set -euo pipefail
 for file in perf/ratchet/*.json; do
-  thread=$(basename "$file" .json)
-  value=$(bash "perf/bench/$thread.sh" | tail -n 1)
-  python3 tools/ratchet.py check --file "$file" --value "$thread=$value"
+  [ -e "$file" ] || continue
+  python3 -c 'import json, sys
+for name, entry in json.load(open(sys.argv[1]))["metrics"].items():
+    print(name, entry.get("command", ""), sep="\t")' "$file" |
+  while IFS=$'\t' read -r name command; do
+    [ -n "$command" ] || { echo "$file: $name has no stored command" >&2; exit 1; }
+    value=$(bash -c "$command" </dev/null | tail -n 1)
+    python3 tools/ratchet.py check --partial --file "$file" --value "$name=$value"
+  done
 done
 ```
 
-The example assumes that each metric name equals its file name and that `perf/bench/<thread>.sh` prints the metric.
-Adjust both to the repository. The loop checks every ratchet file, so a new thread needs no CI change.
+The loop runs the `command` that `ratchet.py add --command` stored for each metric.
+Record a `command` for every metric, or the gate fails. The command must print the metric on its last line.
+The loop skips an empty `perf/ratchet/` directory and checks every ratchet file, so a new thread needs no CI change.
 
 Run the gate on every pull request. A failing gate blocks merge.
 

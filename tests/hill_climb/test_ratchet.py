@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -119,9 +120,16 @@ class AddTests(RatchetCase):
         self.add("a", "10")
         self.assertEqual(self.data()["metrics"]["a"]["threshold"], 10)
 
-    def test_new_file_is_world_readable(self) -> None:
-        self.add("a", "10")
-        self.assertEqual(self.file.stat().st_mode & 0o444, 0o444)
+    def test_new_file_mode_follows_umask(self) -> None:
+        for umask in (0o022, 0o077):
+            with self.subTest(umask=oct(umask)):
+                self.file = self.dir / f"umask-{umask:o}.json"
+                previous = os.umask(umask)
+                try:
+                    self.add("a", "10")
+                finally:
+                    os.umask(previous)
+                self.assertEqual(self.file.stat().st_mode & 0o777, 0o666 & ~umask)
 
     def test_directory_path_is_input_error(self) -> None:
         result = run_cli(
@@ -138,10 +146,19 @@ class AddTests(RatchetCase):
         self.assertEqual(result.returncode, 2)
         self.assertNotIn("Traceback", result.stderr)
 
-    def test_unreadable_or_undecodable_file_is_input_error(self) -> None:
+    def test_undecodable_file_is_input_error(self) -> None:
         self.file.write_bytes(b"\xff\xfe\x00bad")
         result = run_cli("check", "--file", str(self.file), "--value", "a=1")
         self.assertEqual(result.returncode, 2)
+        self.assertNotIn("Traceback", result.stderr)
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
+    def test_unreadable_file_is_input_error(self) -> None:
+        self.add("a", "10")
+        self.file.chmod(0o000)
+        result = run_cli("check", "--file", str(self.file), "--value", "a=1")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("cannot read", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
 
@@ -247,6 +264,7 @@ class TightenTests(RatchetCase):
         self.assertEqual(report["results"][0]["status"], "unchanged")
         self.assertFalse(report["written"])
         self.assertEqual(self.file.stat().st_mtime_ns, before)
+        self.assertEqual(self.file.stat().st_mode & 0o777, 0o640)
         self.assertEqual(self.data()["metrics"]["a"]["threshold"], 80)
 
     def test_tighten_preserves_file_mode(self) -> None:

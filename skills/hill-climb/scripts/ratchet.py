@@ -30,7 +30,6 @@ GATE_FAILURE = 1
 INPUT_ERROR = 2
 
 DEFAULT_TIMEOUT = 600.0
-NEW_FILE_MODE = 0o644
 
 
 class InputError(ValueError):
@@ -118,11 +117,17 @@ def _load(path: Path, *, create: bool = False) -> dict[str, Any]:
     return _validate(data, path)
 
 
+def _new_file_mode() -> int:
+    umask = os.umask(0)
+    os.umask(umask)
+    return 0o666 & ~umask
+
+
 def _save(data: dict[str, Any], path: Path) -> None:
     text = json.dumps(data, indent=2, sort_keys=True) + "\n"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else NEW_FILE_MODE
+        mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else _new_file_mode()
         fd, tmp = tempfile.mkstemp(
             dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
         )
