@@ -50,6 +50,7 @@ teardown() {
     cd "$REPO/.worktrees/parent"
     run "$DOTFILES_DIR/bin/ccw-check" child
     [ "$status" -eq 0 ]
+    [[ "$output" == *"Permission symlink → main repo"* ]]
 }
 
 @test "flags a dangling project symlink" {
@@ -62,4 +63,12 @@ teardown() {
     run "$DOTFILES_DIR/bin/ccw-check" child
     [ "$status" -ne 0 ]
     [[ "$output" == *"unexpected target"* ]]
+}
+
+@test "does not treat a plain clone under a .worktrees dir as a linked worktree" {
+    git clone -q "$REPO" "$TMPROOT/.worktrees/clone"
+    cd "$TMPROOT/.worktrees/clone"
+    run "$DOTFILES_DIR/bin/ccw-check"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"Usage: ccw-check <slug>"* ]]
 }

@@ -70,3 +70,12 @@ teardown() {
     [[ "$output" == *"already checked out at $REPO/.worktrees/shared"* ]]
     [ ! -d "$REPO/.worktrees/parent/.worktrees/shared" ]
 }
+
+@test "reports an existing branch that is not checked out anywhere" {
+    git -C "$REPO" branch worktree/orphan
+    cd "$REPO"
+    run "$DOTFILES_DIR/bin/wt" orphan
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"branch worktree/orphan already exists"* ]]
+    [ ! -d "$REPO/.worktrees/orphan" ]
+}

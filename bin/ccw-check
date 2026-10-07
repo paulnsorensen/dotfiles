@@ -16,7 +16,9 @@ fi
 # Auto-detect slug from the enclosing worktree. Its parent is the checkout one
 # level up, which is itself a worktree when the worktree is nested.
 if [[ -z "$slug" ]]; then
-    if [[ "$repo_root" == */.worktrees/* ]]; then
+    git_dir="$(cd -P "$(git rev-parse --git-dir)" && pwd)"
+    common_dir="$(cd -P "$(git rev-parse --git-common-dir)" && pwd)"
+    if [[ "$repo_root" == */.worktrees/* && "$git_dir" != "$common_dir" ]]; then
         slug="${repo_root##*/}"
         repo_root="${repo_root%/.worktrees/*}"
     else
@@ -59,7 +61,9 @@ elif [[ -d "${claude_projects}/${wt_key}" ]]; then
     echo "⚠ Permission dir exists but is not a symlink (perms not inherited)"; fail=$((fail + 1))
 else
     echo "✗ Permission symlink missing"; fail=$((fail + 1))
-    echo "  Expected: ${claude_projects}/${wt_key} → ${claude_projects}/${main_key}"
+    expected="${claude_projects}/${main_key}"
+    [[ -d "$expected" ]] && expected="$(cd -P "$expected" && pwd)"
+    echo "  Expected: ${claude_projects}/${wt_key} → ${expected}"
 fi
 
 # 3. Local settings (fail loud on parse errors)

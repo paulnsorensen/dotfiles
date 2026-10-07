@@ -49,7 +49,7 @@ nested="$(wt_list_nested "$wt_dir")"
 if [[ -n "$nested" ]]; then
     echo "ccw-rm: ${wt_dir} contains nested worktrees; remove them first:" >&2
     while IFS= read -r child; do
-        echo "  ${child}  (cd ${wt_dir} && ccw-rm ${child##*/})" >&2
+        printf '  %s  (cd %q && ccw-rm %q)\n' "$child" "$wt_dir" "${child##*/}" >&2
     done <<<"$nested"
     exit 1
 fi

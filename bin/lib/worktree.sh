@@ -33,18 +33,27 @@ resolve_default_branch() {
     return 1
 }
 
-# wt_list_nested <wt_path> — emit nested child worktree paths one level under
-# <wt_path>/.worktrees/*. That is the only basis worktrees are created on:
-# wt writes <repo>/.worktrees/<slug>, and ccw()'s nested picker
-# (zsh/claude.zsh) globs .worktrees/* (and .worktrees/*/.worktrees/*). Only
-# paths that are real git worktrees (have a .git entry) are emitted; one path
-# per line.
+# wt_list_nested <wt_path> — emit every git worktree nested inside <wt_path>,
+# at any depth and under any directory name (for example
+# <wt_path>/.claude/worktrees/x). Paths come from `git worktree list
+# --porcelain`. A glob of <wt_path>/.worktrees/*/ adds children that belong to a
+# different repo, because the target's own list does not show them. The target
+# itself is excluded. One path per line.
 wt_list_nested() {
-    local wt_path="$1" child
-    for child in "$wt_path"/.worktrees/*/; do
+    local wt_path="$1" canon line child seen=$'\n'
+    canon="$(cd -P "$wt_path" 2>/dev/null && pwd)" || return 0
+    while IFS= read -r line; do
+        [[ "$line" == "worktree ${canon}/"* ]] || continue
+        line="${line#worktree }"
+        seen+="${line}"$'\n'
+        printf '%s\n' "$line"
+    done < <(git -C "$canon" worktree list --porcelain 2>/dev/null)
+    for child in "$canon"/.worktrees/*/; do
         [[ -d "$child" ]] || continue
         [[ -e "${child}.git" ]] || continue
-        printf '%s\n' "${child%/}"
+        child="${child%/}"
+        [[ "$seen" == *$'\n'"${child}"$'\n'* ]] && continue
+        printf '%s\n' "$child"
     done
 }
 
