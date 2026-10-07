@@ -1361,12 +1361,15 @@ NODE
 }
 
 @test "tool-reroute/io: an unknown shell cwd gives no fabricated absolute hint" {
-    local cmd out
+    local cmd out why
+    # `|| return 1` keeps each check fatal under bash 3.2, which ignores a
+    # failed `[[ ]]` before the last line of a bats test.
     for cmd in 'cat ../zz.txt' 'echo hi > ../zz.txt' 'echo hi | tee ../zz.txt'; do
         out=$(out_for_safe "cd \"\$DEST\"; $cmd")
-        [[ "$(decision "$out")" == "deny" ]]
-        [[ "$out" == *'"<absolute path>"'* ]]
-        [[ "$out" != *"$(dirname "$W")/zz.txt"* ]]
+        why=$(reason "$out")
+        [[ "$(decision "$out")" == "deny" ]] || { echo "expected deny: $cmd" >&2; return 1; }
+        [[ "$why" == *'"<absolute path>"'* ]] || { echo "expected placeholder: $cmd" >&2; return 1; }
+        [[ "$why" != *"$(dirname "$W")/zz.txt"* ]] || { echo "fabricated path: $cmd" >&2; return 1; }
     done
 }
 
