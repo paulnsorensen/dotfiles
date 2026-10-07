@@ -180,6 +180,34 @@ block_sha() {
     assert_success
 }
 
+@test "judge is a read-only powerful-tier agent with a mechanical mode gate on every harness" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    local body="$AGENTS_DIR/agent_definitions/judge.md"
+    local omp="$REAL_DOTFILES_DIR/chezmoi/dot_omp/private_agent/agents/judge.md"
+    local gate='status: blocked: missing-contract — dispatch prompt has no `Judge mode: advise | verify` line'
+
+    [[ "$(yq -r '.agents.judge.models.claude' "$registry")" == opus ]]
+    [[ "$(yq -r '.agents.judge.models.codex' "$registry")" == gpt-6-astra ]]
+    [[ "$(yq -r '.agents.judge.effort' "$registry")" == high ]]
+    [[ "$(yq --front-matter=extract -r '.model' "$omp")" == '@strong' ]]
+    run yq -e '.claude.agents[] | select(. == "judge")' "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
+    assert_success
+    run yq -e '.codex.agents[] | select(. == "judge")' "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml"
+    assert_success
+    # Allowlist with no edit or write tool.
+    [[ "$(yq -r '.agents.judge.tools | join(",")' "$registry")" == 'Bash,ToolSearch,mcp__tilth__tilth_read,mcp__tilth__tilth_search' ]]
+    [[ "$(yq -r '.agents.judge.disallowedTools // "" | length' "$registry")" == 0 ]]
+    [[ "$(yq --front-matter=extract -r '.tools' "$omp")" == 'read,grep,glob,bash' ]]
+    for file in "$body" "$omp"; do
+        run grep -Fq -- "$gate" "$file"
+        assert_success
+        run grep -Fq -- 'Judge mode: advise' "$file"
+        assert_success
+        run grep -Fq -- 'Judge mode: verify' "$file"
+        assert_success
+    done
+}
+
 @test "coder refuses a dispatch missing both Done means and Scope fence" {
     local coder="$AGENTS_DIR/agent_definitions/coder.md"
 

@@ -11,9 +11,11 @@ import { loadWorkflow } from './harness.mjs'
 const root = resolve(import.meta.dirname, '../..')
 const execFileAsync = promisify(execFile)
 const workflowSourceDirectory = resolve(root, 'claude/workflows')
+const templatePath = resolve(root, 'skills/claude-workflows/assets/workflow-template.js')
 const workflowPaths = (await readdir(workflowSourceDirectory, { withFileTypes: true }))
   .filter((entry) => entry.isFile() && entry.name.endsWith('.js'))
   .map((entry) => resolve(workflowSourceDirectory, entry.name))
+  .concat(templatePath)
   .sort()
 
 test('every shipped workflow loads with its meta export', async () => {

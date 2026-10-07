@@ -280,6 +280,7 @@ claude:
     - bin-doctor
     - build-optimize
     - claude-local
+    - claude-workflows
     - ci-optimize
     - coderabbit
     - de-slop
@@ -318,6 +319,7 @@ claude:
     - explorer
     - generalist
     - ghostbuster
+    - judge
     - nih-scanner
     - researcher
     - reviewer

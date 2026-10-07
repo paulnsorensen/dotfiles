@@ -88,6 +88,7 @@ omp:
       # every turn of every agent; these cannot act inside OMP.
       ignoredSkills:
         - claude-local
+        - claude-workflows
         - git-hygiene
         - routine-env
         - routine-scaffold

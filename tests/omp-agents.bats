@@ -47,6 +47,7 @@ expected_omp_model() {
 expected_omp_thinking() {
     case "$1" in
         reviewer) echo xhigh ;;
+        judge) echo high ;;
         ghostbuster|researcher) echo high ;;
         generalist) echo xhigh ;;
         roquefort-wrecker|coder) echo xhigh ;;
