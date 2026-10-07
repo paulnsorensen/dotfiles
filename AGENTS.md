@@ -54,12 +54,13 @@ Implementation details (vault provisioning, codex merge semantics, credential is
 ## Required gates
 
 1. Run `dots sync` after registry, skill, agent, plugin, or docs-source changes, and before committing (repo-local `.agents/skills/` excepted).
-2. Before completion or commit for source or configuration changes, run `just check`. Require exit 0 and name any unrun leg.
+2. Before completion or commit for source or configuration changes, run `just check`. Require exit 0 and name any unrun leg. Prose-only changes use gate 7 instead.
 3. New shell logic belongs in a sourced library with Bats coverage; keep `.sync` scripts to parsing and dispatch.
 4. For chezmoi: never commit plaintext secrets; never edit managed targets; run `chezmoi --source $DOTFILES/chezmoi diff` before template changes; use `prompt*` only in `.chezmoi.toml.tmpl`.
 5. When auto mode requests Bash file operations, use the configured file tools. OMP uses native tools; Claude and Codex use Tilth.
 6. Read-only analysis and unchanged handoffs may omit code test suites and `just check`.
-7. Docs-only edits still run relevant lint, deploy checks, and repository-specific gates.
+7. A prose-only change edits only Markdown prose. It does not change frontmatter, code blocks, templates, or other files. For a prose-only change, `just lint-markdown` is the only validation; require exit 0. Do not run `just check` or the test suites. Gate 1 still applies.
+8. Docs-only edits still run relevant lint, deploy checks, and repository-specific gates when they are not prose-only.
 
 ## Commands
 

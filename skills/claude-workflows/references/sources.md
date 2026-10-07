@@ -21,5 +21,5 @@ Read when a claim needs its source URL. Fetch date for all sources: 2026-10-06.
 | s15 | <https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool> |
 | s16 | <https://claude.com/blog/the-advisor-strategy> |
 
-The Workflow runtime facts come from the Claude Code workflow-authoring reference.
+The Workflow runtime facts live in the built-in workflow-authoring skill. It ships inside the Claude Code CLI, and this skill does not copy it.
 The local exemplars come from `claude/workflows/*.js` in the dotfiles repository. Other repositories do not have these files.

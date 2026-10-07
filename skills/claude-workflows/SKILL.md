@@ -31,7 +31,7 @@ Parse the text after the skill name.
 
 ## Flow
 
-1. **Ground.** Load the workflow-authoring reference when the target is a Workflow tool script. Read the target or the goal. Done when you can name each stage and the data it passes.
+1. **Ground.** Load the built-in workflow-authoring skill when the target is a Workflow tool script. That skill owns the runtime API, the runtime limits, and the quality patterns. This skill does not copy them. Outside Claude Code, that skill is absent; mark its runtime checks as unverified. Read the target or the goal. Done when you can name each stage and the data it passes.
 2. **Model the work.** Build the ontology from `references/ontology.md`. Done when its code checks pass. Each criterion has an exact check and a task. Each reference resolves. The task graph has no cycle.
 3. **Gate the approach.** Send the plan to a read-only advisor from `references/advisor.md`. Done when the advisor approves, or after one revision round.
 4. **Type the contracts.** Give each agent call a schema constant from `references/schemas.md`. Done when each call has a schema and a code validator.
@@ -41,8 +41,14 @@ Parse the text after the skill name.
 8. **Verify independently.** Merge the done task branches in a code-gated integrate step. Give each criterion its own verifier that did not write the code. Call the advisor before done. Done when each criterion has a pass or fail verdict with evidence.
 
 In `design` mode, start from `assets/workflow-template.js`. It implements steps 2 to 8.
+The template fits one shape: plan, implement, and verify. For review, research, audit, or discovery work, take the shape from the workflow-authoring quality patterns. Then apply steps 4 to 7 to each agent call.
 In the dotfiles repository, `tests/workflows/claude-workflows-template.test.mjs` proves its control flow. That path does not exist in other repositories.
-In `review` mode, run steps 2 to 8 as checks against the target.
+In `review` mode, run steps 2 to 8 as checks against the target. Also check the target against workflow-authoring:
+
+- A barrier whose next stage does not need all prior results. The fix is a `pipeline()`.
+- A runtime limit that the script can hit. Check the concurrency, agent, and per-call item caps.
+- `args` sent as a JSON string.
+- A `workflow()` call inside a child workflow. Nesting allows one level only.
 
 ## Output
 

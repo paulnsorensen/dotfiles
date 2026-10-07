@@ -39,9 +39,10 @@ Anthropic reports that programmatic tool calling cut average tokens by 37% on co
 
 ## Determinism for resume
 
-1. Do not call `Date.now()`, `Math.random()`, or argless `new Date()`.
-2. Build labels from stable IDs, such as `task:T-3:c2`.
-3. Iterate in sorted order.
+The workflow-authoring skill states the resume rules and the banned clock and random calls. Add these design rules:
+
+1. Build labels from stable IDs, such as `task:T-3:c2`.
+2. Iterate in sorted order.
 
 ## No silent caps
 
