@@ -64,6 +64,17 @@ STUB
     chmod +x "$stub_dir/.sync" "$stub_dir/packages/sync.sh" "$stub_dir/chezmoi/lib/install-external.sh" "$stub_dir/bin/git"
 }
 
+# Source the real pin library in the stub tree, so the subshell log helpers and
+# the library's readonly names are exercised.
+stub_real_pin_library() {
+    cp "$DOTFILES_DIR/packages/lib-mise-pins.sh" "$1/packages/lib-mise-pins.sh"
+    mkdir -p "$1/chezmoi/dot_config/mise"
+    git init -q -b main "$1"
+    printf '[tools]\n' > "$1/chezmoi/dot_config/mise/config.toml"
+    git -C "$1" add chezmoi/dot_config/mise/config.toml
+    git -C "$1" -c user.name=T -c user.email=t@example.com commit -qm init
+}
+
 @test "dots upgrade pulls before an upgrade sync and refreshes remote skills" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
@@ -169,6 +180,18 @@ STUB
     PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
     assert_success
     assert_output_contains "stub-dotsync args="
+}
+
+@test "dots sync runs the real pin library as a no-op on a clean manifest" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    rm "$stub_dir/bin/git"
+    stub_real_pin_library "$stub_dir"
+    DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
+    assert_success
+    assert_output_contains "stub-dotsync args="
+    assert_output_not_contains "[dots]"
+    [[ -z "$(git -C "$stub_dir" status --porcelain -- chezmoi/dot_config/mise/config.toml)" ]]
 }
 
 @test "dots sync --dry-run skips the skill refresh" {

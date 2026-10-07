@@ -1829,7 +1829,10 @@ setup_pin_bump_repo() {
     export MISE_CONFIG_FILE="$work/mise-config.toml"
 }
 
-# gh mock with state: `pr list` answers with a URL once `pr create` ran.
+# gh mock with state: `pr list` answers with a tab-separated PR row once
+# `pr create` ran. The row carries the pin branch head on origin, so it is a
+# same-repo PR at our commit. GH_LIST_CROSS=true marks it as a fork PR and
+# GH_LIST_SHA overrides its head.
 # GH_CREATE_FAIL=1 makes `pr create` fail; GH_MERGE_FAIL=1 makes `pr merge` fail.
 write_mock_gh_pr() {
     rm -f "$MOCK_BIN/gh"
@@ -1838,7 +1841,10 @@ write_mock_gh_pr() {
 state="\$TEST_HOME/gh-pr-exists"
 if [[ "\$1 \$2" == "pr list" ]]; then
     echo "gh \$*" >> "\$GH_LOG"
-    [[ -f "\$state" ]] && echo "https://github.com/example/dotfiles/pull/1"
+    if [[ -f "\$state" ]]; then
+        head="\${GH_LIST_SHA:-\$(git -C "\$TEST_HOME/origin.git" rev-parse refs/heads/chore/mise-pins)}"
+        printf '%s\t%s\t%s\n' "https://github.com/example/dotfiles/pull/1" "\${GH_LIST_CROSS:-false}" "\$head"
+    fi
     exit 0
 fi
 if [[ "\$1 \$2" == "pr create" ]]; then
@@ -1885,7 +1891,7 @@ pin_branches() {
     grep -q -- "--repo example/dotfiles --base main --head $branch" "$GH_LOG"
     [[ "$output" == *"mise pin bump PR: https://github.com/example/dotfiles/pull/1"* ]]
     [[ "$output" == *"stays modified until the PR merges"* ]]
-    grep -qx "gh pr merge https://github.com/example/dotfiles/pull/1 --auto --squash" "$GH_LOG"
+    grep -qx "gh pr merge https://github.com/example/dotfiles/pull/1 --auto --squash --match-head-commit $(git -C "$origin" rev-parse "$branch")" "$GH_LOG"
     [[ "$output" == *"auto-merge enabled"* ]]
     # The checkout stays on main and keeps the bumped manifest.
     [[ "$(git -C "$work" branch --show-current)" == "main" ]]
@@ -1976,6 +1982,27 @@ pin_branches() {
     [[ "$output" == *"gh pr merge --auto failed"* ]]
     [[ "$output" == *"mise pin bump PR: https://github.com/example/dotfiles/pull/1"* ]]
     [[ "$(pin_branches)" == "chore/mise-pins" ]]
+}
+
+@test "a cross-repo PR from a same-named branch is not auto-merged" {
+    prepare_pin_bump
+    touch "$TEST_HOME/gh-pr-exists"
+
+    GH_LIST_CROSS=true UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"no open chore/mise-pins PR from this repo"* ]]
+    [[ "$output" != *"auto-merge enabled"* ]]
+    ! grep -q 'pr merge' "$GH_LOG"
+}
+
+@test "a PR whose head is not the pushed commit is not auto-merged" {
+    prepare_pin_bump
+    touch "$TEST_HOME/gh-pr-exists"
+
+    GH_LIST_SHA=0000000000000000000000000000000000000000 UPGRADE_MODE=true run bash "$SYNC_SCRIPT"
+    assert_success
+    [[ "$output" == *"no open chore/mise-pins PR from this repo"* ]]
+    ! grep -q 'pr merge' "$GH_LOG"
 }
 
 @test "UPGRADE_MODE does not publish a manifest that differs from origin/main" {

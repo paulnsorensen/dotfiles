@@ -148,12 +148,10 @@ do_update() {
 settle_pin_bump() {
     local lib="$DOTFILES_DIR/packages/lib-mise-pins.sh"
     [[ -r "$lib" ]] || return 0
-    # shellcheck disable=SC2329  # the sourced library calls the log_* helpers.
     (
         log_info()    { echo -e "${BLUE}[dots]${NC} $1"; }
         log_success() { echo -e "${GREEN}[dots]${NC} $1"; }
         log_warning() { echo -e "${YELLOW}[dots]${NC} $1" >&2; }
-        log_error()   { echo -e "${RED}[dots]${NC} $1" >&2; }
         # shellcheck source=packages/lib-mise-pins.sh
         source "$lib"
         settle_mise_pin_bump "$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"

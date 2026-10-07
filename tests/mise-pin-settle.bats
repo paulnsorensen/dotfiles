@@ -79,6 +79,7 @@ push_pin_branch() {
 }
 
 @test "an open pin PR leaves the checkout as it was" {
+    push_pin_branch
     dirty_bump
     local head
     head="$(git -C "$WORK" rev-parse HEAD)"
@@ -207,6 +208,32 @@ push_pin_branch() {
     git -C "$WORK" diff --cached --quiet
     [[ "$(cat "$MANIFEST")" == "$(printf '%s' "$BUMPED")" ]]
     [[ "$(cat "$WORK/other.txt")" == "mine" ]]
+}
+
+@test "a merged pin PR followed by an upstream manifest edit still settles" {
+    dirty_bump
+    land_upstream mise-config.toml "$BUMPED"
+    land_upstream mise-config.toml $'[tools]\n"aqua:example/upstream" = "9.0.0"\n'
+
+    run settle_mise_pin_bump "$MANIFEST"
+    assert_success
+    [[ "$output" == *"edited the manifest since"* ]]
+    [[ -z "$(git -C "$WORK" status --porcelain)" ]]
+    [[ "$(git -C "$WORK" rev-parse HEAD)" == "$(git -C "$WORK" rev-parse origin/main)" ]]
+    grep -q 'aqua:example/upstream' "$MANIFEST"
+}
+
+@test "a manifest that matches no public pin bump warns and stays" {
+    printf 'mine\n' > "$MANIFEST"
+    land_upstream mise-config.toml "$BUMPED"
+    local head
+    head="$(git -C "$WORK" rev-parse HEAD)"
+
+    run settle_mise_pin_bump "$MANIFEST"
+    assert_success
+    [[ "$output" == *"matches no public mise pin bump"* ]]
+    [[ "$(git -C "$WORK" rev-parse HEAD)" == "$head" ]]
+    [[ "$(cat "$MANIFEST")" == "mine" ]]
 }
 
 @test "a manifest the user staged is left alone" {
