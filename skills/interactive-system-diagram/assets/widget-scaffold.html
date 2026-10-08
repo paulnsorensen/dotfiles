@@ -6,112 +6,289 @@
 <title>Example system comparison</title>
 <style>
 :root {
+  --bg: #ffffff; --fg: #222222; --muted: #595959; --border: #cccccc; --svg-bg: #fafaf9; --focus: #174ea6;
   --bg-accent: #e8eefb; --text-accent: #173d85;
   --bg-success: #e8f2d9; --text-success: #315b08;
   --bg-warning: #fff0d2; --text-warning: #754300;
   --bg-danger: #fde8e8; --text-danger: #8f2321;
   --surface-1: #f2f1ee; --text-secondary: #595852;
+  --ext-fill: #e9e9e6; --ext-stroke: #777777;
+  --entry-fill: #deebfa; --entry-stroke: #4677aa;
+  --core-fill: #dcefe7; --core-stroke: #34805e;
+  --amber-fill: #ffe0a3; --amber-stroke: #9c6300; --amber-text: #613800;
+  --grp-fill: #eceae4; --grp-stroke: #6b6a64;
+  --edge-v: #4d7c0f; --edge-p: #a15c07; --edge-u: #d1332f; --edge-m: #6b6a64;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15161a; --fg: #ececec; --muted: #b4b4b0; --border: #444444; --svg-bg: #1b1c1f; --focus: #8ab4f8;
+    --bg-accent: #1f2d4d; --text-accent: #b7cdfa;
+    --bg-success: #1f3311; --text-success: #c5e59b;
+    --bg-warning: #3a2a08; --text-warning: #ffd98a;
+    --bg-danger: #4a1a19; --text-danger: #ffb4b2;
+    --surface-1: #2a2a28; --text-secondary: #c8c8c2;
+    --ext-fill: #2f2f2c; --ext-stroke: #9a9a96;
+    --entry-fill: #1d3350; --entry-stroke: #6aa0d8;
+    --core-fill: #17382b; --core-stroke: #4fb08a;
+    --amber-fill: #5a3d05; --amber-stroke: #e0a030; --amber-text: #ffe3ad;
+    --grp-fill: #2a2d33; --grp-stroke: #9aa0aa;
+    --edge-v: #8bc34a; --edge-p: #e0a030; --edge-u: #ff7b78; --edge-m: #a0a09a;
+  }
 }
 * { box-sizing: border-box; }
-body { max-width: 720px; margin: 0 auto; padding: 20px; color: #222; background: #fff; font: 15px/1.45 system-ui, sans-serif; }
+body { max-width: 720px; margin: 0 auto; padding: 20px; color: var(--fg); background: var(--bg); font: 15px/1.45 system-ui, sans-serif; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-.tabs { display: flex; gap: 8px; margin: 0 0 12px; }
-.tabs button { padding: 8px 14px; border: 1px solid #bbb; border-radius: 6px; background: #fff; color: #222; cursor: pointer; }
-.tabs button[aria-selected="true"] { background: var(--bg-accent); color: var(--text-accent); border-color: currentColor; }
-svg { width: 100%; height: auto; display: block; background: #fafaf9; border: 1px solid #ddd; border-radius: 8px; }
-.c-external rect { fill: #e9e9e6; stroke: #777; }
-.c-entry rect { fill: #deebfa; stroke: #4677aa; }
-.c-core rect { fill: #dcefe7; stroke: #34805e; }
-.c-amber circle { fill: #ffe0a3; stroke: #9c6300; }
-.t { font: 600 15px system-ui, sans-serif; fill: #222; }
-.ts { font: 12px system-ui, sans-serif; fill: #555; }
-.th { font: 600 12px system-ui, sans-serif; fill: #613800; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0 0 12px; }
+.tabs, .levels, .walkbar { display: flex; flex-wrap: wrap; gap: 8px; }
+button { padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; cursor: pointer; }
+button[aria-selected="true"], button[aria-pressed="true"] { background: var(--bg-accent); color: var(--text-accent); border-color: currentColor; }
+button:disabled { cursor: default; opacity: 0.6; }
+.answer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; font-weight: 600; }
+.answer p { margin: 0; }
+svg { width: 100%; height: auto; display: block; background: var(--svg-bg); border: 1px solid var(--border); border-radius: 8px; }
+.c-external rect { fill: var(--ext-fill); stroke: var(--ext-stroke); }
+.c-entry rect { fill: var(--entry-fill); stroke: var(--entry-stroke); }
+.c-core rect { fill: var(--core-fill); stroke: var(--core-stroke); }
+.c-amber circle { fill: var(--amber-fill); stroke: var(--amber-stroke); }
+.grp rect { fill: transparent; stroke: var(--grp-stroke); stroke-dasharray: 6 4; }
+.grp[data-filled="true"] rect { fill: var(--grp-fill); }
+#fence { fill: none; stroke: var(--muted); stroke-dasharray: 6 4; }
+.edge { fill: none; stroke: var(--muted); stroke-width: 2; }
+.hit { fill: none; stroke: transparent; stroke-width: 14; }
+#arrow path { fill: var(--muted); }
+.t { font: 600 15px system-ui, sans-serif; fill: var(--fg); }
+.ts { font: 12px system-ui, sans-serif; fill: var(--muted); }
+.th { font: 600 12px system-ui, sans-serif; fill: var(--amber-text); }
+.gt { font: 600 12px system-ui, sans-serif; fill: var(--fg); }
+.gtc { font: 600 17px system-ui, sans-serif; fill: var(--fg); opacity: 0; }
+.grp[data-filled="true"] .gt { opacity: 0; }
+.grp[data-filled="true"] .gtc { opacity: 1; }
 [data-k] { cursor: pointer; }
-[data-k]:focus-visible { outline: 3px solid #174ea6; outline-offset: 3px; }
+[data-k]:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+[data-k], .edge, .grp rect, #fence { transition: opacity 0.2s; }
+@media (prefers-reduced-motion: reduce) {
+  [data-k], .edge, .grp rect, #fence { transition: none; }
+}
 .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 12px 0; font-size: 13px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { display: inline-block; width: 25px; border-top: 3px solid; }
-.legend .v { border-color: #639922; }
-.legend .p { border-color: #BA7517; border-top-style: dashed; }
-.legend .u { border-color: #E24B4A; border-top-style: dotted; }
-.legend .m { border-color: #888780; border-top-style: dashed; }
-.detail { padding: 12px 14px; border: 1px solid #ddd; border-radius: 8px; min-height: 110px; }
+.legend .v { border-color: var(--edge-v); }
+.legend .p { border-color: var(--edge-p); border-top-style: dashed; }
+.legend .u { border-color: var(--edge-u); border-top-style: dotted; }
+.legend .m { border-color: var(--edge-m); border-top-style: dashed; }
+.terms { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+.detail { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; min-height: 110px; }
 .detail h3 { margin: 0 0 5px; font-size: 16px; }
 .detail p { margin: 4px 0; }
-.source { color: #555; font-size: 13px; }
+.detail p:empty { margin: 0; }
+#pm { white-space: pre-line; }
+.source { color: var(--muted); font-size: 13px; }
 .chip { display: inline-block; margin-left: 4px; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+.tc { margin: 0; background: var(--bg-warning); color: var(--text-warning); }
 </style>
 </head>
 <body>
 <h2 class="sr-only">Example comparison of two unverified system proposals</h2>
-<div class="tabs" role="tablist" aria-label="Proposals">
-  <button type="button" role="tab" data-tab="A">Proposal A</button>
-  <button type="button" role="tab" data-tab="B">Proposal B</button>
+<div class="bar">
+  <div class="tabs" role="tablist" aria-label="Proposals">
+    <button type="button" role="tab" data-tab="A">Proposal A</button>
+    <button type="button" role="tab" data-tab="B">Proposal B</button>
+  </div>
+  <div class="levels" role="group" aria-label="Detail level">
+    <button type="button" data-lv="0" aria-pressed="false">Overview · Exec</button>
+    <button type="button" data-lv="1" aria-pressed="false">Map · PM</button>
+    <button type="button" data-lv="2" aria-pressed="false">Detail · Eng</button>
+  </div>
+  <div class="walkbar">
+    <button type="button" id="walk">Walk me through</button>
+    <button type="button" id="back" disabled>Back</button>
+    <button type="button" id="next" disabled>Next</button>
+  </div>
 </div>
-<svg viewBox="0 0 680 320" role="img" aria-label="Example path from caller through entry to core">
-  <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#777"/></marker></defs>
+<div id="answer" class="answer">
+  <p id="ans"></p>
+  <span id="tc" class="chip tc" data-k="tensions"></span>
+</div>
+<svg viewBox="0 0 680 370" role="img" aria-label="Example system: a caller, an entry layer, and core services">
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>
+  <g class="grp" data-k="g_entry">
+    <rect x="70" y="98" width="540" height="100" rx="12"/>
+    <text class="gt" x="596" y="114" text-anchor="end" dominant-baseline="central">Entry layer</text>
+    <text class="gtc" x="340" y="148" text-anchor="middle" dominant-baseline="central">Entry layer</text>
+  </g>
+  <g class="grp" data-k="g_core">
+    <rect x="20" y="250" width="640" height="100" rx="12"/>
+    <text class="gt" x="646" y="266" text-anchor="end" dominant-baseline="central">Core services</text>
+    <text class="gtc" x="340" y="300" text-anchor="middle" dominant-baseline="central">Core services</text>
+  </g>
+  <rect id="fence" x="455" y="270" width="200" height="76" rx="12" opacity="0"/>
   <g class="c-external" data-k="caller">
     <rect x="275" y="20" width="130" height="56" rx="8"/>
     <text class="t" x="340" y="39" text-anchor="middle" dominant-baseline="central">Caller</text>
-    <text class="ts" x="340" y="58" text-anchor="middle" dominant-baseline="central">Example client</text>
+    <text class="ts" id="s_caller" x="340" y="58" text-anchor="middle" dominant-baseline="central"></text>
   </g>
-  <g class="c-entry" data-k="entry">
-    <rect x="275" y="100" width="130" height="56" rx="8"/>
-    <text class="t" x="340" y="119" text-anchor="middle" dominant-baseline="central">Entry</text>
-    <text class="ts" x="340" y="138" text-anchor="middle" dominant-baseline="central">Example gateway</text>
+  <g class="c-entry" data-k="gateway">
+    <rect x="150" y="128" width="170" height="56" rx="8"/>
+    <text class="t" x="235" y="147" text-anchor="middle" dominant-baseline="central">Gateway</text>
+    <text class="ts" id="s_gateway" x="235" y="166" text-anchor="middle" dominant-baseline="central"></text>
   </g>
-  <rect id="fence" x="245" y="182" width="190" height="118" rx="12" fill="none" stroke="#888" stroke-dasharray="6 4" opacity="0"/>
-  <g class="c-core" data-k="core">
-    <rect x="275" y="210" width="130" height="56" rx="8"/>
-    <text class="t" x="340" y="229" text-anchor="middle" dominant-baseline="central">Core</text>
-    <text class="ts" x="340" y="248" text-anchor="middle" dominant-baseline="central">Example service</text>
+  <g class="c-entry" data-k="auth">
+    <rect x="360" y="128" width="170" height="56" rx="8"/>
+    <text class="t" x="445" y="147" text-anchor="middle" dominant-baseline="central">Auth</text>
+    <text class="ts" id="s_auth" x="445" y="166" text-anchor="middle" dominant-baseline="central"></text>
   </g>
-  <path id="v_e_caller_entry" d="M 340 76 L 340 98" fill="none" stroke="#888" stroke-width="2" marker-end="url(#arrow)"/>
-  <path id="v_e_entry_core" d="M 340 156 L 340 208" fill="none" stroke="#888" stroke-width="2" marker-end="url(#arrow)"/>
-  <path d="M 340 76 L 340 98" fill="none" stroke="transparent" stroke-width="14" data-k="e_caller_entry"/>
-  <path d="M 340 156 L 340 208" fill="none" stroke="transparent" stroke-width="14" data-k="e_entry_core"/>
+  <g class="c-core" data-k="orders">
+    <rect x="40" y="280" width="170" height="56" rx="8"/>
+    <text class="t" x="125" y="299" text-anchor="middle" dominant-baseline="central">Orders</text>
+    <text class="ts" id="s_orders" x="125" y="318" text-anchor="middle" dominant-baseline="central"></text>
+  </g>
+  <g class="c-core" data-k="billing">
+    <rect x="255" y="280" width="170" height="56" rx="8"/>
+    <text class="t" x="340" y="299" text-anchor="middle" dominant-baseline="central">Billing</text>
+    <text class="ts" id="s_billing" x="340" y="318" text-anchor="middle" dominant-baseline="central"></text>
+  </g>
+  <g class="c-core" data-k="store">
+    <rect x="470" y="280" width="170" height="56" rx="8"/>
+    <text class="t" x="555" y="299" text-anchor="middle" dominant-baseline="central">Store</text>
+    <text class="ts" id="s_store" x="555" y="318" text-anchor="middle" dominant-baseline="central"></text>
+  </g>
+  <path class="edge" id="v_e_caller_gateway" d="M 340 76 L 340 88 L 235 88 L 235 126" marker-end="url(#arrow)"/>
+  <path class="edge" id="v_e_caller_auth" d="M 340 76 L 340 88 L 445 88 L 445 126" marker-end="url(#arrow)"/>
+  <path class="edge" id="v_e_gateway_orders" d="M 235 184 L 235 224 L 125 224 L 125 278" marker-end="url(#arrow)"/>
+  <path class="edge" id="v_e_auth_billing" d="M 445 184 L 445 232 L 340 232 L 340 278" marker-end="url(#arrow)"/>
+  <path class="edge" id="v_e_orders_billing" d="M 210 308 L 253 308" marker-end="url(#arrow)"/>
+  <path class="edge" id="v_e_billing_store" d="M 425 308 L 468 308" marker-end="url(#arrow)"/>
+  <path class="edge" id="v_e_g_caller_entry" d="M 340 76 L 340 96" marker-end="url(#arrow)"/>
+  <path class="edge" id="v_e_g_entry_core" d="M 340 198 L 340 248" marker-end="url(#arrow)"/>
+  <path class="hit" d="M 340 76 L 340 88 L 235 88 L 235 126" data-k="e_caller_gateway"/>
+  <path class="hit" d="M 340 76 L 340 88 L 445 88 L 445 126" data-k="e_caller_auth"/>
+  <path class="hit" d="M 235 184 L 235 224 L 125 224 L 125 278" data-k="e_gateway_orders"/>
+  <path class="hit" d="M 445 184 L 445 232 L 340 232 L 340 278" data-k="e_auth_billing"/>
+  <path class="hit" d="M 210 308 L 253 308" data-k="e_orders_billing"/>
+  <path class="hit" d="M 425 308 L 468 308" data-k="e_billing_store"/>
+  <path class="hit" d="M 340 76 L 340 96" data-k="e_g_caller_entry"/>
+  <path class="hit" d="M 340 198 L 340 248" data-k="e_g_entry_core"/>
   <g class="c-amber" data-k="T1">
-    <circle cx="380" cy="183" r="11"/>
-    <text class="th" x="380" y="183" text-anchor="middle" dominant-baseline="central">T1</text>
+    <circle cx="180" cy="224" r="11"/>
+    <text class="th" x="180" y="224" text-anchor="middle" dominant-baseline="central">T1</text>
+  </g>
+  <g class="c-amber" data-k="T2">
+    <circle cx="392" cy="232" r="11"/>
+    <text class="th" x="392" y="232" text-anchor="middle" dominant-baseline="central">T2</text>
   </g>
 </svg>
 <div class="legend" aria-label="Edge states">
   <span><i class="v"></i>Verified</span><span><i class="p"></i>Partly checked</span>
   <span><i class="u"></i>Not checked</span><span><i class="m"></i>Not moved yet</span>
 </div>
+<p class="terms">Key: T1 and T2 are tensions. HTTP means hypertext transfer protocol. API means application programming interface. SQL means structured query language.</p>
 <section class="detail" aria-live="polite" aria-label="Selected detail">
-  <h3 id="ph"></h3><p id="pb"></p><p id="ps" class="source"></p>
+  <h3 id="ph"></h3><p id="pb"></p><p id="px"></p><p id="pm"></p><p id="ps" class="source"></p>
 </section>
 <script>
 const TABS = {
-  A: {n:'Proposal A', fence:0, x:'Example proposal A. No architecture facts are verified.', s:'Example note A. Unverified.'},
-  B: {n:'Proposal B', fence:1, x:'Example proposal B. No architecture facts are verified.', s:'Example note B. Unverified.'}
+  A: {n:'Proposal A', fence:0, a:'Unverified example: proposal A sends every request through the gateway, and one link is not checked.',
+    x:'Example proposal A. No architecture facts are verified.', s:'Example note A. Unverified.'},
+  B: {n:'Proposal B', fence:1, a:'Unverified example: proposal B moves checks to the auth service, and two tensions stay open.',
+    x:'Example proposal B. No architecture facts are verified.', s:'Example note B. Unverified.'}
 };
-const E = {
-  e_caller_entry: {
-    t:'Caller → Entry', s:{A:'p', B:'m'}, x:'Example caller path. Unverified.',
-    src:{A:'Example caller source A. Unverified.', B:'Example caller source B. Unverified.'}
-  },
-  e_entry_core: {
-    t:'Entry → Core', s:{A:'u', B:'m'},
-    x:{A:'Example link is not checked.', B:'Example link remains pending. No architecture facts are verified.'},
-    src:{A:'Example edge source A. Unverified.', B:'Example edge source B. Unverified.'}
-  }
+const G = {
+  g_entry: {t:'Entry layer', p:'Example group that receives requests. Unverified.', members:['gateway','auth']},
+  g_core: {t:'Core services', p:'Example group that holds the business logic. Unverified.', members:['orders','billing','store']}
 };
 const N = {
-  caller:['Caller','Example client. Unverified.'],
-  entry:['Entry','Example gateway. Unverified.'],
-  core:['Core','Example service. Unverified.']
+  caller: {t:'Caller', p:'Example client that sends requests. Unverified.', x:'Example technical detail for the caller. Unverified.', sp:'Example client', sx:'Example HTTP'},
+  gateway: {t:'Gateway', p:'Example service that takes requests in. Unverified.', x:'Example technical detail for the gateway. Unverified.', sp:'Takes requests in', sx:'Example HTTP edge', g:'g_entry'},
+  auth: {t:'Auth', p:'Example service that checks who the caller is. Unverified.', x:'Example technical detail for auth. Unverified.', sp:'Checks who you are', sx:'Example token check', g:'g_entry'},
+  orders: {t:'Orders', p:'Example service that takes orders. Unverified.', x:'Example technical detail for orders. Unverified.', sp:'Takes orders', sx:'Example order API', g:'g_core',
+    src:'Example orders note. Unverified.'},
+  billing: {t:'Billing', p:'Example service that charges customers. Unverified.', x:'Example technical detail for billing. Unverified.', sp:'Charges customers', sx:'Example payment API', g:'g_core',
+    src:{A:'Example billing note A. Unverified.', B:'Example billing note B. Unverified.'}},
+  store: {t:'Store', p:'Example place that keeps the data. Unverified.', x:'Example technical detail for the store. Unverified.', sp:'Keeps the data', sx:'Example SQL store', g:'g_core'}
 };
-const T = {T1:['T1 · Example source X vs example source Y','Both example sources are unverified and disagree.','The decision remains open.']};
+const E = {
+  e_caller_gateway: {
+    t:'Caller → Gateway', p:'Example client calls the gateway. Unverified.', x:'Example technical detail for this call. Unverified.', s:{A:'v', B:'v'},
+    src:'Example caller source. Unverified.', a:'caller', b:'gateway'
+  },
+  e_caller_auth: {
+    t:'Caller → Auth', p:'Example client calls the auth service. Unverified.', x:'Example technical detail for this call. Unverified.', s:{A:'v', B:'v'},
+    src:'Example auth source. Unverified.', a:'caller', b:'auth'
+  },
+  e_gateway_orders: {
+    t:'Gateway → Orders', p:'Example gateway sends orders on. Unverified.',
+    x:{A:'Example link is partly checked.', B:'Example link remains pending.'}, s:{A:'p', B:'m'},
+    src:{A:'Example link source A. Unverified.', B:'Example link source B. Unverified.'}, a:'gateway', b:'orders'
+  },
+  e_auth_billing: {
+    t:'Auth → Billing', p:'Example auth service tells billing who pays. Unverified.',
+    x:{A:'Example link is not checked.', B:'Example link remains pending.'}, s:{A:'u', B:'m'},
+    src:{A:'Example edge source A. Unverified.', B:'Example edge source B. Unverified.'}, a:'auth', b:'billing'
+  },
+  e_orders_billing: {
+    t:'Orders → Billing', p:'Example orders service asks billing to charge. Unverified.', x:'Example technical detail for this link. Unverified.',
+    s:{A:'v', B:'p'}, src:'Example billing link source. Unverified.', a:'orders', b:'billing'
+  },
+  e_billing_store: {
+    t:'Billing → Store', p:'Example billing service saves its records. Unverified.', x:'Example technical detail for this link. Unverified.',
+    s:{A:'m', B:'m'}, src:'Example store link source. Unverified.', a:'billing', b:'store'
+  },
+  e_g_caller_entry: {
+    t:'Caller → Entry layer', p:'Example summary of calls into the entry layer. Unverified.', a:'caller', b:'g_entry',
+    of:['e_caller_gateway', 'e_caller_auth']
+  },
+  e_g_entry_core: {
+    t:'Entry layer → Core services', p:'Example summary of calls into the core. Unverified.', a:'g_entry', b:'g_core',
+    of:['e_gateway_orders', 'e_auth_billing']
+  }
+};
+const T = {
+  T1: {t:'T1 · Example source X vs example source Y', p:'Two example sources disagree about the gateway. Unverified.',
+    x:'Example technical detail for tension 1. Unverified.', why:'The decision stays open until someone checks both sources.',
+    src:'Example sources X and Y. Unverified.', tabs:['A', 'B']},
+  T2: {t:'T2 · Example source Z vs example source Y', p:'Two example sources disagree about billing. Unverified.',
+    x:'Example technical detail for tension 2. Unverified.', why:'Billing cannot move until someone settles this.',
+    src:'Example sources Z and Y. Unverified.', tabs:['B']}
+};
+const W = [
+  {lv:0, keys:['g_entry', 'g_core', 'e_g_entry_core'], cap:'Start here. Two example groups hold the system, and one link between them needs a check. Unverified.'},
+  {lv:1, keys:['gateway', 'auth', 'e_caller_gateway'], cap:'Zoom in. The entry layer holds a gateway and an auth service. Unverified.'},
+  {lv:1, tab:'B', keys:['T2', 'e_auth_billing'], cap:'Switch to proposal B. A second tension appears at the billing link. Unverified.'},
+  {lv:2, tab:'A', keys:['e_gateway_orders', 'T1'], cap:'Read the detail. Each link shows its state and its source. Unverified.'}
+];
 const S = {
-  v:{c:'#639922',d:'none',l:'Verified',bg:'var(--bg-success)',fg:'var(--text-success)'},
-  p:{c:'#BA7517',d:'7 4',l:'Partly checked',bg:'var(--bg-warning)',fg:'var(--text-warning)'},
-  u:{c:'#E24B4A',d:'2 3',l:'Not checked',bg:'var(--bg-danger)',fg:'var(--text-danger)'},
-  m:{c:'#888780',d:'6 3 1 3',l:'Not moved yet',bg:'var(--surface-1)',fg:'var(--text-secondary)'}
+  v:{d:'none', l:'Verified', bg:'var(--bg-success)', fg:'var(--text-success)'},
+  p:{d:'7 4', l:'Partly checked', bg:'var(--bg-warning)', fg:'var(--text-warning)'},
+  u:{d:'2 3', l:'Not checked', bg:'var(--bg-danger)', fg:'var(--text-danger)'},
+  m:{d:'6 3 1 3', l:'Not moved yet', bg:'var(--surface-1)', fg:'var(--text-secondary)'}
 };
-let tab = Object.keys(TABS)[0];
-const ph = document.getElementById('ph'), pb = document.getElementById('pb'), psrc = document.getElementById('ps');
+const RANK = {v:0, m:1, p:2, u:3};
+let tab = Object.keys(TABS)[0], lv = 0, walk = null;
+const el = id => document.getElementById(id);
+const ph = el('ph'), pb = el('pb'), px = el('px'), pm = el('pm'), psrc = el('ps');
+const ans = el('ans'), tc = el('tc'), btnNext = el('next'), btnBack = el('back');
+const per = v => (v && typeof v === 'object' ? v[tab] : v) || '';
+function stateOf(key) {
+  const edge = E[key];
+  if (!edge.of) return edge.s[tab];
+  return edge.of.map(k => E[k].s[tab]).reduce((w, s) => RANK[s] > RANK[w] ? s : w);
+}
+function boxShown(key, level) {
+  if (G[key]) return true;
+  return !!N[key] && (!N[key].g || level > 0);
+}
+function isVisible(key, level) {
+  if (G[key] || N[key]) return boxShown(key, level);
+  if (E[key]) return E[key].of ? level === 0 : boxShown(E[key].a, level) && boxShown(E[key].b, level);
+  if (T[key]) return level > 0 && T[key].tabs.includes(tab);
+  return key === 'tensions';
+}
+function setVis(node, on, dim) {
+  node.style.opacity = on ? (dim ? '0.25' : '1') : '0';
+  node.style.pointerEvents = on ? 'auto' : 'none';
+  node.setAttribute('aria-hidden', on ? 'false' : 'true');
+  if (node.dataset.k) node.setAttribute('tabindex', on ? '0' : '-1');
+}
 function chip(st) {
   const state = S[st], node = document.createElement('span');
   node.className = 'chip';
@@ -121,49 +298,128 @@ function chip(st) {
   return node;
 }
 function paint() {
+  const dim = key => !!walk && !walk.keys.includes(key);
+  document.querySelectorAll('[data-k]').forEach(node => {
+    const key = node.dataset.k;
+    setVis(node, isVisible(key, lv), dim(key));
+    if (G[key]) node.setAttribute('data-filled', lv === 0 ? 'true' : 'false');
+  });
   for (const key in E) {
-    const state = S[E[key].s[tab]];
-    const line = document.getElementById('v_' + key);
-    line.setAttribute('stroke', state.c);
-    line.setAttribute('stroke-dasharray', state.d);
+    const st = stateOf(key), line = el('v_' + key);
+    line.style.stroke = 'var(--edge-' + st + ')';
+    line.setAttribute('stroke-dasharray', S[st].d);
+    setVis(line, isVisible(key, lv), dim(key));
   }
-  const fence = document.getElementById('fence');
-  if (fence) fence.setAttribute('opacity', TABS[tab].fence ? '1' : '0');
+  for (const key in N) el('s_' + key).textContent = lv === 2 ? N[key].sx : N[key].sp;
+  const fence = el('fence');
+  if (fence) setVis(fence, lv > 0 && !!TABS[tab].fence, dim('fence'));
   document.querySelectorAll('.tabs button').forEach(button =>
     button.setAttribute('aria-selected', button.dataset.tab === tab ? 'true' : 'false'));
+  document.querySelectorAll('[data-lv]').forEach(button =>
+    button.setAttribute('aria-pressed', Number(button.dataset.lv) === lv ? 'true' : 'false'));
+  const open = Object.keys(T).filter(k => T[k].tabs.includes(tab)).length;
+  ans.textContent = TABS[tab].a;
+  tc.textContent = open + ' open ' + (open === 1 ? 'tension' : 'tensions');
+}
+function clearPanel() {
+  ph.textContent = pb.textContent = px.textContent = pm.textContent = psrc.textContent = '';
+}
+function summary() {
+  clearPanel();
   ph.textContent = TABS[tab].n;
   pb.textContent = TABS[tab].x;
   psrc.textContent = TABS[tab].s;
 }
 function show(key) {
-  if (E[key]) {
+  clearPanel();
+  const tech = lv === 2;
+  if (key === 'tensions') {
+    const open = Object.keys(T).filter(k => T[k].tabs.includes(tab));
+    ph.textContent = 'Open tensions in ' + TABS[tab].n;
+    pm.textContent = open.map(k => T[k].t + ': ' + T[k].why).join('\n');
+  } else if (G[key]) {
+    ph.textContent = G[key].t;
+    pb.textContent = G[key].p;
+    pm.textContent = 'Members: ' + G[key].members.map(k => N[k].t).join(', ');
+  } else if (E[key]) {
     const edge = E[key];
     ph.textContent = edge.t + ' ';
-    ph.append(chip(edge.s[tab]));
-    pb.textContent = typeof edge.x === 'string' ? edge.x : edge.x[tab];
-    psrc.textContent = edge.src[tab];
-    return;
-  }
-  if (T[key]) {
-    ph.textContent = T[key][0];
-    pb.textContent = T[key][1];
-    psrc.textContent = 'Why it matters: ' + T[key][2];
-    return;
-  }
-  if (N[key]) {
-    ph.textContent = N[key][0];
-    pb.textContent = N[key][1];
-    psrc.textContent = TABS[tab].s;
+    ph.append(chip(stateOf(key)));
+    pb.textContent = edge.p;
+    if (edge.of) pm.textContent = 'Summarises: ' + edge.of.map(k => E[k].t).join(', ');
+    else if (tech) { px.textContent = per(edge.x); psrc.textContent = per(edge.src); }
+  } else if (T[key]) {
+    ph.textContent = T[key].t;
+    pb.textContent = T[key].p;
+    if (tech) {
+      px.textContent = per(T[key].x);
+      pm.textContent = 'Why it matters: ' + T[key].why;
+      psrc.textContent = per(T[key].src);
+    }
+  } else if (N[key]) {
+    ph.textContent = N[key].t;
+    pb.textContent = N[key].p;
+    if (tech) { px.textContent = per(N[key].x); psrc.textContent = per(N[key].src) || TABS[tab].s; }
   }
 }
+function applyStep() {
+  const step = W[walk.i];
+  lv = step.lv;
+  tab = walk.tab0;
+  for (let j = 0; j <= walk.i; j++) if (W[j].tab) tab = W[j].tab;
+  walk.keys = step.keys;
+  paint();
+  clearPanel();
+  ph.textContent = 'Step ' + (walk.i + 1) + ' of ' + W.length;
+  pb.textContent = step.cap;
+}
+function setWalking(on) {
+  btnNext.disabled = btnBack.disabled = !on;
+}
+function endWalk(restore) {
+  if (!walk) return;
+  if (restore) { tab = walk.tab0; lv = walk.lv0; }
+  walk = null;
+  setWalking(false);
+  paint();
+  summary();
+}
+function choose(nextTab, nextLv) {
+  endWalk(false);
+  if (nextTab) tab = nextTab;
+  if (nextLv !== undefined) lv = nextLv;
+  paint();
+  summary();
+}
 document.querySelectorAll('[data-k]').forEach(node => {
-  node.setAttribute('tabindex', '0');
   node.addEventListener('mouseenter', () => show(node.dataset.k));
   node.addEventListener('focus', () => show(node.dataset.k));
 });
 document.querySelectorAll('.tabs button').forEach(button =>
-  button.addEventListener('click', () => { tab = button.dataset.tab; paint(); }));
+  button.addEventListener('click', () => choose(button.dataset.tab)));
+document.querySelectorAll('[data-lv]').forEach(button =>
+  button.addEventListener('click', () => choose(null, Number(button.dataset.lv))));
+el('walk').addEventListener('click', () => {
+  // A restart keeps the view that was active before the first start.
+  walk = {i:0, tab0: walk ? walk.tab0 : tab, lv0: walk ? walk.lv0 : lv, keys:[]};
+  setWalking(true);
+  applyStep();
+});
+btnNext.addEventListener('click', () => {
+  if (!walk) return;
+  if (walk.i >= W.length - 1) endWalk(true);
+  else { walk.i++; applyStep(); }
+});
+btnBack.addEventListener('click', () => {
+  if (walk && walk.i > 0) { walk.i--; applyStep(); }
+});
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  if (walk) endWalk(true);
+  else summary();
+});
 paint();
+summary();
 </script>
 </body>
 </html>

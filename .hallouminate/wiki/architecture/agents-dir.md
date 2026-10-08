@@ -121,6 +121,17 @@ The reference explains layout, data, and geometry without duplicating executable
 This split permits direct browser checks and avoids reconstructing required DOM elements and styles.
 Recursive skill deployment carries nested assets without another registry entry.[^skill-asset-copy]
 
+The diagram skill uses progressive disclosure (2026-10-08).
+These decisions hold:
+
+- Three levels: L0 Overview (Exec), L1 Map (PM), L2 Detail (Eng). L0 reuses L1 geometry through semantic zoom, so no level relayouts. Reason: one geometry keeps the diagram stable when the reader changes level.[^diagram-asset]
+- Hidden elements use `opacity: 0`, `pointer-events: none`, `tabindex=-1`, and `aria-hidden=true`, never `display: none`. Reason: the skill already bans `display: none` during streaming, and the attributes keep hidden items out of the tab order.[^diagram-asset]
+- Group containers (`G`) are not nodes. A group edge (`of`) shows at L0 only, takes its members' worst state, and carries no source. Reason: a summary edge must never look better than its members.[^diagram-asset]
+- An answer strip holds one sentence of at most 20 words per tab. This lifts the no-prose rule for that sentence and the walkthrough captions. Reason: a reader needs the conclusion before the detail.[^diagram-asset]
+- `scripts/check-widget.mjs` enforces word, sentence, and contrast limits. The agent gets 2 fix rounds, then reports what remains. Reason: a bounded loop stops endless rewrites and still shows the open findings.[^diagram-asset]
+- Every colour is a CSS custom property. Light values sit in `:root` and dark values sit under `prefers-color-scheme: dark`. Reason: one theme source lets the script check contrast in both schemes.[^diagram-asset]
+- The check script is original code. It adopts ideas from answer-me-with-html, not its code. Reason: the script is written fresh, so no MIT code or licence notice enters the repo.[^diagram-asset]
+
 [^diagram-asset]: `skills/interactive-system-diagram/assets/widget-scaffold.html`; `skills/interactive-system-diagram/references/widget-scaffold.md`; `skills/interactive-system-diagram/SKILL.md`; PR #1209 artifact extraction, 2026-10-08.
 [^skill-asset-copy]: `.sync-lib.sh:389-413,613`.
 
