@@ -28,7 +28,8 @@ Ask for proposals only when the user wants a comparison.
 ## Flow
 
 1. **Ground the facts.** Collect nodes, edges, proposals, and tensions from code, tickets, and design docs.
-   Give each edge a state for every tab, and give each state a source (file:line, doc, ticket, or command output).
+   Give each edge a state for every tab.
+   Give each state a source (file:line, doc, ticket, or command output).
    Give each tension a number, the two sources that conflict, and what the conflict blocks.
    Done when every edge state and every tension cites a source, and no excluded system appears.
 2. **Cut to the budget.** Keep at most 12 nodes in three or four tiers: callers, entry layer, core, and dependencies.
@@ -40,7 +41,8 @@ Ask for proposals only when the user wants a comparison.
    Read the `diagram` and `interactive` modules completely before the first widget call.
    Otherwise, write one self-contained HTML file in the session folder and open it in a browser.
    Done when the guidance is read, or the HTML file path is chosen.
-4. **Build the widget.** Read `references/widget-scaffold.md` and follow its layout rules, data model, and script.
+4. **Build the widget.** Read `references/widget-scaffold.md` for layout and geometry rules.
+   Copy `assets/widget-scaffold.html` as the working artifact and replace its unverified example data with sourced facts.
    Encode tier by node colour, edge state by colour plus dash pattern, and tensions as amber `T<n>` badges.
    Done when every `data-k` element has an entry in the data model and every edge has a state for every tab.
 5. **Check the geometry.** Run the geometry checklist in `references/widget-scaffold.md`.
@@ -64,4 +66,5 @@ Ask for proposals only when the user wants a comparison.
 
 ## References
 
-- `references/widget-scaffold.md` — read at step 4; the layout rules, data model, script, and geometry checklist.
+- `references/widget-scaffold.md` — read at step 4; layout, data, embedding, and geometry rules.
+- `assets/widget-scaffold.html` — copy at step 4; complete standalone example with one SVG and local behavior.

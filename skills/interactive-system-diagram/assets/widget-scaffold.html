@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Example system comparison</title>
+<style>
+:root {
+  --bg-accent: #e8eefb; --text-accent: #173d85;
+  --bg-success: #e8f2d9; --text-success: #315b08;
+  --bg-warning: #fff0d2; --text-warning: #754300;
+  --bg-danger: #fde8e8; --text-danger: #8f2321;
+  --surface-1: #f2f1ee; --text-secondary: #595852;
+}
+* { box-sizing: border-box; }
+body { max-width: 720px; margin: 0 auto; padding: 20px; color: #222; background: #fff; font: 15px/1.45 system-ui, sans-serif; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.tabs { display: flex; gap: 8px; margin: 0 0 12px; }
+.tabs button { padding: 8px 14px; border: 1px solid #bbb; border-radius: 6px; background: #fff; color: #222; cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--bg-accent); color: var(--text-accent); border-color: currentColor; }
+svg { width: 100%; height: auto; display: block; background: #fafaf9; border: 1px solid #ddd; border-radius: 8px; }
+.c-external rect { fill: #e9e9e6; stroke: #777; }
+.c-entry rect { fill: #deebfa; stroke: #4677aa; }
+.c-core rect { fill: #dcefe7; stroke: #34805e; }
+.c-amber circle { fill: #ffe0a3; stroke: #9c6300; }
+.t { font: 600 15px system-ui, sans-serif; fill: #222; }
+.ts { font: 12px system-ui, sans-serif; fill: #555; }
+.th { font: 600 12px system-ui, sans-serif; fill: #613800; }
+[data-k] { cursor: pointer; }
+[data-k]:focus-visible { outline: 3px solid #174ea6; outline-offset: 3px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 12px 0; font-size: 13px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { display: inline-block; width: 25px; border-top: 3px solid; }
+.legend .v { border-color: #639922; }
+.legend .p { border-color: #BA7517; border-top-style: dashed; }
+.legend .u { border-color: #E24B4A; border-top-style: dotted; }
+.legend .m { border-color: #888780; border-top-style: dashed; }
+.detail { padding: 12px 14px; border: 1px solid #ddd; border-radius: 8px; min-height: 110px; }
+.detail h3 { margin: 0 0 5px; font-size: 16px; }
+.detail p { margin: 4px 0; }
+.source { color: #555; font-size: 13px; }
+.chip { display: inline-block; margin-left: 4px; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h2 class="sr-only">Example comparison of two unverified system proposals</h2>
+<div class="tabs" role="tablist" aria-label="Proposals">
+  <button type="button" role="tab" data-tab="A">Proposal A</button>
+  <button type="button" role="tab" data-tab="B">Proposal B</button>
+</div>
+<svg viewBox="0 0 680 320" role="img" aria-label="Example path from caller through entry to core">
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#777"/></marker></defs>
+  <g class="c-external" data-k="caller">
+    <rect x="275" y="20" width="130" height="56" rx="8"/>
+    <text class="t" x="340" y="39" text-anchor="middle" dominant-baseline="central">Caller</text>
+    <text class="ts" x="340" y="58" text-anchor="middle" dominant-baseline="central">Example client</text>
+  </g>
+  <g class="c-entry" data-k="entry">
+    <rect x="275" y="100" width="130" height="56" rx="8"/>
+    <text class="t" x="340" y="119" text-anchor="middle" dominant-baseline="central">Entry</text>
+    <text class="ts" x="340" y="138" text-anchor="middle" dominant-baseline="central">Example gateway</text>
+  </g>
+  <rect id="fence" x="245" y="182" width="190" height="118" rx="12" fill="none" stroke="#888" stroke-dasharray="6 4" opacity="0"/>
+  <g class="c-core" data-k="core">
+    <rect x="275" y="210" width="130" height="56" rx="8"/>
+    <text class="t" x="340" y="229" text-anchor="middle" dominant-baseline="central">Core</text>
+    <text class="ts" x="340" y="248" text-anchor="middle" dominant-baseline="central">Example service</text>
+  </g>
+  <path id="v_e_caller_entry" d="M 340 76 L 340 98" fill="none" stroke="#888" stroke-width="2" marker-end="url(#arrow)"/>
+  <path id="v_e_entry_core" d="M 340 156 L 340 208" fill="none" stroke="#888" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 340 76 L 340 98" fill="none" stroke="transparent" stroke-width="14" data-k="e_caller_entry"/>
+  <path d="M 340 156 L 340 208" fill="none" stroke="transparent" stroke-width="14" data-k="e_entry_core"/>
+  <g class="c-amber" data-k="T1">
+    <circle cx="380" cy="183" r="11"/>
+    <text class="th" x="380" y="183" text-anchor="middle" dominant-baseline="central">T1</text>
+  </g>
+</svg>
+<div class="legend" aria-label="Edge states">
+  <span><i class="v"></i>Verified</span><span><i class="p"></i>Partly checked</span>
+  <span><i class="u"></i>Not checked</span><span><i class="m"></i>Not moved yet</span>
+</div>
+<section class="detail" aria-live="polite" aria-label="Selected detail">
+  <h3 id="ph"></h3><p id="pb"></p><p id="ps" class="source"></p>
+</section>
+<script>
+const TABS = {
+  A: {n:'Proposal A', fence:0, x:'Example proposal A. No architecture facts are verified.', s:'Example note A. Unverified.'},
+  B: {n:'Proposal B', fence:1, x:'Example proposal B. No architecture facts are verified.', s:'Example note B. Unverified.'}
+};
+const E = {
+  e_caller_entry: {
+    t:'Caller → Entry', s:{A:'p', B:'m'}, x:'Example caller path. Unverified.',
+    src:{A:'Example caller source A. Unverified.', B:'Example caller source B. Unverified.'}
+  },
+  e_entry_core: {
+    t:'Entry → Core', s:{A:'u', B:'m'},
+    x:{A:'Example link is not checked.', B:'Example link remains pending. No architecture facts are verified.'},
+    src:{A:'Example edge source A. Unverified.', B:'Example edge source B. Unverified.'}
+  }
+};
+const N = {
+  caller:['Caller','Example client. Unverified.'],
+  entry:['Entry','Example gateway. Unverified.'],
+  core:['Core','Example service. Unverified.']
+};
+const T = {T1:['T1 · Example source X vs example source Y','Both example sources are unverified and disagree.','The decision remains open.']};
+const S = {
+  v:{c:'#639922',d:'none',l:'Verified',bg:'var(--bg-success)',fg:'var(--text-success)'},
+  p:{c:'#BA7517',d:'7 4',l:'Partly checked',bg:'var(--bg-warning)',fg:'var(--text-warning)'},
+  u:{c:'#E24B4A',d:'2 3',l:'Not checked',bg:'var(--bg-danger)',fg:'var(--text-danger)'},
+  m:{c:'#888780',d:'6 3 1 3',l:'Not moved yet',bg:'var(--surface-1)',fg:'var(--text-secondary)'}
+};
+let tab = Object.keys(TABS)[0];
+const ph = document.getElementById('ph'), pb = document.getElementById('pb'), psrc = document.getElementById('ps');
+function chip(st) {
+  const state = S[st], node = document.createElement('span');
+  node.className = 'chip';
+  node.style.background = state.bg;
+  node.style.color = state.fg;
+  node.textContent = state.l;
+  return node;
+}
+function paint() {
+  for (const key in E) {
+    const state = S[E[key].s[tab]];
+    const line = document.getElementById('v_' + key);
+    line.setAttribute('stroke', state.c);
+    line.setAttribute('stroke-dasharray', state.d);
+  }
+  const fence = document.getElementById('fence');
+  if (fence) fence.setAttribute('opacity', TABS[tab].fence ? '1' : '0');
+  document.querySelectorAll('.tabs button').forEach(button =>
+    button.setAttribute('aria-selected', button.dataset.tab === tab ? 'true' : 'false'));
+  ph.textContent = TABS[tab].n;
+  pb.textContent = TABS[tab].x;
+  psrc.textContent = TABS[tab].s;
+}
+function show(key) {
+  if (E[key]) {
+    const edge = E[key];
+    ph.textContent = edge.t + ' ';
+    ph.append(chip(edge.s[tab]));
+    pb.textContent = typeof edge.x === 'string' ? edge.x : edge.x[tab];
+    psrc.textContent = edge.src[tab];
+    return;
+  }
+  if (T[key]) {
+    ph.textContent = T[key][0];
+    pb.textContent = T[key][1];
+    psrc.textContent = 'Why it matters: ' + T[key][2];
+    return;
+  }
+  if (N[key]) {
+    ph.textContent = N[key][0];
+    pb.textContent = N[key][1];
+    psrc.textContent = TABS[tab].s;
+  }
+}
+document.querySelectorAll('[data-k]').forEach(node => {
+  node.setAttribute('tabindex', '0');
+  node.addEventListener('mouseenter', () => show(node.dataset.k));
+  node.addEventListener('focus', () => show(node.dataset.k));
+});
+document.querySelectorAll('.tabs button').forEach(button =>
+  button.addEventListener('click', () => { tab = button.dataset.tab; paint(); }));
+paint();
+</script>
+</body>
+</html>
