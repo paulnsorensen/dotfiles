@@ -15,7 +15,8 @@ The scaffold comes from a staging-topology diagram that compared three authentic
 - Give parallel L-shapes different `ymid` values so that their horizontal segments do not overlap.
 - Stop each arrow 2 px before the target edge.
 - Colour nodes by tier with `c-*` classes: gray for external actors, one ramp for the entry layer, one ramp for internal services.
-- Draw a fence or boundary overlay as a dashed rect with `opacity="0"`, then show it per tab from the script.
+- Draw a fence or boundary overlay as a dashed rect with `id="fence"` and `opacity="0"`, then show it per tab from the script.
+  Omit the rect when no tab needs a fence; `paint()` skips a missing `#fence`.
 
 ## Edge states
 
@@ -57,21 +58,22 @@ const T = { T1: ['T1 · Source X vs source Y', 'The clash in two sentences.', 'W
 const S={v:{c:'#639922',d:'none',l:'Verified',bg:'var(--bg-success)',fg:'var(--text-success)'},p:{c:'#BA7517',d:'7 4',l:'Partly checked',bg:'var(--bg-warning)',fg:'var(--text-warning)'},u:{c:'#E24B4A',d:'2 3',l:'Not checked',bg:'var(--bg-danger)',fg:'var(--text-danger)'},m:{c:'#888780',d:'6 3 1 3',l:'Not moved yet',bg:'var(--surface-1)',fg:'var(--text-secondary)'}};
 let tab='today';
 const ph=document.getElementById('ph'),pb=document.getElementById('pb'),psrc=document.getElementById('ps');
-function chip(st){const s=S[st];return '<span class="chip" style="background:'+s.bg+';color:'+s.fg+'">'+s.l+'</span>';}
+function chip(st){const s=S[st],c=document.createElement('span');c.className='chip';c.style.background=s.bg;c.style.color=s.fg;c.textContent=s.l;return c;}
 function paint(){for(const k in E){const st=E[k].s[tab],el=document.getElementById('v_'+k);el.setAttribute('stroke',S[st].c);el.setAttribute('stroke-dasharray',S[st].d);}
- document.getElementById('fence').setAttribute('opacity',TABS[tab].fence?'1':'0');
+ const f=document.getElementById('fence');if(f)f.setAttribute('opacity',TABS[tab].fence?'1':'0');
  document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===tab?'true':'false'));
  ph.textContent=TABS[tab].n;pb.textContent=TABS[tab].x;psrc.textContent=TABS[tab].s;}
-function show(k){if(E[k]){const e=E[k];ph.innerHTML=e.t+' '+chip(e.s[tab]);pb.textContent=typeof e.x==='string'?e.x:e.x[tab];return;}
+function show(k){const src=TABS[tab].s;
+ if(E[k]){const e=E[k];ph.textContent=e.t+' ';ph.append(chip(e.s[tab]));pb.textContent=typeof e.x==='string'?e.x:e.x[tab];psrc.textContent=src;return;}
  if(T[k]){ph.textContent=T[k][0];pb.textContent=T[k][1];psrc.textContent='Why it matters: '+T[k][2];return;}
- if(N[k]){ph.textContent=N[k][0];pb.textContent=N[k][1];}}
+ if(N[k]){ph.textContent=N[k][0];pb.textContent=N[k][1];psrc.textContent=src;}}
 document.querySelectorAll('[data-k]').forEach(el=>{el.setAttribute('tabindex','0');el.addEventListener('mouseenter',()=>show(el.dataset.k));el.addEventListener('focus',()=>show(el.dataset.k));});
 document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',()=>{tab=b.dataset.tab;paint();}));
 paint();
 </script>
 ```
 
-The tab bar is a row of `<button role="tab" data-tab="…">` elements above the SVG.
+The tab bar is a `<div class="tabs" role="tablist">` above the SVG, with one `<button role="tab" data-tab="…">` for each tab.
 The selected tab uses `background: var(--bg-accent)` and `color: var(--text-accent)`.
 The first element of the widget is a visually hidden `<h2 class="sr-only">` with a one-sentence summary.
 

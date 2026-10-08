@@ -60,7 +60,7 @@ Ask for proposals only when the user wants a comparison.
 - It never invents an edge state or a tension; an unverified claim says "unverified" in its hover text.
 - It never hides content with `display: none` or tabs during streaming; tabs restyle one SVG after the script runs.
 - It never uses `position: fixed`, nested scrolling, or prose and tables inside the widget.
-- It never draws more than 12 nodes; split into an overview and a detail diagram instead.
+- It never draws more than 12 nodes; it cuts nodes or merges them into a group box instead (step 2).
 
 ## References
 
