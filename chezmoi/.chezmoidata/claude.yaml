@@ -289,6 +289,7 @@ claude:
     - git-risk
     - grok-codebase
     - harness-doctor
+    - harness-climb
     - hill-climb
     - interactive-system-diagram
     - land
