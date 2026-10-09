@@ -41,7 +41,7 @@ body { max-width: 720px; margin: 0 auto; padding: 20px; color: var(--fg); backgr
 .bar { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0 0 12px; }
 .tabs, .levels, .walkbar { display: flex; flex-wrap: wrap; gap: 8px; }
 button { padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; cursor: pointer; }
-button[aria-selected="true"], button[aria-pressed="true"] { background: var(--bg-accent); color: var(--text-accent); border-color: currentColor; }
+button[aria-pressed="true"] { background: var(--bg-accent); color: var(--text-accent); border-color: currentColor; }
 button:disabled { cursor: default; opacity: 0.6; }
 .answer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; font-weight: 600; }
 .answer p { margin: 0; }
@@ -90,9 +90,9 @@ svg { width: 100%; height: auto; display: block; background: var(--svg-bg); bord
 <body>
 <h2 class="sr-only">Example comparison of two unverified system proposals</h2>
 <div class="bar">
-  <div class="tabs" role="tablist" aria-label="Proposals">
-    <button type="button" role="tab" data-tab="A">Proposal A</button>
-    <button type="button" role="tab" data-tab="B">Proposal B</button>
+  <div class="tabs" role="group" aria-label="Proposals">
+    <button type="button" data-tab="A" aria-pressed="false">Proposal A</button>
+    <button type="button" data-tab="B" aria-pressed="false">Proposal B</button>
   </div>
   <div class="levels" role="group" aria-label="Detail level">
     <button type="button" data-lv="0" aria-pressed="false">Overview · Exec</button>
@@ -109,7 +109,7 @@ svg { width: 100%; height: auto; display: block; background: var(--svg-bg); bord
   <p id="ans"></p>
   <span id="tc" class="chip tc" data-k="tensions"></span>
 </div>
-<svg viewBox="0 0 680 370" role="img" aria-label="Example system: a caller, an entry layer, and core services">
+<svg viewBox="0 0 680 370" role="group" aria-label="Example system: a caller, an entry layer, and core services">
   <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>
   <g class="grp" data-k="g_entry">
     <rect x="70" y="98" width="540" height="100" rx="12"/>
@@ -314,7 +314,7 @@ function paint() {
   const fence = el('fence');
   if (fence) setVis(fence, lv > 0 && !!TABS[tab].fence, dim('fence'));
   document.querySelectorAll('.tabs button').forEach(button =>
-    button.setAttribute('aria-selected', button.dataset.tab === tab ? 'true' : 'false'));
+    button.setAttribute('aria-pressed', button.dataset.tab === tab ? 'true' : 'false'));
   document.querySelectorAll('[data-lv]').forEach(button =>
     button.setAttribute('aria-pressed', Number(button.dataset.lv) === lv ? 'true' : 'false'));
   const open = Object.keys(T).filter(k => T[k].tabs.includes(tab)).length;

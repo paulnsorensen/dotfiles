@@ -41,18 +41,45 @@ try {
   process.exit(2);
 }
 
-function loadModel(source) {
+// Stub only the ids in the markup, so a missing id throws in paint() as it does in a browser.
+function loadModel(source, ids) {
   const noop = () => {};
   const stub = () => ({
     dataset: {}, style: {}, children: [], textContent: '', disabled: false,
     setAttribute: noop, addEventListener: noop, append: noop,
   });
   const document = {
-    getElementById: stub, createElement: stub, querySelectorAll: () => [], addEventListener: noop,
+    getElementById: id => (ids.has(id) ? stub() : null),
+    createElement: stub, querySelectorAll: () => [], addEventListener: noop,
   };
   const context = vm.createContext({ document }, { microtaskMode: 'afterEvaluate' });
   vm.runInContext(source, context, { timeout: 1000 });
-  return vm.runInContext('({ TABS, G, N, E, T, W })', context);
+  const model = vm.runInContext('({ TABS, G, N, E, T, W, S })', context);
+  // Paint every tab, not only the first.
+  const paintAll = () => {
+    for (const key of Object.keys(model.TABS)) {
+      vm.runInContext(`tab = ${JSON.stringify(key)}; paint();`, context, { timeout: 1000 });
+    }
+    vm.runInContext(`tab = Object.keys(TABS)[0];`, context);
+  };
+  return { model, paintAll };
+}
+
+// Every non-group edge needs a state that exists in S for every tab.
+function checkStates(model) {
+  let ok = true;
+  for (const [name, edge] of Object.entries(model.E)) {
+    if (edge.of) continue;
+    for (const tabKey of Object.keys(model.TABS)) {
+      const state = edge.s?.[tabKey];
+      if (!Object.hasOwn(model.S, state ?? '')) {
+        ok = false;
+        report(name, 'edge-state', `no valid state for tab ${tabKey} (${state === undefined ? 'missing' : JSON.stringify(state)})`,
+          `set E.${name}.s.${tabKey} to one of ${Object.keys(model.S).join(', ')}`);
+      }
+    }
+  }
+  return ok;
 }
 
 // A period after a common abbreviation does not end a sentence.
@@ -190,9 +217,13 @@ function checkContrast(css) {
 const scriptMatch = html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/i);
 if (scriptMatch) {
   try {
-    checkText(loadModel(scriptMatch[1]));
+    const markup = html.slice(0, scriptMatch.index);
+    const ids = new Set([...markup.matchAll(/\bid\s*=\s*["']([^"']*)["']/g)].map(m => m[1]));
+    const { model, paintAll } = loadModel(scriptMatch[1], ids);
+    checkText(model);
+    if (checkStates(model)) paintAll();
   } catch (error) {
-    report('script', 'load', `the widget script fails to run: ${error.message}`, 'fix the script error, or remove DOM calls that check-widget does not stub');
+    report('script', 'load', `the widget script fails to run: ${error.message}`, 'fix the script error, add the missing element id, or remove DOM calls that check-widget does not stub');
   }
 } else {
   report('script', 'load', 'no inline script found', 'add the widget script');

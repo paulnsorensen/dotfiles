@@ -131,11 +131,13 @@ These decisions hold:
 - `scripts/check-widget.mjs` enforces word, sentence, and contrast limits. The agent gets 2 fix rounds, then reports what remains. Reason: a bounded loop stops endless rewrites and still shows the open findings.[^diagram-asset]
 - Every colour is a CSS custom property. Light values sit in `:root` and dark values sit under `prefers-color-scheme: dark`. Reason: one theme source lets the script check contrast in both schemes.[^diagram-asset]
 - The check script is original code. It adopts ideas from answer-me-with-html, not its code. Reason: the script is written fresh, so no MIT code or licence notice enters the repo.[^diagram-asset]
+- Proposal and level switches are plain button groups that use `aria-pressed`, not tab roles. The SVG uses `role="group"`, not `role="img"`. Reason: one shared SVG has no tabpanel, and `role="img"` makes the focusable nodes inside it presentational.[^diagram-asset]
+- `check-widget.mjs` stubs only the element ids present in the markup, paints every tab, and requires a valid state for every tab on each non-group edge. Reason: a missing id or tab state otherwise passes the check and fails in the browser.[^diagram-asset]
 
-[^diagram-asset]: `skills/interactive-system-diagram/assets/widget-scaffold.html`; `skills/interactive-system-diagram/references/widget-scaffold.md`; `skills/interactive-system-diagram/SKILL.md`; PR #1209 artifact extraction, 2026-10-08.
+[^diagram-asset]: `skills/interactive-system-diagram/assets/widget-scaffold.html`; `skills/interactive-system-diagram/references/widget-scaffold.md`; `skills/interactive-system-diagram/SKILL.md`; progressive-disclosure decisions from PR #1217, 2026-10-08; asset and reference split from PR #1209 artifact extraction.
 [^skill-asset-copy]: `.sync-lib.sh:389-413,613`.
 
-*Source: PR #1209 artifact extraction and recursive skill deployment · Updated: 2026-10-08 · Supersedes: none*
+*Source: PR #1217 progressive disclosure, PR #1209 artifact extraction, and recursive skill deployment · Updated: 2026-10-08 · Supersedes: none*
 
 #### User-only skills need a Codex sidecar (2026-09-12)
 

@@ -24,7 +24,9 @@ for (const id of ['ph', 'pb', 'px', 'pm', 'ps', 'fence', 'ans', 'tc', 'walk', 'n
 for (const key of ['caller', 'gateway', 'orders', 'g_entry', 'g_core', 'e_gateway_orders', 'e_g_entry_core', 'T1', 'tensions']) {
   assert.match(html, new RegExp('data-k="' + key + '"'));
 }
-assert.match(html, /role="tablist"/);
+assert.doesNotMatch(html, /role="(?:tablist|tab)"|aria-selected/);
+assert.match(html, /<svg\b[^>]*role="group"[^>]*aria-label=/);
+assert.doesNotMatch(html, /role="img"/);
 assert.match(html, /aria-live="polite"/);
 assert.match(html, /--bg-success:/);
 assert.match(html, /--text-danger:/);
@@ -36,7 +38,8 @@ NODE
     vm_run <<'NODE'
 const env = load();
 const {ph, pb, ps} = env.panel();
-assert.equal(env.tabEls[0].attrs['aria-selected'], 'true');
+assert.equal(env.tabEls[0].attrs['aria-pressed'], 'true');
+assert.equal(env.tabEls[1].attrs['aria-pressed'], 'false');
 assert.equal(env.id('v_e_auth_billing').style.stroke, 'var(--edge-u)');
 assert.equal(env.id('fence').style.opacity, '0');
 assert.equal(env.keys.caller.attrs.tabindex, '0');
@@ -50,7 +53,8 @@ assert.match(env.panel().pm.textContent, /Why it matters:/);
 env.focus('gateway');
 assert.equal(ps.textContent, 'Example note A. Unverified.');
 env.tab('B');
-assert.equal(env.tabEls[1].attrs['aria-selected'], 'true');
+assert.equal(env.tabEls[1].attrs['aria-pressed'], 'true');
+assert.equal(env.tabEls[0].attrs['aria-pressed'], 'false');
 assert.equal(env.id('v_e_auth_billing').style.stroke, 'var(--edge-m)');
 assert.equal(env.id('v_e_auth_billing').attrs['stroke-dasharray'], '6 3 1 3');
 assert.equal(env.id('fence').style.opacity, '1');
@@ -63,7 +67,7 @@ assert.equal(ph.textContent, '<img src=x onerror=alert(1)>');
 assert.equal(ph.children.length, 0);
 assert.equal(ps.textContent, 'Example note B. Unverified.');
 const noFence = load(['fence']);
-assert.equal(noFence.tabEls[0].attrs['aria-selected'], 'true');
+assert.equal(noFence.tabEls[0].attrs['aria-pressed'], 'true');
 NODE
 }
 
@@ -666,4 +670,29 @@ NODE
     run node "$CHECK" "$FIXTURE"
     [[ "$status" -eq 1 ]]
     [[ "$output" == *"TABS.A.a [plain-words] the field is object, not a string"* ]] || { echo "$output"; return 1; }
+}
+
+@test "CURE3-1: check-widget fails a scaffold copy with a missing element id or a missing tab state" {
+    run node "$CHECK" "$ASSET"
+    [[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+
+    fixture 'id="s_store"' 'id="x_store"'
+    run node "$CHECK" "$FIXTURE"
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"script [load]"* ]] || { echo "$output"; return 1; }
+
+    fixture 'id="v_e_billing_store"' 'id="x_e_billing_store"'
+    run node "$CHECK" "$FIXTURE"
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"script [load]"* ]] || { echo "$output"; return 1; }
+
+    fixture "s:{A:'m', B:'m'}" "s:{A:'m'}"
+    run node "$CHECK" "$FIXTURE"
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"e_billing_store [edge-state] no valid state for tab B"* ]] || { echo "$output"; return 1; }
+
+    fixture "s:{A:'m', B:'m'}" "s:{A:'m', B:'zz'}"
+    run node "$CHECK" "$FIXTURE"
+    [[ "$status" -eq 1 ]]
+    [[ "$output" == *"e_billing_store [edge-state] no valid state for tab B"* ]] || { echo "$output"; return 1; }
 }
