@@ -696,3 +696,13 @@ NODE
     [[ "$status" -eq 1 ]]
     [[ "$output" == *"e_billing_store [edge-state] no valid state for tab B"* ]] || { echo "$output"; return 1; }
 }
+
+@test "CURE4-1: check-widget finds the script and style when end tags carry whitespace" {
+    fixture '</script>' '</script >'
+    run node "$CHECK" "$FIXTURE"
+    [[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+
+    fixture '</style>' '</style >'
+    run node "$CHECK" "$FIXTURE"
+    [[ "$status" -eq 0 ]] || { echo "$output"; return 1; }
+}

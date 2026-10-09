@@ -214,7 +214,8 @@ function checkContrast(css) {
   }
 }
 
-const scriptMatch = html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/i);
+// End tags can carry whitespace or junk before '>' (`</script >`), as browsers accept.
+const scriptMatch = html.match(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/i);
 if (scriptMatch) {
   try {
     const markup = html.slice(0, scriptMatch.index);
@@ -228,7 +229,7 @@ if (scriptMatch) {
 } else {
   report('script', 'load', 'no inline script found', 'add the widget script');
 }
-checkContrast([...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map(m => m[1]).join('\n'));
+checkContrast([...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\b[^>]*>/gi)].map(m => m[1]).join('\n'));
 
 if (findings.length) {
   console.log(findings.join('\n'));
