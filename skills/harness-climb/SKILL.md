@@ -71,7 +71,7 @@ The gate files live in the tracked directory `harness-climb/gates/`. Each file i
 ## Guardrails
 
 - One component has one unmeasured merged candidate at a time.
-- A pin bump for `claude-code` or `codex` fails CI while a soak window is open. Only the `harness-climb/soak-override` label passes it.
+- A pin bump for `claude-code` or `codex` fails CI while a soak window is open. Only the `harness-climb/soak-override` label passes it. To override a hold, add the `harness-climb/soak-override` label, then re-run the CI workflow.
 - The skill never merges, never syncs, and never reverts itself.
 - Tokens are a cost, not a guard. A cheaper equal result is `keep-cheaper`.
 
