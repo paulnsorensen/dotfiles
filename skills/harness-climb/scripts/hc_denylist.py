@@ -38,11 +38,6 @@ def text_blocks(raw: Any) -> list[str]:
     return []
 
 
-def flatten_content(raw: Any) -> str:
-    """Prompt text from message content: a string, or the text blocks of an array."""
-    return "\n".join(text_blocks(raw))
-
-
 def prompt_blocks(raw: Any) -> list[str]:
     """The text blocks of message content that a user wrote."""
     return [b for b in text_blocks(raw) if b.strip() and not is_injected(b)]

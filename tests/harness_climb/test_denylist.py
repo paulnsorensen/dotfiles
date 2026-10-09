@@ -82,15 +82,15 @@ class SelfEditCritic(CriticCase):
 
 
 class PromptSources(unittest.TestCase):
-    def test_flattenContent_collectsTextBlocksOnly(self) -> None:
+    def test_textBlocks_collectsTextBlocksOnly(self) -> None:
         blocks = [
             {"type": "text", "text": "alpha"},
             {"type": "tool_result", "text": "skip"},
             {"type": "input_text", "text": "beta"},
         ]
-        self.assertEqual(hc_denylist.flatten_content(blocks), "alpha\nbeta")
-        self.assertEqual(hc_denylist.flatten_content("plain"), "plain")
-        self.assertEqual(hc_denylist.flatten_content(None), "")
+        self.assertEqual(hc_denylist.text_blocks(blocks), ["alpha", "beta"])
+        self.assertEqual(hc_denylist.text_blocks("plain"), ["plain"])
+        self.assertEqual(hc_denylist.text_blocks(None), [])
 
     def rollout(self, root: Path, *entries: dict) -> None:
         day = root / "2026" / "01" / "01"
