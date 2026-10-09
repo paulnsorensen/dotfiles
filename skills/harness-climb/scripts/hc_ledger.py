@@ -107,11 +107,6 @@ def measured_rounds(root: Path, thread: str) -> set[str]:
     }
 
 
-def is_measured(root: Path, thread: str, rnd: int) -> bool:
-    """True when the ledger holds a field verdict for this gate round."""
-    return str(rnd) in measured_rounds(root, thread)
-
-
 def resolve_merge(repo: Path, main_ref: str, thread: str, rnd: int) -> str | None:
     """The first-parent commit on `main_ref` that brought the round's gate file in.
 

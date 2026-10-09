@@ -296,7 +296,7 @@ class RefusalLedgerTests(FreezeCase):
 
     def test_refusals_never_count_as_a_field_verdict(self) -> None:
         self.freeze()
-        self.assertFalse(hc_ledger.is_measured(self.state, "t1", 1))
+        self.assertNotIn("1", hc_ledger.measured_rounds(self.state, "t1"))
 
 
 if __name__ == "__main__":
