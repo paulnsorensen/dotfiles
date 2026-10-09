@@ -259,6 +259,29 @@ def _codex_command(name, parsed, raw_input):
     return None
 
 
+def _codex_token_usage(payload, last_total):
+    """Map a token_count payload to (Claude-style usage, total_token_usage).
+
+    Returns (None, last_total) when last_token_usage is null or when
+    total_token_usage repeats the previous event (Codex re-emits it).
+    """
+    info = payload.get("info")
+    if not isinstance(info, dict):
+        return None, last_total
+    last = info.get("last_token_usage")
+    if not isinstance(last, dict):
+        return None, last_total
+    total = info.get("total_token_usage")
+    if total is not None and total == last_total:
+        return None, last_total
+    usage = {
+        "input_tokens": last.get("input_tokens"),
+        "output_tokens": last.get("output_tokens"),
+        "cache_read_input_tokens": last.get("cached_input_tokens"),
+    }
+    return usage, total
+
+
 def codex_normalize(path):
     """Codex rollout JSONL -> canonical envelope.
 
@@ -269,9 +292,17 @@ def codex_normalize(path):
     custom tools) are kept verbatim, and ``input.command`` is normalized to the
     executed command string for shell-ish tools so ``bash_cmd`` extracts.
     ``tool_search_output`` items have no matching call item and are dropped.
+    ``session_meta.cli_version`` stamps ``version`` on every entry. Each
+    non-duplicate ``token_count`` event with a ``last_token_usage`` becomes one
+    assistant entry (unique ``message.id``, empty content) that model_turns
+    reads as one row.
     """
     session_id = None
     cwd = None
+    cli_version = None
+    model = None
+    last_total = None
+    token_turns = 0
     for entry in _iter_jsonl(path):
         if not isinstance(entry, dict):
             continue
@@ -281,9 +312,36 @@ def codex_normalize(path):
         if etype == "session_meta" and isinstance(payload, dict):
             session_id = payload.get("id") or session_id
             cwd = payload.get("cwd") or cwd
+            cli_version = payload.get("cli_version") or cli_version
             continue
         if etype == "turn_context" and isinstance(payload, dict):
             cwd = payload.get("cwd") or cwd
+            model = payload.get("model") or model
+            continue
+        if (
+            etype == "event_msg"
+            and isinstance(payload, dict)
+            and payload.get("type") == "token_count"
+        ):
+            usage, total = _codex_token_usage(payload, last_total)
+            if usage is None:
+                continue
+            last_total = total
+            token_turns += 1
+            yield {
+                "harness": "codex",
+                "type": "assistant",
+                "timestamp": ts,
+                "sessionId": session_id,
+                "version": cli_version,
+                "cwd": cwd,
+                "message": {
+                    "id": f"codex-tokens:{session_id}:{token_turns}",
+                    "model": model,
+                    "content": [],
+                    "usage": usage,
+                },
+            }
             continue
         if etype != "response_item" or not isinstance(payload, dict):
             continue
@@ -307,6 +365,7 @@ def codex_normalize(path):
                 "type": "assistant",
                 "timestamp": ts,
                 "sessionId": session_id,
+                "version": cli_version,
                 "cwd": cwd,
                 "message": {
                     "content": [
@@ -329,6 +388,7 @@ def codex_normalize(path):
                 "type": "user",
                 "timestamp": ts,
                 "sessionId": session_id,
+                "version": cli_version,
                 "cwd": cwd,
                 "message": {
                     "content": [
@@ -981,6 +1041,7 @@ def main():
             max(timestamp) AS last_seen,
             cwd AS project,
             gitBranch AS branch,
+            max(version) AS version,
             count(*) AS entry_count
         FROM raw_entries
         WHERE sessionId IS NOT NULL

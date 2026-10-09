@@ -26,7 +26,7 @@ lint-shell:
     (( rc == 0 )) && echo "shellcheck: ok"
     exit "$rc"
 
-PYTHON_LINT_PATHS := "skills/session-analytics/scripts/ skills/ci-optimize/scripts/ skills/bash-shortening/scripts/ skills/hill-climb/scripts/ skills/harness-climb/scripts/ tests/ci_optimize/ tests/hill_climb/ tests/harness_climb/ tests/lib/"
+PYTHON_LINT_PATHS := "skills/session-analytics/scripts/ skills/ci-optimize/scripts/ skills/bash-shortening/scripts/ skills/hill-climb/scripts/ skills/harness-climb/scripts/ tests/ci_optimize/ tests/hill_climb/ tests/harness_climb/ tests/session_analytics/ tests/lib/"
 
 # ruff on python files
 lint-python:

@@ -90,6 +90,38 @@ q() { duckdb "$DB" -json -c "$1"; }
     assert_output_contains '"n":1'
 }
 
+@test "codex ingest unittest" {
+    run python3 -m unittest discover -s "$REAL_DOTFILES_DIR/tests/session_analytics" -t "$REAL_DOTFILES_DIR/tests" -p 'test_codex_ingest.py'
+    [ "$status" -eq 0 ] || { echo "$output" >&2; false; }
+}
+
+@test "ingest: sessions.version and codex token_count model_turns rows land for claude and codex" {
+    cat > "$TEST_HOME/.claude/projects/proj/sess-claude.jsonl" <<'JSONL'
+{"type":"assistant","timestamp":"2026-05-30T10:00:00Z","sessionId":"c-1","cwd":"/work/claude","version":"2.1.0","message":{"content":[{"type":"tool_use","id":"tu-c-1","name":"Skill","input":{"skill":"cook"}}]}}
+JSONL
+    cat > "$TEST_HOME/.codex/sessions/2026/05/30/rollout-codex.jsonl" <<'JSONL'
+{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"x-1","cwd":"/work/codex","cli_version":"0.159.3"}}
+{"timestamp":"2026-05-30T11:00:01Z","type":"turn_context","payload":{"cwd":"/work/codex","model":"gpt-x"}}
+{"timestamp":"2026-05-30T11:00:02Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"ls\"]}","call_id":"call-x-1"}}
+{"timestamp":"2026-05-30T11:00:03Z","type":"event_msg","payload":{"type":"token_count","info":null}}
+{"timestamp":"2026-05-30T11:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}
+{"timestamp":"2026-05-30T11:00:05Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}
+{"timestamp":"2026-05-30T11:00:06Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":130,"cached_input_tokens":50,"output_tokens":12},"last_token_usage":{"input_tokens":30,"cached_input_tokens":10,"output_tokens":5}}}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT harness, version FROM sessions ORDER BY harness;"
+    assert_output_contains '"harness":"claude","version":"2.1.0"'
+    assert_output_contains '"harness":"codex","version":"0.159.3"'
+    run q "SELECT count(*) AS n, sum(input_tokens) AS i, sum(output_tokens) AS o, sum(cache_read_tokens) AS c FROM model_turns WHERE harness='codex' AND model='gpt-x';"
+    assert_output_contains '"n":2'
+    assert_output_contains '"i":"130"'
+    assert_output_contains '"o":"12"'
+    assert_output_contains '"c":"50"'
+    run q "SELECT count(*) AS n FROM tool_uses WHERE harness='codex';"
+    assert_output_contains '"n":1'
+}
+
 
 @test "ingest: Pi adapter preserves native tool calls and results" {
     write_pi_fixture
