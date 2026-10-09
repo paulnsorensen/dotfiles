@@ -294,6 +294,7 @@ claude:
     - land
     - nih-audit
     - prompt-analytics
+    - python-scaffold
     - rennet
     - session-analytics
     - steel-thread
