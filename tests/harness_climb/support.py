@@ -42,6 +42,7 @@ __all__ = [
     "hc_git",
     "hc_policy",
     "hc_stats",
+    "make_db",
     "soak_check",
 ]
 
@@ -165,6 +166,19 @@ def make_rows(
             row[key] = val[i] if isinstance(val, list) else val
         rows.append(row)
     return rows
+
+
+def make_db(path: Path, *statements: str) -> Path:
+    """A duckdb file built from SQL statements. Callers gate on HAVE_DUCKDB."""
+    proc = subprocess.run(
+        ["duckdb", "-init", os.devnull, str(path), "-c", ";\n".join(statements)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise AssertionError(f"duckdb: {proc.stderr}")
+    return path
 
 
 def call(*argv: str) -> tuple[int, dict[str, Any]]:

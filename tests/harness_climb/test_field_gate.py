@@ -367,10 +367,30 @@ class GateCase(RepoCase):
         history = f"garbage\n{T0} {'0' * 40}\n{AFTER} {self.merge}\n"
         self.assertEqual(self.run_gate(history)["sync"]["epoch"], AFTER)
 
-    def test_sync_history_without_a_containing_sync_is_inconclusive(self) -> None:
-        got = self.run_gate(f"{T0} {self.base}\n")
+    def test_no_containing_sync_within_the_grace_is_not_due_not_inconclusive(
+        self,
+    ) -> None:
+        history = f"{T0} {self.base}\n"
+        for now in (T0 + DAY, T0 + 2 * DAY):
+            got = self.run_gate(history, now=now)
+            self.assertEqual(got["status"], "not-due", now)
+            self.assertEqual(got["due"], T0 + 2 * DAY)
+            self.assertNotIn("candidate", got)
+            self.assertNotIn("harnesses", got)
+
+    def test_no_containing_sync_past_the_grace_is_inconclusive_sync_late(self) -> None:
+        got = self.run_gate(f"{T0} {self.base}\n", now=T0 + 2 * DAY + 1)
+        self.assertEqual(got["status"], "ok")
         self.assertEqual(got["candidate"], "inconclusive")
-        self.assertEqual({v["reason"] for v in got["harnesses"].values()}, {"no-sync"})
+        self.assertEqual(
+            {v["reason"] for v in got["harnesses"].values()}, {"sync-late"}
+        )
+
+    def test_not_due_grace_result_is_not_a_ledger_verdict(self) -> None:
+        got = self.run_gate(f"{T0} {self.base}\n", now=T0 + DAY)
+        self.assertEqual(got["status"], "not-due")
+        self.assertNotIn(got["status"], cli.LEDGER_VERDICTS)
+        self.assertNotIn("not-due", cli.LEDGER_VERDICTS)
 
     def test_sync_history_late_sync_is_inconclusive_sync_late(self) -> None:
         late = T0 + 3 * DAY

@@ -243,7 +243,6 @@ def check_leakage(
                         }
                     )
     return violations
-    return violations
 
 
 _HUNK = re.compile(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")

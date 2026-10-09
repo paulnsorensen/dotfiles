@@ -29,6 +29,7 @@ import soak_check
 
 SKILLS_DIR = Path(__file__).resolve().parents[2]
 DB_PATH_SH = SKILLS_DIR / "session-analytics" / "scripts" / "db-path.sh"
+INGEST_PY = SKILLS_DIR / "session-analytics" / "scripts" / "ingest.py"
 HARNESS_FILTER = re.compile(
     r"harness\s+IN\s*\(\s*'claude'\s*,\s*'codex'\s*\)", re.IGNORECASE
 )
@@ -40,6 +41,10 @@ IN_SCOPE = "harness IN ('claude','codex')"
 
 class InputError(ValueError):
     """The caller gave input the contract rejects."""
+
+
+class VersionUnavailable(InputError):
+    """The session database has no harness version column."""
 
 
 # --- shared ----------------------------------------------------------------
@@ -75,8 +80,21 @@ def stopped(args: argparse.Namespace, repo: Path) -> bool:
     return True
 
 
+def ensure_fresh_db() -> None:
+    """Refresh the session database with the TTL-aware ingest. `SESSIONS_DB` skips it."""
+    if os.environ.get("SESSIONS_DB"):
+        return
+    subprocess.run(
+        [sys.executable, str(INGEST_PY)], capture_output=True, text=True, check=False
+    )
+
+
 def resolve_db() -> Path:
-    """The session database path, from the shared session-analytics resolver only."""
+    """The session database path, from the shared session-analytics resolver only.
+
+    Every caller reads the database next, so a stale one is refreshed here first.
+    """
+    ensure_fresh_db()
     proc = subprocess.run(
         ["bash", "-c", 'source "$1" && sessions_db_path', "_", str(DB_PATH_SH)],
         capture_output=True,
@@ -476,6 +494,48 @@ def ledger_append(
     return {"status": "appended", "ledger": str(path), "line": line}
 
 
+def pending_rounds(root: Path, thread: str) -> list[dict[str, str]]:
+    """Rounds whose latest ledger line is `pending`. The ledger is append-only: the last line wins."""
+    path = root / thread / "ledger.md"
+    latest: dict[str, dict[str, str]] = {}
+    if path.is_file():
+        for line in path.read_text().splitlines():
+            fields = parse_ledger_line(line)
+            if fields.get("round", "").isdigit():
+                latest[fields["round"]] = fields
+    return [
+        fields
+        for _, fields in sorted(latest.items(), key=lambda item: int(item[0]))
+        if fields.get("candidate") == "pending"
+    ]
+
+
+def resolve_merge(repo: Path, main_ref: str, thread: str, rnd: int) -> str | None:
+    """The first-parent commit on `main_ref` that brought the round's gate file in.
+
+    Only history reachable from `main_ref` counts, so an unmerged branch commit never resolves.
+    """
+    gate = hc_git.gate_path(thread, rnd)
+    added = hc_git.git_out(
+        repo, "log", "--diff-filter=A", "--format=%H", main_ref, "--", gate
+    ).split()
+    if not added:
+        return None
+    commit = added[-1]
+    first_parent = hc_git.git_out(repo, "rev-list", "--first-parent", main_ref).split()
+    if commit in first_parent:
+        return commit
+    path = hc_git.git_out(
+        repo,
+        "rev-list",
+        "--first-parent",
+        "--ancestry-path",
+        "--reverse",
+        f"{commit}..{main_ref}",
+    ).split()
+    return path[0] if path else None
+
+
 def cmd_ledger(args: argparse.Namespace) -> int:
     repo = repo_root(args.repo)
     if stopped(args, repo):
@@ -485,6 +545,20 @@ def cmd_ledger(args: argparse.Namespace) -> int:
         path = root / args.thread / "ledger.md"
         lines = path.read_text().splitlines()[-args.last :] if path.is_file() else []
         emit({"status": "ok", "lines": lines})
+        return 0
+    if args.action == "pending":
+        rounds = []
+        for fields in pending_rounds(root, args.thread):
+            rnd = int(fields["round"])
+            rounds.append(
+                {
+                    "round": rnd,
+                    "change": fields.get("change", ""),
+                    "gate": hc_git.gate_path(args.thread, rnd),
+                    "merge": resolve_merge(repo, args.main_ref, args.thread, rnd),
+                }
+            )
+        emit({"status": "ok", "pending": rounds})
         return 0
     fields = {k: getattr(args, k) for k in LEDGER_KEYS}
     try:
@@ -511,6 +585,40 @@ def is_measured(root: Path, thread: str, rnd: int) -> bool:
 
 
 # --- freeze ----------------------------------------------------------------
+
+
+def has_contract(repo: Path, base: str) -> bool:
+    """True when every skill the diff touches has `evals/autoimprove.json` at HEAD."""
+    names = set()
+    for _, path in hc_git.changed_files(repo, f"{base}...HEAD"):
+        parts = path.split("/")
+        if parts[0] == "skills" and len(parts) > 2:
+            names.add(parts[1])
+    return bool(names) and all(
+        hc_git.git(
+            repo,
+            "cat-file",
+            "-e",
+            f"HEAD:skills/{name}/evals/autoimprove.json",
+            check=False,
+        ).returncode
+        == 0
+        for name in names
+    )
+
+
+def query_problem(query: str) -> str | None:
+    """Why the targeted query cannot freeze, or None. It dry-runs against the session database."""
+    if ";" in query:
+        return "targeted query must not contain ';'"
+    try:
+        duck(
+            resolve_db(),
+            f"SELECT harness, sessionId, value FROM ({query}) AS q LIMIT 0",
+        )
+    except InputError as exc:
+        return f"targeted query failed the dry run on harness, sessionId, value: {exc}"
+    return None
 
 
 def lab_result(component: str, contract: bool, verdict: str | None) -> dict[str, str]:
@@ -565,17 +673,38 @@ def cmd_freeze(args: argparse.Namespace) -> int:
     lab: dict[str, str] = {}
     if not refusal:
         try:
-            lab = lab_result(args.component, args.contract, args.autoimprove_verdict)
+            lab = lab_result(
+                args.component, has_contract(repo, args.base), args.autoimprove_verdict
+            )
         except InputError as exc:
             refusal = str(exc)
-    if refusal:
-        emit({"status": "refused", "reason": refusal})
-        return 1
     query = (
         Path(args.targeted_query_file).read_text()
         if args.targeted_query_file
         else args.targeted_query
     )
+    if not refusal:
+        if not (query or "").strip():
+            raise InputError("freeze needs a targeted query")
+        refusal = query_problem(query.strip())
+    if refusal:
+        ledger_append(
+            repo,
+            root,
+            args.thread,
+            {
+                "round": args.round,
+                "change": f"freeze refused: {refusal}",
+                "pr": "none",
+                "lab": "n/a",
+                "claude": "n/a",
+                "codex": "n/a",
+                "candidate": "n/a",
+                "merge": "none",
+            },
+        )
+        emit({"status": "refused", "reason": refusal})
+        return 1
     gate = hc_stats.normalize_gate(
         {
             "thread": args.thread,
@@ -637,7 +766,9 @@ def load_rows(
         db,
         "SELECT count(*) AS n FROM information_schema.columns WHERE table_name = 'sessions' AND column_name = 'version'",
     )[0]["n"]
-    version = "max(version)" if has_version else "CAST(NULL AS VARCHAR)"
+    if not has_version:
+        raise VersionUnavailable("sessions table has no version column")
+    version = "arg_max(version, last_seen) FILTER (WHERE version IS NOT NULL)"
     query = gate["targeted_query"].strip().rstrip(";")
     sql = f"""
     WITH s AS (
@@ -689,7 +820,12 @@ def field_gate(
         repo, merge, hc_git.parse_sync_history(history_text)
     )
     if sync is None:
-        return {**out, **_both("no-sync")}
+        grace_end = (
+            hc_git.commit_time(repo, merge) + gate["sync_grace_days"] * hc_stats.DAY
+        )
+        if now <= grace_end:
+            return {**out, "status": "not-due", "due": grace_end}
+        return {**out, **_both("sync-late")}
     after_start = float(sync[0])
     out["sync"] = {"epoch": sync[0], "sha": sync[1]}
     if (
@@ -707,7 +843,10 @@ def field_gate(
         if db is None or not db.is_file():
             return {**out, "status": "no-db"}
         soak = gate["soak_days"] * hc_stats.DAY
-        rows = load_rows(db, gate, after_start - 2 * soak, after_start + soak)
+        try:
+            rows = load_rows(db, gate, after_start - 2 * soak, after_start + soak)
+        except VersionUnavailable:
+            return {**out, **_both("version-unavailable")}
     per = {
         h: hc_stats.evaluate_harness(h, gate, rows, after_start)
         for h in hc_stats.HARNESSES
@@ -794,11 +933,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--token-per-gain", type=float, default=hc_stats.GATE_DEFAULTS["token_per_gain"]
     )
-    p.add_argument(
-        "--contract",
-        action="store_true",
-        help="the skill has an approved autoimprove contract",
-    )
     p.add_argument("--autoimprove-verdict")
 
     p = add("field-gate", cmd_field_gate)
@@ -816,8 +950,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--now", type=float)
 
     p = add("ledger", cmd_ledger)
-    p.add_argument("action", choices=("append", "tail"))
+    p.add_argument("action", choices=("append", "tail", "pending"))
     p.add_argument("--last", type=int, default=5)
+    p.add_argument(
+        "--main-ref", default="main", help="branch that holds merged rounds (pending)"
+    )
     for key in LEDGER_KEYS:
         p.add_argument(f"--{key}")
 

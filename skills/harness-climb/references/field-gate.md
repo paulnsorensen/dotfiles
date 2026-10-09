@@ -18,9 +18,12 @@ Scope the targeted query to `harness IN ('claude','codex')`.
 ## Windows
 
 - The after window starts at the first line of `sync-history.log` whose SHA contains the merge commit. It lasts `soak_days`.
-- No such line gives `inconclusive` with reason `no-sync`.
+- No such line, and `now` is not past `sync_grace_days` after the merge commit time, gives `not-due`. The ledger stays `pending`.
+- No such line after that grace gives `inconclusive` with reason `sync-late`.
 - A sync later than `sync_grace_days` after the merge gives `inconclusive` with reason `sync-late`.
 - Before the after window ends, the result is `not-due`.
+- A `not-due` result is never a ledger verdict.
+- A session database with no `version` column gives `inconclusive` with reason `version-unavailable`.
 - The before window ends where the after window starts. It begins at the later of `soak_days` earlier and the last version change before the start.
 - A version change inside a window gives `inconclusive` with reason `version-changed`.
 

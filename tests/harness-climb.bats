@@ -21,6 +21,18 @@ WORKFLOW="$REPO_ROOT/.github/workflows/test.yml"
     [ "$status" -eq 0 ]
 }
 
+@test "skill resolves its script from the skill directory" {
+    # shellcheck disable=SC2016 # literal backticks in the expected SKILL.md text
+    grep -q 'Resolve `HC` from the directory of the loaded `SKILL.md`' "$SKILL"
+    run grep -n 'show-toplevel' "$SKILL"
+    [ "$status" -eq 1 ] || { echo "$output" >&2; false; }
+}
+
+@test "skill drives the field gate through ledger pending" {
+    grep -q 'ledger pending' "$SKILL"
+    grep -q 'candidate=n/a' "$SKILL"
+}
+
 @test "no merge" {
     grep -q '/plate' "$SKILL"
     run grep -nE 'gh pr merge|git merge|git revert|dots sync|--admin|--auto([^a-z]|$)' "$SKILL"

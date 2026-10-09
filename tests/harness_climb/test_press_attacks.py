@@ -442,7 +442,7 @@ class FieldGateCase(RepoCase):
 
     def test_syncHistory_onlyMalformed_isNoSync(self) -> None:
         out = self.fg("nonsense\n")
-        self.assertEqual(self.reasons(out), {"no-sync"})
+        self.assertEqual(self.reasons(out), {"sync-late"})
         self.assertEqual(out["candidate"], "inconclusive")
 
     def test_syncHistory_unknownShaIsSkippedNotFatal(self) -> None:
@@ -491,7 +491,7 @@ class FieldGateCase(RepoCase):
         )
         out = self.out(proc)
         self.assertEqual(out["candidate"], "inconclusive")
-        self.assertEqual(out["harnesses"]["claude"]["reason"], "no-sync")
+        self.assertEqual(out["harnesses"]["claude"]["reason"], "sync-late")
 
     def test_cliFieldGate_historyPathIsDirectory_failsCleanly(self) -> None:
         rows_file = self.write_json("rows.json", [])

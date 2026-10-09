@@ -32,9 +32,11 @@ One invocation is one round. A loop runs the skill until a stop condition occurs
 
 Every step below uses one script. Each subcommand prints JSON. Exit 0 means pass, 1 means fail or refusal, 2 means error.
 
+Resolve `HC` from the directory of the loaded `SKILL.md`: `<skill-dir>/scripts/harness_climb.py`.
+Resolve symlinks first. Do not derive the path from the repository under change.
+
 ```bash
-hc="$(git rev-parse --show-toplevel)/skills/harness-climb/scripts/harness_climb.py"
-python3 "$hc" <analyze|critic|freeze|field-gate|ledger> --thread <thread> ...
+python3 "$HC" <analyze|critic|freeze|field-gate|ledger> --thread <thread> ...
 ```
 
 Read [field-gate.md](references/field-gate.md) before you freeze a round or run a field gate.
@@ -44,7 +46,7 @@ Read [field-gate.md](references/field-gate.md) before you freeze a round or run 
 State lives in `.harness-climb/<thread>/` and stays out of git:
 
 - `STOP` — its presence ends the loop. Its first line is the reason.
-- `ledger.md` — one line per round: round, change, pr, lab, claude, codex, candidate, merge.
+- `ledger.md` — append-only, one line per event: round, change, pr, lab, claude, codex, candidate, merge. The latest line of a round wins.
 - `rounds/r<n>/` — `tags.json` (path to one component tag) and `critic.json`.
 
 The gate files live in the tracked directory `harness-climb/gates/`. Each file is `<thread>-r<n>.json`.
@@ -52,14 +54,14 @@ The gate files live in the tracked directory `harness-climb/gates/`. Each file i
 ## Round
 
 1. If `STOP` exists, run any subcommand. It prints the reason and writes nothing. Report it and end.
-2. Check due field gates. Run `ledger tail`. For each line with `candidate=pending` and a merge SHA, run `field-gate --round <n> --merge <sha>`. Report `not-due` and move on. Record a verdict with `ledger append`. A `revert` verdict opens a revert PR through `/plate`. Never run a revert yourself.
-3. Run `analyze`. Dispatch the `session-analytics` skill for the findings. Write them to a findings file and pass it with `--findings`. Every failure mode needs `query`, integer `counts`, and one blamed component. Every success habit needs a session count. Use claude and codex sessions only.
-4. Propose one change for one component: `global-doc`, `preamble`, `agent-def`, `hook`, or `skill`. Edit owned source only. Do not edit vendored skills, rendered targets, runtime output, or `agents/instruction-budgets.toml`. Work on branch `harness-climb/<thread>/r<n>`. Write one component tag per changed path to `tags.json`. Never copy prompt text or project names into the diff.
+2. Check due field gates. Run `ledger pending`. It lists each round whose latest line is `candidate=pending` and resolves its merge commit on `main`. Skip a round whose `merge` is null: the PR is not merged. For each other round, run `field-gate --round <n> --merge <sha>`. Report `not-due` and move on. Append the verdict with `ledger append`. A `revert` verdict opens a revert PR through `/plate`. Never run a revert yourself. After you record a verdict, end the round.
+3. Run `analyze`. It refreshes the session database first. Gather findings with the packs `skills/prompt-analytics/scripts/analyze.sh <domain> <target> claude|codex` and `skills/tool-efficiency/scripts/analyze.sh <domain> <target> claude|codex`. Write them to a findings file and pass it with `--findings`. Every failure mode needs `query`, integer `counts`, and one blamed component. Every success habit needs a session count. Use claude and codex sessions only.
+4. Propose one change for one component: `global-doc`, `preamble`, `agent-def`, `hook`, or `skill`. For a `skill` that has `evals/autoimprove.json`, run `skillz autoimprove` as the proposer. Its winner is the proposal. For every other change, edit owned source only. Do not edit vendored skills, rendered targets, runtime output, or `agents/instruction-budgets.toml`. Work on branch `harness-climb/<thread>/r<n>`. Write one component tag per changed path to `tags.json`. Never copy prompt text or project names into the diff.
 5. Run `critic --round <n>`. On `fail`, repair the diff and run it again. The third failure returns `rejected`: the script writes the ledger line, and you open no PR.
-6. Run the lab. A `skill` with an approved autoimprove contract runs `autoimprove`. Every other component is held. Pass `--contract --autoimprove-verdict <verdict>` to the freeze for a contracted skill.
-7. Run `freeze --round <n> --component <c> --targeted-query-file <file> --direction <lower|higher>`. The freeze needs the passing critic verdict. It refuses while a merged gate of the same component has no field verdict. It commits the gate file.
+6. Record the lab. A `skill` with `evals/autoimprove.json` has run `autoimprove` in step 4. Pass `--autoimprove-verdict <verdict>` to the freeze. The freeze reads the contract from that file, not from a flag. Every other component is held.
+7. Run `freeze --round <n> --component <c> --targeted-query-file <file> --direction <lower|higher>`. The freeze needs the passing critic verdict. It refuses while a merged gate of the same component has no field verdict. It dry-runs the query on the session database and refuses a `;` or a query without `harness`, `sessionId`, and `value`. It commits the gate file. A refused freeze appends a `candidate=n/a` ledger line with the reason and ends the round.
 8. Publish the branch through `/plate`. Put the evidence counts, the lab result, and the gate file path in the PR body. Stop at the PR.
-9. Append a ledger line with `candidate=pending`, `claude=pending`, `codex=pending`, and `merge=none`. After the human merge, a later round replaces it with the field verdict and the merge SHA.
+9. Append a ledger line with `candidate=pending`, `claude=pending`, `codex=pending`, and `merge=none`. After the human merge, step 2 of a later round finds the merge commit with `ledger pending`. It appends the field verdict line with the merge SHA. The ledger never changes an older line.
 
 ## Stop conditions
 
