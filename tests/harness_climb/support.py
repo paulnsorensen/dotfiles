@@ -19,7 +19,12 @@ CLI_PATH = SCRIPTS / "harness_climb.py"
 
 sys.path.insert(0, str(SCRIPTS))
 
+import hc_db
+import hc_denylist
+import hc_field_gate
+import hc_gate
 import hc_git
+import hc_ledger
 import hc_policy
 import hc_stats
 import soak_check
@@ -39,7 +44,12 @@ __all__ = [
     "ROOT",
     "T0",
     "cli",
+    "hc_db",
+    "hc_denylist",
+    "hc_field_gate",
+    "hc_gate",
     "hc_git",
+    "hc_ledger",
     "hc_policy",
     "hc_stats",
     "make_db",

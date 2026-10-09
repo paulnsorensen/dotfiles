@@ -10,7 +10,7 @@ import unittest
 from typing import Any
 from unittest import mock
 
-from .support import HAVE_DUCKDB, RepoCase, call, cli, gate_json, hc_git, make_db
+from .support import HAVE_DUCKDB, RepoCase, call, gate_json, hc_gate, hc_ledger, make_db
 
 QUERY = "SELECT harness, sessionId, 1.0 AS value FROM sessions"
 needs_duckdb = unittest.skipUnless(HAVE_DUCKDB, "duckdb CLI not installed")
@@ -37,7 +37,7 @@ class FreezeCase(RepoCase):
     def ledger_lines(self) -> list[dict[str, str]]:
         path = self.state / "t1" / "ledger.md"
         lines = path.read_text().splitlines() if path.is_file() else []
-        return [cli.parse_ledger_line(line) for line in lines]
+        return [hc_ledger.parse_ledger_line(line) for line in lines]
 
     def critic(self, **over: Any) -> None:
         state = {
@@ -174,7 +174,7 @@ class GateFileTests(FreezeCase):
         self.assertEqual(self.git("show", "--name-only", "--format=", "HEAD"), rel)
         self.assertEqual(self.git("status", "--porcelain", "--", rel), "")
         self.assertEqual(
-            hc_git.read_gate_at(self.repo, "HEAD", rel)["direction"], "higher"
+            hc_gate.read_gate_at(self.repo, "HEAD", rel)["direction"], "higher"
         )
 
     def test_gate_file_needs_a_query(self) -> None:
@@ -296,7 +296,7 @@ class RefusalLedgerTests(FreezeCase):
 
     def test_refusals_never_count_as_a_field_verdict(self) -> None:
         self.freeze()
-        self.assertFalse(cli.is_measured(self.state, "t1", 1))
+        self.assertFalse(hc_ledger.is_measured(self.state, "t1", 1))
 
 
 if __name__ == "__main__":

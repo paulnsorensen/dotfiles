@@ -11,7 +11,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
-from .support import DAY, HAVE_DUCKDB, T0, RepoCase, call, cli, gate_json, make_db
+from .support import (
+    DAY,
+    HAVE_DUCKDB,
+    T0,
+    RepoCase,
+    call,
+    gate_json,
+    hc_db,
+    hc_denylist,
+    hc_field_gate,
+    make_db,
+)
 
 AFTER = T0 + DAY
 SESSIONS_DDL = (
@@ -58,27 +69,27 @@ class EnsureFreshDbTests(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k != "SESSIONS_DB"}
         with (
             mock.patch.dict(os.environ, env, clear=True),
-            mock.patch.object(cli.subprocess, "run") as run,
+            mock.patch.object(hc_db.subprocess, "run") as run,
         ):
-            cli.ensure_fresh_db()
+            hc_db.ensure_fresh_db()
         ((args, _),) = run.call_args_list
-        self.assertEqual(args[0], [sys.executable, str(cli.INGEST_PY)])
+        self.assertEqual(args[0], [sys.executable, str(hc_db.INGEST_PY)])
         self.assertNotIn("--force", args[0])
-        self.assertTrue(Path(cli.INGEST_PY).is_file())
+        self.assertTrue(Path(hc_db.INGEST_PY).is_file())
 
     def test_sessions_db_override_skips_the_ingest(self) -> None:
         with (
             mock.patch.dict(os.environ, {"SESSIONS_DB": "/tmp/x.duckdb"}),
-            mock.patch.object(cli.subprocess, "run") as run,
+            mock.patch.object(hc_db.subprocess, "run") as run,
         ):
-            cli.ensure_fresh_db()
+            hc_db.ensure_fresh_db()
         run.assert_not_called()
 
     def test_every_database_reader_refreshes_first(self) -> None:
         absent = str(Path(os.environ["SESSIONS_DB"]).with_name("never.duckdb"))
         with (
             mock.patch.dict(os.environ, {"SESSIONS_DB": absent}),
-            mock.patch.object(cli, "ensure_fresh_db") as fresh,
+            mock.patch.object(hc_db, "ensure_fresh_db") as fresh,
         ):
             rc, out = call(
                 "analyze",
@@ -92,7 +103,7 @@ class EnsureFreshDbTests(unittest.TestCase):
             self.assertEqual((rc, out["status"]), (1, "no-db"))
             self.assertEqual(fresh.call_count, 1)
             args = argparse.Namespace(denylist=None)
-            self.assertIsNone(cli.load_denylist(args, Path("/tmp/repo")))
+            self.assertIsNone(hc_denylist.load_denylist(args, Path("/tmp/repo")))
             self.assertEqual(fresh.call_count, 2)
 
 
@@ -128,7 +139,7 @@ class LoadRowsTests(RepoCase):
         gate = gate_json(
             targeted_query="SELECT harness, sessionId, entry_count * 2.5 AS value FROM sessions"
         )
-        rows = cli.load_rows(db, gate, AFTER, AFTER + 7 * DAY)
+        rows = hc_db.load_rows(db, gate, AFTER, AFTER + 7 * DAY)
         by = {r["session"]: r for r in rows}
         self.assertEqual(sorted(by), ["s1", "s2"])
         s1 = by["s1"]
@@ -176,7 +187,7 @@ class LoadRowsTests(RepoCase):
         merge = self.commit(
             {"harness-climb/gates/t1-r1.json": json.dumps(gate)}, date=T0
         )
-        got = cli.field_gate(
+        got = hc_field_gate.field_gate(
             self.repo, "t1", 1, merge, f"{AFTER} {merge}\n", None, AFTER + 9 * DAY, db
         )
         self.assertEqual(got["status"], "ok", got)
@@ -196,15 +207,15 @@ class LoadRowsTests(RepoCase):
         merge = self.commit(
             {"harness-climb/gates/t1-r1.json": json.dumps(gate_json())}, date=T0
         )
-        got = cli.field_gate(
+        got = hc_field_gate.field_gate(
             self.repo, "t1", 1, merge, f"{AFTER} {merge}\n", None, AFTER + 9 * DAY, db
         )
         self.assertEqual(got["candidate"], "inconclusive")
         self.assertEqual(
             {v["reason"] for v in got["harnesses"].values()}, {"version-unavailable"}
         )
-        with self.assertRaises(cli.VersionUnavailable):
-            cli.load_rows(db, gate_json(), AFTER, AFTER + DAY)
+        with self.assertRaises(hc_db.VersionUnavailable):
+            hc_db.load_rows(db, gate_json(), AFTER, AFTER + DAY)
 
 
 if __name__ == "__main__":

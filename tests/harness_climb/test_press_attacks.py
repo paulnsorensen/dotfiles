@@ -11,8 +11,9 @@ from .support import (
     T0,
     RepoCase,
     call,
-    cli,
     gate_json,
+    hc_field_gate,
+    hc_gate,
     hc_git,
     hc_policy,
     hc_stats,
@@ -22,7 +23,7 @@ from .support import (
 
 
 def gate(**over: object) -> dict:
-    return hc_stats.normalize_gate(gate_json(min_sessions=2, **over))
+    return hc_gate.normalize_gate(gate_json(min_sessions=2, **over))
 
 
 def rows(harness: str, n: int, **metrics: object) -> list[dict]:
@@ -96,7 +97,7 @@ class WelchEdges(unittest.TestCase):
 
     def test_normalizeGate_minSessionsOne_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            hc_stats.normalize_gate(gate_json(min_sessions=1))
+            hc_gate.normalize_gate(gate_json(min_sessions=1))
 
     def test_beyond_exactlyTwoSE_isNotBeyond(self) -> None:
         # before [10,12]: var 2 -> SE 1 with a zero-variance after window
@@ -374,19 +375,19 @@ class WindowEdges(unittest.TestCase):
 class GateSettingsEdges(unittest.TestCase):
     def test_normalizeGate_nanSoakDays_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            hc_stats.normalize_gate(gate_json(soak_days=float("nan")))
+            hc_gate.normalize_gate(gate_json(soak_days=float("nan")))
 
     def test_normalizeGate_infiniteSoakDays_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            hc_stats.normalize_gate(gate_json(soak_days=float("inf")))
+            hc_gate.normalize_gate(gate_json(soak_days=float("inf")))
 
     def test_normalizeGate_nanTokenPerGain_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            hc_stats.normalize_gate(gate_json(token_per_gain=float("nan")))
+            hc_gate.normalize_gate(gate_json(token_per_gain=float("nan")))
 
     def test_normalizeGate_boolSoakDays_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            hc_stats.normalize_gate(gate_json(soak_days=True))
+            hc_gate.normalize_gate(gate_json(soak_days=True))
 
 
 # --- 2/3. sync history window and gate file read (AC-22, AC-11) ------------
@@ -404,7 +405,9 @@ class FieldGateCase(RepoCase):
         self.later = self.commit({"b.txt": "2\n"}, "later", date=T0 + DAY)
 
     def fg(self, history: str, now: float = T0 + 30 * DAY, merge: str | None = None):
-        return cli.field_gate(self.repo, "t1", 1, merge or self.merge, history, [], now)
+        return hc_field_gate.field_gate(
+            self.repo, "t1", 1, merge or self.merge, history, [], now
+        )
 
     def reasons(self, out: dict) -> set[str]:
         return {h["reason"] for h in out["harnesses"].values()}
@@ -626,7 +629,9 @@ class FieldGateCase(RepoCase):
             "gv",
             date=T0,
         )
-        out = cli.field_gate(self.repo, "t4", 1, c, f"{T0} {c}\n", [], T0 + 30 * DAY)
+        out = hc_field_gate.field_gate(
+            self.repo, "t4", 1, c, f"{T0} {c}\n", [], T0 + 30 * DAY
+        )
         self.assertEqual(self.reasons(out), {"guard-version-unknown"})
 
     def test_gateRead_mergeRefThatIsNotACommit_errorsCleanly(self) -> None:
@@ -670,7 +675,7 @@ class FieldGateCase(RepoCase):
             stop_hook_blocks=0,
             tokens_per_turn=100.0,
         )
-        out = cli.field_gate(
+        out = hc_field_gate.field_gate(
             self.repo, "t1", 1, self.merge, hist, bad + good, T0 + 30 * DAY
         )
         self.assertEqual(out["harnesses"]["claude"]["verdict"], "revert")

@@ -8,6 +8,7 @@ Every function here is pure. Rows are per-session dicts with the keys
 from __future__ import annotations
 
 import math
+import statistics
 from collections.abc import Iterable
 from typing import Any
 
@@ -25,16 +26,6 @@ GUARD_COMPOSITE: dict[int, tuple[tuple[str, tuple[str, ...]], ...]] = {
     ),
 }
 
-GATE_DEFAULTS: dict[str, Any] = {
-    "guard_composite_version": GUARD_COMPOSITE_VERSION,
-    "min_sessions": 20,
-    "soak_days": 7,
-    "sync_grace_days": 2,
-    "token_per_gain": 1.0,
-    "direction": "lower",
-}
-GATE_REQUIRED = ("thread", "round", "component", "targeted_query")
-
 KEEP, KEEP_CHEAPER, REVERT, INCONCLUSIVE = (
     "keep",
     "keep-cheaper",
@@ -42,29 +33,6 @@ KEEP, KEEP_CHEAPER, REVERT, INCONCLUSIVE = (
     "inconclusive",
 )
 VERDICTS = (KEEP, KEEP_CHEAPER, REVERT, INCONCLUSIVE)
-
-
-def normalize_gate(raw: dict[str, Any]) -> dict[str, Any]:
-    missing = [k for k in GATE_REQUIRED if k not in raw]
-    if missing:
-        raise ValueError(f"gate file lacks {', '.join(missing)}")
-    gate = {**GATE_DEFAULTS, **raw}
-    if gate["direction"] not in ("lower", "higher"):
-        raise ValueError("gate direction must be lower or higher")
-    if not isinstance(gate["min_sessions"], int) or gate["min_sessions"] < 2:
-        raise ValueError("gate min_sessions must be an integer of at least 2")
-    for key in ("soak_days", "sync_grace_days", "token_per_gain"):
-        value = gate[key]
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-            or value < 0
-        ):
-            raise ValueError(f"gate {key} must be a finite non-negative number")
-    if gate["soak_days"] <= 0:
-        raise ValueError("gate soak_days must be positive")
-    return gate
 
 
 # --- windows ---------------------------------------------------------------
@@ -118,10 +86,9 @@ def welch(before: list[float], after: list[float]) -> dict[str, float | int]:
     """Unpaired difference of means (after - before) and its standard error."""
 
     def moments(xs: list[float]) -> tuple[float, float]:
-        n = len(xs)
-        mean = sum(xs) / n
-        var = sum((x - mean) ** 2 for x in xs) / (n - 1) if n > 1 else math.nan
-        return mean, var
+        return statistics.fmean(xs), statistics.variance(xs) if len(
+            xs
+        ) > 1 else math.nan
 
     mb, vb = moments(before)
     ma, va = moments(after)
@@ -247,6 +214,8 @@ def evaluate_harness(
         in_window(mine, windows["before"]),
         in_window(mine, windows["after"]),
     )
+    scored_before = [r for r in before if r.get("target") is not None]
+    scored_after = [r for r in after if r.get("target") is not None]
     base = {"windows": {k: list(v) for k, v in windows.items()}}
     versions = sorted({r["version"] for r in before + after if r.get("version")})
     if len(versions) > 1:
@@ -255,10 +224,7 @@ def evaluate_harness(
             **_result(INCONCLUSIVE, "version-changed", {}, None, None),
             "versions": versions,
         }
-    counts = {
-        "before": len(_values(before, "target")),
-        "after": len(_values(after, "target")),
-    }
+    counts = {"before": len(scored_before), "after": len(scored_after)}
     if min(counts.values()) < gate["min_sessions"]:
         return {
             **base,
@@ -266,10 +232,5 @@ def evaluate_harness(
             "sessions": counts,
             "min_sessions": gate["min_sessions"],
         }
-    judged = judge(
-        harness,
-        gate,
-        [r for r in before if r.get("target") is not None],
-        [r for r in after if r.get("target") is not None],
-    )
+    judged = judge(harness, gate, scored_before, scored_after)
     return {**base, **judged, "sessions": counts}

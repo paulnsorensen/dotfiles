@@ -9,9 +9,11 @@ from .support import (
     DAY,
     T0,
     RepoCase,
-    cli,
     gate_json,
+    hc_field_gate,
+    hc_gate,
     hc_git,
+    hc_ledger,
     hc_stats,
     make_rows,
     run_cli,
@@ -52,7 +54,7 @@ def side(target: float, tokens: float | None = 1000.0, **guards: Any) -> dict[st
 
 
 class VerdictCase(unittest.TestCase):
-    gate = hc_stats.normalize_gate(gate_json(min_sessions=4))
+    gate = hc_gate.normalize_gate(gate_json(min_sessions=4))
 
     def verdict(
         self,
@@ -75,7 +77,7 @@ class VerdictCase(unittest.TestCase):
         self.assertEqual((got["verdict"], got["reason"]), ("revert", "token-cost"))
 
     def test_verdict_token_per_gain_scales_the_cost_rule(self) -> None:
-        gate = hc_stats.normalize_gate(gate_json(min_sessions=4, token_per_gain=2.0))
+        gate = hc_gate.normalize_gate(gate_json(min_sessions=4, token_per_gain=2.0))
         self.assertEqual(
             self.verdict(side(10), side(5, tokens=1600), gate=gate)["verdict"], "keep"
         )
@@ -92,7 +94,7 @@ class VerdictCase(unittest.TestCase):
         self.assertEqual(self.verdict(side(10), side(15))["verdict"], "revert")
 
     def test_verdict_higher_direction_flips_the_sign(self) -> None:
-        gate = hc_stats.normalize_gate(gate_json(min_sessions=4, direction="higher"))
+        gate = hc_gate.normalize_gate(gate_json(min_sessions=4, direction="higher"))
         self.assertEqual(self.verdict(side(5), side(10), gate=gate)["verdict"], "keep")
         self.assertEqual(
             self.verdict(side(10), side(5), gate=gate)["verdict"], "revert"
@@ -221,7 +223,7 @@ class WindowCase(unittest.TestCase):
         old = make_rows("claude", AFTER - 6 * DAY, 6, "0.9", **side(10))
         new_before = make_rows("claude", AFTER - 2 * DAY, 6, "1.0", **side(10))
         after = make_rows("claude", AFTER + 3600, 6, "1.0", **side(5))
-        gate = hc_stats.normalize_gate(gate_json(min_sessions=4))
+        gate = hc_gate.normalize_gate(gate_json(min_sessions=4))
         got = hc_stats.evaluate_harness("claude", gate, old + new_before + after, AFTER)
         self.assertEqual(got["verdict"], "keep")
         self.assertEqual(got["sessions"]["before"], 6)
@@ -229,7 +231,7 @@ class WindowCase(unittest.TestCase):
 
 
 class VersionChangedCase(unittest.TestCase):
-    gate = hc_stats.normalize_gate(gate_json(min_sessions=4))
+    gate = hc_gate.normalize_gate(gate_json(min_sessions=4))
 
     def test_version_changed_inside_the_after_window(self) -> None:
         rows = window_rows("claude", side(10), side(5), "1.0")
@@ -280,7 +282,7 @@ class GateCase(RepoCase):
     def run_gate(
         self, history: str | None = None, rows: Any = None, now: float | None = None
     ) -> dict[str, Any]:
-        return cli.field_gate(
+        return hc_field_gate.field_gate(
             self.repo,
             "t1",
             1,
@@ -301,7 +303,7 @@ class GateCase(RepoCase):
 
     def test_merge_commit_gate_file_is_required(self) -> None:
         with self.assertRaises(hc_git.GitError):
-            cli.field_gate(
+            hc_field_gate.field_gate(
                 self.repo, "t1", 2, self.merge, self.history, self.rows, AFTER + 9 * DAY
             )
 
@@ -341,7 +343,7 @@ class GateCase(RepoCase):
                 {"harness-climb/gates/t1-r1.json": json.dumps(gate)}, date=T0
             )
             history = f"{AFTER} {merge}\n"
-            got = cli.field_gate(
+            got = hc_field_gate.field_gate(
                 self.repo, "t1", 1, merge, history, self.rows, AFTER + 9 * DAY
             )
             verdicts.append(
@@ -389,8 +391,8 @@ class GateCase(RepoCase):
     def test_not_due_grace_result_is_not_a_ledger_verdict(self) -> None:
         got = self.run_gate(f"{T0} {self.base}\n", now=T0 + DAY)
         self.assertEqual(got["status"], "not-due")
-        self.assertNotIn(got["status"], cli.LEDGER_VERDICTS)
-        self.assertNotIn("not-due", cli.LEDGER_VERDICTS)
+        self.assertNotIn(got["status"], hc_ledger.LEDGER_VERDICTS)
+        self.assertNotIn("not-due", hc_ledger.LEDGER_VERDICTS)
 
     def test_sync_history_late_sync_is_inconclusive_sync_late(self) -> None:
         late = T0 + 3 * DAY
@@ -404,7 +406,7 @@ class GateCase(RepoCase):
         edge = T0 + 2 * DAY
         rows = window_rows("claude", side(10), side(5))
         rows = [{**r, "start": r["start"] + DAY} for r in rows]
-        got = cli.field_gate(
+        got = hc_field_gate.field_gate(
             self.repo,
             "t1",
             1,

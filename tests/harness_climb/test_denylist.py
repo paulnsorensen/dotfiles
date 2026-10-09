@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from .support import cli, hc_policy
+from .support import hc_denylist, hc_policy
 from .test_critic import CriticCase
 
 PROMPT = "please rotate the quarterly credentials for the acme billing cluster tonight"
@@ -89,9 +89,9 @@ class PromptSources(unittest.TestCase):
             {"type": "tool_result", "text": "skip"},
             {"type": "input_text", "text": "beta"},
         ]
-        self.assertEqual(cli.flatten_content(blocks), "alpha\nbeta")
-        self.assertEqual(cli.flatten_content("plain"), "plain")
-        self.assertEqual(cli.flatten_content(None), "")
+        self.assertEqual(hc_denylist.flatten_content(blocks), "alpha\nbeta")
+        self.assertEqual(hc_denylist.flatten_content("plain"), "plain")
+        self.assertEqual(hc_denylist.flatten_content(None), "")
 
     def rollout(self, root: Path, *entries: dict) -> None:
         day = root / "2026" / "01" / "01"
@@ -120,11 +120,13 @@ class PromptSources(unittest.TestCase):
                 self.message("user", "# AGENTS.md instructions for /x"),
                 self.message("user", "other", kind="event_msg"),
             )
-            self.assertEqual(cli.codex_prompts(Path(tmp)), [PROMPT])
+            self.assertEqual(hc_denylist.codex_prompts(Path(tmp)), [PROMPT])
 
     def test_codexSessionsRoot_respectsCodexHome(self) -> None:
         with mock.patch.dict(os.environ, {"CODEX_HOME": "/tmp/chome"}):
-            self.assertEqual(cli.codex_sessions_root(), Path("/tmp/chome/sessions"))
+            self.assertEqual(
+                hc_denylist.codex_sessions_root(), Path("/tmp/chome/sessions")
+            )
 
     def load(self, rows: list[dict], codex_home: Path):
         args = argparse.Namespace(denylist=None)
@@ -136,11 +138,11 @@ class PromptSources(unittest.TestCase):
             return rows if "raw_entries" in sql else [{"project": "/a/b/zebracorp"}]
 
         with (
-            mock.patch.object(cli, "resolve_db", return_value=db),
-            mock.patch.object(cli, "duck", side_effect=duck),
+            mock.patch.object(hc_denylist, "resolve_db", return_value=db),
+            mock.patch.object(hc_denylist, "duck", side_effect=duck),
             mock.patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}),
         ):
-            deny = cli.load_denylist(args, Path("/x/repo"), notes)
+            deny = hc_denylist.load_denylist(args, Path("/x/repo"), notes)
         return deny, notes
 
     def test_loadDenylist_arrayContentAndCodexRollouts_enterTheDenylist(self) -> None:

@@ -84,3 +84,11 @@ _Code_: skills/hill-climb/scripts/ratchet.py (`check`, `tighten`)
 **Hill-climb thread** — one narrow optimization loop over one journey and one deterministic metric, with state in `.hill-climb/<thread>/` and a `STOP` file that ends any loop driver.
 _Avoid_: perf task, optimization ticket
 _Code_: skills/hill-climb/SKILL.md; claude/workflows/hill-climb-threads.js
+
+**Field gate** — the post-merge evaluator of a harness-climb candidate: an unpaired Welch 2·SE test of the targeted metric, a fixed guard composite, and a token-cost rule over the windows before and after the first sync that deployed the merge.
+_Avoid_: A/B test, canary
+_Code_: skills/harness-climb/scripts/ (`field-gate`)
+
+**Soak window** — the period after a harness-climb gate file merges during which `soak-check` holds Claude and Codex pin bumps, so the field gate compares one harness version.
+_Avoid_: freeze, change freeze
+_Code_: skills/harness-climb/scripts/soak_check.py; .github/workflows/test.yml (`soak-check`)

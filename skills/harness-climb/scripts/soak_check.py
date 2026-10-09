@@ -7,14 +7,15 @@ history, so the check needs no extra state.
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 from typing import Any
 
+import hc_gate
 import hc_git
 import tomllib
-from hc_stats import DAY, GATE_DEFAULTS, normalize_gate
+from hc_core import emit
+from hc_stats import DAY
 
 PIN_FILE = "chezmoi/dot_config/mise/config.toml"
 PINNED_TOOLS = ("aqua:anthropics/claude-code", "aqua:openai/codex")
@@ -22,7 +23,11 @@ OVERRIDE_LABEL = "harness-climb/soak-override"
 
 
 def _pin_values(repo: str | Path, rev: str) -> dict[str, Any] | None:
-    """Parsed pin values at a revision; None when the file or a parse is unusable."""
+    """Pin values at a revision, one of three results.
+
+    `{}` when the file is absent at that revision, `None` when its TOML does not
+    parse, and otherwise a map of each pinned tool to its value (or None).
+    """
     proc = hc_git.git(repo, "show", f"{rev}:{PIN_FILE}", check=False)
     if proc.returncode != 0:
         return {}
@@ -67,7 +72,7 @@ def open_windows(repo: str | Path, main_ref: str, now: float) -> list[dict[str, 
     ref = _resolve_main(repo, main_ref)
     log = hc_git.git_out(
         repo, "log", "--first-parent", "--diff-filter=A", "--name-only",
-        "--format=%x01%H %ct", ref, "--", hc_git.GATE_DIR,
+        "--format=%x01%H %ct", ref, "--", hc_gate.GATE_DIR,
     )  # fmt: skip
     added: dict[str, tuple[str, int]] = {}
     for block in log.split("\x01")[1:]:
@@ -79,9 +84,9 @@ def open_windows(repo: str | Path, main_ref: str, now: float) -> list[dict[str, 
     windows = []
     for path, (sha, opened) in sorted(added.items()):
         try:
-            gate = normalize_gate(hc_git.read_gate_at(repo, sha, path))
+            gate = hc_gate.normalize_gate(hc_gate.read_gate_at(repo, sha, path))
         except (hc_git.GitError, ValueError):
-            gate = dict(GATE_DEFAULTS)
+            gate = dict(hc_gate.GATE_DEFAULTS)
         closes = opened + (gate["sync_grace_days"] + gate["soak_days"]) * DAY
         if opened <= now < closes:
             windows.append(
@@ -100,56 +105,30 @@ def soak_check(
 ) -> dict[str, Any]:
     """Verdict dict; status is `pass` or `fail`."""
     now = time.time() if now is None else now
+    result: dict[str, Any] = {
+        "status": "pass",
+        "pins_changed": [],
+        "open_gate_files": [],
+    }
     if not base:
-        return {
-            "status": "pass",
-            "reason": "no-pull-request",
-            "pins_changed": [],
-            "open_gate_files": [],
-        }
+        return {**result, "reason": "no-pull-request"}
     pins = changed_pins(repo, base, head)
     if not pins:
-        return {
-            "status": "pass",
-            "reason": "no-pin-change",
-            "pins_changed": [],
-            "open_gate_files": [],
-        }
+        return {**result, "reason": "no-pin-change"}
     windows = open_windows(repo, main_ref, now)
-    names = [w["gate_file"] for w in windows]
+    result["pins_changed"] = pins
     if not windows:
-        return {
-            "status": "pass",
-            "reason": "no-open-window",
-            "pins_changed": pins,
-            "open_gate_files": [],
-        }
+        return {**result, "reason": "no-open-window"}
+    result.update(open_gate_files=[w["gate_file"] for w in windows], windows=windows)
     if OVERRIDE_LABEL in labels:
-        return {
-            "status": "pass",
-            "reason": "override",
-            "override": OVERRIDE_LABEL,
-            "pins_changed": pins,
-            "open_gate_files": names,
-            "windows": windows,
-        }
-    return {
-        "status": "fail",
-        "reason": "open-window",
-        "pins_changed": pins,
-        "open_gate_files": names,
-        "windows": windows,
-    }
+        return {**result, "reason": "override", "override": OVERRIDE_LABEL}
+    return {**result, "status": "fail", "reason": "open-window"}
 
 
 def run(args: Any) -> int:
     labels = [x.strip() for x in (args.labels or "").split(",") if x.strip()]
-    try:
-        result = soak_check(
-            args.repo or ".", args.base, args.head, args.main_ref, labels, args.now
-        )
-    except hc_git.GitError as exc:
-        print(json.dumps({"status": "error", "error": str(exc)}))
-        return 2
-    print(json.dumps(result, indent=2))
+    result = soak_check(
+        args.repo or ".", args.base, args.head, args.main_ref, labels, args.now
+    )
+    emit(result)
     return 0 if result["status"] == "pass" else 1

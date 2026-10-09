@@ -130,12 +130,17 @@ def check_scope(paths: Iterable[str], vendored: set[str]) -> list[dict[str, str]
     return violations
 
 
+def tag_of(tags: dict[str, Any], path: str) -> list[Any]:
+    """The tags a map gives one path, as a list: empty when absent, one item for a bare tag."""
+    raw = tags.get(path)
+    return [] if raw is None else (raw if isinstance(raw, list) else [raw])
+
+
 def check_tags(paths: Iterable[str], tags: dict[str, Any]) -> list[dict[str, str]]:
     """Each changed path needs exactly one tag, and the tag must match its path class."""
     violations = []
     for path in paths:
-        raw = tags.get(path)
-        listed = [] if raw is None else (raw if isinstance(raw, list) else [raw])
+        listed = tag_of(tags, path)
         if not listed:
             violations.append({"check": "tag", "category": "tag-missing", "path": path})
         elif len(listed) > 1:
