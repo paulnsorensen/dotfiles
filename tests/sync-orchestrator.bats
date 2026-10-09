@@ -183,6 +183,85 @@ MOCK
     [[ "$ts" =~ ^[0-9]+$ ]]
 }
 
+# Mock git that reports a fixed 40-hex HEAD, with or without "-C <dir>".
+mock_git_head() {
+    rm -f "$MOCK_BIN/git"
+    cat > "$MOCK_BIN/git" <<'MOCK'
+#!/bin/bash
+[[ "$1" == "-C" ]] && shift 2
+case "$1" in
+    rev-parse) echo "0123456789abcdef0123456789abcdef01234567" ;;
+    *) exit 0 ;;
+esac
+MOCK
+    chmod +x "$MOCK_BIN/git"
+}
+
+@test "sync history appends one line with epoch and 40-hex sha" {
+    mock_git_head
+    run call-sync-fn record_sync_history
+    assert_success
+    local log="$TEST_HOME/.local/state/dotfiles/sync-history.log"
+    assert_file_exists "$log"
+    [[ "$(wc -l < "$log" | tr -d ' ')" == "1" ]]
+    [[ "$(cat "$log")" =~ ^[0-9]+\ [0-9a-f]{40}$ ]]
+}
+
+@test "sync history repeated calls append and never truncate" {
+    mock_git_head
+    local log="$TEST_HOME/.local/state/dotfiles/sync-history.log"
+    mkdir -p "${log%/*}"
+    printf '1 %s\n' "$(printf 'f%.0s' {1..40})" > "$log"
+    run call-sync-fn record_sync_history
+    assert_success
+    run call-sync-fn record_sync_history
+    assert_success
+    [[ "$(wc -l < "$log" | tr -d ' ')" == "3" ]]
+    [[ "$(head -n1 "$log")" == "1 $(printf 'f%.0s' {1..40})" ]]
+}
+
+@test "sync history skips with a warning when HEAD is unreadable" {
+    rm -f "$MOCK_BIN/git"
+    printf '#!/bin/bash\nexit 128\n' > "$MOCK_BIN/git"
+    chmod +x "$MOCK_BIN/git"
+    run call-sync-fn record_sync_history
+    assert_success
+    assert_output_contains "skipping sync history entry"
+    [[ ! -e "$TEST_HOME/.local/state/dotfiles/sync-history.log" ]]
+}
+
+@test "sync history: successful sync run appends one line" {
+    mock_git_head
+    cd "$FAKE_DOTFILES"
+    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    local log="$TEST_HOME/.local/state/dotfiles/sync-history.log"
+    [[ "$(wc -l < "$log" | tr -d ' ')" == "1" ]]
+    [[ "$(cat "$log")" =~ ^[0-9]+\ [0-9a-f]{40}$ ]]
+    assert_file_exists "$TEST_HOME/.local/state/dotfiles/last_sync"
+}
+
+@test "sync history: run with SYNC_FAILURES appends no line" {
+    mock_git_head
+    cd "$FAKE_DOTFILES"
+    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
+    rm -f "$MOCK_BIN/pi"
+    cat > "$MOCK_BIN/pi" <<'MOCK'
+#!/bin/bash
+case "$1" in
+    --version) printf '%s\n' "$PI_VER" ;;
+    update) exit 1 ;;
+esac
+MOCK
+    chmod +x "$MOCK_BIN/pi"
+    run bash "$SYNC_SCRIPT"
+    assert_failure
+    assert_output_contains "Sync completed with FAILURES in: pi-packages"
+    [[ ! -e "$TEST_HOME/.local/state/dotfiles/sync-history.log" ]]
+    assert_file_exists "$TEST_HOME/.local/state/dotfiles/last_sync"
+}
+
 
 @test "Pi package reconcile updates configured extensions" {
     rm -f "$MOCK_BIN/pi"

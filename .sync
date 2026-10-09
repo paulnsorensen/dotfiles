@@ -152,6 +152,7 @@ run_sync() {
         exit 1
     fi
 
+    record_sync_history
     log_success "Sync completed successfully!"
 }
 

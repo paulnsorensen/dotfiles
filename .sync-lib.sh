@@ -28,6 +28,21 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Append "<epoch> <dotfiles HEAD sha>" to the sync history log.
+# Skip with a warning when HEAD cannot be read. Never fail the sync.
+record_sync_history() {
+    local sha
+    sha=$(git -C "$dir" rev-parse HEAD 2>/dev/null) || sha=""
+    if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+        log_warning "Cannot read dotfiles HEAD; skipping sync history entry"
+        return 0
+    fi
+    mkdir -p "${DOTFILES_STATE_DIR}" || return 0
+    printf '%s %s\n' "$(date +%s)" "$sha" >> "${DOTFILES_STATE_DIR}/sync-history.log" ||
+        log_warning "Cannot write sync history entry"
+    return 0
+}
+
 bootstrap_chezmoi_linux() {
     [[ "$(uname -s)" == "Linux" ]] || return 0
     command -v chezmoi &>/dev/null && return 0
