@@ -113,6 +113,32 @@ Pure-prompt, user-invoked skills marked `disable-model-invocation: true` are the
 
 [^inline-skill-model]: `skills/wat/SKILL.md:1-7`; `tests/agent-skill-model-effort.bats:80-106`
 
+#### Executable skill templates
+
+Executable skill templates belong in the owning skill's `assets/` directory.
+The system diagram skill keeps its runnable template in `assets/widget-scaffold.html`.[^diagram-asset]
+The reference explains layout, data, and geometry without duplicating executable code.[^diagram-asset]
+This split permits direct browser checks and avoids reconstructing required DOM elements and styles.
+Recursive skill deployment carries nested assets without another registry entry.[^skill-asset-copy]
+
+The diagram skill uses progressive disclosure (2026-10-08).
+These decisions hold:
+
+- Three levels: L0 Overview (Exec), L1 Map (PM), L2 Detail (Eng). L0 reuses L1 geometry through semantic zoom, so no level relayouts. Reason: one geometry keeps the diagram stable when the reader changes level.[^diagram-asset]
+- Hidden elements use `opacity: 0`, `pointer-events: none`, `tabindex=-1`, and `aria-hidden=true`, never `display: none`. Reason: the skill already bans `display: none` during streaming, and the attributes keep hidden items out of the tab order.[^diagram-asset]
+- Group containers (`G`) are not nodes. A group edge (`of`) shows at L0 only, takes its members' worst state, and carries no source. Reason: a summary edge must never look better than its members.[^diagram-asset]
+- An answer strip holds one sentence of at most 20 words per tab. This lifts the no-prose rule for that sentence and the walkthrough captions. Reason: a reader needs the conclusion before the detail.[^diagram-asset]
+- `scripts/check-widget.mjs` enforces word, sentence, and contrast limits. The agent gets 2 fix rounds, then reports what remains. Reason: a bounded loop stops endless rewrites and still shows the open findings.[^diagram-asset]
+- Every colour is a CSS custom property. Light values sit in `:root` and dark values sit under `prefers-color-scheme: dark`. Reason: one theme source lets the script check contrast in both schemes.[^diagram-asset]
+- The check script is original code. It adopts ideas from answer-me-with-html, not its code. Reason: the script is written fresh, so no MIT code or licence notice enters the repo.[^diagram-asset]
+- Proposal and level switches are plain button groups that use `aria-pressed`, not tab roles. The SVG uses `role="group"`, not `role="img"`. Reason: one shared SVG has no tabpanel, and `role="img"` makes the focusable nodes inside it presentational.[^diagram-asset]
+- `check-widget.mjs` stubs only the element ids present in the markup, paints every tab, and requires a valid state for every tab on each non-group edge. Reason: a missing id or tab state otherwise passes the check and fails in the browser.[^diagram-asset]
+
+[^diagram-asset]: `skills/interactive-system-diagram/assets/widget-scaffold.html`; `skills/interactive-system-diagram/references/widget-scaffold.md`; `skills/interactive-system-diagram/SKILL.md`; progressive-disclosure decisions from PR #1217, 2026-10-08; asset and reference split from PR #1209 artifact extraction.
+[^skill-asset-copy]: `.sync-lib.sh:389-413,613`.
+
+*Source: PR #1217 progressive disclosure, PR #1209 artifact extraction, and recursive skill deployment · Updated: 2026-10-08 · Supersedes: none*
+
 #### User-only skills need a Codex sidecar (2026-09-12)
 
 `disable-model-invocation: true` is a Claude Code field. OMP honors it (normalized to `disableModelInvocation`); Codex ignores it and will auto-invoke the skill from `~/.agents/skills` on a description match. A user-only skill therefore ships **both** the frontmatter flag and `skills/<name>/agents/openai.yaml` with `policy.allow_implicit_invocation: false`. `install-local.sh`, the chezmoi `exact_skills` assembler, and `npx skills add --copy` all carry the nested `agents/` directory, so nothing else is needed. `$ARGUMENTS` substitution is also Claude-only; user-only skills state their grammar in `argument-hint` and parse "the text after the skill name" in prose. First applied to `/skillz` and `/land`. The full matrix and sources live in `skills/skillz/references/harness-layout.md` in `paulnsorensen/skillz-that-grillz`, which `/skillz self-update` re-researches and rewrites (its `Checked:` date is the staleness signal). Research record: `.cheese/research/cross-harness-skill-layout.md`.

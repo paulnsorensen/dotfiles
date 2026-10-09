@@ -90,3 +90,6 @@
 
 2026-10-07 · just-fixes-affected-check · new-page · operations/affected-check-gate.md · Recorded the affected-only `just check` gate: selection rules, the rejected sibling and mention closures, the BDD research verdict, and selection measured over 60 commits.
 2026-10-07 · just-fixes-affected-check · merged · operations/index.md · Registered affected-check-gate.md under Repo-local traps.
+
+2026-10-08 · 1e3c11d2eab700a0 · merged · architecture/agents-dir.md · Records executable skill assets, reference separation, and recursive deployment for PR #1209.
+2026-10-08 · pr-1217-progressive-disclosure · merged · architecture/agents-dir.md · Credits the progressive-disclosure decisions to PR #1217. Adds the button-group and SVG group roles and the stricter check-widget stub from the review fix.
