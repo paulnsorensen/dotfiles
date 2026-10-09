@@ -288,8 +288,8 @@ claude:
     - git-hygiene
     - git-risk
     - grok-codebase
-    - harness-doctor
     - harness-climb
+    - harness-doctor
     - hill-climb
     - interactive-system-diagram
     - land
