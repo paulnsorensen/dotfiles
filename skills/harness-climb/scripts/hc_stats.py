@@ -54,8 +54,14 @@ def normalize_gate(raw: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(gate["min_sessions"], int) or gate["min_sessions"] < 2:
         raise ValueError("gate min_sessions must be an integer of at least 2")
     for key in ("soak_days", "sync_grace_days", "token_per_gain"):
-        if not isinstance(gate[key], (int, float)) or gate[key] < 0:
-            raise ValueError(f"gate {key} must be a non-negative number")
+        value = gate[key]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value < 0
+        ):
+            raise ValueError(f"gate {key} must be a finite non-negative number")
     if gate["soak_days"] <= 0:
         raise ValueError("gate soak_days must be positive")
     return gate
@@ -199,7 +205,8 @@ def judge(
             return _result(
                 INCONCLUSIVE, "tokens-unavailable", guards, target_report, token_report
             )
-        if cost > gate["token_per_gain"] * gain:
+        budget = gate["token_per_gain"] * gain if gate["token_per_gain"] else 0.0
+        if cost > budget:
             return _result(REVERT, "token-cost", guards, target_report, token_report)
         return _result(KEEP, "target", guards, target_report, token_report)
     if tokens is not None and beyond(tokens) and tokens["diff"] < 0:

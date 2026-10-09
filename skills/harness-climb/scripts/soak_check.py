@@ -13,23 +13,36 @@ from pathlib import Path
 from typing import Any
 
 import hc_git
-from hc_stats import DAY, GATE_DEFAULTS
+import tomllib
+from hc_stats import DAY, GATE_DEFAULTS, normalize_gate
 
 PIN_FILE = "chezmoi/dot_config/mise/config.toml"
 PINNED_TOOLS = ("aqua:anthropics/claude-code", "aqua:openai/codex")
 OVERRIDE_LABEL = "harness-climb/soak-override"
 
 
+def _pin_values(repo: str | Path, rev: str) -> dict[str, Any] | None:
+    """Parsed pin values at a revision; None when the file or a parse is unusable."""
+    proc = hc_git.git(repo, "show", f"{rev}:{PIN_FILE}", check=False)
+    if proc.returncode != 0:
+        return {}
+    try:
+        tools = tomllib.loads(proc.stdout).get("tools", {})
+    except tomllib.TOMLDecodeError:
+        return None
+    return {tool: tools.get(tool) for tool in PINNED_TOOLS}
+
+
 def changed_pins(repo: str | Path, base: str, head: str) -> list[str]:
-    """Pinned tools whose line the PR diff adds or removes."""
-    diff = hc_git.git_out(
-        repo, "diff", "-U0", "--no-color", f"{base}...{head}", "--", PIN_FILE
-    )
-    changed = set()
-    for line in diff.splitlines():
-        if line[:1] in ("+", "-") and not line.startswith(("+++", "---")):
-            changed.update(tool for tool in PINNED_TOOLS if tool in line)
-    return sorted(changed)
+    """Pinned tools whose parsed value differs between the merge base and head.
+
+    An unparsable file counts as a change to every pin, so a bump cannot hide in it.
+    """
+    old = _pin_values(repo, hc_git.git_out(repo, "merge-base", base, head))
+    new = _pin_values(repo, head)
+    if old is None or new is None:
+        return sorted(PINNED_TOOLS)
+    return sorted(tool for tool in PINNED_TOOLS if old.get(tool) != new.get(tool))
 
 
 def _resolve_main(repo: str | Path, main_ref: str) -> str:
@@ -66,12 +79,10 @@ def open_windows(repo: str | Path, main_ref: str, now: float) -> list[dict[str, 
     windows = []
     for path, (sha, opened) in sorted(added.items()):
         try:
-            gate = hc_git.read_gate_at(repo, sha, path)
-        except hc_git.GitError:
-            gate = {}
-        grace = gate.get("sync_grace_days", GATE_DEFAULTS["sync_grace_days"])
-        soak = gate.get("soak_days", GATE_DEFAULTS["soak_days"])
-        closes = opened + (grace + soak) * DAY
+            gate = normalize_gate(hc_git.read_gate_at(repo, sha, path))
+        except (hc_git.GitError, ValueError):
+            gate = dict(GATE_DEFAULTS)
+        closes = opened + (gate["sync_grace_days"] + gate["soak_days"]) * DAY
         if opened <= now < closes:
             windows.append(
                 {"gate_file": path, "merge": sha, "opened": opened, "closes": closes}

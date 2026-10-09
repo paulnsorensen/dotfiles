@@ -96,7 +96,8 @@ rows, split the suffix once at the first underscore.
 One row per `(harness, sessionId, cwd, branch)`. Columns: `harness`,
 `sessionId`, `first_seen`, `last_seen`, `project` (cwd), `branch`, `version`,
 `entry_count`. `version` is the harness CLI version (Claude `version`, Codex
-`session_meta.cli_version`). It is NULL when the log names none.
+`session_meta.cli_version`) of the latest entry by timestamp. It is NULL when
+the log names none.
 
 ## `stop_hooks`
 

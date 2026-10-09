@@ -88,6 +88,7 @@ def _normalized(path: str) -> str | None:
 
 def check_scope(paths: Iterable[str], vendored: set[str]) -> list[dict[str, str]]:
     violations = []
+    folded_vendored = {name.casefold() for name in vendored}
     for path in paths:
         clean = _normalized(path)
         if clean is None or clean.startswith(RUNTIME_PREFIXES):
@@ -98,7 +99,10 @@ def check_scope(paths: Iterable[str], vendored: set[str]) -> list[dict[str, str]
             violations.append(
                 {"check": "budget", "category": "budget-config", "path": path}
             )
-        elif clean.startswith("skills/") and clean.split("/")[1] in vendored:
+        elif (
+            clean.startswith("skills/")
+            and clean.split("/")[1].casefold() in folded_vendored
+        ):
             violations.append({"check": "scope", "category": "vendored", "path": path})
         elif classify(clean) is None:
             violations.append(
@@ -130,11 +134,11 @@ def check_tags(paths: Iterable[str], tags: dict[str, Any]) -> list[dict[str, str
 
 # --- leakage ---------------------------------------------------------------
 
-_WORD = re.compile(r"[a-z0-9]+")
+_WORD = re.compile(r"[^\W_]+")
 
 
 def _tokens(text: str) -> list[str]:
-    return _WORD.findall(text.lower())
+    return _WORD.findall(text.casefold())
 
 
 def _ngram_keys(words: list[str]) -> Iterable[str]:
@@ -168,7 +172,8 @@ def check_leakage(
     """Scan added lines only. A violation holds the category and file:line, never text."""
     violations: list[dict[str, Any]] = []
     for path, lines in added.items():
-        stream: list[tuple[str, int]] = []
+        runs: list[list[tuple[str, int]]] = []
+        previous = -2
         for lineno, text in lines:
             low = text.lower()
             for category in ("path", "project"):
@@ -181,39 +186,66 @@ def check_leakage(
                             "line": lineno,
                         }
                     )
-            stream.extend((tok, lineno) for tok in _tokens(text))
+            if lineno != previous + 1 or not runs:
+                runs.append([])
+            runs[-1].extend((tok, lineno) for tok in _tokens(text))
+            previous = lineno
         prompts = deny.get("prompt", set())
         seen: set[int] = set()
-        for i in range(len(stream) - NGRAM + 1):
-            if (
-                " ".join(t for t, _ in stream[i : i + NGRAM]) in prompts
-                and stream[i][1] not in seen
-            ):
-                seen.add(stream[i][1])
-                violations.append(
-                    {
-                        "check": "leakage",
-                        "category": "prompt",
-                        "file": path,
-                        "line": stream[i][1],
-                    }
-                )
+        for stream in runs:
+            for i in range(len(stream) - NGRAM + 1):
+                if (
+                    " ".join(t for t, _ in stream[i : i + NGRAM]) in prompts
+                    and stream[i][1] not in seen
+                ):
+                    seen.add(stream[i][1])
+                    violations.append(
+                        {
+                            "check": "leakage",
+                            "category": "prompt",
+                            "file": path,
+                            "line": stream[i][1],
+                        }
+                    )
+    return violations
     return violations
 
 
+_HUNK = re.compile(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
 def parse_added_lines(diff: str) -> dict[str, list[tuple[int, str]]]:
-    """Added lines per file from `git diff -U0`, with new-file line numbers."""
+    """Added lines per file from `git diff -U0`, with new-file line numbers.
+
+    A `+++ ` line is a file header only outside a hunk. Hunk line counts from
+    the `@@` header decide where the hunk ends.
+    """
     added: dict[str, list[tuple[int, str]]] = {}
     path: str | None = None
-    lineno = 0
+    lineno = old_left = new_left = 0
     for line in diff.splitlines():
-        if line.startswith("+++ "):
-            target = line[4:]
+        if old_left > 0 or new_left > 0:
+            if line.startswith("+"):
+                new_left -= 1
+                if path:
+                    added.setdefault(path, []).append((lineno, line[1:]))
+                lineno += 1
+            elif line.startswith("-"):
+                old_left -= 1
+            elif line.startswith(" "):
+                old_left -= 1
+                new_left -= 1
+                lineno += 1
+            continue
+        if line.startswith("diff --git "):
+            path = None
+        elif line.startswith("+++ "):
+            target = line[4:].rstrip("\t")
             path = None if target == "/dev/null" else target.removeprefix("b/")
-        elif line.startswith("@@"):
-            match = re.match(r"@@ -\S+ \+(\d+)", line)
-            lineno = int(match.group(1)) if match else 0
-        elif path and line.startswith("+") and not line.startswith("+++"):
-            added.setdefault(path, []).append((lineno, line[1:]))
-            lineno += 1
+        else:
+            match = _HUNK.match(line)
+            if match:
+                old_left = int(match.group(1) or 1)
+                lineno = int(match.group(2))
+                new_left = int(match.group(3) or 1)
     return added

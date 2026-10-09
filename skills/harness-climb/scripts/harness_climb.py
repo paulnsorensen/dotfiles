@@ -229,13 +229,8 @@ def run_critic_checks(
             }
         )
     span = f"{args.base}...HEAD"
-    paths = [
-        p
-        for p in hc_git.git_out(
-            repo, "diff", "--name-only", "--no-renames", span
-        ).splitlines()
-        if p
-    ]
+    changed = hc_git.changed_files(repo, span)
+    paths = [path for _, path in changed]
     if not paths:
         violations.append({"check": "diff", "category": "empty-diff"})
     registry = repo / "skills" / "_registry.yaml"
@@ -244,7 +239,21 @@ def run_critic_checks(
     )
     scope = hc_policy.check_scope(paths, vendored)
     violations += scope + hc_policy.check_tags(paths, tags)
-    diff = hc_git.git_out(repo, "diff", "-U0", "--no-color", "--no-renames", span)
+    violations += [
+        {"check": "scope", "category": "symlink", "path": path}
+        for mode, path in changed
+        if mode == "120000"
+    ]
+    diff = hc_git.git_out(
+        repo,
+        "-c",
+        "core.quotepath=false",
+        "diff",
+        "-U0",
+        "--no-color",
+        "--no-renames",
+        span,
+    )
     deny = load_denylist(args, repo)
     if deny is None:
         violations.append({"check": "leakage", "category": "denylist-unavailable"})

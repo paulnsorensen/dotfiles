@@ -37,6 +37,16 @@ def git_out(repo: str | Path, *args: str) -> str:
     return git(repo, *args).stdout.strip()
 
 
+def changed_files(repo: str | Path, span: str) -> list[tuple[str, str]]:
+    """(new mode, path) per changed file. NUL-separated output keeps paths unquoted."""
+    out = git(repo, "diff", "--raw", "-z", "--no-renames", span).stdout
+    fields = out.split("\0")
+    files = []
+    for meta, path in zip(fields[0::2], fields[1::2], strict=False):
+        files.append((meta.split()[1], path))
+    return files
+
+
 def gate_path(thread: str, rnd: int) -> str:
     return f"{GATE_DIR}/{thread}-r{rnd}.json"
 

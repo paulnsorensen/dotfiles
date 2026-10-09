@@ -262,24 +262,26 @@ def _codex_command(name, parsed, raw_input):
 def _codex_token_usage(payload, last_total):
     """Map a token_count payload to (Claude-style usage, total_token_usage).
 
-    Returns (None, last_total) when last_token_usage is null or when
-    total_token_usage repeats the previous event (Codex re-emits it).
+    Returns usage None when last_token_usage is null or when total_token_usage
+    repeats the previous event (Codex re-emits it). The returned total is the
+    latest total seen on any token_count event, with or without usage.
     """
     info = payload.get("info")
     if not isinstance(info, dict):
         return None, last_total
+    total = info.get("total_token_usage")
+    new_total = last_total if total is None else total
     last = info.get("last_token_usage")
     if not isinstance(last, dict):
-        return None, last_total
-    total = info.get("total_token_usage")
+        return None, new_total
     if total is not None and total == last_total:
-        return None, last_total
+        return None, new_total
     usage = {
         "input_tokens": last.get("input_tokens"),
         "output_tokens": last.get("output_tokens"),
         "cache_read_input_tokens": last.get("cached_input_tokens"),
     }
-    return usage, total
+    return usage, new_total
 
 
 def codex_normalize(path):
@@ -323,10 +325,9 @@ def codex_normalize(path):
             and isinstance(payload, dict)
             and payload.get("type") == "token_count"
         ):
-            usage, total = _codex_token_usage(payload, last_total)
+            usage, last_total = _codex_token_usage(payload, last_total)
             if usage is None:
                 continue
-            last_total = total
             token_turns += 1
             yield {
                 "harness": "codex",
@@ -337,7 +338,7 @@ def codex_normalize(path):
                 "cwd": cwd,
                 "message": {
                     "id": f"codex-tokens:{session_id}:{token_turns}",
-                    "model": model,
+                    "model": model or "unknown",
                     "content": [],
                     "usage": usage,
                 },
@@ -1041,7 +1042,7 @@ def main():
             max(timestamp) AS last_seen,
             cwd AS project,
             gitBranch AS branch,
-            max(version) AS version,
+            arg_max(version, timestamp) FILTER (WHERE version IS NOT NULL) AS version,
             count(*) AS entry_count
         FROM raw_entries
         WHERE sessionId IS NOT NULL
