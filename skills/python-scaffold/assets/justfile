@@ -1,0 +1,24 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+# The local gate: fix what tools can fix, then verify.
+check: fix ci
+
+# Verify without edits. CI runs this recipe.
+ci: lint typecheck deadcode test
+
+fix:
+    uv run ruff format
+    uv run ruff check --fix
+
+lint:
+    uv run ruff format --check
+    uv run ruff check
+
+typecheck:
+    uv run basedpyright
+
+deadcode:
+    uv run vulture
+
+test *args:
+    uv run pytest {{ args }}

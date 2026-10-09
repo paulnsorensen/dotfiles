@@ -1,0 +1,36 @@
+# Merge these tables into pyproject.toml. See references/decisions.md.
+
+[tool.ruff]
+line-length = 99
+# vulture_whitelist.py holds bare names, which ruff reports as undefined.
+extend-exclude = ["vulture_whitelist.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "ARG", "BLE", "PTH", "RUF100", "PLR0913", "PLR0915"]
+
+[tool.ruff.lint.pylint]
+max-args = 4
+max-statements = 40
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "ARG", "PLR0913"]
+
+[tool.basedpyright]
+# "recommended" is the basedpyright default: every rule is on, and warnings fail.
+typeCheckingMode = "recommended"
+pythonVersion = "__PYTHON__"
+include = ["src", "tests"]
+
+[tool.vulture]
+# Shipped code only: a name that only tests use is dead code.
+paths = ["src", "vulture_whitelist.py"]
+min_confidence = 60
+sort_by_size = true
+
+[tool.pytest]
+minversion = "9.0"
+strict = true
+testpaths = ["tests"]
+addopts = ["-ra"]
+filterwarnings = ["error"]
+tmp_path_retention_policy = "failed"

@@ -154,6 +154,19 @@ It verifies the merge commit against current `main`, because squash and rebase c
 
 [^land-workflow]: `skills/land/SKILL.md`; `skills/land/references/gh-recipes.md`; `skills/land/agents/openai.yaml`; user decision, 2026-10-06.
 
+#### Python scaffold assets (2026-10-08)
+
+`/python-scaffold` is user-only and ships an `agents/openai.yaml` sidecar. Its assets render a uv repository with ruff, basedpyright, vulture, pytest, prek, CI, and agent files.[^python-scaffold]
+These decisions hold:
+
+- Instruction assets use `.template.md` names. Reason: a nested `AGENTS.md`, `CLAUDE.md`, or `SKILL.md` in the skill tree can load as live instructions or as a second skill.[^python-scaffold]
+- No asset uses a `.tmpl` suffix. Reason: the skill tree is copied into the chezmoi source, and chezmoi renders `.tmpl` files; the CI asset holds `${{ }}` expressions.[^python-scaffold]
+- Placeholders are `__PROJECT__`, `__PACKAGE__`, and `__PYTHON__`. Reason: they cannot clash with Go templates, just interpolation, or GitHub expressions.[^python-scaffold]
+- vulture scans `src` at confidence 60, and basedpyright runs `recommended`. Reason: the local Python repos agree on both, and a higher vulture floor hides unused functions.[^python-scaffold]
+- `tests/python-scaffold.bats` runs the networked render test only with `PYTHON_SCAFFOLD_E2E=1`. Reason: it downloads the dev tools for two fresh projects.[^python-scaffold]
+
+[^python-scaffold]: `skills/python-scaffold/SKILL.md`; `skills/python-scaffold/references/decisions.md`; `tests/python-scaffold.bats`.
+
 `npx skills add` never prunes: renaming a local skill leaves the old copy under `~/.agents/skills/<old-name>` until it is deleted by hand (seen with `skill-improver` → `skillz`).
 
 #### Vendored skills overwrite local skills of the same name (2026-09-22)
