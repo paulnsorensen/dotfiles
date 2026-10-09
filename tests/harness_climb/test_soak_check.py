@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from .support import DAY, T0, RepoCase, gate_json, run_cli, soak_check
+from .support import DAY, T0, RepoCase, gate_json, hc_git, run_cli, soak_check
 
 PIN = soak_check.PIN_FILE
 GATE = "harness-climb/gates/t1-r1.json"
@@ -178,6 +178,13 @@ class SoakCase(RepoCase):
             str(T0),
         )
         self.assertEqual(proc.returncode, 2)
+
+    def test_resolve_main_falls_back_to_local_main_without_origin(self) -> None:
+        self.assertEqual(hc_git.resolve_main(self.repo, "origin/main"), "main")
+
+    def test_resolve_main_prefers_origin_main_when_present(self) -> None:
+        self.git("update-ref", "refs/remotes/origin/main", self.main)
+        self.assertEqual(hc_git.resolve_main(self.repo, "origin/main"), "origin/main")
 
 
 if __name__ == "__main__":

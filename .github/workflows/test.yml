@@ -9,9 +9,10 @@ on:
 permissions:
   contents: read
 
-# Only pull_request runs cancel; a push to main always finishes.
+# A pull_request run cancels an older run of the same PR. A push to main
+# gets a group per commit, so it always finishes.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -66,8 +67,22 @@ jobs:
     - name: Install bats
       run: sudo npm install -g bats
 
-    # bash-shortening tests need `sg` (ast-grep). Ubuntu's util-linux also
-    # ships `sg`, so the uv tool bin goes first on PATH.
+    # The harness-climb and session-analytics tests need the duckdb CLI.
+    # The version matches chezmoi/dot_config/mise/config.toml.
+    - name: Install duckdb
+      env:
+        DUCKDB_VERSION: v1.5.6
+        DUCKDB_SHA256: 6e89deac1ebbc36eed0291caf8b567b030c7b86ac35998f71854e22b3c5d5e2f
+      run: |
+        curl -fsSL -o "$RUNNER_TEMP/duckdb.zip" \
+          "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-amd64.zip"
+        echo "${DUCKDB_SHA256}  $RUNNER_TEMP/duckdb.zip" | sha256sum -c -
+        mkdir -p "$RUNNER_TEMP/duckdb-bin"
+        unzip -q "$RUNNER_TEMP/duckdb.zip" -d "$RUNNER_TEMP/duckdb-bin"
+        echo "$RUNNER_TEMP/duckdb-bin" >> "$GITHUB_PATH"
+
+    # The bash-shortening tests need `sg` (ast-grep). Ubuntu's util-linux also
+    # ships `sg`, so put the uv tool bin first on PATH.
     - name: Install ast-grep
       run: |
         uv tool install ast-grep-cli==0.42.1
@@ -129,7 +144,7 @@ jobs:
 
   # Holds a claude-code or codex pin bump while a harness-climb soak window
   # is open. It reads labels from the API at run time, so a re-run after
-  # the override label is added sees the new label.
+  # someone adds the override label sees the new label.
   # It needs the PR base SHA, so it skips on push.
   soak-check:
     if: github.event_name == 'pull_request'
@@ -158,11 +173,11 @@ jobs:
         python3 skills/harness-climb/scripts/harness_climb.py soak-check --base "$BASE_SHA" --labels "$PR_LABELS" --main-ref origin/main
 
   # Stable aggregate gate. Branch protection requires the check named `test`,
-  # so that name must not change when the shard count does. `if: always()`
-  # plus an explicit result assertion is required: without it a failed shard
-  # makes this job *skip*, and a skipped required check does not block a
-  # merge -- the gate would silently pass while tests were red.
-  # A skip is accepted only for soak-check on push, where it has no base SHA.
+  # so do not change that name when the shard count changes. The job needs
+  # `if: always()` plus an explicit result assertion. Without them, a failed
+  # shard makes this job skip, and a skipped required check does not block a
+  # merge: the gate would pass while tests are red.
+  # The gate accepts a skip only for soak-check on push, where it has no base SHA.
   test:
     runs-on: ubuntu-latest
     needs: [test-shard, test-extras, soak-check]

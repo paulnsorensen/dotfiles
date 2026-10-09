@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
+import subprocess
 import sys
 import unittest
 from datetime import datetime, timezone
@@ -85,6 +85,60 @@ class EnsureFreshDbTests(unittest.TestCase):
             hc_db.ensure_fresh_db()
         run.assert_not_called()
 
+    def test_ingest_output_is_discarded_and_the_run_is_bounded(self) -> None:
+        env = {k: v for k, v in os.environ.items() if k != "SESSIONS_DB"}
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(hc_db.subprocess, "run") as run,
+        ):
+            hc_db.ensure_fresh_db()
+        ((_, kwargs),) = run.call_args_list
+        self.assertIs(kwargs["stdout"], subprocess.DEVNULL)
+        self.assertEqual(kwargs["timeout"], hc_db.INGEST_TIMEOUT_S)
+
+    def test_refresh_status_follows_the_ingest_outcome(self) -> None:
+        env = {k: v for k, v in os.environ.items() if k != "SESSIONS_DB"}
+        outcomes = (
+            (subprocess.CompletedProcess([], 0), True),
+            (subprocess.CompletedProcess([], 1), False),
+            (subprocess.TimeoutExpired("ingest", 1), False),
+            (FileNotFoundError("python"), False),
+        )
+        for result, expected in outcomes:
+            effect = result if isinstance(result, BaseException) else None
+            value = None if effect else result
+            with (
+                mock.patch.dict(os.environ, env, clear=True),
+                mock.patch.object(
+                    hc_db.subprocess, "run", return_value=value, side_effect=effect
+                ),
+            ):
+                self.assertIs(hc_db.ensure_fresh_db(), expected, result)
+
+    def test_override_counts_as_fresh(self) -> None:
+        with mock.patch.dict(os.environ, {"SESSIONS_DB": "/tmp/x.duckdb"}):
+            self.assertIs(hc_db.ensure_fresh_db(), True)
+
+    def test_resolve_db_raises_when_the_refresh_fails(self) -> None:
+        with (
+            mock.patch.object(hc_db, "ensure_fresh_db", return_value=False),
+            self.assertRaises(hc_db.RefreshFailed) as ctx,
+        ):
+            hc_db.resolve_db()
+        self.assertEqual(str(ctx.exception), "session database refresh failed")
+
+    def test_critic_denylist_path_surfaces_a_failed_refresh(self) -> None:
+        with (
+            mock.patch.object(hc_db, "ensure_fresh_db", return_value=False),
+            self.assertRaises(hc_db.InputError),
+        ):
+            hc_denylist.load_denylist(None, Path("/tmp/repo"))
+
+    def test_settings_follow_the_environment_despite_the_cache(self) -> None:
+        for name in ("/tmp/a.duckdb", "/tmp/b.duckdb"):
+            with mock.patch.dict(os.environ, {"SESSIONS_DB": name}):
+                self.assertEqual(hc_db.resolve_db(), Path(name))
+
     def test_every_database_reader_refreshes_first(self) -> None:
         absent = str(Path(os.environ["SESSIONS_DB"]).with_name("never.duckdb"))
         with (
@@ -102,8 +156,9 @@ class EnsureFreshDbTests(unittest.TestCase):
             )
             self.assertEqual((rc, out["status"]), (1, "no-db"))
             self.assertEqual(fresh.call_count, 1)
-            args = argparse.Namespace(denylist=None)
-            self.assertIsNone(hc_denylist.load_denylist(args, Path("/tmp/repo")))
+            self.assertEqual(
+                hc_denylist.load_denylist(None, Path("/tmp/repo")), (None, [])
+            )
             self.assertEqual(fresh.call_count, 2)
 
 
@@ -112,9 +167,8 @@ class LoadRowsTests(RepoCase):
     def build(self, *extra: str, sessions_ddl: str = SESSIONS_DDL) -> Path:
         return make_db(self.dir / "s.duckdb", sessions_ddl, *OTHER_DDL, *extra)
 
-    def test_load_rows_computes_per_session_values_from_the_ingest_schema(self) -> None:
-        t = AFTER + 100
-        db = self.build(
+    def build_session_db(self, t: float) -> Path:
+        return self.build(
             # s1 spans three (cwd, branch) rows. 10.0 beats 9.0 only as a version by recency.
             session_row("claude", "s1", t, t + 10, "9.0", 3),
             session_row("claude", "s1", t + 5, t + 100, "10.0", 3),
@@ -136,6 +190,10 @@ class LoadRowsTests(RepoCase):
             "INSERT INTO model_turns VALUES ('claude', 'm', 'end_turn', 100, 50, 'ts', 's1', '/p'), "
             "('claude', 'm', 'end_turn', 300, NULL, 'ts', 's1', '/p')",
         )
+
+    def test_load_rows_computes_per_session_values_from_the_ingest_schema(self) -> None:
+        t = AFTER + 100
+        db = self.build_session_db(t)
         gate = gate_json(
             targeted_query="SELECT harness, sessionId, entry_count * 2.5 AS value FROM sessions"
         )

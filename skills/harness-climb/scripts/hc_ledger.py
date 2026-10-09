@@ -143,6 +143,8 @@ def _pending_payload(
             {
                 "round": rnd,
                 "change": fields.get("change", ""),
+                "pr": fields.get("pr", ""),
+                "lab": fields.get("lab", ""),
                 "gate": hc_gate.gate_path(args.thread, rnd),
                 "merge": resolve_merge(repo, args.main_ref, args.thread, rnd),
             }

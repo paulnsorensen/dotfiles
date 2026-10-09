@@ -54,7 +54,7 @@ class PendingCase(RepoCase):
 
     def pending(self) -> list[dict[str, Any]]:
         rc, out = call(
-            "ledger", "pending", "--repo", str(self.repo),
+            "ledger", "pending", "--repo", str(self.repo), "--main-ref", "main",
             "--state-dir", str(self.state), "--thread", "t1",
         )  # fmt: skip
         self.assertEqual((rc, out["status"]), (0, "ok"), out)
@@ -131,6 +131,31 @@ class PendingTests(PendingCase):
             "--candidate", "not-due", "--merge", "none",
         )  # fmt: skip
         self.assertEqual((rc, out["status"]), (1, "refused"))
+
+    def test_not_due_field_gate_leaves_the_round_pending(self) -> None:
+        self.branch(1)
+        self.append(1, pr="7", lab="promote")
+        merge = self.merge(1)
+        before = self.ledger_text()
+        history = self.dir / "sync-history.log"
+        history.write_text("")
+        now = int(self.git("show", "-s", "--format=%ct", merge)) + 3600
+        rc, out = call(
+            "field-gate", "--repo", str(self.repo), "--state-dir", str(self.state),
+            "--thread", "t1", "--round", "1", "--merge", merge,
+            "--history", str(history), "--now", str(now),
+        )  # fmt: skip
+        self.assertEqual((rc, out["status"]), (0, "not-due"))
+        self.assertEqual(self.ledger_text(), before)
+        (row,) = self.pending()
+        self.assertEqual((row["round"], row["merge"]), (1, merge))
+
+    def test_pending_rows_carry_the_pr_and_lab_of_the_latest_line(self) -> None:
+        self.branch(1)
+        self.append(1, pr="none", lab="held")
+        self.append(1, pr="42", lab="promote")
+        (row,) = self.pending()
+        self.assertEqual((row["pr"], row["lab"]), ("42", "promote"))
 
 
 if __name__ == "__main__":

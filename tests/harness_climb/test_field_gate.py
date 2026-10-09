@@ -3,17 +3,19 @@ from __future__ import annotations
 import itertools
 import json
 import unittest
+from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from .support import (
     DAY,
     T0,
     RepoCase,
     gate_json,
+    hc_db,
     hc_field_gate,
     hc_gate,
     hc_git,
-    hc_ledger,
     hc_stats,
     make_rows,
     run_cli,
@@ -388,11 +390,28 @@ class GateCase(RepoCase):
             {v["reason"] for v in got["harnesses"].values()}, {"sync-late"}
         )
 
-    def test_not_due_grace_result_is_not_a_ledger_verdict(self) -> None:
-        got = self.run_gate(f"{T0} {self.base}\n", now=T0 + DAY)
-        self.assertEqual(got["status"], "not-due")
-        self.assertNotIn(got["status"], hc_ledger.LEDGER_VERDICTS)
-        self.assertNotIn("not-due", hc_ledger.LEDGER_VERDICTS)
+    def test_db_refresh_failure_is_inconclusive_db_stale(self) -> None:
+        def stale() -> Path:
+            raise hc_db.RefreshFailed("session database refresh failed")
+
+        got = hc_field_gate.field_gate(
+            self.repo, "t1", 1, self.merge, self.history, None, AFTER + 9 * DAY, stale
+        )
+        self.assertEqual(got["candidate"], "inconclusive")
+        self.assertEqual({v["reason"] for v in got["harnesses"].values()}, {"db-stale"})
+
+    def test_early_verdicts_never_refresh_the_database(self) -> None:
+        resolver = mock.Mock(side_effect=AssertionError("refreshed"))
+        for history, now in (
+            (f"{T0} {self.base}\n", T0 + DAY),
+            (f"{T0} {self.base}\n", T0 + 3 * DAY),
+            (self.history, AFTER + DAY),
+        ):
+            got = hc_field_gate.field_gate(
+                self.repo, "t1", 1, self.merge, history, None, now, resolver
+            )
+            self.assertNotEqual(got.get("status"), "no-db")
+        resolver.assert_not_called()
 
     def test_sync_history_late_sync_is_inconclusive_sync_late(self) -> None:
         late = T0 + 3 * DAY

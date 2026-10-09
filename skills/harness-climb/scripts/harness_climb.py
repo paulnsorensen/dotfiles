@@ -98,16 +98,16 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         json.loads(Path(args.findings).read_text()) if args.findings else {}
     )
     errors = validate_findings(findings)
-    db = resolve_db()
     out: dict[str, Any] = {
         "status": "ok",
-        "db": str(db),
         "harnesses": list(hc_stats.HARNESSES),
         "window_days": args.days,
     }
     if errors:
         emit({**out, "status": "invalid", "errors": errors})
         return 2
+    db = resolve_db()
+    out["db"] = str(db)
     if not db.is_file():
         emit({**out, "status": "no-db"})
         return 1
@@ -144,7 +144,7 @@ def _add_analyze(sub: Any) -> None:
 def _add_critic(sub: Any) -> None:
     p = _subcommand(sub, "critic", hc_critic.cmd_critic)
     p.add_argument("--round", type=int, required=True)
-    p.add_argument("--base", default="main")
+    p.add_argument("--base", default="origin/main")
     p.add_argument("--tags", help="JSON map of changed path to component tag")
     p.add_argument(
         "--denylist", help="JSON {prompts, projects} instead of the session database"
@@ -157,7 +157,7 @@ def _add_freeze(sub: Any) -> None:
     p = _subcommand(sub, "freeze", hc_freeze.cmd_freeze)
     p.add_argument("--round", type=int, required=True)
     p.add_argument("--component", required=True, choices=hc_policy.COMPONENTS)
-    p.add_argument("--base", default="main")
+    p.add_argument("--base", default="origin/main")
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("--targeted-query")
     group.add_argument("--targeted-query-file")
@@ -191,7 +191,9 @@ def _add_ledger(sub: Any) -> None:
     p.add_argument("action", choices=("append", "tail", "pending"))
     p.add_argument("--last", type=int, default=5)
     p.add_argument(
-        "--main-ref", default="main", help="branch that holds merged rounds (pending)"
+        "--main-ref",
+        default="origin/main",
+        help="branch that holds merged rounds (pending)",
     )
     for key in hc_ledger.LEDGER_KEYS:
         p.add_argument(f"--{key}")
@@ -223,9 +225,18 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_refs(args: argparse.Namespace) -> None:
+    """Fall back to the local `main` when `origin/main` does not exist."""
+    if args.command in ("critic", "freeze"):
+        args.base = hc_git.resolve_main(repo_root(args.repo), args.base)
+    elif args.command == "ledger" and args.action == "pending":
+        args.main_ref = hc_git.resolve_main(repo_root(args.repo), args.main_ref)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        _resolve_refs(args)
         return args.handler(args)
     except (hc_git.GitError, ValueError, OSError) as exc:
         emit({"status": "error", "error": str(exc)})

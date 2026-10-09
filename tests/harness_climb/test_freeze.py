@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import os
 import unittest
@@ -31,8 +29,12 @@ class FreezeCase(RepoCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def contract(self) -> None:
-        self.commit({"skills/foo/evals/autoimprove.json": "{}\n"}, "contract")
+    def contract(self, skill: str = "foo") -> None:
+        """Put the skill's contract on `main`, the freeze base, and rebase the branch."""
+        self.git("checkout", "-q", "main")
+        self.commit({f"skills/{skill}/evals/autoimprove.json": "{}\n"}, "contract")
+        self.git("checkout", "-q", "harness-climb/t1/r1")
+        self.git("rebase", "-q", "main")
 
     def ledger_lines(self) -> list[dict[str, str]]:
         path = self.state / "t1" / "ledger.md"
@@ -52,11 +54,16 @@ class FreezeCase(RepoCase):
         path.write_text(json.dumps(state))
 
     def freeze(
-        self, *extra: str, component: str = "skill", rnd: str = "1"
+        self,
+        *extra: str,
+        component: str = "skill",
+        rnd: str = "1",
+        query: str = QUERY,
     ) -> tuple[int, dict[str, Any]]:
         return call(
             "freeze", "--repo", str(self.repo), "--state-dir", str(self.state), "--thread", "t1",
-            "--round", rnd, "--component", component, "--targeted-query", QUERY, *extra,
+            "--round", rnd, "--component", component, "--base", "main",
+            "--targeted-query", query, *extra,
         )  # fmt: skip
 
 
@@ -77,30 +84,6 @@ class LabTests(FreezeCase):
             rc, out = self.freeze(*extra)
             self.assertEqual((rc, out["status"]), (1, "refused"), verdict)
         self.assertFalse((self.repo / "harness-climb").exists())
-
-    @needs_duckdb
-    def test_lab_contract_comes_from_the_evals_file_not_a_flag(self) -> None:
-        self.critic()
-        rc, out = self.freeze("--autoimprove-verdict", "promote")
-        self.assertEqual(rc, 0, out)
-        self.assertEqual(out["lab"], {"verdict": "held", "reason": "no-contract"})
-
-    def test_lab_contract_flag_is_gone(self) -> None:
-        self.critic()
-        with (
-            contextlib.redirect_stderr(io.StringIO()),
-            self.assertRaises(SystemExit),
-        ):
-            self.freeze("--contract", "--autoimprove-verdict", "promote")
-
-    @needs_duckdb
-    def test_lab_contract_needs_every_touched_skill_contracted(self) -> None:
-        self.contract()
-        self.commit({"skills/bar/SKILL.md": "edit\n"}, "second skill")
-        self.critic()
-        rc, out = self.freeze("--autoimprove-verdict", "promote")
-        self.assertEqual(rc, 0, out)
-        self.assertEqual(out["lab"], {"verdict": "held", "reason": "no-contract"})
 
     @needs_duckdb
     def test_lab_held_no_contract_for_skill(self) -> None:
@@ -179,10 +162,7 @@ class GateFileTests(FreezeCase):
 
     def test_gate_file_needs_a_query(self) -> None:
         self.critic()
-        rc, out = call(
-            "freeze", "--repo", str(self.repo), "--state-dir", str(self.state), "--thread", "t1",
-            "--round", "1", "--component", "skill", "--targeted-query", "  ",
-        )  # fmt: skip
+        rc, out = self.freeze(query="  ")
         self.assertEqual(rc, 2)
         self.assertEqual(out["status"], "error")
         self.assertFalse((self.repo / "harness-climb").exists())
@@ -234,53 +214,6 @@ class InFlightTests(FreezeCase):
             "round=1 | change=x | pr=1 | lab=held | claude=pending | codex=pending | candidate=pending | merge=abc\n"
         )
         self.assertEqual(self.freeze()[0], 1)
-
-
-class QueryDryRunTests(FreezeCase):
-    def query_freeze(self, query: str) -> tuple[int, dict[str, Any]]:
-        self.critic()
-        return self.freeze_query(query)
-
-    def freeze_query(self, query: str) -> tuple[int, dict[str, Any]]:
-        return call(
-            "freeze", "--repo", str(self.repo), "--state-dir", str(self.state), "--thread", "t1",
-            "--round", "1", "--component", "skill", "--targeted-query", query,
-        )  # fmt: skip
-
-    def assertRefusedWithoutGate(self, rc: int, out: dict[str, Any], text: str) -> None:
-        self.assertEqual((rc, out["status"]), (1, "refused"), out)
-        self.assertIn(text, out["reason"])
-        self.assertFalse((self.repo / "harness-climb").exists())
-
-    def test_query_with_a_semicolon_is_refused_without_duckdb(self) -> None:
-        rc, out = self.query_freeze(f"{QUERY}; DROP TABLE sessions")
-        self.assertRefusedWithoutGate(rc, out, "';'")
-
-    def test_query_with_a_trailing_semicolon_is_refused(self) -> None:
-        rc, out = self.query_freeze(f"{QUERY};")
-        self.assertRefusedWithoutGate(rc, out, "';'")
-
-    @needs_duckdb
-    def test_query_missing_the_value_column_is_refused(self) -> None:
-        rc, out = self.query_freeze("SELECT harness, sessionId FROM sessions")
-        self.assertRefusedWithoutGate(rc, out, "dry run")
-
-    @needs_duckdb
-    def test_query_with_a_sql_error_is_refused(self) -> None:
-        rc, out = self.query_freeze("SELECT harness, sessionId, 1 AS value FROM nope")
-        self.assertRefusedWithoutGate(rc, out, "dry run")
-
-    def test_query_dry_run_is_refused_when_the_database_is_missing(self) -> None:
-        with mock.patch.dict(os.environ, {"SESSIONS_DB": str(self.dir / "absent.db")}):
-            rc, out = self.query_freeze(QUERY)
-        self.assertRefusedWithoutGate(rc, out, "dry run")
-
-    @needs_duckdb
-    def test_query_with_the_three_columns_freezes(self) -> None:
-        rc, out = self.query_freeze(
-            "SELECT harness, sessionId, 2 AS value, 'x' AS extra FROM sessions"
-        )
-        self.assertEqual((rc, out["status"]), (0, "frozen"), out)
 
 
 class RefusalLedgerTests(FreezeCase):

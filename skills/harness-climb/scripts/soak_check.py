@@ -50,26 +50,9 @@ def changed_pins(repo: str | Path, base: str, head: str) -> list[str]:
     return sorted(tool for tool in PINNED_TOOLS if old.get(tool) != new.get(tool))
 
 
-def _resolve_main(repo: str | Path, main_ref: str) -> str:
-    for candidate in (main_ref, "main"):
-        if (
-            hc_git.git(
-                repo,
-                "rev-parse",
-                "--verify",
-                "--quiet",
-                f"{candidate}^{{commit}}",
-                check=False,
-            ).returncode
-            == 0
-        ):
-            return candidate
-    raise hc_git.GitError(f"main ref {main_ref} not found; fetch full history")
-
-
 def open_windows(repo: str | Path, main_ref: str, now: float) -> list[dict[str, Any]]:
     """Gate files added to main whose soak window contains `now`."""
-    ref = _resolve_main(repo, main_ref)
+    ref = hc_git.resolve_main(repo, main_ref)
     log = hc_git.git_out(
         repo, "log", "--first-parent", "--diff-filter=A", "--name-only",
         "--format=%x01%H %ct", ref, "--", hc_gate.GATE_DIR,

@@ -53,17 +53,80 @@ MIN_PROJECT_LEN = 5
 
 # Words that name a directory or a common English word, not a project.
 # A session cwd basename in this set never enters the project denylist.
-PROJECT_STOPWORDS = frozenset(
-    """
-    scripts script tests test hooks hook press plate harness src docs doc specs spec
-    internal modules module package packages research wiki build builds config configs
-    skills skill agents agent notes tools tool utils common shared output outputs
-    cache temp tmpdir trash backup archive reference references examples example
-    sandbox scratch playground vendor assets static public private lib libs bin
-    about after again being below could every first green other right their there
-    these those three under until where which while would write local global
-    """.split()  # noqa: SIM905
-)
+# Names shorter than MIN_PROJECT_LEN never enter it, so they are not listed.
+PROJECT_STOPWORDS = {
+    "scripts",
+    "script",
+    "tests",
+    "hooks",
+    "press",
+    "plate",
+    "harness",
+    "specs",
+    "internal",
+    "modules",
+    "module",
+    "package",
+    "packages",
+    "research",
+    "build",
+    "builds",
+    "config",
+    "configs",
+    "skills",
+    "skill",
+    "agents",
+    "agent",
+    "notes",
+    "tools",
+    "utils",
+    "common",
+    "shared",
+    "output",
+    "outputs",
+    "cache",
+    "tmpdir",
+    "trash",
+    "backup",
+    "archive",
+    "reference",
+    "references",
+    "examples",
+    "example",
+    "sandbox",
+    "scratch",
+    "playground",
+    "vendor",
+    "assets",
+    "static",
+    "public",
+    "private",
+    "about",
+    "after",
+    "again",
+    "being",
+    "below",
+    "could",
+    "every",
+    "first",
+    "green",
+    "other",
+    "right",
+    "their",
+    "there",
+    "these",
+    "those",
+    "three",
+    "under",
+    "until",
+    "where",
+    "which",
+    "while",
+    "would",
+    "write",
+    "local",
+    "global",
+}
 
 
 def vendored_names(registry_text: str) -> set[str]:
@@ -198,6 +261,43 @@ def build_denylist(
     return deny
 
 
+def _line_violations(
+    path: str, lineno: int, text: str, deny: dict[str, set[str]]
+) -> list[dict[str, Any]]:
+    """The path and project hits on one added line."""
+    low = text.lower()
+    padded = f" {' '.join(_tokens(text))} "
+    hits = {
+        "path": any(span in low for span in deny.get("path", ())),
+        "project": any(f" {name} " in padded for name in deny.get("project", ())),
+    }
+    return [
+        {"check": "leakage", "category": cat, "file": path, "line": lineno}
+        for cat, hit in hits.items()
+        if hit
+    ]
+
+
+def _prompt_violations(
+    path: str, runs: list[list[tuple[str, int]]], prompts: set[str]
+) -> list[dict[str, Any]]:
+    """One violation per line that holds a prompt n-gram. A run is consecutive added lines."""
+    found: dict[int, dict[str, Any]] = {}
+    for stream in runs:
+        for i in range(len(stream) - NGRAM + 1):
+            if " ".join(t for t, _ in stream[i : i + NGRAM]) in prompts:
+                found.setdefault(
+                    stream[i][1],
+                    {
+                        "check": "leakage",
+                        "category": "prompt",
+                        "file": path,
+                        "line": stream[i][1],
+                    },
+                )
+    return list(found.values())
+
+
 def check_leakage(
     added: dict[str, list[tuple[int, str]]], deny: dict[str, set[str]]
 ) -> list[dict[str, Any]]:
@@ -207,46 +307,12 @@ def check_leakage(
         runs: list[list[tuple[str, int]]] = []
         previous = -2
         for lineno, text in lines:
-            low = text.lower()
-            words = _tokens(text)
-            padded = f" {' '.join(words)} "
-            hits = {
-                "path": any(span in low for span in deny.get("path", ())),
-                "project": any(
-                    f" {name} " in padded for name in deny.get("project", ())
-                ),
-            }
-            for category, hit in hits.items():
-                if hit:
-                    violations.append(
-                        {
-                            "check": "leakage",
-                            "category": category,
-                            "file": path,
-                            "line": lineno,
-                        }
-                    )
+            violations += _line_violations(path, lineno, text, deny)
             if lineno != previous + 1 or not runs:
                 runs.append([])
             runs[-1].extend((tok, lineno) for tok in _tokens(text))
             previous = lineno
-        prompts = deny.get("prompt", set())
-        seen: set[int] = set()
-        for stream in runs:
-            for i in range(len(stream) - NGRAM + 1):
-                if (
-                    " ".join(t for t, _ in stream[i : i + NGRAM]) in prompts
-                    and stream[i][1] not in seen
-                ):
-                    seen.add(stream[i][1])
-                    violations.append(
-                        {
-                            "check": "leakage",
-                            "category": "prompt",
-                            "file": path,
-                            "line": stream[i][1],
-                        }
-                    )
+        violations += _prompt_violations(path, runs, deny.get("prompt", set()))
     return violations
 
 

@@ -71,7 +71,7 @@ assert "types:" not in text
 assert "if: github.event_name == 'pull_request'" in body, "soak-check must skip on push"
 conc = re.search(r"^concurrency:\n(.*?)(?=^\S)", text, re.S | re.M)
 assert conc, "no concurrency block"
-assert "group: ci-${{ github.event.pull_request.number || github.ref }}\n" in conc.group(1)
+assert "group: ci-${{ github.event.pull_request.number || github.sha }}\n" in conc.group(1)
 assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in conc.group(1)
 agg = re.search(r"^  test:\n(.*?)(?=^  \S|\Z)", text, re.S | re.M).group(1)
 assert "if: always()" in agg

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import subprocess
@@ -16,25 +17,45 @@ DB_PATH_SH = SKILLS_DIR / "session-analytics" / "scripts" / "db-path.sh"
 INGEST_PY = SKILLS_DIR / "session-analytics" / "scripts" / "ingest.py"
 IN_SCOPE = "harness IN ('claude','codex')"
 
-# The memory limit that the last resolver call returned.
-_resolved: dict[str, str] = {}
+INGEST_TIMEOUT_S = 600
 
 
 class VersionUnavailable(InputError):
     """The session database has no harness version column."""
 
 
-def ensure_fresh_db() -> None:
-    """Refresh the session database with the TTL-aware ingest. `SESSIONS_DB` skips it."""
+class RefreshFailed(InputError):
+    """The ingest that refreshes the session database failed or timed out."""
+
+
+def ensure_fresh_db() -> bool:
+    """Refresh the session database with the TTL-aware ingest. True when it is fresh.
+
+    `SESSIONS_DB` skips the ingest and counts as fresh.
+    """
     if os.environ.get("SESSIONS_DB"):
-        return
-    subprocess.run(
-        [sys.executable, str(INGEST_PY)], capture_output=True, text=True, check=False
-    )
+        return True
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(INGEST_PY)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=INGEST_TIMEOUT_S,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
 
 
-def _shell_settings() -> tuple[Path, str]:
-    """The database path and DuckDB memory limit, from one call to the shared resolver."""
+@functools.cache
+def _settings_for(
+    sessions_db: str, cache_home: str, home: str, limit: str, cwd: str
+) -> tuple[Path, str]:
+    """The database path and DuckDB memory limit, from one call to the shared resolver.
+
+    The arguments are the environment the resolver reads. They key the cache.
+    """
     proc = subprocess.run(
         [
             "bash",
@@ -53,36 +74,49 @@ def _shell_settings() -> tuple[Path, str]:
     return Path(lines[0].strip()), lines[1].strip()
 
 
+def _shell_settings() -> tuple[Path, str]:
+    env = os.environ.get
+    return _settings_for(
+        env("SESSIONS_DB", ""),
+        env("XDG_CACHE_HOME", ""),
+        env("HOME", ""),
+        env("SESSIONS_DUCKDB_MEMORY_LIMIT", ""),
+        os.getcwd(),
+    )
+
+
 def resolve_db() -> Path:
     """The session database path, from the shared session-analytics resolver only.
 
     Every caller reads the database next, so a stale one is refreshed here first.
     """
-    ensure_fresh_db()
-    path, limit = _shell_settings()
-    _resolved["memory_limit"] = limit
-    return path
+    if not ensure_fresh_db():
+        raise RefreshFailed("session database refresh failed")
+    return _shell_settings()[0]
 
 
 def duck(db: Path, sql: str) -> list[dict[str, Any]]:
-    limit = _resolved.get("memory_limit") or _shell_settings()[1]
-    proc = subprocess.run(
-        [
-            "duckdb",
-            "-init",
-            "/dev/null",
-            "-readonly",
-            str(db),
-            "-cmd",
-            f"SET memory_limit='{limit}'",
-            "-json",
-            "-c",
-            sql,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    limit = _shell_settings()[1]
+    try:
+        proc = subprocess.run(
+            [
+                "duckdb",
+                "-init",
+                "/dev/null",
+                "-readonly",
+                str(db),
+                "-cmd",
+                f"SET memory_limit='{limit}'",
+                "-json",
+                "-c",
+                sql,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise InputError("duckdb not installed") from exc
     if proc.returncode != 0:
         raise InputError(f"duckdb failed: {proc.stderr.strip()[:300]}")
     text = proc.stdout.strip()

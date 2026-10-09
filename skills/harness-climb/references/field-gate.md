@@ -26,6 +26,7 @@ Scope the targeted query to `harness IN ('claude','codex')`.
 - A session database with no `version` column gives `inconclusive` with reason `version-unavailable`.
 - The before window ends where the after window starts. It begins at the later of `soak_days` earlier and the last version change before the start.
 - A version change inside a window gives `inconclusive` with reason `version-changed`.
+- A session database that the gate cannot refresh gives `inconclusive` with reason `db-stale`.
 
 ## Statistics
 

@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 SYNC_LINE = re.compile(r"^(\d+) ([0-9a-f]{40})$")
+CLOCK_SKEW_S = 300
 
 
 class GitError(RuntimeError):
@@ -32,6 +33,18 @@ def git(
 
 def git_out(repo: str | Path, *args: str) -> str:
     return git(repo, *args).stdout.strip()
+
+
+def resolve_main(repo: str | Path, main_ref: str) -> str:
+    """`main_ref` when it resolves to a commit, else the local `main` branch."""
+    for candidate in (main_ref, "main"):
+        probe = git(
+            repo, "rev-parse", "--verify", "--quiet", f"{candidate}^{{commit}}",
+            check=False,
+        )  # fmt: skip
+        if probe.returncode == 0:
+            return candidate
+    raise GitError(f"main ref {main_ref} not found; fetch full history")
 
 
 def changed_files(repo: str | Path, span: str) -> list[tuple[str, str]]:
@@ -81,12 +94,13 @@ def first_sync_containing(
     """First history line whose sha has the merge commit as an ancestor.
 
     A sync older than the merge commit cannot contain it, and each sha needs one check.
+    The time skip allows `CLOCK_SKEW_S` of clock skew between the merge and the sync.
     """
     merge_sha = git_out(repo, "rev-parse", "--verify", f"{merge}^{{commit}}")
     merged_at = commit_time(repo, merge_sha)
     checked: set[str] = set()
     for epoch, sha in history:
-        if epoch < merged_at or sha in checked:
+        if epoch < merged_at - CLOCK_SKEW_S or sha in checked:
             continue
         checked.add(sha)
         if is_ancestor(repo, merge_sha, sha):

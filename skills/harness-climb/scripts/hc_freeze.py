@@ -25,19 +25,24 @@ from hc_ledger import append_note, measured_rounds
 _GATE_NAME = re.compile(rf"^{re.escape(hc_gate.GATE_DIR)}/(.+)-r(\d+)\.json$")
 
 
-def has_contract(repo: Path, base: str) -> bool:
-    """True when every skill the diff touches has `evals/autoimprove.json` at HEAD."""
+def touched_skills(repo: Path, base: str) -> set[str]:
+    """Names of the skills that the diff from `base` to HEAD touches."""
     names = set()
     for _, path in hc_git.changed_files(repo, f"{base}...HEAD"):
         parts = path.split("/")
         if parts[0] == "skills" and len(parts) > 2:
             names.add(parts[1])
-    return bool(names) and all(
+    return names
+
+
+def has_contract(repo: Path, base: str, names: set[str]) -> bool:
+    """True when any touched skill has `evals/autoimprove.json` at `base`."""
+    return any(
         hc_git.git(
             repo,
             "cat-file",
             "-e",
-            f"HEAD:skills/{name}/evals/autoimprove.json",
+            f"{base}:skills/{name}/evals/autoimprove.json",
             check=False,
         ).returncode
         == 0
@@ -114,7 +119,12 @@ def _refusal(
             {},
         )
     try:
-        contract = has_contract(repo, args.base)
+        names = touched_skills(repo, args.base)
+        if args.component == "skill" and len(names) > 1:
+            raise InputError(
+                f"a skill round must touch one skill, not {len(names)}: {', '.join(sorted(names))}"
+            )
+        contract = has_contract(repo, args.base, names)
         return None, lab_result(args.component, contract, args.autoimprove_verdict)
     except InputError as exc:
         return str(exc), {}
@@ -143,13 +153,14 @@ def cmd_freeze(args: argparse.Namespace) -> int:
         return 0
     root = state_root(args, repo)
     refusal, lab = _refusal(args, repo, root)
-    query = (
-        Path(args.targeted_query_file).read_text()
-        if args.targeted_query_file
-        else args.targeted_query
-    )
-    query = (query or "").strip()
+    query = ""
     if not refusal:
+        query = (
+            Path(args.targeted_query_file).read_text()
+            if args.targeted_query_file
+            else args.targeted_query
+        )
+        query = (query or "").strip()
         if not query:
             raise InputError("freeze needs a targeted query")
         refusal = query_problem(query)

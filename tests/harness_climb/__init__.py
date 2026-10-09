@@ -6,7 +6,6 @@ No test then ingests or reads the real database.
 import os
 import tempfile
 
-os.environ.setdefault(
-    "SESSIONS_DB",
-    os.path.join(tempfile.gettempdir(), "harness-climb-tests-absent.duckdb"),
+os.environ["SESSIONS_DB"] = os.path.join(
+    tempfile.gettempdir(), "harness-climb-tests-absent.duckdb"
 )

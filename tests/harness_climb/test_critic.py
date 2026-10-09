@@ -5,7 +5,7 @@ import os
 import unittest
 from unittest import mock
 
-from .support import RepoCase, call, hc_policy
+from .support import RepoCase, call, hc_critic, hc_policy
 
 REGISTRY = """sources:
   paulnsorensen/easy-cheese:
@@ -52,6 +52,8 @@ class CriticCase(RepoCase):
             "t1",
             "--round",
             "1",
+            "--base",
+            "main",
             "--tags",
             str(tags_file),
             "--denylist",
@@ -160,6 +162,8 @@ class CriticCase(RepoCase):
             "t1",
             "--round",
             "1",
+            "--base",
+            "main",
             "--component",
             "skill",
             "--targeted-query",
@@ -230,6 +234,8 @@ class CriticCase(RepoCase):
                 "t1",
                 "--round",
                 "1",
+                "--base",
+                "main",
                 "--tags",
                 str(tags),
                 "--budget-cmd",
@@ -237,6 +243,60 @@ class CriticCase(RepoCase):
             )
         self.assertEqual(rc, 1)
         self.assertIn("denylist-unavailable", self.categories(out))
+
+    def critic_with_denylist(
+        self, files: dict[str, str], deny: dict, notes: list[dict] | None = None
+    ) -> tuple[int, dict]:
+        """Run the critic with a database-style denylist: no --denylist file."""
+        self.commit(files, "propose")
+        tags = self.write_json("tags.json", {p: _tag(p) for p in files})
+        loaded = ({"prompt": set(), "path": set(), **deny}, notes or [])
+        with mock.patch("hc_critic.load_denylist", return_value=loaded):
+            return call(
+                "critic",
+                "--repo",
+                str(self.repo),
+                "--state-dir",
+                str(self.state),
+                "--thread",
+                "t1",
+                "--round",
+                "1",
+                "--base",
+                "main",
+                "--tags",
+                str(tags),
+                "--budget-cmd",
+                "true",
+            )
+
+    def test_leakage_partialDenylistNote_failsTheCritic(self) -> None:
+        note = {"check": "leakage", "category": "denylist-partial", "harness": "codex"}
+        rc, out = self.critic_with_denylist(
+            {"AGENTS.md": "better\n"}, {"project": set()}, [note]
+        )
+        self.assertEqual(rc, 1)
+        self.assertEqual(out["violations"], [note])
+
+    def test_leakage_projectKeyThatBaseTreeHolds_isNotFlagged(self) -> None:
+        text = "the rollout plan\nsee quokkaworks\n"
+        rc, out = self.critic_with_denylist(
+            {"AGENTS.md": text}, {"project": {"rollout", "quokkaworks"}}
+        )
+        self.assertEqual(rc, 1)
+        self.assertEqual(
+            [(v["category"], v["line"]) for v in out["violations"]], [("project", 2)]
+        )
+        self.assertNotIn("quokkaworks", json.dumps(out).lower())
+
+    def test_leakage_repoVocabulary_failedGitKeepsEveryKey(self) -> None:
+        self.assertEqual(
+            hc_critic._repo_vocabulary(self.repo, "no-such-ref", {"rollout"}), set()
+        )
+        self.assertEqual(
+            hc_critic._repo_vocabulary(self.repo, "main", {"rollout", "quokkaworks"}),
+            {"rollout"},
+        )
 
     # --- AC-7 budgets ---
 

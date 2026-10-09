@@ -6,6 +6,7 @@ import argparse
 import json
 import shlex
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,31 @@ def _branch_violations(args: argparse.Namespace, repo: Path) -> list[dict[str, A
     ]
 
 
+def _repo_vocabulary(repo: Path, base: str, keys: set[str]) -> set[str]:
+    """The single-word keys that occur as a whole token in the tracked text of `base`.
+
+    A word the repository already holds cannot leak. Any git failure returns
+    no words, so every key stays on the denylist.
+    """
+    words = sorted(key for key in keys if " " not in key)
+    if not words:
+        return set()
+    with tempfile.NamedTemporaryFile("w", suffix=".keys") as keyfile:
+        keyfile.write("\n".join(words) + "\n")
+        keyfile.flush()
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "grep", "-I", "-h", "-o", "-i", "-w", "-F"]
+            + ["-f", keyfile.name, base, "--"],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+        )
+    if proc.returncode not in (0, 1):  # 1 means no match
+        return set()
+    return {line.casefold() for line in proc.stdout.splitlines()} & set(words)
+
+
 def _leakage_violations(
     args: argparse.Namespace, repo: Path, span: str
 ) -> list[dict[str, Any]]:
@@ -47,10 +73,11 @@ def _leakage_violations(
         "--no-renames",
         span,
     )
-    notes: list[dict[str, Any]] = []
-    deny = load_denylist(args, repo, notes)
+    deny, notes = load_denylist(args.denylist, repo)
     if deny is None:
         return [{"check": "leakage", "category": "denylist-unavailable"}]
+    if not args.denylist:
+        deny["project"] -= _repo_vocabulary(repo, args.base, deny["project"])
     return notes + hc_policy.check_leakage(hc_policy.parse_added_lines(diff), deny)
 
 

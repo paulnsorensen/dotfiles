@@ -189,7 +189,7 @@ case "$REPORT" in
         esac
         run "SELECT harness, model, count(*) AS turns,
                     round(avg(tool_calls), 2) AS calls_per_turn,
-                    round(100.0 * avg(CASE WHEN tool_calls = 1 THEN 1 ELSE 0 END), 1) AS single_call_pct,
+                    round(100.0 * avg(CASE WHEN tool_calls = 1 THEN 1 ELSE 0 END) FILTER (WHERE tool_calls IS NOT NULL), 1) AS single_call_pct,
                     round(median(duration_ms) / 1000, 1) AS dur_p50_s,
                     round(quantile_cont(duration_ms, 0.95) / 1000, 1) AS dur_p95_s,
                     round(median(ttft_ms) / 1000, 1) AS ttft_p50_s,

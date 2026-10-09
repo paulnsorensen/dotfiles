@@ -44,6 +44,8 @@ Claude transcripts.
 
 ### codex
 
+A forked Codex sub-agent writes its own rollout, so it counts as a standalone session. A Claude sidechain keeps the parent `sessionId`.
+
 Rollout JSONL. Each line is `{timestamp, type, payload}`:
 
 - `session_meta` — `payload.id` (session id) + `payload.cwd`. Threaded onto every

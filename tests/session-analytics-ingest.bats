@@ -22,7 +22,8 @@ DB="$TEST_HOME/.cache/dotfiles/session-analytics/sessions.duckdb"
 setup() {
     setup_test_env
     export XDG_CACHE_HOME="$TEST_HOME/.cache"
-    command -v duckdb  >/dev/null || skip "duckdb not installed"
+    # The pure-Python unittest needs no duckdb; every other test does.
+    [[ "$BATS_TEST_DESCRIPTION" == "codex ingest unittest" ]] || command -v duckdb >/dev/null || skip "duckdb not installed"
     mkdir -p "$TEST_HOME/.claude/projects/proj"
     mkdir -p "$TEST_HOME/.codex/sessions/2026/05/30"
     mkdir -p "$TEST_HOME/.pi/agent/sessions/2026/05/30"
@@ -249,6 +250,26 @@ JSONL
     [[ "$output" =~ omp[[:space:]]*\|[[:space:]]*p/gpt-x[[:space:]]*\|[[:space:]]*2[[:space:]]*\|[[:space:]]*0\.5[[:space:]]*\|[[:space:]]*50\.0[[:space:]]*\|[[:space:]]*4\.0 ]]
     [[ "$output" =~ \|[[:space:]]*1[[:space:]]*\|$ ]]
     [[ "$output" != *claude* ]]
+}
+
+@test "query: latency reports NULL single_call_pct for codex turns without tool_calls" {
+    write_codex_fixture
+    local d="$TEST_HOME/.codex/sessions/2026/05/30"
+    printf '%s\n' \
+        '{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"x-2","cwd":"/work/codex"}}' \
+        '{"timestamp":"2026-05-30T11:00:01Z","type":"turn_context","payload":{"cwd":"/work/codex","model":"gpt-x"}}' \
+        '{"timestamp":"2026-05-30T11:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}' \
+        > "$d/rollout-latency.jsonl"
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT count(*) AS n, count(tool_calls) AS t FROM model_turns WHERE harness='codex';"
+    assert_output_contains '"t":0'
+    run duckdb "$DB" -json -c "SELECT round(100.0 * avg(CASE WHEN tool_calls = 1 THEN 1 ELSE 0 END) FILTER (WHERE tool_calls IS NOT NULL), 1) AS pct FROM model_turns WHERE harness='codex'"
+    assert_output_contains '"pct":null'
+    run env SESSIONS_DB="$DB" "$REAL_DOTFILES_DIR/skills/session-analytics/scripts/query.sh" latency codex
+    assert_success
+    [[ "$output" != *"| 0.0 "* ]]
+    [[ "$output" =~ gpt-x[[:space:]]*\|[[:space:]]*1[[:space:]]*\|[[:space:]]*NULL[[:space:]]*\| ]]
 }
 
 @test "query: latency names the re-ingest fix when the database predates model_turns" {

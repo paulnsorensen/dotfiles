@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from .support import CLI_PATH, HAVE_DUCKDB, call, cli
+from .support import CLI_PATH, HAVE_DUCKDB, call, cli, hc_db
 
 GOOD_QUERY = "SELECT sessionId FROM tool_results WHERE harness IN ('claude','codex') AND is_error = 'true'"
 
@@ -134,6 +134,18 @@ class AnalyzeCommandTests(unittest.TestCase):
         self.assertEqual((rc, out["status"]), (2, "invalid"))
         self.assertGreaterEqual(len(out["errors"]), 4)
         self.assertFalse(self.db.exists())
+
+    def test_invalid_findings_never_refresh_the_database(self) -> None:
+        bad = self.findings({"failure_modes": [{"counts": {}}]})
+        with mock.patch.object(hc_db, "ensure_fresh_db") as fresh:
+            self.analyze(bad)
+        fresh.assert_not_called()
+
+    def test_a_failed_refresh_is_an_error_not_a_stale_read(self) -> None:
+        with mock.patch.object(hc_db, "ensure_fresh_db", return_value=False):
+            rc, out = self.analyze(self.findings({"failure_modes": [failure_mode()]}))
+        self.assertEqual((rc, out["status"]), (2, "error"))
+        self.assertIn("refresh failed", out["error"])
 
     def test_valid_findings_with_missing_db_report_no_db(self) -> None:
         rc, out = self.analyze(self.findings({"failure_modes": [failure_mode()]}))

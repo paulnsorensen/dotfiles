@@ -86,9 +86,8 @@ def welch(before: list[float], after: list[float]) -> dict[str, float | int]:
     """Unpaired difference of means (after - before) and its standard error."""
 
     def moments(xs: list[float]) -> tuple[float, float]:
-        return statistics.fmean(xs), statistics.variance(xs) if len(
-            xs
-        ) > 1 else math.nan
+        var = statistics.variance(xs) if len(xs) > 1 else math.nan
+        return statistics.fmean(xs), var
 
     mb, vb = moments(before)
     ma, va = moments(after)

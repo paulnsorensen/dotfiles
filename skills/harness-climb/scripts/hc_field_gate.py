@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,7 @@ import hc_gate
 import hc_git
 import hc_stats
 from hc_core import emit, repo_root, stopped
-from hc_db import VersionUnavailable, load_rows, resolve_db
+from hc_db import RefreshFailed, VersionUnavailable, load_rows, resolve_db
 
 
 def _both(reason: str, **extra: Any) -> dict[str, Any]:
@@ -49,11 +50,17 @@ def _judge_rows(
     out: dict[str, Any],
     gate: dict[str, Any],
     rows: list[dict[str, Any]] | None,
-    db: Path | None,
+    db: Path | Callable[[], Path] | None,
     after_start: float,
 ) -> dict[str, Any]:
     if rows is None:
-        if db is None or not db.is_file():
+        if db is None:
+            return {**out, "status": "no-db"}
+        try:
+            db = db() if callable(db) else db
+        except RefreshFailed:
+            return {**out, **_both("db-stale")}
+        if not db.is_file():
             return {**out, "status": "no-db"}
         soak = gate["soak_days"] * hc_stats.DAY
         try:
@@ -77,9 +84,12 @@ def field_gate(
     history_text: str,
     rows: list[dict[str, Any]] | None,
     now: float,
-    db: Path | None = None,
+    db: Path | Callable[[], Path] | None = None,
 ) -> dict[str, Any]:
-    """Verdict dict. Reads settings from the merge commit and mutates nothing."""
+    """Verdict dict. Reads settings from the merge commit and mutates nothing.
+
+    A callable `db` resolves the database only when the verdict needs rows.
+    """
     gate = hc_gate.normalize_gate(
         hc_gate.read_gate_at(repo, merge, hc_gate.gate_path(thread, rnd))
     )
@@ -113,9 +123,15 @@ def cmd_field_gate(args: argparse.Namespace) -> int:
     history_text = history.read_text() if history.is_file() else ""
     rows = json.loads(Path(args.rows).read_text()) if args.rows else None
     now = args.now if args.now is not None else time.time()
-    db = None if rows is not None else resolve_db()
     result = field_gate(
-        repo, args.thread, args.round, args.merge, history_text, rows, now, db
+        repo,
+        args.thread,
+        args.round,
+        args.merge,
+        history_text,
+        rows,
+        now,
+        None if rows is not None else resolve_db,
     )
     emit(result)
     return 0 if result["status"] in ("ok", "not-due") else 1

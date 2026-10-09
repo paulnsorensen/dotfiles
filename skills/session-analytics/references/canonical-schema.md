@@ -98,6 +98,7 @@ One row per `(harness, sessionId, cwd, branch)`. Columns: `harness`,
 `entry_count`. `version` is the harness CLI version (Claude `version`, Codex
 `session_meta.cli_version`) of the latest entry by timestamp. It is NULL when
 the log names none.
+A forked Codex sub-agent rollout counts as a standalone session. A Claude sidechain keeps the parent `sessionId`.
 
 ## `stop_hooks`
 
