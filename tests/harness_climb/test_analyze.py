@@ -5,10 +5,9 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
-import unittest
+import unittest.mock
 from pathlib import Path
 from typing import Any
-from unittest import mock
 
 from .support import CLI_PATH, HAVE_DUCKDB, call, cli, hc_db
 
@@ -51,6 +50,34 @@ class ValidateFindingsTests(unittest.TestCase):
         )
         self.assertEqual(len(errors), 1)
         self.assertIn("must filter", errors[0])
+
+    def test_failure_mode_query_accepts_a_reordered_harness_list(self) -> None:
+        query = "SELECT 1 FROM sessions WHERE harness  IN ( 'codex', 'claude' )"
+        self.assertEqual(self.errors(failure_modes=[failure_mode(query=query)]), [])
+
+    def test_failure_mode_query_rejects_a_partial_harness_list(self) -> None:
+        for query in (
+            "SELECT 1 WHERE harness IN ('claude')",
+            "SELECT 1 WHERE harness IN ('claude','codex','pi')",
+        ):
+            errors = self.errors(failure_modes=[failure_mode(query=query)])
+            self.assertEqual(len(errors), 1, query)
+
+    def test_non_object_findings_return_errors(self) -> None:
+        self.assertEqual(len(cli.validate_findings([])), 1)
+        for key, bad in (
+            ("failure_modes", ["x"]),
+            ("failure_modes", "x"),
+            ("success_habits", [3]),
+            ("success_habits", None),
+        ):
+            errors = self.errors(**{key: bad})
+            self.assertEqual(len(errors), 1, (key, bad))
+
+    def test_boolean_counts_are_rejected(self) -> None:
+        errors = self.errors(failure_modes=[failure_mode(counts={"claude": True})])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("counts", errors[0])
 
     def test_failure_mode_without_counts_is_rejected(self) -> None:
         for counts in (None, {}, {"claude": "4"}, {"claude": 1.5}):
@@ -104,7 +131,7 @@ class AnalyzeCommandTests(unittest.TestCase):
         ]
         if findings:
             argv += ["--findings", str(findings)]
-        with mock.patch.dict(os.environ, {"SESSIONS_DB": str(db or self.db)}):
+        with unittest.mock.patch.dict(os.environ, {"SESSIONS_DB": str(db or self.db)}):
             return call(*argv)
 
     def findings(self, data: dict[str, Any]) -> Path:
@@ -137,12 +164,12 @@ class AnalyzeCommandTests(unittest.TestCase):
 
     def test_invalid_findings_never_refresh_the_database(self) -> None:
         bad = self.findings({"failure_modes": [{"counts": {}}]})
-        with mock.patch.object(hc_db, "ensure_fresh_db") as fresh:
+        with unittest.mock.patch.object(hc_db, "ensure_fresh_db") as fresh:
             self.analyze(bad)
         fresh.assert_not_called()
 
     def test_a_failed_refresh_is_an_error_not_a_stale_read(self) -> None:
-        with mock.patch.object(hc_db, "ensure_fresh_db", return_value=False):
+        with unittest.mock.patch.object(hc_db, "ensure_fresh_db", return_value=False):
             rc, out = self.analyze(self.findings({"failure_modes": [failure_mode()]}))
         self.assertEqual((rc, out["status"]), (2, "error"))
         self.assertIn("refresh failed", out["error"])

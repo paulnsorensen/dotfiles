@@ -4,14 +4,26 @@ from __future__ import annotations
 
 import json
 import os
-import unittest
+from pathlib import Path
 from typing import Any
-from unittest import mock
+from unittest import TestCase, main, mock, skipUnless
 
-from .support import HAVE_DUCKDB, RepoCase, call, gate_json, hc_gate, hc_ledger, make_db
+from .support import (
+    HAVE_DUCKDB,
+    RepoCase,
+    call,
+    cli,
+    gate_json,
+    hc_db,
+    hc_gate,
+    hc_ledger,
+    make_db,
+)
+
+hc_freeze = cli.hc_freeze
 
 QUERY = "SELECT harness, sessionId, 1.0 AS value FROM sessions"
-needs_duckdb = unittest.skipUnless(HAVE_DUCKDB, "duckdb CLI not installed")
+needs_duckdb = skipUnless(HAVE_DUCKDB, "duckdb CLI not installed")
 
 
 class FreezeCase(RepoCase):
@@ -28,6 +40,10 @@ class FreezeCase(RepoCase):
             patch = mock.patch.dict(os.environ, {"SESSIONS_DB": str(db)})
             patch.start()
             self.addCleanup(patch.stop)
+        clean = ({"prompt": set(), "path": set(), "project": set()}, [])
+        denylist = mock.patch("hc_freeze.load_denylist", return_value=clean)
+        denylist.start()
+        self.addCleanup(denylist.stop)
 
     def contract(self, skill: str = "foo") -> None:
         """Put the skill's contract on `main`, the freeze base, and rebase the branch."""
@@ -83,6 +99,7 @@ class LabTests(FreezeCase):
             extra = ["--autoimprove-verdict", verdict] if verdict else []
             rc, out = self.freeze(*extra)
             self.assertEqual((rc, out["status"]), (1, "refused"), verdict)
+            self.assertIn("autoimprove verdict", out["reason"], verdict)
         self.assertFalse((self.repo / "harness-climb").exists())
 
     @needs_duckdb
@@ -109,10 +126,15 @@ class LabTests(FreezeCase):
     def test_lab_freeze_refused_without_passing_critic(self) -> None:
         rc, out = self.freeze()
         self.assertEqual((rc, out["status"]), (1, "refused"))
+        self.assertIn("no passing critic verdict", out["reason"])
         self.critic(passed=False)
-        self.assertEqual(self.freeze()[0], 1)
+        rc, out = self.freeze()
+        self.assertEqual(rc, 1)
+        self.assertIn("no passing critic verdict", out["reason"])
         self.critic(head="0" * 40)
-        self.assertEqual(self.freeze()[0], 1)
+        rc, out = self.freeze()
+        self.assertEqual(rc, 1)
+        self.assertIn("no passing critic verdict", out["reason"])
 
     def test_lab_freeze_refused_when_critic_component_differs(self) -> None:
         self.critic(components=["hook"])
@@ -213,7 +235,92 @@ class InFlightTests(FreezeCase):
         ledger.write_text(
             "round=1 | change=x | pr=1 | lab=held | claude=pending | codex=pending | candidate=pending | merge=abc\n"
         )
-        self.assertEqual(self.freeze()[0], 1)
+        rc, out = self.freeze()
+        self.assertEqual(rc, 1)
+        self.assertIn("merged unmeasured candidate", out["reason"])
+        self.assertIn("harness-climb/gates/old-r1.json", out["reason"])
+
+    def test_in_flight_ignores_files_that_are_not_gate_paths(self) -> None:
+        self.git("checkout", "-q", "main")
+        self.commit({"harness-climb/gates/README.md": "notes\n"}, "notes")
+        self.git("checkout", "-q", "harness-climb/t1/r1")
+        self.git("rebase", "-q", "main")
+        self.critic()
+        self.assertEqual(
+            hc_freeze.in_flight(self.repo, self.state, "main", "skill", "t1", 1), []
+        )
+
+
+class GatePathTests(TestCase):
+    def test_parse_gate_path_inverts_gate_path(self) -> None:
+        path = hc_gate.gate_path("my-thread", 12)
+        self.assertEqual(hc_gate.parse_gate_path(path), ("my-thread", 12))
+
+    def test_parse_gate_path_rejects_other_paths(self) -> None:
+        for path in ("harness-climb/gates/README.md", "other/t1-r1.json", "t1-r1.json"):
+            self.assertIsNone(hc_gate.parse_gate_path(path), path)
+
+
+class LeakageTests(FreezeCase):
+    LEAK = "acmesecretproject"
+
+    def test_leaking_query_is_refused_without_echoing_the_text(self) -> None:
+        self.critic()
+        deny = {"prompt": set(), "path": set(), "project": {self.LEAK}}
+        query = f"SELECT harness, sessionId, 1.0 AS value FROM sessions WHERE project = '{self.LEAK}'"
+        with mock.patch("hc_freeze.load_denylist", return_value=(deny, [])):
+            rc, out = self.freeze(query=query)
+        self.assertEqual((rc, out["status"]), (1, "refused"))
+        self.assertIn("leaks denylisted text: project", out["reason"])
+        self.assertNotIn(self.LEAK, out["reason"])
+        self.assertFalse((self.repo / "harness-climb").exists())
+        (line,) = self.ledger_lines()
+        self.assertNotIn(self.LEAK, line["change"])
+
+    def test_freeze_is_refused_when_the_denylist_is_unavailable(self) -> None:
+        self.critic()
+        with mock.patch("hc_freeze.load_denylist", return_value=(None, [])):
+            rc, out = self.freeze()
+        self.assertEqual(rc, 1)
+        self.assertIn("denylist unavailable", out["reason"])
+        self.assertFalse((self.repo / "harness-climb").exists())
+
+
+class DbFailureTests(FreezeCase):
+    def test_a_failed_refresh_is_not_reported_as_a_bad_query(self) -> None:
+        self.critic()
+        failure = hc_db.RefreshFailed("session database refresh failed")
+        with mock.patch("hc_freeze.resolve_db", side_effect=failure):
+            rc, out = self.freeze()
+        self.assertEqual((rc, out["status"]), (1, "refused"))
+        self.assertIn("session database unavailable", out["reason"])
+        self.assertNotIn("dry run", out["reason"])
+
+    def test_a_failed_refresh_in_the_denylist_load_is_not_a_bad_query(self) -> None:
+        self.critic()
+        failure = hc_db.RefreshFailed("session database refresh failed")
+        with mock.patch("hc_freeze.load_denylist", side_effect=failure):
+            rc, out = self.freeze()
+        self.assertEqual(rc, 1)
+        self.assertIn("session database unavailable", out["reason"])
+
+    def test_a_missing_duckdb_is_not_reported_as_a_bad_query(self) -> None:
+        db = Path("/x/s.duckdb")
+        with (
+            mock.patch("hc_freeze.resolve_db", return_value=db),
+            mock.patch("hc_db._shell_settings", return_value=(db, "1GB")),
+            mock.patch("hc_db.subprocess.run", side_effect=FileNotFoundError),
+        ):
+            reason = hc_freeze.query_problem(QUERY)
+        self.assertIn("session database unavailable", reason)
+        self.assertNotIn("dry run", reason)
+
+    @needs_duckdb
+    def test_a_bad_query_still_reports_the_dry_run(self) -> None:
+        self.critic()
+        rc, out = self.freeze(query="SELECT nope FROM sessions")
+        self.assertEqual(rc, 1)
+        self.assertIn("failed the dry run", out["reason"])
 
 
 class RefusalLedgerTests(FreezeCase):
@@ -233,4 +340,4 @@ class RefusalLedgerTests(FreezeCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()

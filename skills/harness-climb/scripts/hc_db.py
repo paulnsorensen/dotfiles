@@ -11,20 +11,25 @@ from pathlib import Path
 from typing import Any
 
 from hc_core import InputError
+from hc_stats import HARNESSES
 
 SKILLS_DIR = Path(__file__).resolve().parents[2]
 DB_PATH_SH = SKILLS_DIR / "session-analytics" / "scripts" / "db-path.sh"
 INGEST_PY = SKILLS_DIR / "session-analytics" / "scripts" / "ingest.py"
-IN_SCOPE = "harness IN ('claude','codex')"
+IN_SCOPE = f"harness IN ({','.join(repr(h) for h in HARNESSES)})"
 
 INGEST_TIMEOUT_S = 600
 
 
-class VersionUnavailable(InputError):
+class DbError(ValueError):
+    """The session database or its environment failed. The caller's input is not at fault."""
+
+
+class VersionUnavailable(DbError):
     """The session database has no harness version column."""
 
 
-class RefreshFailed(InputError):
+class RefreshFailed(DbError):
     """The ingest that refreshes the session database failed or timed out."""
 
 
@@ -70,7 +75,7 @@ def _settings_for(
     )
     lines = proc.stdout.strip().splitlines()
     if proc.returncode != 0 or len(lines) < 2:
-        raise InputError(f"cannot resolve the session database: {proc.stderr.strip()}")
+        raise DbError(f"cannot resolve the session database: {proc.stderr.strip()}")
     return Path(lines[0].strip()), lines[1].strip()
 
 
@@ -116,7 +121,7 @@ def duck(db: Path, sql: str) -> list[dict[str, Any]]:
             check=False,
         )
     except OSError as exc:
-        raise InputError("duckdb not installed") from exc
+        raise DbError("duckdb not installed") from exc
     if proc.returncode != 0:
         raise InputError(f"duckdb failed: {proc.stderr.strip()[:300]}")
     text = proc.stdout.strip()
@@ -133,18 +138,27 @@ def load_rows(
     )[0]["n"]
     if not has_version:
         raise VersionUnavailable("sessions table has no version column")
+    current = duck(
+        db,
+        "SELECT count(*) AS n FROM information_schema.columns WHERE (table_name = 'sessions' AND column_name = 'parent_session_id') OR (table_name = 'model_turns' AND column_name = 'context_tokens')",
+    )[0]["n"]
+    if current != 2:
+        raise InputError(
+            "session database predates parent_session_id/context_tokens; re-run ingest.py --force"
+        )
     version = "arg_max(version, last_seen) FILTER (WHERE version IS NOT NULL)"
     query = gate["targeted_query"].strip().rstrip(";")
     sql = f"""
     WITH s AS (
         SELECT harness, sessionId, epoch(CAST(min(first_seen) AS TIMESTAMPTZ)) AS start, {version} AS version
-        FROM sessions WHERE {IN_SCOPE} GROUP BY harness, sessionId),
+        FROM sessions WHERE {IN_SCOPE} GROUP BY harness, sessionId
+        HAVING max(parent_session_id) IS NULL),
     tg AS (SELECT harness, sessionId, avg(value) AS target FROM ({query}) AS q GROUP BY harness, sessionId),
     er AS (SELECT harness, sessionId, avg(CASE WHEN is_error = 'true' THEN 1.0 ELSE 0.0 END) AS tool_error_rate
            FROM tool_results WHERE {IN_SCOPE} GROUP BY harness, sessionId),
     pd AS (SELECT harness, sessionId, count(*) AS permission_denials FROM permission_denials GROUP BY harness, sessionId),
     sh AS (SELECT harness, sessionId, count(*) AS stop_hook_blocks FROM stop_hooks WHERE preventedContinuation GROUP BY harness, sessionId),
-    tk AS (SELECT harness, sessionId, avg(coalesce(input_tokens, 0) + coalesce(output_tokens, 0)) AS tokens_per_turn
+    tk AS (SELECT harness, sessionId, avg(coalesce(context_tokens, 0) + coalesce(output_tokens, 0)) AS tokens_per_turn
            FROM model_turns WHERE {IN_SCOPE} GROUP BY harness, sessionId)
     SELECT s.harness, s.sessionId AS session, s.start, s.version, tg.target, er.tool_error_rate,
            coalesce(pd.permission_denials, 0) AS permission_denials,

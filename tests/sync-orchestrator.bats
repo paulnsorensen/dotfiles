@@ -1187,6 +1187,52 @@ press_real_repo() {
     [[ "$(cut -d' ' -f2 "$TEST_HOME/state/sync-history.log")" == "$(git -C "$repo" rev-parse HEAD)" ]]
 }
 
+@test "press: sync history marks a dirty working tree" {
+    local repo="$TEST_HOME/repo"
+    press_real_repo "$repo"
+    echo change > "$repo/untracked"
+    run press_history "$TEST_HOME/state" "$repo"
+    assert_success
+    [[ "$(cat "$TEST_HOME/state/sync-history.log")" =~ ^[0-9]+\ [0-9a-f]{40}\ dirty$ ]]
+}
+
+@test "press: sync history leaves a clean working tree unmarked" {
+    local repo="$TEST_HOME/repo"
+    press_real_repo "$repo"
+    run press_history "$TEST_HOME/state" "$repo"
+    assert_success
+    [[ "$(cat "$TEST_HOME/state/sync-history.log")" =~ ^[0-9]+\ [0-9a-f]{40}$ ]]
+}
+
+# Print DOTFILES_STATE_DIR as .sync resolves it under the given environment.
+sync_state_dir() {
+    # shellcheck disable=SC2016  # the inner bash expands these, not this shell
+    env -u DOTFILES_STATE_DIR "$@" bash -c '
+        eval "$(awk "/^########## Main\$/{exit} {print}" "$SYNC_SCRIPT")"
+        printf "%s" "$DOTFILES_STATE_DIR"
+    '
+}
+
+@test "sync state dir honours an exported DOTFILES_STATE_DIR" {
+    run sync_state_dir HOME="$TEST_HOME" DOTFILES_STATE_DIR="$TEST_HOME/custom"
+    assert_success
+    [[ "$output" == "$TEST_HOME/custom" ]]
+}
+
+@test "sync default state dir matches the harness-climb history default" {
+    run sync_state_dir HOME="$TEST_HOME"
+    assert_success
+    local sync_dir="$output"
+    run env -u DOTFILES_STATE_DIR HOME="$TEST_HOME" python3 -I -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+import hc_git
+print(hc_git.default_history_path())
+' "$REAL_DOTFILES_DIR/skills/harness-climb/scripts"
+    assert_success
+    [[ "$output" == "$sync_dir/sync-history.log" ]]
+}
+
 @test "press: sync history skips with a warning when the dotfiles dir is not a git repo" {
     rm -f "$MOCK_BIN/git"
     mkdir -p "$TEST_HOME/plain"

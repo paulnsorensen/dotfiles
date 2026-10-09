@@ -10,14 +10,16 @@ from typing import Any
 import hc_gate
 import hc_git
 import hc_stats
-from hc_core import InputError, emit, repo_root, state_root, stopped
+from hc_core import InputError, emit, repo_root, state_root
 
 LEDGER_KEYS = ("round", "change", "pr", "lab", "claude", "codex", "candidate", "merge")
 LEDGER_VERDICTS = (*hc_stats.VERDICTS, "pending", "rejected", "n/a")
+STOP_STREAK = 3
+STOP_REASON = "diminishing-returns"
 
 
 def _clean(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value).replace(" | ", " / ")).strip()
+    return re.sub(r"\s+", " ", str(value).replace("|", "/")).strip()
 
 
 def parse_ledger_line(line: str) -> dict[str, str]:
@@ -66,6 +68,13 @@ def ledger_append(
             raise InputError(
                 f"ledger {key} must be one of {', '.join(LEDGER_VERDICTS)}"
             )
+    if fields["candidate"] in hc_stats.VERDICTS:
+        expected = hc_stats.combine([fields["claude"], fields["codex"]])
+        if fields["candidate"] != expected:
+            raise InputError(
+                f"ledger candidate {fields['candidate']} does not match the "
+                f"harness verdicts, which combine to {expected}"
+            )
     if fields["candidate"] in (hc_stats.KEEP, hc_stats.KEEP_CHEAPER):
         verify_merge_tree(repo, str(fields["merge"]), thread, int(fields["round"]))
     line = " | ".join(f"{k}={_clean(fields[k])}" for k in LEDGER_KEYS)
@@ -112,25 +121,25 @@ def resolve_merge(repo: Path, main_ref: str, thread: str, rnd: int) -> str | Non
 
     Only history reachable from `main_ref` counts, so an unmerged branch commit never resolves.
     """
-    gate = hc_gate.gate_path(thread, rnd)
-    added = hc_git.git_out(
-        repo, "log", "--diff-filter=A", "--format=%H", main_ref, "--", gate
-    ).split()
-    if not added:
-        return None
-    commit = added[-1]
-    first_parent = hc_git.git_out(repo, "rev-list", "--first-parent", main_ref).split()
-    if commit in first_parent:
-        return commit
-    path = hc_git.git_out(
-        repo,
-        "rev-list",
-        "--first-parent",
-        "--ancestry-path",
-        "--reverse",
-        f"{commit}..{main_ref}",
-    ).split()
-    return path[0] if path else None
+    added = hc_gate.gate_merge(repo, main_ref, hc_gate.gate_path(thread, rnd))
+    return added[0] if added else None
+
+
+def stop_if_diminishing(root: Path, thread: str) -> dict[str, Any]:
+    """Write `STOP` when the last three field verdicts of the thread hold no keep."""
+    latest: dict[int, str] = {}
+    for fields in read_ledger(root, thread):
+        if fields.get("round", "").isdigit():
+            latest[int(fields["round"])] = fields.get("candidate", "")
+    verdicts = [v for _, v in sorted(latest.items()) if v in hc_stats.VERDICTS]
+    recent = verdicts[-STOP_STREAK:]
+    keeps = (hc_stats.KEEP, hc_stats.KEEP_CHEAPER)
+    if len(recent) < STOP_STREAK or any(v in keeps for v in recent):
+        return {"status": "ok", "stop": False}
+    stop = root / thread / "STOP"
+    stop.parent.mkdir(parents=True, exist_ok=True)
+    stop.write_text(f"{STOP_REASON}\n")
+    return {"status": "ok", "stop": True, "reason": STOP_REASON}
 
 
 def _pending_payload(
@@ -154,8 +163,6 @@ def _pending_payload(
 
 def cmd_ledger(args: argparse.Namespace) -> int:
     repo = repo_root(args.repo)
-    if stopped(args, repo):
-        return 0
     root = state_root(args, repo)
     if args.action == "tail":
         path = ledger_path(root, args.thread)
@@ -164,6 +171,9 @@ def cmd_ledger(args: argparse.Namespace) -> int:
         return 0
     if args.action == "pending":
         emit(_pending_payload(repo, root, args))
+        return 0
+    if args.action == "stop-check":
+        emit(stop_if_diminishing(root, args.thread))
         return 0
     fields = {k: getattr(args, k) for k in LEDGER_KEYS}
     try:

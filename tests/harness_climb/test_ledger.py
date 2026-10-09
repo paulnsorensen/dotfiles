@@ -6,8 +6,9 @@ import json
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
-from .support import RepoCase, call, gate_json
+from .support import RepoCase, call, gate_json, hc_git, run_cli
 
 FIELDS = ("round", "change", "pr", "lab", "claude", "codex", "candidate", "merge")
 
@@ -120,6 +121,37 @@ class StopTests(LedgerCase):
                 self.assertEqual(self.snapshot(), before)
         self.assertFalse(self.ledger_file().exists())
 
+    def test_stop_short_circuits_before_ref_resolution(self) -> None:
+        stop = self.state / "t1" / "STOP"
+        stop.parent.mkdir(parents=True)
+        stop.write_text("hold the climb for the audit\n")
+        common = ["--repo", str(self.repo), "--state-dir", str(self.state)]
+        commands = {
+            "critic": ["critic", *common, "--thread", "t1", "--round", "1"],
+            "ledger-pending": ["ledger", "pending", *common, "--thread", "t1"],
+            "ledger-stop-check": ["ledger", "stop-check", *common, "--thread", "t1"],
+        }
+        for name, argv in commands.items():
+            with self.subTest(command=name):
+                with mock.patch.object(
+                    hc_git, "resolve_main", side_effect=AssertionError("resolved")
+                ) as resolve:
+                    rc, out = call(*argv)
+                resolve.assert_not_called()
+                self.assertEqual(rc, 0)
+                self.assertEqual(
+                    out, {"status": "stopped", "reason": "hold the climb for the audit"}
+                )
+
+    def test_stop_does_not_halt_a_command_without_a_thread(self) -> None:
+        stop = self.state / "t1" / "STOP"
+        stop.parent.mkdir(parents=True)
+        stop.write_text("hold the climb for the audit\n")
+        rc, out = call("soak-check", "--repo", str(self.repo))
+        self.assertEqual(rc, 0)
+        self.assertNotEqual(out.get("status"), "stopped")
+        self.assertTrue(out)
+
 
 class AppendTests(LedgerCase):
     def test_append_writes_one_line_with_every_field(self) -> None:
@@ -195,7 +227,10 @@ class KeepMergeTreeTests(LedgerCase):
         merge = self.merge_branch({"skills/foo/SKILL.md": "edit\n", **self.gate_file()})
         for verdict in ("keep", "keep-cheaper"):
             rc, out = self.ledger(
-                "append", **self.fields(candidate=verdict, merge=merge)
+                "append",
+                **self.fields(
+                    candidate=verdict, claude=verdict, codex=verdict, merge=merge
+                ),
             )
             self.assertEqual((rc, out["status"]), (0, "appended"), out)
         self.assertEqual(len(self.ledger_file().read_text().splitlines()), 2)
@@ -223,9 +258,146 @@ class KeepMergeTreeTests(LedgerCase):
     def test_non_keep_verdicts_need_no_merge_tree(self) -> None:
         for verdict in ("revert", "inconclusive"):
             rc, out = self.ledger(
-                "append", **self.fields(candidate=verdict, merge="HEAD")
+                "append",
+                **self.fields(
+                    candidate=verdict, claude=verdict, codex=verdict, merge="HEAD"
+                ),
             )
             self.assertEqual(rc, 0, out)
+
+
+class SanitizeTests(LedgerCase):
+    def test_pipe_next_to_any_whitespace_never_starts_a_field(self) -> None:
+        for rnd, change in enumerate(("x\t|\tround=9", "x |\nround=9"), start=1):
+            with self.subTest(change=change):
+                rc, out = self.ledger(
+                    "append",
+                    **self.fields(
+                        round=rnd,
+                        change=change,
+                        candidate="pending",
+                        claude="pending",
+                        codex="pending",
+                        merge="none",
+                    ),
+                )
+                self.assertEqual(rc, 0, out)
+                line = self.ledger_file().read_text().splitlines()[-1]
+                parts = line.split(" | ")
+                self.assertEqual([p.split("=", 1)[0] for p in parts], list(FIELDS))
+                self.assertEqual(parts[0], f"round={rnd}")
+
+
+class CandidateConsistencyTests(LedgerCase):
+    def test_candidate_verdict_must_equal_the_combined_harness_verdicts(self) -> None:
+        for claude, codex, candidate in (
+            ("revert", "keep", "keep"),
+            ("keep", "keep", "inconclusive"),
+            ("pending", "pending", "keep"),
+        ):
+            with self.subTest(claude=claude, codex=codex, candidate=candidate):
+                rc, out = self.ledger(
+                    "append",
+                    **self.fields(claude=claude, codex=codex, candidate=candidate),
+                )
+                self.assertEqual((rc, out["status"]), (1, "refused"), out)
+                self.assertIn("combine", out["error"])
+        self.assertFalse(self.ledger_file().exists())
+
+    def test_matching_verdicts_are_accepted(self) -> None:
+        rc, out = self.ledger(
+            "append",
+            **self.fields(claude="revert", codex="keep", candidate="revert"),
+        )
+        self.assertEqual((rc, out["status"]), (0, "appended"), out)
+
+
+class StopCheckTests(LedgerCase):
+    def verdict(self, rnd: int, verdict: str) -> None:
+        rc, out = self.ledger(
+            "append",
+            **self.fields(
+                round=rnd,
+                claude=verdict,
+                codex=verdict,
+                candidate=verdict,
+                merge="none",
+            ),
+        )
+        self.assertEqual(rc, 0, out)
+
+    def stop_file(self) -> Path:
+        return self.state / "t1" / "STOP"
+
+    def test_three_non_keep_verdicts_write_stop(self) -> None:
+        for rnd in (1, 2, 3):
+            self.verdict(rnd, "inconclusive" if rnd % 2 else "revert")
+        rc, out = self.ledger("stop-check")
+        self.assertEqual(
+            (rc, out["stop"], out["reason"]), (0, True, "diminishing-returns")
+        )
+        first = self.stop_file().read_text().splitlines()[0]
+        self.assertEqual(first, "diminishing-returns")
+
+    def test_two_non_keep_verdicts_do_not_stop(self) -> None:
+        self.verdict(1, "revert")
+        self.verdict(2, "inconclusive")
+        rc, out = self.ledger("stop-check")
+        self.assertEqual((rc, out["stop"]), (0, False))
+        self.assertFalse(self.stop_file().exists())
+
+    def test_a_keep_inside_the_last_three_does_not_stop(self) -> None:
+        merge = self.merge_branch(
+            {
+                "skills/foo/SKILL.md": "edit\n",
+                "harness-climb/gates/t1-r2.json": json.dumps(gate_json(rnd=2)) + "\n",
+            },
+            rnd=2,
+        )
+        self.verdict(1, "revert")
+        rc, out = self.ledger(
+            "append",
+            **self.fields(
+                round=2, claude="keep", codex="keep", candidate="keep", merge=merge
+            ),
+        )
+        self.assertEqual(rc, 0, out)
+        self.verdict(3, "revert")
+        self.verdict(4, "revert")
+        rc, out = self.ledger("stop-check")
+        self.assertFalse(out["stop"], out)
+
+    def test_rejected_rounds_are_not_field_verdicts(self) -> None:
+        self.verdict(1, "revert")
+        self.verdict(2, "revert")
+        rc, _ = self.ledger(
+            "append",
+            **self.fields(
+                round=3, claude="n/a", codex="n/a", candidate="rejected", merge="none"
+            ),
+        )
+        self.assertEqual(rc, 0)
+        rc, out = self.ledger("stop-check")
+        self.assertFalse(out["stop"], out)
+
+
+class ThreadNameTests(LedgerCase):
+    def tail(self, thread: str) -> Any:
+        return run_cli(
+            "ledger", "tail", "--repo", str(self.repo),
+            "--state-dir", str(self.state), "--thread", thread,
+        )  # fmt: skip
+
+    def test_thread_with_path_or_branch_characters_is_refused(self) -> None:
+        for thread in ("../x", "A", "-x", "a/b", "a b", "a_b"):
+            with self.subTest(thread=thread):
+                proc = self.tail(thread)
+                self.assertEqual(proc.returncode, 2)
+                self.assertIn("thread", proc.stderr)
+
+    def test_lowercase_digit_hyphen_thread_is_accepted(self) -> None:
+        proc = self.tail("t1-a2")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
 if __name__ == "__main__":

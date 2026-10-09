@@ -62,11 +62,12 @@ into several raw entries; this table groups them by `message.id`.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| harness | VARCHAR | Source harness (claude, codex, omp, and pi; cursor names no model; codex rows need a `turn_context` model) |
+| harness | VARCHAR | Source harness (claude, codex, omp, and pi; cursor names no model; codex rows use the latest `turn_context` model, or `unknown` before the first one) |
 | model | VARCHAR | Model id; omp and pi use `<provider>/<model>`, or the bare model when the log names no provider |
 | stop_reason | VARCHAR | Canonical stop reason; omp and pi `toolUse`/`stop` map to `tool_use`/`end_turn` |
 | error_message | VARCHAR | Provider error text on an `error` stop (omp and pi) |
-| input_tokens / output_tokens / cache_read_tokens | BIGINT | Token usage for the turn. Codex rows come from `token_count` events: one row per event with a non-null `last_token_usage`, skipping an event whose `total_token_usage` repeats the previous one. Codex `input_tokens` includes cached tokens |
+| input_tokens / output_tokens / cache_read_tokens / cache_creation_tokens | BIGINT | Token usage for the turn. Codex rows come from `token_count` events: one row per event with a non-null `last_token_usage`, skipping an event whose `total_token_usage` repeats the previous one. Codex `input_tokens` includes cached tokens. Claude `input_tokens` excludes cache reads and cache creation. Only Claude reports `cache_creation_tokens` |
+| context_tokens | BIGINT | One context-size measure for both harnesses. Claude: `input_tokens + cache_read_tokens + cache_creation_tokens`. Other harnesses, including Codex: `input_tokens` |
 | prompt_tokens | BIGINT | Full context size sent for the turn (omp and pi) |
 | duration_ms / ttft_ms | DOUBLE | Model round-trip time and time to first token (omp and pi) |
 | tool_calls | BIGINT | Tool calls issued in the turn; 1 means the turn did not batch. NULL for Codex: its token rows carry no content, so Codex tool calls and `stop_reason` are not measured |
@@ -95,10 +96,12 @@ rows, split the suffix once at the first underscore.
 
 One row per `(harness, sessionId, cwd, branch)`. Columns: `harness`,
 `sessionId`, `first_seen`, `last_seen`, `project` (cwd), `branch`, `version`,
-`entry_count`. `version` is the harness CLI version (Claude `version`, Codex
+`parent_session_id`, `entry_count`. `version` is the harness CLI version (Claude `version`, Codex
 `session_meta.cli_version`) of the latest entry by timestamp. It is NULL when
 the log names none.
-A forked Codex sub-agent rollout counts as a standalone session. A Claude sidechain keeps the parent `sessionId`.
+`entry_count` counts the rows of the session in `raw_entries` except Codex `token_usage` rows. Those rows are synthetic and feed only `model_turns`.
+`parent_session_id` is the Codex `source.subagent.thread_spawn.parent_thread_id` of a sub-agent rollout. It is NULL for any other session.
+A forked Codex sub-agent rollout counts as a standalone session with its own `sessionId`. A Claude sidechain keeps the parent `sessionId`.
 
 ## `stop_hooks`
 

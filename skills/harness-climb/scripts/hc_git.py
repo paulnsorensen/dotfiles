@@ -106,3 +106,22 @@ def first_sync_containing(
         if is_ancestor(repo, merge_sha, sha):
             return epoch, sha
     return None
+
+
+def has_regressing_sync(
+    repo: str | Path,
+    merge: str,
+    history: list[tuple[int, str]],
+    start: float,
+    end: float,
+) -> bool:
+    """True when a sync after `start` and up to `end` deploys a sha without the merge.
+
+    The log is shared by every clone and worktree, so such a line means a deploy dropped the change.
+    """
+    merge_sha = git_out(repo, "rev-parse", "--verify", f"{merge}^{{commit}}")
+    return any(
+        not is_ancestor(repo, merge_sha, sha)
+        for epoch, sha in history
+        if start < epoch <= end
+    )

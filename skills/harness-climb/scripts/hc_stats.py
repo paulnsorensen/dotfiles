@@ -38,33 +38,26 @@ VERDICTS = (KEEP, KEEP_CHEAPER, REVERT, INCONCLUSIVE)
 # --- windows ---------------------------------------------------------------
 
 
-def last_version_change(
-    rows: Iterable[dict[str, Any]], before_ts: float
-) -> float | None:
-    """Start time of the first session of the latest version run before `before_ts`."""
-    versioned = sorted(
-        (r for r in rows if r.get("version") and r["start"] < before_ts),
-        key=lambda r: r["start"],
-    )
-    change = None
-    previous = None
-    for row in versioned:
-        if previous is not None and row["version"] != previous:
-            change = row["start"]
-        previous = row["version"]
-    return change
+def dominant_version(
+    before: list[dict[str, Any]], after: list[dict[str, Any]], min_sessions: int
+) -> str | None:
+    """Version with `min_sessions` scored sessions in both windows. The busiest one wins."""
+    best: tuple[int, str] | None = None
+    for version in {r["version"] for r in before + after if r.get("version")}:
+        nb = sum(1 for r in before if r.get("version") == version)
+        na = sum(1 for r in after if r.get("version") == version)
+        if min(nb, na) >= min_sessions and (best is None or (nb + na, version) > best):
+            best = (nb + na, version)
+    return best[1] if best else None
 
 
 def select_windows(
-    after_start: float, soak_days: float, version_change: float | None
+    after_start: float, soak_days: float
 ) -> dict[str, tuple[float, float]]:
-    """Before = [max(after_start - soak, last change), after_start); after = [after_start, after_start + soak)."""
+    """Before = [after_start - soak, after_start); after = [after_start, after_start + soak)."""
     soak = soak_days * DAY
-    before_start = after_start - soak
-    if version_change is not None:
-        before_start = max(before_start, version_change)
     return {
-        "before": (before_start, after_start),
+        "before": (after_start - soak, after_start),
         "after": (after_start, after_start + soak),
     }
 
@@ -140,7 +133,7 @@ def judge(
             guards[name] = {"status": "n/a"}
             continue
         b, a = _values(before, name), _values(after, name)
-        if not b or not a:
+        if len(b) < 2 or len(a) < 2:
             return _result(INCONCLUSIVE, f"guard-no-data:{name}", guards, None, None)
         cmp = welch(b, a)
         bad = beyond(cmp) and cmp["diff"] > 0
@@ -206,23 +199,32 @@ def evaluate_harness(
 ) -> dict[str, Any]:
     """Select windows for one harness, run the pre-checks, and judge."""
     mine = [r for r in rows if r.get("harness") == harness]
-    windows = select_windows(
-        after_start, gate["soak_days"], last_version_change(mine, after_start)
-    )
+    windows = select_windows(after_start, gate["soak_days"])
     before, after = (
         in_window(mine, windows["before"]),
         in_window(mine, windows["after"]),
     )
-    scored_before = [r for r in before if r.get("target") is not None]
-    scored_after = [r for r in after if r.get("target") is not None]
     base = {"windows": {k: list(v) for k, v in windows.items()}}
     versions = sorted({r["version"] for r in before + after if r.get("version")})
     if len(versions) > 1:
-        return {
-            **base,
-            **_result(INCONCLUSIVE, "version-changed", {}, None, None),
-            "versions": versions,
-        }
+        scored = (
+            [r for r in before if r.get("target") is not None],
+            [r for r in after if r.get("target") is not None],
+        )
+        keep = dominant_version(*scored, gate["min_sessions"])
+        if keep is None:
+            return {
+                **base,
+                **_result(INCONCLUSIVE, "version-changed", {}, None, None),
+                "versions": versions,
+            }
+        total = len(before) + len(after)
+        before = [r for r in before if r.get("version") == keep]
+        after = [r for r in after if r.get("version") == keep]
+        excluded = total - len(before) - len(after)
+        base = {**base, "version": keep, "versions": versions, "excluded": excluded}
+    scored_before = [r for r in before if r.get("target") is not None]
+    scored_after = [r for r in after if r.get("target") is not None]
     counts = {"before": len(scored_before), "after": len(scored_after)}
     if min(counts.values()) < gate["min_sessions"]:
         return {

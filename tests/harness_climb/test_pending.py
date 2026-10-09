@@ -6,7 +6,7 @@ import json
 import unittest
 from typing import Any
 
-from .support import RepoCase, call, gate_json
+from .support import RepoCase, call, gate_json, soak_check
 
 
 class PendingCase(RepoCase):
@@ -156,6 +156,22 @@ class PendingTests(PendingCase):
         self.append(1, pr="42", lab="promote")
         (row,) = self.pending()
         self.assertEqual((row["pr"], row["lab"]), ("42", "promote"))
+
+    def test_re_added_gate_file_resolves_to_its_newest_add_like_the_soak_hold(
+        self,
+    ) -> None:
+        self.branch(1)
+        self.append(1)
+        self.merge(1)
+        gate = "harness-climb/gates/t1-r1.json"
+        self.git("rm", "-q", gate)
+        self.git("commit", "-q", "-m", "rm gate")
+        readded = self.commit({gate: json.dumps(gate_json(rnd=1))}, "re-add gate")
+        (row,) = self.pending()
+        self.assertEqual(row["merge"], readded)
+        now = int(self.git("show", "-s", "--format=%ct", readded)) + 3600
+        (window,) = soak_check.open_windows(self.repo, "main", now)
+        self.assertEqual(window["merge"], row["merge"])
 
 
 if __name__ == "__main__":

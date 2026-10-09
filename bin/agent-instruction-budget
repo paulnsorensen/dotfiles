@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Check the token ceilings of the repo-owned agent instruction sources.
+# Usage: agent-instruction-budget CONFIG [--root DIR]
+set -euo pipefail
+
+DOTFILES_DIR="$(cd -- "${BASH_SOURCE[0]%/*}/.." && pwd)"
+
+exec uv run --project "$DOTFILES_DIR/agent-profile" --frozen \
+    python "$DOTFILES_DIR/tests/helpers/agent_instruction_budget.py" "$@"

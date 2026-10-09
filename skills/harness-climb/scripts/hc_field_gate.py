@@ -12,7 +12,7 @@ from typing import Any
 import hc_gate
 import hc_git
 import hc_stats
-from hc_core import emit, repo_root, stopped
+from hc_core import emit, repo_root
 from hc_db import RefreshFailed, VersionUnavailable, load_rows, resolve_db
 
 
@@ -50,21 +50,19 @@ def _judge_rows(
     out: dict[str, Any],
     gate: dict[str, Any],
     rows: list[dict[str, Any]] | None,
-    db: Path | Callable[[], Path] | None,
+    db: Callable[[], Path],
     after_start: float,
 ) -> dict[str, Any]:
     if rows is None:
-        if db is None:
-            return {**out, "status": "no-db"}
         try:
-            db = db() if callable(db) else db
+            path = db()
         except RefreshFailed:
             return {**out, **_both("db-stale")}
-        if not db.is_file():
+        if not path.is_file():
             return {**out, "status": "no-db"}
         soak = gate["soak_days"] * hc_stats.DAY
         try:
-            rows = load_rows(db, gate, after_start - 2 * soak, after_start + soak)
+            rows = load_rows(path, gate, after_start - 2 * soak, after_start + soak)
         except VersionUnavailable:
             return {**out, **_both("version-unavailable")}
     per = {
@@ -84,11 +82,11 @@ def field_gate(
     history_text: str,
     rows: list[dict[str, Any]] | None,
     now: float,
-    db: Path | Callable[[], Path] | None = None,
+    db: Callable[[], Path] = resolve_db,
 ) -> dict[str, Any]:
     """Verdict dict. Reads settings from the merge commit and mutates nothing.
 
-    A callable `db` resolves the database only when the verdict needs rows.
+    `db` resolves the database only when the verdict needs rows.
     """
     gate = hc_gate.normalize_gate(
         hc_gate.read_gate_at(repo, merge, hc_gate.gate_path(thread, rnd))
@@ -112,13 +110,17 @@ def field_gate(
     early = _early_verdict(out, gate, sync, grace_end, now)
     if early is not None:
         return early
-    return _judge_rows(out, gate, rows, db, float(sync[0]))
+    after_start = float(sync[0])
+    soak = gate["soak_days"] * hc_stats.DAY
+    if hc_git.has_regressing_sync(
+        repo, merge, history, after_start, after_start + soak
+    ):
+        return {**out, **_both("sync-regressed")}
+    return _judge_rows(out, gate, rows, db, after_start)
 
 
 def cmd_field_gate(args: argparse.Namespace) -> int:
     repo = repo_root(args.repo)
-    if stopped(args, repo):
-        return 0
     history = Path(args.history) if args.history else hc_git.default_history_path()
     history_text = history.read_text() if history.is_file() else ""
     rows = json.loads(Path(args.rows).read_text()) if args.rows else None
@@ -131,7 +133,7 @@ def cmd_field_gate(args: argparse.Namespace) -> int:
         history_text,
         rows,
         now,
-        None if rows is not None else resolve_db,
+        resolve_db,
     )
     emit(result)
     return 0 if result["status"] in ("ok", "not-due") else 1

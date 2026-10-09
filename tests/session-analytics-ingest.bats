@@ -218,6 +218,40 @@ JSONL
     assert_output_contains '"stop":"tool_use"'
 }
 
+@test "ingest: claude context_tokens adds cache reads and creation; codex keeps input_tokens" {
+    cat > "$TEST_HOME/.claude/projects/proj/sess-ctx.jsonl" <<'JSONL'
+{"type":"assistant","timestamp":"2026-05-30T10:00:00Z","sessionId":"c-8","cwd":"/w","message":{"id":"msg_c","model":"claude-x","usage":{"input_tokens":8,"output_tokens":5,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200},"content":[]}}
+JSONL
+    cat > "$TEST_HOME/.codex/sessions/2026/05/30/rollout-ctx.jsonl" <<'JSONL'
+{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"x-8","cwd":"/w"}}
+{"timestamp":"2026-05-30T11:00:01Z","type":"turn_context","payload":{"cwd":"/w","model":"gpt-x"}}
+{"timestamp":"2026-05-30T11:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT harness, context_tokens, cache_creation_tokens FROM model_turns ORDER BY harness;"
+    assert_output_contains '"harness":"claude","context_tokens":1208,"cache_creation_tokens":200'
+    assert_output_contains '"harness":"codex","context_tokens":100,"cache_creation_tokens":null'
+}
+
+@test "ingest: codex token rows stay out of entry_count and assistant readers; sub-agents keep a parent link" {
+    local d="$TEST_HOME/.codex/sessions/2026/05/30"
+    local tok='{"timestamp":"2026-05-30T11:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}'
+    local ctx='{"timestamp":"2026-05-30T11:00:01Z","type":"turn_context","payload":{"cwd":"/w","model":"gpt-x"}}'
+    local call='{"timestamp":"2026-05-30T11:00:02Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"ls\"]}","call_id":"call-1"}}'
+    local meta='{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"sub-1","cwd":"/w","source":{"subagent":{"thread_spawn":{"parent_thread_id":"top-1"}}}}}'
+    printf '%s\n' "$meta" "$ctx" "$call" "$tok" > "$d/rollout-sub.jsonl"
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT entry_count, parent_session_id FROM sessions WHERE sessionId='sub-1';"
+    assert_output_contains '"entry_count":1'
+    assert_output_contains '"parent_session_id":"top-1"'
+    run q "SELECT count(*) AS n FROM raw_entries WHERE type='assistant' AND json_extract(message, '\$.usage') IS NOT NULL;"
+    assert_output_contains '"n":0'
+    run q "SELECT count(*) AS n FROM model_turns WHERE harness='codex';"
+    assert_output_contains '"n":1'
+}
+
 @test "ingest: a malformed omp metric becomes NULL and does not abort the ingest" {
     mkdir -p "$TEST_HOME/.omp/agent/sessions/proj"
     cat > "$TEST_HOME/.omp/agent/sessions/proj/bad.jsonl" <<'JSONL'
@@ -264,8 +298,6 @@ JSONL
     assert_success
     run q "SELECT count(*) AS n, count(tool_calls) AS t FROM model_turns WHERE harness='codex';"
     assert_output_contains '"t":0'
-    run duckdb "$DB" -json -c "SELECT round(100.0 * avg(CASE WHEN tool_calls = 1 THEN 1 ELSE 0 END) FILTER (WHERE tool_calls IS NOT NULL), 1) AS pct FROM model_turns WHERE harness='codex'"
-    assert_output_contains '"pct":null'
     run env SESSIONS_DB="$DB" "$REAL_DOTFILES_DIR/skills/session-analytics/scripts/query.sh" latency codex
     assert_success
     [[ "$output" != *"| 0.0 "* ]]

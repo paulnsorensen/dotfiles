@@ -3,14 +3,15 @@ from __future__ import annotations
 import itertools
 import json
 import unittest
+import unittest.mock
 from pathlib import Path
 from typing import Any
-from unittest import mock
 
 from .support import (
     DAY,
     T0,
     RepoCase,
+    call,
     gate_json,
     hc_db,
     hc_field_gate,
@@ -190,38 +191,31 @@ class CombineCase(unittest.TestCase):
 
 class WindowCase(unittest.TestCase):
     def test_window_before_ends_where_after_starts(self) -> None:
-        w = hc_stats.select_windows(100 * DAY, 7, None)
+        w = hc_stats.select_windows(100 * DAY, 7)
         self.assertEqual(w["before"], (93 * DAY, 100 * DAY))
         self.assertEqual(w["after"], (100 * DAY, 107 * DAY))
 
-    def test_window_starts_at_a_recent_version_change(self) -> None:
-        self.assertEqual(
-            hc_stats.select_windows(100 * DAY, 7, 98 * DAY)["before"],
-            (98 * DAY, 100 * DAY),
-        )
+    def test_dominant_version_needs_min_sessions_in_both_windows(self) -> None:
+        before = make_rows("claude", 0, 3, "1") + make_rows("claude", 0, 5, "2")
+        after = make_rows("claude", 0, 4, "1") + make_rows("claude", 0, 1, "2")
+        self.assertEqual(hc_stats.dominant_version(before, after, 3), "1")
+        self.assertIsNone(hc_stats.dominant_version(before, after, 5))
 
-    def test_window_ignores_a_version_change_older_than_the_soak(self) -> None:
-        self.assertEqual(
-            hc_stats.select_windows(100 * DAY, 7, 80 * DAY)["before"],
-            (93 * DAY, 100 * DAY),
-        )
+    def test_window_interleaved_versions_are_filtered_not_inconclusive(self) -> None:
+        # Claude interleaves versions. Each window holds both; the busiest shared version wins.
+        rows = make_rows("claude", AFTER - 3 * DAY, 6, "1.0", **side(10))
+        rows += make_rows("claude", AFTER - 2 * DAY, 2, "2.0", **side(10))
+        rows += make_rows("claude", AFTER - DAY, 2, "1.0", **side(10))
+        rows += make_rows("claude", AFTER + 3600, 6, "1.0", **side(5))
+        rows += make_rows("claude", AFTER + 7200, 2, "2.0", **side(5))
+        gate = hc_gate.normalize_gate(gate_json(min_sessions=4))
+        got = hc_stats.evaluate_harness("claude", gate, rows, AFTER)
+        self.assertEqual(got["verdict"], "keep")
+        self.assertEqual(got["version"], "1.0")
+        self.assertEqual(got["sessions"], {"before": 8, "after": 6})
+        self.assertEqual(got["excluded"], 4)
 
-    def test_window_last_version_change_comes_from_session_versions(self) -> None:
-        rows = (
-            make_rows("claude", 0, 2, "1")
-            + make_rows("claude", 10 * DAY, 2, "2")
-            + make_rows("claude", 20 * DAY, 2, "3")
-        )
-        self.assertEqual(hc_stats.last_version_change(rows, 15 * DAY), 10 * DAY)
-        self.assertEqual(hc_stats.last_version_change(rows, 30 * DAY), 20 * DAY)
-        self.assertIsNone(hc_stats.last_version_change(rows, 5 * DAY))
-
-    def test_window_unversioned_sessions_never_mark_a_change(self) -> None:
-        rows = make_rows("codex", 0, 3, None) + make_rows("codex", DAY, 3, "1")
-        self.assertIsNone(hc_stats.last_version_change(rows, 5 * DAY))
-
-    def test_window_evaluate_drops_sessions_before_the_version_change(self) -> None:
-        # Old-version sessions sit before the change; the before window starts at the change.
+    def test_window_evaluate_drops_sessions_of_other_versions(self) -> None:
         old = make_rows("claude", AFTER - 6 * DAY, 6, "0.9", **side(10))
         new_before = make_rows("claude", AFTER - 2 * DAY, 6, "1.0", **side(10))
         after = make_rows("claude", AFTER + 3600, 6, "1.0", **side(5))
@@ -229,7 +223,7 @@ class WindowCase(unittest.TestCase):
         got = hc_stats.evaluate_harness("claude", gate, old + new_before + after, AFTER)
         self.assertEqual(got["verdict"], "keep")
         self.assertEqual(got["sessions"]["before"], 6)
-        self.assertEqual(got["windows"]["before"][0], AFTER - 2 * DAY)
+        self.assertEqual(got["excluded"], 6)
 
 
 class VersionChangedCase(unittest.TestCase):
@@ -401,7 +395,7 @@ class GateCase(RepoCase):
         self.assertEqual({v["reason"] for v in got["harnesses"].values()}, {"db-stale"})
 
     def test_early_verdicts_never_refresh_the_database(self) -> None:
-        resolver = mock.Mock(side_effect=AssertionError("refreshed"))
+        resolver = unittest.mock.Mock(side_effect=AssertionError("refreshed"))
         for history, now in (
             (f"{T0} {self.base}\n", T0 + DAY),
             (f"{T0} {self.base}\n", T0 + 3 * DAY),
@@ -434,7 +428,35 @@ class GateCase(RepoCase):
             rows,
             edge + 9 * DAY,
         )
-        self.assertNotEqual(got["harnesses"]["claude"]["reason"], "sync-late")
+        self.assertEqual(got["sync"]["epoch"], edge)
+        self.assertEqual(got["harnesses"]["claude"]["verdict"], "keep")
+        self.assertEqual(got["candidate"], "keep")
+
+    def test_sync_inside_the_window_without_the_merge_is_sync_regressed(self) -> None:
+        history = f"{self.history}{AFTER + DAY} {self.base}\n"
+        got = self.run_gate(history)
+        self.assertEqual(got["candidate"], "inconclusive")
+        self.assertEqual(
+            {v["reason"] for v in got["harnesses"].values()}, {"sync-regressed"}
+        )
+
+    def test_sync_after_the_window_without_the_merge_is_ignored(self) -> None:
+        history = f"{self.history}{AFTER + 8 * DAY} {self.base}\n"
+        self.assertEqual(
+            self.run_gate(history, now=AFTER + 20 * DAY)["candidate"], "keep"
+        )
+
+    def test_first_sync_allows_clock_skew_of_60_seconds(self) -> None:
+        got = hc_git.first_sync_containing(
+            self.repo, self.merge, [(T0 - 60, self.merge)]
+        )
+        self.assertEqual(got, (T0 - 60, self.merge))
+
+    def test_first_sync_skips_a_sync_600_seconds_before_the_merge(self) -> None:
+        got = hc_git.first_sync_containing(
+            self.repo, self.merge, [(T0 - 600, self.merge)]
+        )
+        self.assertIsNone(got)
 
     def test_field_gate_before_the_soak_ends_is_not_due(self) -> None:
         got = self.run_gate(now=AFTER + DAY)
@@ -476,6 +498,671 @@ class GateCase(RepoCase):
 
     def test_revert_pr_action_is_absent_for_other_verdicts(self) -> None:
         self.assertEqual(self.run_gate()["action"], "none")
+
+
+def gate(**over: object) -> dict:
+    return hc_gate.normalize_gate(gate_json(min_sessions=2, **over))
+
+
+def rows(harness: str, n: int, **metrics: object) -> list[dict]:
+    return make_rows(harness, T0, n, **metrics)
+
+
+def judge(
+    before: dict, after: dict, harness: str = "claude", **gate_over: object
+) -> dict:
+    """before/after: metric -> list. Missing guards default to a constant 0.1."""
+
+    def build(spec: dict) -> list[dict]:
+        n = len(next(iter(spec.values())))
+        base = {
+            "tool_error_rate": [0.1] * n,
+            "permission_denials": [0.0] * n,
+            "stop_hook_blocks": [0.0] * n,
+            "tokens_per_turn": [100.0] * n,
+        }
+        return rows(harness, n, **{**base, **spec})
+
+    return hc_stats.judge(harness, gate(**gate_over), build(before), build(after))
+
+
+class WelchEdges(unittest.TestCase):
+    def test_welch_zeroVarianceBothWindows_nonzeroDiffIsBeyond(self) -> None:
+        v = judge({"target": [10.0] * 3}, {"target": [5.0] * 3})
+        self.assertEqual(v["verdict"], "keep")
+
+    def test_welch_zeroVarianceBothWindows_zeroDiffIsNoEffect(self) -> None:
+        v = judge({"target": [10.0] * 3}, {"target": [10.0] * 3})
+        self.assertEqual((v["verdict"], v["reason"]), ("inconclusive", "no-effect"))
+
+    def test_welch_zeroVarianceOneWindow_stillUsesOtherVariance(self) -> None:
+        before = [10.0, 12.0, 10.0, 12.0]
+        v = judge({"target": before}, {"target": [11.0] * 4})
+        self.assertEqual(v["verdict"], "inconclusive")
+        self.assertGreater(v["target"]["se"], 0)
+
+    def test_welch_singleSessionWindow_seUndefinedNeverBeyond(self) -> None:
+        cmp = hc_stats.welch([1.0], [100.0])
+        self.assertFalse(hc_stats.beyond(cmp))
+        self.assertEqual(
+            hc_stats.judge(
+                "claude",
+                {**gate(), "min_sessions": 1},
+                rows(
+                    "claude",
+                    1,
+                    target=10.0,
+                    tool_error_rate=0.1,
+                    permission_denials=0,
+                    stop_hook_blocks=0,
+                    tokens_per_turn=1.0,
+                ),
+                rows(
+                    "claude",
+                    1,
+                    target=1.0,
+                    tool_error_rate=0.1,
+                    permission_denials=0,
+                    stop_hook_blocks=0,
+                    tokens_per_turn=1.0,
+                ),
+            )["verdict"],
+            "inconclusive",
+        )
+
+    def test_judge_singleValueGuardWindow_isGuardNoData(self) -> None:
+        v = judge(
+            {"target": [10.0] * 3, "permission_denials": [0.0, None, None]},
+            {"target": [5.0] * 3, "permission_denials": [50.0, None, None]},
+        )
+        self.assertEqual(
+            (v["verdict"], v["reason"]),
+            ("inconclusive", "guard-no-data:permission_denials"),
+        )
+
+    def test_normalizeGate_minSessionsOne_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            hc_gate.normalize_gate(gate_json(min_sessions=1))
+
+    def test_beyond_exactlyTwoSE_isNotBeyond(self) -> None:
+        # before [10,12]: var 2 -> SE 1 with a zero-variance after window
+        v = judge({"target": [10.0, 12.0]}, {"target": [9.0, 9.0]})
+        self.assertEqual(v["target"]["se"], 1.0)
+        self.assertEqual(v["target"]["diff"], -2.0)
+        self.assertEqual((v["verdict"], v["reason"]), ("inconclusive", "no-effect"))
+
+    def test_beyond_justPastTwoSE_isBeyond(self) -> None:
+        v = judge({"target": [10.0, 12.0]}, {"target": [8.99, 8.99]})
+        self.assertEqual(v["verdict"], "keep")
+
+
+class VerdictRules(unittest.TestCase):
+    def test_judge_gainZeroTokensUp_isInconclusiveNotKeep(self) -> None:
+        v = judge(
+            {"target": [5.0] * 3, "tokens_per_turn": [100.0, 101.0, 102.0]},
+            {"target": [5.0] * 3, "tokens_per_turn": [200.0, 201.0, 202.0]},
+        )
+        self.assertEqual(v["verdict"], "inconclusive")
+
+    def test_judge_gainZeroTokensDropBeyond_keepCheaper(self) -> None:
+        v = judge(
+            {"target": [5.0] * 3, "tokens_per_turn": [100.0, 101.0, 102.0]},
+            {"target": [5.0] * 3, "tokens_per_turn": [50.0, 51.0, 52.0]},
+        )
+        self.assertEqual(v["verdict"], "keep-cheaper")
+
+    def test_judge_keepCheaperWithGuardRegression_reverts(self) -> None:
+        v = judge(
+            {
+                "target": [5.0] * 3,
+                "tokens_per_turn": [100.0, 101.0, 102.0],
+                "permission_denials": [0.0] * 3,
+            },
+            {
+                "target": [5.0] * 3,
+                "tokens_per_turn": [50.0, 51.0, 52.0],
+                "permission_denials": [9.0, 10.0, 11.0],
+            },
+        )
+        self.assertEqual((v["verdict"], v["reason"]), ("revert", "permission_denials"))
+
+    def test_judge_lowerDirectionTargetRises_reverts(self) -> None:
+        v = judge({"target": [5.0] * 3}, {"target": [9.0] * 3})
+        self.assertEqual((v["verdict"], v["reason"]), ("revert", "target"))
+
+    def test_judge_higherDirectionTargetDrops_reverts(self) -> None:
+        v = judge({"target": [9.0] * 3}, {"target": [5.0] * 3}, direction="higher")
+        self.assertEqual((v["verdict"], v["reason"]), ("revert", "target"))
+
+    def test_judge_higherDirectionTargetRises_keeps(self) -> None:
+        v = judge({"target": [5.0] * 3}, {"target": [9.0] * 3}, direction="higher")
+        self.assertEqual(v["verdict"], "keep")
+        self.assertGreater(v["target"]["gain"], 0)
+
+    def test_judge_guardImproves_isNotARegression(self) -> None:
+        v = judge(
+            {"target": [9.0] * 3, "tool_error_rate": [0.5] * 3},
+            {"target": [5.0] * 3, "tool_error_rate": [0.1] * 3},
+        )
+        self.assertEqual(v["guards"]["tool_error_rate"]["status"], "pass")
+        self.assertEqual(v["verdict"], "keep")
+
+    def test_judge_guardRegressionNamesTheGuard(self) -> None:
+        v = judge(
+            {"target": [9.0] * 3, "stop_hook_blocks": [0.0] * 3},
+            {"target": [5.0] * 3, "stop_hook_blocks": [4.0] * 3},
+        )
+        self.assertEqual((v["verdict"], v["reason"]), ("revert", "stop_hook_blocks"))
+
+    def test_judge_tokenPerGainZero_anyCostIncreaseReverts(self) -> None:
+        v = judge(
+            {"target": [9.0] * 3, "tokens_per_turn": [100.0, 100.0, 100.0]},
+            {"target": [5.0] * 3, "tokens_per_turn": [101.0, 101.0, 101.0]},
+            token_per_gain=0,
+        )
+        self.assertEqual((v["verdict"], v["reason"]), ("revert", "token-cost"))
+
+    def test_judge_tokenPerGainZero_zeroCostKeeps(self) -> None:
+        v = judge({"target": [9.0] * 3}, {"target": [5.0] * 3}, token_per_gain=0)
+        self.assertEqual(v["verdict"], "keep")
+
+    def test_judge_tokenPerGainZero_infiniteGainStillRevertsOnCost(self) -> None:
+        # direction=higher with a zero baseline makes gain infinite; 0 * inf is nan.
+        v = judge(
+            {"target": [0.0] * 3, "tokens_per_turn": [100.0] * 3},
+            {"target": [5.0] * 3, "tokens_per_turn": [150.0] * 3},
+            direction="higher",
+            token_per_gain=0,
+        )
+        self.assertEqual((v["verdict"], v["reason"]), ("revert", "token-cost"))
+
+    def test_judge_costExactlyAtBudget_keeps(self) -> None:
+        # gain 0.5, cost 0.5, token_per_gain 1.0 -> cost <= budget
+        v = judge(
+            {"target": [10.0] * 3, "tokens_per_turn": [100.0] * 3},
+            {"target": [5.0] * 3, "tokens_per_turn": [150.0] * 3},
+        )
+        self.assertEqual(v["verdict"], "keep")
+
+    def test_judge_tokensAreNeverAGuard(self) -> None:
+        v = judge(
+            {"target": [10.0] * 3, "tokens_per_turn": [100.0] * 3},
+            {"target": [2.0] * 3, "tokens_per_turn": [120.0] * 3},
+        )
+        self.assertNotIn("tokens_per_turn", v["guards"])
+        self.assertEqual(v["verdict"], "keep")
+
+    def test_judge_codexGuardMembersAreNaAndNeverPass(self) -> None:
+        v = judge({"target": [5.0] * 3}, {"target": [5.0] * 3}, harness="codex")
+        self.assertEqual(v["guards"]["permission_denials"], {"status": "n/a"})
+        self.assertEqual(v["guards"]["stop_hook_blocks"], {"status": "n/a"})
+        self.assertEqual(v["guards"]["tool_error_rate"]["status"], "pass")
+        self.assertNotEqual(v["verdict"], "keep")
+
+    def test_judge_codexIgnoresRegressedClaudeOnlyGuards(self) -> None:
+        v = judge(
+            {"target": [9.0] * 3, "permission_denials": [0.0] * 3},
+            {"target": [5.0] * 3, "permission_denials": [50.0] * 3},
+            harness="codex",
+        )
+        self.assertEqual(v["verdict"], "keep")
+
+    def test_judge_codexToolErrorRegression_reverts(self) -> None:
+        v = judge(
+            {"target": [9.0] * 3, "tool_error_rate": [0.1] * 3},
+            {"target": [5.0] * 3, "tool_error_rate": [0.9] * 3},
+            harness="codex",
+        )
+        self.assertEqual((v["verdict"], v["reason"]), ("revert", "tool_error_rate"))
+
+
+class CombineEdges(unittest.TestCase):
+    def test_combine_oneInconclusiveOneRevert_reverts(self) -> None:
+        self.assertEqual(hc_stats.combine(["inconclusive", "revert"]), "revert")
+
+    def test_combine_keepAndRevert_reverts(self) -> None:
+        self.assertEqual(hc_stats.combine(["keep", "revert"]), "revert")
+
+    def test_combine_keepCheaperAndKeep_keepWins(self) -> None:
+        self.assertEqual(hc_stats.combine(["keep-cheaper", "keep"]), "keep")
+
+    def test_combine_keepCheaperAndInconclusive_keepCheaper(self) -> None:
+        self.assertEqual(
+            hc_stats.combine(["inconclusive", "keep-cheaper"]), "keep-cheaper"
+        )
+
+    def test_combine_empty_isInconclusive(self) -> None:
+        self.assertEqual(hc_stats.combine([]), "inconclusive")
+
+    def test_combine_unknownVerdictNeverWins(self) -> None:
+        self.assertEqual(hc_stats.combine(["bogus", "inconclusive"]), "inconclusive")
+
+
+class WindowEdges(unittest.TestCase):
+    AFTER = T0 + 20 * DAY
+
+    def sessions(self, harness: str, spec: list[tuple[float, str]]) -> list[dict]:
+        out = []
+        for i, (start, version) in enumerate(spec):
+            out.append(
+                {
+                    "harness": harness,
+                    "session": f"s{i}",
+                    "start": start,
+                    "version": version,
+                    "target": 5.0 + (i % 2),
+                    "tool_error_rate": 0.1,
+                    "permission_denials": 0,
+                    "stop_hook_blocks": 0,
+                    "tokens_per_turn": 100.0,
+                }
+            )
+        return out
+
+    def test_evaluateHarness_changeInsideBeforeWindowIsClippedNotInconclusive(
+        self,
+    ) -> None:
+        a = self.AFTER
+        spec = [(a - 6 * DAY + i * 600, "1.0") for i in range(3)]
+        spec += [(a - 3 * DAY + i * 600, "2.0") for i in range(3)]
+        spec += [(a + i * 600, "2.0") for i in range(3)]
+        out = hc_stats.evaluate_harness(
+            "claude", gate(), self.sessions("claude", spec), a
+        )
+        self.assertEqual(out["sessions"], {"before": 3, "after": 3})
+        self.assertNotEqual(out["reason"], "version-changed")
+
+    def test_evaluateHarness_firstNewVersionSessionExactlyAtAfterStart_versionChanged(
+        self,
+    ) -> None:
+        a = self.AFTER
+        spec = [(a - DAY + i * 600, "1.0") for i in range(3)]
+        spec += [(a + i * 600, "2.0") for i in range(3)]
+        out = hc_stats.evaluate_harness(
+            "claude", gate(), self.sessions("claude", spec), a
+        )
+        self.assertEqual(out["reason"], "version-changed")
+
+    def test_evaluateHarness_changeInsideAfterWindow_isFilteredNotMixed(self) -> None:
+        a = self.AFTER
+        spec = [(a - DAY + i * 600, "1.0") for i in range(3)]
+        spec += [(a + DAY + i * 600, "1.0") for i in range(2)]
+        spec += [(a + 6 * DAY, "1.1")]
+        out = hc_stats.evaluate_harness(
+            "claude", gate(), self.sessions("claude", spec), a
+        )
+        self.assertNotEqual(out["reason"], "version-changed")
+        self.assertEqual(out["sessions"], {"before": 3, "after": 2})
+        self.assertEqual((out["version"], out["excluded"]), ("1.0", 1))
+
+    def test_evaluateHarness_noVersionInBothWindows_versionChanged(self) -> None:
+        a = self.AFTER
+        spec = [(a - DAY + i * 600, "1.0") for i in range(3)]
+        spec += [(a + DAY, "1.0")]
+        spec += [(a + 2 * DAY + i * 600, "1.1") for i in range(2)]
+        out = hc_stats.evaluate_harness(
+            "claude", gate(), self.sessions("claude", spec), a
+        )
+        self.assertEqual(out["reason"], "version-changed")
+
+    def test_evaluateHarness_sessionExactlyAtAfterEnd_isOutsideAfterWindow(
+        self,
+    ) -> None:
+        a = self.AFTER
+        spec = [(a - DAY + i * 600, "1.0") for i in range(3)]
+        spec += [(a + i * 600, "1.0") for i in range(3)]
+        spec += [(a + 7 * DAY, "9.9")]
+        out = hc_stats.evaluate_harness(
+            "claude", gate(), self.sessions("claude", spec), a
+        )
+        self.assertNotEqual(out["reason"], "version-changed")
+        self.assertEqual(out["sessions"]["after"], 3)
+
+    def test_evaluateHarness_otherHarnessVersionChangeDoesNotLeak(self) -> None:
+        a = self.AFTER
+        rows_ = self.sessions(
+            "claude",
+            [(a - DAY + i * 600, "1.0") for i in range(3)]
+            + [(a + i * 600, "1.0") for i in range(3)],
+        ) + self.sessions("codex", [(a - 100, "1"), (a + 100, "2")])
+        out = hc_stats.evaluate_harness("claude", gate(), rows_, a)
+        self.assertNotEqual(out["reason"], "version-changed")
+
+    def test_evaluateHarness_exactlyMinSessions_isJudged(self) -> None:
+        a = self.AFTER
+        spec = [(a - DAY + i * 600, "1.0") for i in range(2)]
+        spec += [(a + i * 600, "1.0") for i in range(2)]
+        out = hc_stats.evaluate_harness(
+            "claude", gate(), self.sessions("claude", spec), a
+        )
+        self.assertNotEqual(out["reason"], "min-sessions")
+
+    def test_evaluateHarness_oneBelowMinSessions_reportsCounts(self) -> None:
+        a = self.AFTER
+        spec = [(a - DAY + i * 600, "1.0") for i in range(2)]
+        spec += [(a, "1.0")]
+        out = hc_stats.evaluate_harness(
+            "claude", gate(), self.sessions("claude", spec), a
+        )
+        self.assertEqual(out["reason"], "min-sessions")
+        self.assertEqual(out["sessions"], {"before": 2, "after": 1})
+
+    def test_evaluateHarness_nullVersionRowsDoNotTriggerVersionChange(self) -> None:
+        a = self.AFTER
+        spec = [(a - DAY, "1.0"), (a - DAY + 600, None), (a, None), (a + 600, "1.0")]
+        spec += [(a + 1200, "1.0"), (a - DAY + 1200, "1.0")]
+        out = hc_stats.evaluate_harness(
+            "claude", gate(), self.sessions("claude", spec), a
+        )
+        self.assertNotEqual(out["reason"], "version-changed")
+
+
+class GateSettingsEdges(unittest.TestCase):
+    def test_normalizeGate_nanSoakDays_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            hc_gate.normalize_gate(gate_json(soak_days=float("nan")))
+
+    def test_normalizeGate_infiniteSoakDays_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            hc_gate.normalize_gate(gate_json(soak_days=float("inf")))
+
+    def test_normalizeGate_nanTokenPerGain_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            hc_gate.normalize_gate(gate_json(token_per_gain=float("nan")))
+
+    def test_normalizeGate_boolSoakDays_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            hc_gate.normalize_gate(gate_json(soak_days=True))
+
+
+class FieldGateCase(RepoCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.base = self.commit({"README.md": "x\n"}, date=T0 - 30 * DAY)
+        self.merge = self.commit(
+            {"harness-climb/gates/t1-r1.json": json.dumps(gate_json()), "a.txt": "1\n"},
+            "merge",
+            date=T0,
+        )
+        self.later = self.commit({"b.txt": "2\n"}, "later", date=T0 + DAY)
+
+    def fg(self, history: str, now: float = T0 + 30 * DAY, merge: str | None = None):
+        return hc_field_gate.field_gate(
+            self.repo, "t1", 1, merge or self.merge, history, [], now
+        )
+
+    def reasons(self, out: dict) -> set[str]:
+        return {h["reason"] for h in out["harnesses"].values()}
+
+    def test_syncHistory_earlierSyncWithoutMergeIsSkipped(self) -> None:
+        hist = f"{T0 - 5 * DAY} {self.base}\n{T0 + 3600} {self.later}\n"
+        out = self.fg(hist)
+        self.assertEqual(out["sync"]["epoch"], T0 + 3600)
+        self.assertEqual(self.reasons(out), {"min-sessions"})
+
+    def test_syncHistory_firstContainingLineWinsOverLaterOnes(self) -> None:
+        hist = f"{T0 + 100} {self.merge}\n{T0 + 200} {self.later}\n"
+        self.assertEqual(self.fg(hist)["sync"]["epoch"], T0 + 100)
+
+    def test_syncHistory_malformedLinesAreIgnored(self) -> None:
+        junk = [
+            "garbage",
+            "",
+            "   ",
+            "12 abc",
+            f"x {self.later}",
+            f"-5 {self.later}",
+            f"{T0} {self.later[:39]}",
+            f"{T0} {self.later} extra",
+            f"{T0}{self.later}",
+            f"{T0} {self.later.upper()}",
+            f"{T0 + 1.5} {self.later}",
+        ]
+        hist = "\n".join(junk) + f"\n{T0 + 7} {self.later}\n"
+        self.assertEqual(self.fg(hist)["sync"]["epoch"], T0 + 7)
+
+    def test_syncHistory_crlfAndPaddedLinesParse(self) -> None:
+        hist = f"  {T0 + 9} {self.later}  \r\n"
+        self.assertEqual(self.fg(hist)["sync"]["epoch"], T0 + 9)
+
+    def test_syncHistory_onlyMalformed_isNoSync(self) -> None:
+        out = self.fg("nonsense\n")
+        self.assertEqual(self.reasons(out), {"sync-late"})
+        self.assertEqual(out["candidate"], "inconclusive")
+
+    def test_syncHistory_unknownShaIsSkippedNotFatal(self) -> None:
+        hist = f"{T0 + 1} {'a' * 40}\n{T0 + 2} {self.later}\n"
+        self.assertEqual(self.fg(hist)["sync"]["epoch"], T0 + 2)
+
+    def test_syncGrace_exactlyAtBoundary_isNotLate(self) -> None:
+        out = self.fg(f"{T0 + 2 * DAY} {self.later}\n")
+        self.assertEqual(self.reasons(out), {"min-sessions"})
+
+    def test_syncGrace_oneSecondPastBoundary_isSyncLate(self) -> None:
+        out = self.fg(f"{T0 + 2 * DAY + 1} {self.later}\n")
+        self.assertEqual(self.reasons(out), {"sync-late"})
+        self.assertEqual(out["candidate"], "inconclusive")
+
+    def test_syncGrace_syncOnlyAtLaterCommitStillLateAgainstMergeTime(self) -> None:
+        out = self.fg(f"{T0 + 5 * DAY} {self.later}\n")
+        self.assertEqual(self.reasons(out), {"sync-late"})
+
+    def test_soakWindow_nowBeforeSoakEnd_isNotDue(self) -> None:
+        hist = f"{T0 + 100} {self.later}\n"
+        out = self.fg(hist, now=T0 + 100 + 7 * DAY - 1)
+        self.assertEqual(out["status"], "not-due")
+        self.assertEqual(self.fg(hist, now=T0 + 100 + 7 * DAY)["status"], "ok")
+
+    def test_cliFieldGate_missingHistoryFile_isNoSyncNotCrash(self) -> None:
+        rows_file = self.write_json("rows.json", [])
+        proc = run_cli(
+            "field-gate",
+            "--repo",
+            str(self.repo),
+            "--state-dir",
+            str(self.state),
+            "--thread",
+            "t1",
+            "--round",
+            "1",
+            "--merge",
+            self.merge,
+            "--history",
+            str(self.dir / "absent.log"),
+            "--rows",
+            str(rows_file),
+            "--now",
+            str(T0 + 30 * DAY),
+        )
+        out = self.out(proc)
+        self.assertEqual(out["candidate"], "inconclusive")
+        self.assertEqual(out["harnesses"]["claude"]["reason"], "sync-late")
+
+    def test_cliFieldGate_historyPathIsDirectory_failsCleanly(self) -> None:
+        rows_file = self.write_json("rows.json", [])
+        proc = run_cli(
+            "field-gate",
+            "--repo",
+            str(self.repo),
+            "--thread",
+            "t1",
+            "--round",
+            "1",
+            "--merge",
+            self.merge,
+            "--history",
+            str(self.dir),
+            "--rows",
+            str(rows_file),
+            "--now",
+            str(T0 + 30 * DAY),
+        )
+        self.assertNotIn("Traceback", proc.stderr)
+
+    def test_defaultHistoryPath_stateDirWithSpaces(self) -> None:
+        p = hc_git.default_history_path({"DOTFILES_STATE_DIR": "/tmp/a b/c"})
+        self.assertEqual(str(p), "/tmp/a b/c/sync-history.log")
+
+    # --- AC-11 gate file read ---
+
+    def test_gateRead_workingTreeEditIsIgnored(self) -> None:
+        path = self.repo / "harness-climb/gates/t1-r1.json"
+        path.write_text(json.dumps(gate_json(min_sessions=999)))
+        out = self.fg(f"{T0 + 100} {self.later}\n")
+        self.assertEqual(out["gate"]["min_sessions"], 4)
+
+    def test_gateRead_laterCommitEditIsIgnored(self) -> None:
+        self.commit(
+            {"harness-climb/gates/t1-r1.json": json.dumps(gate_json(min_sessions=999))},
+            "tamper",
+            date=T0 + 2 * DAY,
+        )
+        out = self.fg(f"{T0 + 100} {self.later}\n")
+        self.assertEqual(out["gate"]["min_sessions"], 4)
+
+    def test_gateRead_absentFromMerge_errorsEvenIfLaterCommitHasIt(self) -> None:
+        early = self.base
+        self.commit({"harness-climb/gates/t2-r1.json": json.dumps(gate_json("t2"))})
+        rc, out = call(
+            "field-gate",
+            "--repo",
+            str(self.repo),
+            "--state-dir",
+            str(self.state),
+            "--thread",
+            "t2",
+            "--round",
+            "1",
+            "--merge",
+            self.merge,
+            "--history",
+            str(self.dir / "h.log"),
+            "--rows",
+            str(self.write_json("r.json", [])),
+        )
+        self.assertEqual(rc, 2)
+        self.assertEqual(out["status"], "error")
+        self.assertTrue(early)
+
+    def test_gateRead_malformedJsonAtMerge_errorsCleanly(self) -> None:
+        bad = self.commit({"harness-climb/gates/t3-r1.json": "{not json"}, "bad")
+        rc, out = call(
+            "field-gate",
+            "--repo",
+            str(self.repo),
+            "--thread",
+            "t3",
+            "--round",
+            "1",
+            "--merge",
+            bad,
+            "--history",
+            str(self.dir / "h.log"),
+            "--rows",
+            str(self.write_json("r.json", [])),
+        )
+        self.assertEqual((rc, out["status"]), (2, "error"))
+
+    def test_gateRead_nonObjectJson_errorsCleanly(self) -> None:
+        bad = self.commit({"harness-climb/gates/t3-r1.json": "[1,2]"}, "bad")
+        rc, out = call(
+            "field-gate",
+            "--repo",
+            str(self.repo),
+            "--thread",
+            "t3",
+            "--round",
+            "1",
+            "--merge",
+            bad,
+            "--history",
+            str(self.dir / "h.log"),
+            "--rows",
+            str(self.write_json("r.json", [])),
+        )
+        self.assertEqual((rc, out["status"]), (2, "error"))
+
+    def test_gateRead_missingRequiredKeys_errorsCleanly(self) -> None:
+        bad = self.commit({"harness-climb/gates/t3-r1.json": "{}"}, "bad")
+        rc, out = call(
+            "field-gate",
+            "--repo",
+            str(self.repo),
+            "--thread",
+            "t3",
+            "--round",
+            "1",
+            "--merge",
+            bad,
+            "--history",
+            str(self.dir / "h.log"),
+            "--rows",
+            str(self.write_json("r.json", [])),
+        )
+        self.assertEqual((rc, out["status"]), (2, "error"))
+
+    def test_gateRead_unknownGuardVersion_isInconclusiveForBoth(self) -> None:
+        c = self.commit(
+            {
+                "harness-climb/gates/t4-r1.json": json.dumps(
+                    gate_json("t4", guard_composite_version=99)
+                )
+            },
+            "gv",
+            date=T0,
+        )
+        out = hc_field_gate.field_gate(
+            self.repo, "t4", 1, c, f"{T0} {c}\n", [], T0 + 30 * DAY
+        )
+        self.assertEqual(self.reasons(out), {"guard-version-unknown"})
+
+    def test_gateRead_mergeRefThatIsNotACommit_errorsCleanly(self) -> None:
+        rc, out = call(
+            "field-gate",
+            "--repo",
+            str(self.repo),
+            "--thread",
+            "t1",
+            "--round",
+            "1",
+            "--merge",
+            "no-such-rev",
+            "--history",
+            str(self.dir / "h.log"),
+            "--rows",
+            str(self.write_json("r.json", [])),
+        )
+        self.assertEqual((rc, out["status"]), (2, "error"))
+
+    def test_endToEnd_revertCandidateRequestsRevertPrWithoutActing(self) -> None:
+        hist = f"{T0 + 100} {self.later}\n"
+        sync = T0 + 100
+        bad = make_rows(
+            "claude",
+            sync,
+            5,
+            target=[9.0, 9.1, 9.2, 9.3, 9.4],
+            tool_error_rate=0.1,
+            permission_denials=0,
+            stop_hook_blocks=0,
+            tokens_per_turn=100.0,
+        )
+        good = make_rows(
+            "claude",
+            sync - 3 * DAY,
+            5,
+            target=[5.0, 5.1, 5.2, 5.3, 5.4],
+            tool_error_rate=0.1,
+            permission_denials=0,
+            stop_hook_blocks=0,
+            tokens_per_turn=100.0,
+        )
+        out = hc_field_gate.field_gate(
+            self.repo, "t1", 1, self.merge, hist, bad + good, T0 + 30 * DAY
+        )
+        self.assertEqual(out["harnesses"]["claude"]["verdict"], "revert")
+        self.assertEqual(out["candidate"], "revert")
+        self.assertEqual(out["action"], "open-revert-pr")
 
 
 if __name__ == "__main__":

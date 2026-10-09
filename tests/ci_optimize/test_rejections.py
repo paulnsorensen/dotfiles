@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -296,7 +296,7 @@ class FromHyperfineTests(unittest.TestCase):
                 "version", before_normalized["context"]["benchmark_source"]
             )
             expected_captured_at = datetime.fromtimestamp(
-                export_path.stat().st_mtime, tz=timezone.utc
+                export_path.stat().st_mtime, tz=UTC
             ).isoformat()
             self.assertEqual(
                 before_normalized["context"]["captured_at"], expected_captured_at

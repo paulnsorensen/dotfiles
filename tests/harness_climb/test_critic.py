@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
-import unittest
-from unittest import mock
+import unittest.mock
 
 from .support import RepoCase, call, hc_critic, hc_policy
 
@@ -29,6 +30,9 @@ class CriticCase(RepoCase):
             }
         )
         self.git("checkout", "-q", "-b", "harness-climb/t1/r1")
+        env = unittest.mock.patch.dict(os.environ, {hc_critic.DENYLIST_ENV: "1"})
+        env.start()
+        self.addCleanup(env.stop)
 
     def propose(
         self,
@@ -145,7 +149,7 @@ class CriticCase(RepoCase):
         )
         self.assertEqual(
             [v["category"] for v in got],
-            ["runtime-output", "runtime-output", "runtime-output", "outside-allowlist"],
+            ["invalid-path", "invalid-path", "invalid-path", "outside-allowlist"],
         )
 
     def test_scope_freeze_refuses_a_proposal_without_a_passing_critic_verdict(
@@ -171,6 +175,7 @@ class CriticCase(RepoCase):
         )
         self.assertEqual(rc, 1)
         self.assertEqual(out["status"], "refused")
+        self.assertIn("no passing critic verdict", out["reason"])
         self.assertFalse((self.repo / "harness-climb").exists())
 
     # --- AC-6 leakage ---
@@ -223,7 +228,7 @@ class CriticCase(RepoCase):
         self.commit({"AGENTS.md": "better\n"}, "p")
         tags = self.write_json("tags.json", {"AGENTS.md": "global-doc"})
         env = {"SESSIONS_DB": str(self.dir / "absent.duckdb")}
-        with mock.patch.dict(os.environ, env):
+        with unittest.mock.patch.dict(os.environ, env):
             rc, out = call(
                 "critic",
                 "--repo",
@@ -251,7 +256,7 @@ class CriticCase(RepoCase):
         self.commit(files, "propose")
         tags = self.write_json("tags.json", {p: _tag(p) for p in files})
         loaded = ({"prompt": set(), "path": set(), **deny}, notes or [])
-        with mock.patch("hc_critic.load_denylist", return_value=loaded):
+        with unittest.mock.patch("hc_critic.load_denylist", return_value=loaded):
             return call(
                 "critic",
                 "--repo",
@@ -304,6 +309,26 @@ class CriticCase(RepoCase):
         rc, out = self.propose({"AGENTS.md": "better\n"}, budget="false")
         self.assertEqual(rc, 1)
         self.assertEqual(self.categories(out), {"budget-exit"})
+
+    def test_budget_failure_keeps_the_tool_stderr(self) -> None:
+        rc, out = self.propose(
+            {"AGENTS.md": "better\n"}, budget="sh -c 'echo boom >&2; exit 3'"
+        )
+        self.assertEqual(rc, 1)
+        self.assertEqual(
+            [(v["exit"], v["stderr"]) for v in out["violations"]], [(3, "boom")]
+        )
+
+    def test_denylist_flag_needs_the_test_environment(self) -> None:
+        argv = ("critic", "--thread", "t1", "--round", "1", "--denylist", "x.json")
+        with unittest.mock.patch.dict(os.environ):
+            os.environ.pop(hc_critic.DENYLIST_ENV, None)
+            with (
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit) as raised,
+            ):
+                call(*argv)
+        self.assertEqual(raised.exception.code, 2)
 
     def test_budget_config_edit_is_rejected(self) -> None:
         rc, out = self.propose(
@@ -363,6 +388,67 @@ class DenylistCase(unittest.TestCase):
             ["/hill-climb run one iteration of the thread now please"], []
         )
         self.assertEqual(deny["prompt"], {"run one iteration of the thread now please"})
+
+
+class PolicyEdges(unittest.TestCase):
+    LOCAL = frozenset({"mine"})
+
+    def cats(self, *paths: str) -> list[str]:
+        return [v["category"] for v in hc_policy.check_scope(paths, self.LOCAL)]
+
+    def test_scope_dotDotTraversalIntoVendored_rejected(self) -> None:
+        self.assertEqual(self.cats("skills/../skills/easy-cheese/x.md"), ["vendored"])
+
+    def test_scope_dotSegmentIntoVendored_rejected(self) -> None:
+        self.assertEqual(self.cats("skills/./easy-cheese/x.md"), ["vendored"])
+
+    def test_scope_doubleSlashIntoVendored_rejected(self) -> None:
+        self.assertEqual(self.cats("skills//easy-cheese/x.md"), ["vendored"])
+
+    def test_scope_traversalOutOfRepo_rejected(self) -> None:
+        self.assertEqual(
+            self.cats("../outside.md", "skills/../../x"), ["invalid-path"] * 2
+        )
+
+    def test_scope_tildeAndAbsoluteRuntimePaths_rejected(self) -> None:
+        got = self.cats("~/.claude/settings.json", "/Users/x/.codex/config.toml", "~")
+        self.assertEqual(got, ["invalid-path"] * 3)
+
+    def test_scope_dotSlashRuntimePrefix_rejected(self) -> None:
+        self.assertEqual(self.cats("./.claude/settings.json"), ["runtime-output"])
+
+    def test_scope_backslashPath_rejected(self) -> None:
+        self.assertEqual(self.cats("skills\\easy-cheese\\x.md"), ["invalid-path"])
+
+    def test_scope_traversalThatLandsOnBudgetConfig_flaggedAsBudget(self) -> None:
+        self.assertEqual(
+            self.cats("skills/../agents/instruction-budgets.toml"), ["budget-config"]
+        )
+
+    def test_scope_emptyPath_notAllowed(self) -> None:
+        self.assertEqual(self.cats(""), ["outside-allowlist"])
+
+    def test_scope_vendoredNameCaseVariant_rejected(self) -> None:
+        # macOS and default git checkouts fold case; Mine resolves to mine.
+        self.assertEqual(self.cats("skills/Mine/x.md"), [])
+        self.assertEqual(self.cats("skills/Easy-Cheese/x.md"), ["vendored"])
+
+    def test_scope_underscorePrefixedSkillDir_notOwned(self) -> None:
+        self.assertEqual(self.cats("skills/_registry.yaml"), ["outside-allowlist"])
+
+    def test_tags_listOfTwoTags_multiple(self) -> None:
+        got = hc_policy.check_tags(
+            ["AGENTS.md"], {"AGENTS.md": ["global-doc", "skill"]}
+        )
+        self.assertEqual(got[0]["category"], "tag-multiple")
+
+    def test_tags_nonStringTag_isUnknownNotCrash(self) -> None:
+        got = hc_policy.check_tags(["AGENTS.md"], {"AGENTS.md": {"a": 1}})
+        self.assertEqual(got[0]["category"], "tag-unknown")
+
+    def test_tags_emptyList_isMissing(self) -> None:
+        got = hc_policy.check_tags(["AGENTS.md"], {"AGENTS.md": []})
+        self.assertEqual(got[0]["category"], "tag-missing")
 
 
 if __name__ == "__main__":

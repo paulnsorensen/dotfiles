@@ -113,8 +113,8 @@ class DuckdbMissingTests(FreezeCase):
 
         return mock.patch.object(hc_db.subprocess, "run", run)
 
-    def test_duck_turns_a_missing_binary_into_an_input_error(self) -> None:
-        with self.hide_duckdb(), self.assertRaises(hc_db.InputError) as ctx:
+    def test_duck_turns_a_missing_binary_into_a_db_error(self) -> None:
+        with self.hide_duckdb(), self.assertRaises(hc_db.DbError) as ctx:
             hc_db.duck(self.dir / "x.duckdb", "SELECT 1")
         self.assertIn("duckdb not installed", str(ctx.exception))
 
@@ -123,6 +123,7 @@ class DuckdbMissingTests(FreezeCase):
         with self.hide_duckdb():
             rc, out = self.freeze()
         self.assertEqual((rc, out["status"]), (1, "refused"), out)
+        self.assertIn("session database unavailable", out["reason"])
         self.assertIn("duckdb not installed", out["reason"])
         (line,) = self.ledger_lines()
         self.assertEqual(line["candidate"], "n/a")

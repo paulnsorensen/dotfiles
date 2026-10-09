@@ -12,11 +12,13 @@ from typing import Any
 
 import hc_git
 import hc_policy
-from hc_core import emit, read_json, repo_root, round_dir, state_root, stopped
+from hc_core import emit, read_json, repo_root, round_dir, state_root
 from hc_denylist import load_denylist
 from hc_ledger import append_note
 
-DEFAULT_BUDGET_CMD = "uv run --project agent-profile --frozen python tests/helpers/agent_instruction_budget.py agents/instruction-budgets.toml"
+DEFAULT_BUDGET_CMD = "bin/agent-instruction-budget agents/instruction-budgets.toml"
+DENYLIST_ENV = "HARNESS_CLIMB_TEST_DENYLIST"  # test-only: enables critic --denylist
+STDERR_TAIL_CHARS = 2000
 MAX_CRITIC_FAILURES = 3  # the first attempt plus two repairs
 
 
@@ -91,7 +93,15 @@ def _budget_violations(args: argparse.Namespace, repo: Path) -> list[dict[str, A
     )
     if budget.returncode == 0:
         return []
-    return [{"check": "budget", "category": "budget-exit", "exit": budget.returncode}]
+    violation: dict[str, Any] = {
+        "check": "budget",
+        "category": "budget-exit",
+        "exit": budget.returncode,
+    }
+    stderr = budget.stderr.strip()
+    if stderr:
+        violation["stderr"] = stderr[-STDERR_TAIL_CHARS:]
+    return [violation]
 
 
 def run_critic_checks(
@@ -103,11 +113,8 @@ def run_critic_checks(
     paths = [path for _, path in changed]
     if not paths:
         violations.append({"check": "diff", "category": "empty-diff"})
-    registry = repo / "skills" / "_registry.yaml"
-    vendored = (
-        hc_policy.vendored_names(registry.read_text()) if registry.is_file() else set()
-    )
-    scope = hc_policy.check_scope(paths, vendored)
+    listing = hc_git.git_out(repo, "ls-tree", "-d", "--name-only", args.base, "skills/")
+    scope = hc_policy.check_scope(paths, hc_policy.local_skill_names(listing))
     violations += scope + hc_policy.check_tags(paths, tags)
     violations += [
         {"check": "scope", "category": "symlink", "path": path}
@@ -144,8 +151,6 @@ def _record_failure(
 
 def cmd_critic(args: argparse.Namespace) -> int:
     repo = repo_root(args.repo)
-    if stopped(args, repo):
-        return 0
     rdir = round_dir(state_root(args, repo), args.thread, args.round)
     state_file = rdir / "critic.json"
     state = read_json(state_file, {"failures": 0})
@@ -168,7 +173,8 @@ def cmd_critic(args: argparse.Namespace) -> int:
         emit({"status": status, "attempt": state["failures"], "violations": violations})
         return 1
     components = sorted({hc_policy.tag_of(tags, p)[0] for p in paths})
-    state.update(passed=True, head=head, components=components)
+    warnings = hc_policy.executable_warnings(paths)
+    state.update(passed=True, head=head, components=components, warnings=warnings)
     state_file.write_text(json.dumps(state, indent=2))
     emit(
         {
@@ -176,6 +182,7 @@ def cmd_critic(args: argparse.Namespace) -> int:
             "attempt": state["failures"] + 1,
             "head": head,
             "violations": [],
+            "warnings": warnings,
         }
     )
     return 0

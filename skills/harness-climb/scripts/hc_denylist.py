@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,10 +12,13 @@ import hc_policy
 import hc_stats
 from hc_db import IN_SCOPE, duck, resolve_db
 
-# Codex injects these as user messages; they are harness text, not prompts.
-CODEX_INJECTED = ("<", "# AGENTS.md instructions")
-# Text that starts with one of these is injected by a harness on every path.
-INJECTED_PREFIXES = CODEX_INJECTED + ("Base directory for this skill",)
+# Text that starts with one of these is harness text, not a user prompt.
+INJECTED_PREFIXES = (
+    "<",  # an XML-style tag: a system reminder, a command wrapper, or Codex context
+    "# AGENTS.md instructions",  # the Codex project-instructions preamble
+    "Base directory for this skill",  # a skill body that a harness loads
+)
+_CACHE_VERSION = 1
 _TEXT_TYPES = ("text", "input_text")
 
 
@@ -92,7 +96,8 @@ def prompt_query() -> str:
     starts = " OR ".join(
         f"starts_with(ltrim(t, E' \\t\\r\\n'), '{p}')" for p in INJECTED_PREFIXES
     )
-    where = f"{IN_SCOPE} AND type = 'user'"
+    # Ingest writes no Codex prompt rows, so the scan reads Claude rows only.
+    where = f"{IN_SCOPE} AND type = 'user' AND harness = 'claude'"
     content = "json_extract(message, '$.content')"
     return (
         "SELECT harness, t FROM ("
@@ -117,13 +122,73 @@ def _db_prompts(db: Path) -> dict[str, list[str]]:
     return by_harness
 
 
+def _mtime(path: Path) -> int | None:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+def _cache_file(db: Path, own: list[str]) -> Path:
+    base = os.environ.get("XDG_CACHE_HOME") or "~/.cache"
+    ident = json.dumps([str(db), own, str(codex_sessions_root())])
+    name = hashlib.sha256(ident.encode()).hexdigest()[:16]
+    return Path(os.path.expanduser(base)) / "harness-climb" / f"denylist-{name}.json"
+
+
+def _rollout_stamp(root: Path) -> tuple[int, int]:
+    """The newest mtime and the count of the rollout files. Stat only: no file is read."""
+    newest, count = 0, 0
+    if root.is_dir():
+        for path in root.rglob("*.jsonl"):
+            stamp = _mtime(path)
+            if stamp is not None:
+                newest, count = max(newest, stamp), count + 1
+    return newest, count
+
+
+def _cache_key(db: Path) -> list[int | None]:
+    return [_CACHE_VERSION, _mtime(db), *_rollout_stamp(codex_sessions_root())]
+
+
+def _read_cache(
+    file: Path, key: list[int | None]
+) -> tuple[dict[str, set[str]], list[dict[str, Any]]] | None:
+    try:
+        data = json.loads(file.read_text())
+        if data["key"] != key:
+            return None
+        return {k: set(v) for k, v in data["deny"].items()}, data["notes"]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
+def _write_cache(
+    file: Path,
+    key: list[int | None],
+    deny: dict[str, set[str]],
+    notes: list[dict[str, Any]],
+) -> None:
+    """Store the denylist for the next critic run. The file holds prompt n-grams: owner-only."""
+    payload = {"key": key, "deny": {k: sorted(v) for k, v in deny.items()}}
+    payload["notes"] = notes
+    try:
+        file.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            json.dump(payload, handle)
+    except OSError:
+        pass
+
+
 def load_denylist(
     denylist_file: str | None, repo: Path
 ) -> tuple[dict[str, set[str]] | None, list[dict[str, Any]]]:
     """The leakage denylist and its notes.
 
     A harness with no prompts adds a `denylist-partial` note. The denylist is
-    None when no source exists.
+    None when no source exists. The database build is cached by the mtime of
+    the database and by the newest mtime and count of the Codex rollout files.
     """
     own = [repo.name, "dotfiles"]
     if denylist_file:
@@ -135,6 +200,10 @@ def load_denylist(
     db = resolve_db()
     if not db.is_file():
         return None, []
+    cache, key = _cache_file(db, own), _cache_key(db)
+    cached = _read_cache(cache, key)
+    if cached is not None:
+        return cached
     by_harness = _db_prompts(db)
     notes = [
         {"check": "leakage", "category": "denylist-partial", "harness": name}
@@ -147,4 +216,5 @@ def load_denylist(
         [r["project"] for r in projects],
         own,
     )
+    _write_cache(cache, key, deny, notes)
     return deny, notes

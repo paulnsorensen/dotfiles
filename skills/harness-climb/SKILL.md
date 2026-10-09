@@ -60,12 +60,12 @@ The gate files live in the tracked directory `harness-climb/gates/`. Each file i
 5. Run `critic --round <n>`. Its `--base` defaults to `origin/main` and falls back to the local `main`. On `fail`, repair the diff and run it again. The third failure returns `rejected`: the script writes the ledger line, and you open no PR.
 6. Record the lab. A `skill` with `evals/autoimprove.json` has run `autoimprove` in step 4. Pass `--autoimprove-verdict <verdict>` to the freeze. The freeze reads the contract from that file, not from a flag. Freeze holds the lab for every other component.
 7. Run `freeze --round <n> --component <c> --targeted-query-file <file> --direction <lower|higher>`. Its `--base` has the same default as the critic. The freeze needs the passing critic verdict. It refuses while a merged gate of the same component has no field verdict. It dry-runs the query on the session database and refuses a `;` or a query without `harness`, `sessionId`, and `value`. It commits the gate file. A refused freeze appends a `candidate=n/a` ledger line with the reason and ends the round.
-8. Publish the branch through `/plate`. Put the evidence counts, the lab result, and the gate file path in the PR body. Stop at the PR.
+8. Publish the branch through `/plate`. Put the evidence counts, the lab result, and the gate file path in the PR body. Copy each entry of the critic `warnings` list into the PR body under an "Executable change" heading; the reviewer must approve it. Stop at the PR.
 9. Append a ledger line with `candidate=pending`, `claude=pending`, `codex=pending`, and `merge=none`. After the human merge, step 2 of a later round finds the merge commit with `ledger pending`. It appends the field verdict line with the merge SHA. The ledger never changes an older line.
 
 ## Stop conditions
 
-- Three rounds in a row with no `keep` verdict: write `STOP` with `diminishing-returns`.
+- Three rounds in a row with no `keep` verdict: run `ledger stop-check`. It writes `STOP` with `diminishing-returns` after three field verdicts without `keep` or `keep-cheaper`.
 - A trade-off needs human taste: write `STOP` with `needs-human` and the evidence.
 - The session database is missing or a gate breaks for an unrelated cause: write `STOP` with `blocked`.
 - The human owner asks to stop.

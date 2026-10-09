@@ -13,7 +13,6 @@ from typing import Any
 
 import hc_gate
 import hc_git
-import tomllib
 from hc_core import emit
 from hc_stats import DAY
 
@@ -23,14 +22,17 @@ OVERRIDE_LABEL = "harness-climb/soak-override"
 
 
 def _pin_values(repo: str | Path, rev: str) -> dict[str, Any] | None:
-    """Pin values at a revision, one of three results.
+    """Pin values at a revision.
 
-    `{}` when the file is absent at that revision, `None` when its TOML does not
-    parse, and otherwise a map of each pinned tool to its value (or None).
+    Maps each pinned tool to its value. A tool maps to None when the file is
+    absent at that revision or the tool is unset. The result is None only when
+    the TOML does not parse.
     """
+    import tomllib  # local: ruff 0.16 and 0.17 class this module differently
+
     proc = hc_git.git(repo, "show", f"{rev}:{PIN_FILE}", check=False)
     if proc.returncode != 0:
-        return {}
+        return dict.fromkeys(PINNED_TOOLS)
     try:
         tools = tomllib.loads(proc.stdout).get("tools", {})
     except tomllib.TOMLDecodeError:
@@ -47,25 +49,22 @@ def changed_pins(repo: str | Path, base: str, head: str) -> list[str]:
     new = _pin_values(repo, head)
     if old is None or new is None:
         return sorted(PINNED_TOOLS)
-    return sorted(tool for tool in PINNED_TOOLS if old.get(tool) != new.get(tool))
+    return sorted(tool for tool in PINNED_TOOLS if old[tool] != new[tool])
 
 
 def open_windows(repo: str | Path, main_ref: str, now: float) -> list[dict[str, Any]]:
     """Gate files added to main whose soak window contains `now`."""
     ref = hc_git.resolve_main(repo, main_ref)
-    log = hc_git.git_out(
+    names = hc_git.git_out(
         repo, "log", "--first-parent", "--diff-filter=A", "--name-only",
-        "--format=%x01%H %ct", ref, "--", hc_gate.GATE_DIR,
+        "--format=", ref, "--", hc_gate.GATE_DIR,
     )  # fmt: skip
-    added: dict[str, tuple[str, int]] = {}
-    for block in log.split("\x01")[1:]:
-        head, *files = block.strip().splitlines()
-        sha, ctime = head.split()
-        for path in files:
-            if path.endswith(".json"):
-                added.setdefault(path, (sha, int(ctime)))  # newest add wins
     windows = []
-    for path, (sha, opened) in sorted(added.items()):
+    for path in sorted({n for n in names.splitlines() if n.endswith(".json")}):
+        added = hc_gate.gate_merge(repo, ref, path)
+        if added is None:
+            continue
+        sha, opened = added
         try:
             gate = hc_gate.normalize_gate(hc_gate.read_gate_at(repo, sha, path))
         except (hc_git.GitError, ValueError):

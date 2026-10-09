@@ -6,10 +6,9 @@ import json
 import os
 import subprocess
 import sys
-import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from unittest import mock
+from unittest import TestCase, main, mock, skipUnless
 
 from .support import (
     DAY,
@@ -27,7 +26,7 @@ from .support import (
 AFTER = T0 + DAY
 SESSIONS_DDL = (
     "CREATE TABLE sessions (harness VARCHAR, sessionId VARCHAR, first_seen VARCHAR, "
-    "last_seen VARCHAR, project VARCHAR, branch VARCHAR, version VARCHAR, entry_count BIGINT)"
+    "last_seen VARCHAR, project VARCHAR, branch VARCHAR, version VARCHAR, entry_count BIGINT, parent_session_id VARCHAR)"
 )
 OTHER_DDL = (
     (
@@ -42,13 +41,13 @@ OTHER_DDL = (
     ),
     (
         "CREATE TABLE model_turns (harness VARCHAR, model VARCHAR, stop_reason VARCHAR, "
-        "input_tokens BIGINT, output_tokens BIGINT, timestamp VARCHAR, sessionId VARCHAR, cwd VARCHAR)"
+        "input_tokens BIGINT, output_tokens BIGINT, timestamp VARCHAR, sessionId VARCHAR, cwd VARCHAR, context_tokens BIGINT)"
     ),
 )
 
 
 def iso(epoch: float) -> str:
-    return datetime.fromtimestamp(epoch, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.fromtimestamp(epoch, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def q(value: str | None) -> str:
@@ -56,15 +55,21 @@ def q(value: str | None) -> str:
 
 
 def session_row(
-    harness: str, sid: str, first: float, last: float, version: str | None, entries: int
+    harness: str,
+    sid: str,
+    first: float,
+    last: float,
+    version: str | None,
+    entries: int,
+    parent: str | None = None,
 ) -> str:
     return (
         f"INSERT INTO sessions VALUES ({q(harness)}, {q(sid)}, {q(iso(first))}, "
-        f"{q(iso(last))}, '/p', 'b', {q(version)}, {entries})"
+        f"{q(iso(last))}, '/p', 'b', {q(version)}, {entries}, {q(parent)})"
     )
 
 
-class EnsureFreshDbTests(unittest.TestCase):
+class EnsureFreshDbTests(TestCase):
     def test_ingest_runs_when_no_sessions_db_override_is_set(self) -> None:
         env = {k: v for k, v in os.environ.items() if k != "SESSIONS_DB"}
         with (
@@ -130,9 +135,14 @@ class EnsureFreshDbTests(unittest.TestCase):
     def test_critic_denylist_path_surfaces_a_failed_refresh(self) -> None:
         with (
             mock.patch.object(hc_db, "ensure_fresh_db", return_value=False),
-            self.assertRaises(hc_db.InputError),
+            self.assertRaises(hc_db.DbError),
         ):
             hc_denylist.load_denylist(None, Path("/tmp/repo"))
+
+    def test_db_failures_are_not_input_errors(self) -> None:
+        for cls in (hc_db.VersionUnavailable, hc_db.RefreshFailed):
+            self.assertTrue(issubclass(cls, hc_db.DbError), cls)
+            self.assertFalse(issubclass(cls, hc_db.InputError), cls)
 
     def test_settings_follow_the_environment_despite_the_cache(self) -> None:
         for name in ("/tmp/a.duckdb", "/tmp/b.duckdb"):
@@ -162,7 +172,7 @@ class EnsureFreshDbTests(unittest.TestCase):
             self.assertEqual(fresh.call_count, 2)
 
 
-@unittest.skipUnless(HAVE_DUCKDB, "duckdb CLI not installed")
+@skipUnless(HAVE_DUCKDB, "duckdb CLI not installed")
 class LoadRowsTests(RepoCase):
     def build(self, *extra: str, sessions_ddl: str = SESSIONS_DDL) -> Path:
         return make_db(self.dir / "s.duckdb", sessions_ddl, *OTHER_DDL, *extra)
@@ -187,8 +197,9 @@ class LoadRowsTests(RepoCase):
                 f"('claude', 'ts', 's1', 1, '', '', {flag}, '', false, 'x')"
                 for flag in ("true", "true", "false")
             ),
-            "INSERT INTO model_turns VALUES ('claude', 'm', 'end_turn', 100, 50, 'ts', 's1', '/p'), "
-            "('claude', 'm', 'end_turn', 300, NULL, 'ts', 's1', '/p')",
+            "INSERT INTO model_turns VALUES ('claude', 'm', 'end_turn', 100, 50, 'ts', 's1', '/p', 1100), "
+            "('claude', 'm', 'end_turn', 300, NULL, 'ts', 's1', '/p', 1300)",
+            session_row("codex", "sub1", t + 70, t + 80, None, 1, parent="s2"),
         )
 
     def test_load_rows_computes_per_session_values_from_the_ingest_schema(self) -> None:
@@ -208,12 +219,23 @@ class LoadRowsTests(RepoCase):
         self.assertEqual(s1["tool_error_rate"], 0.25)
         self.assertEqual(s1["permission_denials"], 2)
         self.assertEqual(s1["stop_hook_blocks"], 2)
-        self.assertEqual(s1["tokens_per_turn"], 225.0)
+        self.assertEqual(s1["tokens_per_turn"], 1225.0)
         s2 = by["s2"]
         self.assertEqual((s2["harness"], s2["version"]), ("codex", None))
         self.assertEqual((s2["permission_denials"], s2["stop_hook_blocks"]), (0, 0))
         self.assertIsNone(s2["tool_error_rate"])
         self.assertIsNone(s2["tokens_per_turn"])
+
+    def test_sub_agent_sessions_are_excluded(self) -> None:
+        db = self.build_session_db(AFTER + 100)
+        rows = hc_db.load_rows(db, gate_json(), AFTER, AFTER + 7 * DAY)
+        self.assertNotIn("sub1", {r["session"] for r in rows})
+
+    def test_database_without_the_new_columns_names_the_reingest(self) -> None:
+        ddl = SESSIONS_DDL.replace(", parent_session_id VARCHAR", "")
+        db = self.build(sessions_ddl=ddl)
+        with self.assertRaisesRegex(hc_db.InputError, "re-run ingest.py --force"):
+            hc_db.load_rows(db, gate_json(), AFTER, AFTER + DAY)
 
     def test_field_gate_reads_the_database_and_keeps_a_real_gain(self) -> None:
         statements = []
@@ -234,7 +256,7 @@ class LoadRowsTests(RepoCase):
                         f"INSERT INTO tool_results VALUES ({q(harness)}, 'u', 'c', {q(err)}, true, 'ts', {q(sid)})"
                     )
                     statements.append(
-                        f"INSERT INTO model_turns VALUES ({q(harness)}, 'm', 'end_turn', {1000 + 10 * i}, 0, 'ts', {q(sid)}, '/p')"
+                        f"INSERT INTO model_turns VALUES ({q(harness)}, 'm', 'end_turn', {1000 + 10 * i}, 0, 'ts', {q(sid)}, '/p', {1000 + 10 * i})"
                     )
         db = self.build(*statements)
         self.commit({"README.md": "x"}, date=T0 - DAY)
@@ -246,7 +268,14 @@ class LoadRowsTests(RepoCase):
             {"harness-climb/gates/t1-r1.json": json.dumps(gate)}, date=T0
         )
         got = hc_field_gate.field_gate(
-            self.repo, "t1", 1, merge, f"{AFTER} {merge}\n", None, AFTER + 9 * DAY, db
+            self.repo,
+            "t1",
+            1,
+            merge,
+            f"{AFTER} {merge}\n",
+            None,
+            AFTER + 9 * DAY,
+            lambda: db,
         )
         self.assertEqual(got["status"], "ok", got)
         self.assertEqual(got["candidate"], "keep", got)
@@ -266,7 +295,14 @@ class LoadRowsTests(RepoCase):
             {"harness-climb/gates/t1-r1.json": json.dumps(gate_json())}, date=T0
         )
         got = hc_field_gate.field_gate(
-            self.repo, "t1", 1, merge, f"{AFTER} {merge}\n", None, AFTER + 9 * DAY, db
+            self.repo,
+            "t1",
+            1,
+            merge,
+            f"{AFTER} {merge}\n",
+            None,
+            AFTER + 9 * DAY,
+            lambda: db,
         )
         self.assertEqual(got["candidate"], "inconclusive")
         self.assertEqual(
@@ -277,4 +313,4 @@ class LoadRowsTests(RepoCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()

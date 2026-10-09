@@ -33,6 +33,8 @@ jobs:
     - name: Install ruff
       uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89 # v4.1.0
       with:
+        # renovate: datasource=pypi depName=ruff
+        version: "0.17.0"
         args: "--version"
 
     - name: Install Node linters
@@ -166,17 +168,15 @@ jobs:
         REPO: ${{ github.repository }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
       run: |
-        if ! PR_LABELS="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '[.labels[].name] | join(",")')"; then
-          echo "gh pr view failed; cannot read PR labels" >&2
-          exit 1
-        fi
+        bin/ci-soak-gate guard "$BASE_SHA"
+        PR_LABELS="$(bin/ci-soak-gate labels)"
         python3 skills/harness-climb/scripts/harness_climb.py soak-check --base "$BASE_SHA" --labels "$PR_LABELS" --main-ref origin/main
 
   # Stable aggregate gate. Branch protection requires the check named `test`,
   # so do not change that name when the shard count changes. The job needs
   # `if: always()` plus an explicit result assertion. Without them, a failed
   # shard makes this job skip, and a skipped required check does not block a
-  # merge: the gate would pass while tests are red.
+  # merge. The gate would then pass while tests are red.
   # The gate accepts a skip only for soak-check on push, where it has no base SHA.
   test:
     runs-on: ubuntu-latest
@@ -184,16 +184,16 @@ jobs:
     if: always()
 
     steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        sparse-checkout: bin/ci-soak-gate
+        sparse-checkout-cone-mode: false
+        persist-credentials: false
+
     - name: Assert every test job succeeded
       env:
         EVENT: ${{ github.event_name }}
         SHARDS: ${{ needs.test-shard.result }}
         EXTRAS: ${{ needs.test-extras.result }}
         SOAK: ${{ needs.soak-check.result }}
-      run: |
-        echo "event=$EVENT test-shard=$SHARDS test-extras=$EXTRAS soak-check=$SOAK"
-        if [ "$EVENT" = push ]; then
-          [ "$SHARDS" = success ] && [ "$EXTRAS" = success ] && { [ "$SOAK" = success ] || [ "$SOAK" = skipped ]; }
-        else
-          [ "$SHARDS" = success ] && [ "$EXTRAS" = success ] && [ "$SOAK" = success ]
-        fi
+      run: bin/ci-soak-gate assert

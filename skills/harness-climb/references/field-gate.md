@@ -22,10 +22,12 @@ Scope the targeted query to `harness IN ('claude','codex')`.
 - No such line after that grace gives `inconclusive` with reason `sync-late`.
 - A sync later than `sync_grace_days` after the merge gives `inconclusive` with reason `sync-late`.
 - Before the after window ends, the result is `not-due`.
+- A sync inside the after window whose SHA lacks the merge commit gives `inconclusive` with reason `sync-regressed`. Every clone and worktree writes the log, so that line means a deploy dropped the change.
 - A `not-due` result is never a ledger verdict.
 - A session database with no `version` column gives `inconclusive` with reason `version-unavailable`.
-- The before window ends where the after window starts. It begins at the later of `soak_days` earlier and the last version change before the start.
-- A version change inside a window gives `inconclusive` with reason `version-changed`.
+- The before window ends where the after window starts. It begins `soak_days` earlier.
+- A harness version change inside the two windows does not clip a window. The gate keeps the dominant version: the version with at least `min_sessions` sessions in both windows and the most sessions in total. It drops the sessions of other versions. The result reports `version`, `versions`, and `excluded`, the count of dropped sessions.
+- No version with `min_sessions` in both windows gives `inconclusive` with reason `version-changed`.
 - A session database that the gate cannot refresh gives `inconclusive` with reason `db-stale`.
 
 ## Statistics

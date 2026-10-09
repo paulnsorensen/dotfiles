@@ -42,12 +42,6 @@ RUNTIME_PREFIXES = (
     ".copilot/",
     "chezmoi/private_dot_codex/",
 )
-# Short names that vendored repositories answer to in a skills path.
-_VENDOR_ALIASES = {
-    "skillz-that-grillz": ("skillz",),
-    "sliced-bread-architecture": ("sliced-bread",),
-}
-
 NGRAM = 8
 MIN_PROJECT_LEN = 5
 
@@ -129,26 +123,16 @@ PROJECT_STOPWORDS = {
 }
 
 
-def vendored_names(registry_text: str) -> set[str]:
-    """Vendored skill names: source repository names plus explicit `skills:` lists."""
-    names: set[str] = set()
-    in_sources = False
-    for line in registry_text.splitlines():
-        if re.match(r"^sources:\s*$", line):
-            in_sources = True
-            continue
-        if not in_sources:
-            continue
-        if re.match(r"^\S", line) and not line.startswith("#"):
-            break
-        repo = re.match(r"^  ([\w.-]+)/([\w.-]+):\s*$", line)
-        if repo:
-            names.add(repo.group(2))
-            names.update(_VENDOR_ALIASES.get(repo.group(2), ()))
-        listed = re.match(r"^\s+skills:\s*\[(.*)\]", line)
-        if listed:
-            names.update(n.strip() for n in listed.group(1).split(",") if n.strip())
-    return names
+def local_skill_names(tree_listing: str) -> set[str]:
+    """Skill names from `git ls-tree -d --name-only <base> skills/`, one path per line.
+
+    A vendored skill has no local directory, so its name is never in this set.
+    """
+    return {
+        line.removeprefix("skills/")
+        for line in tree_listing.splitlines()
+        if line.startswith("skills/")
+    }
 
 
 def classify(path: str) -> str | None:
@@ -166,12 +150,17 @@ def _normalized(path: str) -> str | None:
     return None if clean.startswith("..") else clean
 
 
-def check_scope(paths: Iterable[str], vendored: set[str]) -> list[dict[str, str]]:
+def check_scope(paths: Iterable[str], local_skills: set[str]) -> list[dict[str, str]]:
+    """Scope violations. A skill path is owned only when `skills/<name>/` exists at base."""
     violations = []
-    folded_vendored = {name.casefold() for name in vendored}
+    folded_local = {name.casefold() for name in local_skills}
     for path in paths:
         clean = _normalized(path)
-        if clean is None or clean.startswith(RUNTIME_PREFIXES):
+        if clean is None:
+            violations.append(
+                {"check": "scope", "category": "invalid-path", "path": path}
+            )
+        elif clean.startswith(RUNTIME_PREFIXES):
             violations.append(
                 {"check": "scope", "category": "runtime-output", "path": path}
             )
@@ -181,15 +170,15 @@ def check_scope(paths: Iterable[str], vendored: set[str]) -> list[dict[str, str]
             )
         elif clean.casefold().startswith(SELF_EDIT_PREFIXES):
             violations.append({"check": "scope", "category": "self-edit", "path": path})
-        elif (
-            clean.startswith("skills/")
-            and clean.split("/")[1].casefold() in folded_vendored
-        ):
-            violations.append({"check": "scope", "category": "vendored", "path": path})
         elif classify(clean) is None:
             violations.append(
                 {"check": "scope", "category": "outside-allowlist", "path": path}
             )
+        elif (
+            classify(clean) == "skill"
+            and clean.split("/")[1].casefold() not in folded_local
+        ):
+            violations.append({"check": "scope", "category": "vendored", "path": path})
     return violations
 
 
@@ -197,6 +186,15 @@ def tag_of(tags: dict[str, Any], path: str) -> list[Any]:
     """The tags a map gives one path, as a list: empty when absent, one item for a bare tag."""
     raw = tags.get(path)
     return [] if raw is None else (raw if isinstance(raw, list) else [raw])
+
+
+def executable_warnings(paths: Iterable[str]) -> list[str]:
+    """One warning per hook path. A hook runs code in every later session."""
+    return [
+        f"executable change: {path} is a hook and runs code in every later session"
+        for path in paths
+        if classify(path) == "hook"
+    ]
 
 
 def check_tags(paths: Iterable[str], tags: dict[str, Any]) -> list[dict[str, str]]:
@@ -268,8 +266,8 @@ def _line_violations(
     low = text.lower()
     padded = f" {' '.join(_tokens(text))} "
     hits = {
-        "path": any(span in low for span in deny.get("path", ())),
-        "project": any(f" {name} " in padded for name in deny.get("project", ())),
+        "path": any(span in low for span in deny["path"]),
+        "project": any(f" {name} " in padded for name in deny["project"]),
     }
     return [
         {"check": "leakage", "category": cat, "file": path, "line": lineno}
@@ -308,11 +306,11 @@ def check_leakage(
         previous = -2
         for lineno, text in lines:
             violations += _line_violations(path, lineno, text, deny)
-            if lineno != previous + 1 or not runs:
+            if lineno != previous + 1:
                 runs.append([])
             runs[-1].extend((tok, lineno) for tok in _tokens(text))
             previous = lineno
-        violations += _prompt_violations(path, runs, deny.get("prompt", set()))
+        violations += _prompt_violations(path, runs, deny["prompt"])
     return violations
 
 
@@ -328,7 +326,7 @@ def parse_added_lines(diff: str) -> dict[str, list[tuple[int, str]]]:
     added: dict[str, list[tuple[int, str]]] = {}
     path: str | None = None
     lineno = old_left = new_left = 0
-    for line in diff.splitlines():
+    for line in diff.split("\n"):
         if old_left > 0 or new_left > 0:
             if line.startswith("+"):
                 new_left -= 1

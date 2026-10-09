@@ -16,7 +16,7 @@ The custom backup/restore/rollback subsystem has been **deleted** (chezmoi-conso
 
 ### Sync history log (2026-10-09)
 
-A successful sync appends `<unix epoch> <40-hex dotfiles HEAD sha>` to `$DOTFILES_STATE_DIR/sync-history.log` through `record_sync_history` (`.sync-lib.sh`). `.sync` calls it only after the `SYNC_FAILURES` check, so a failed sync appends nothing. The function never fails the sync: it warns and skips the line when git cannot read HEAD. `last_sync` holds one overwritten timestamp, so it cannot anchor a measurement window. The `harness-climb` field gate reads this log to find the first sync that deployed a merge commit. See [[architecture/harness-climb]].
+A successful sync appends `<unix epoch> <40-hex dotfiles HEAD sha>` to `$DOTFILES_STATE_DIR/sync-history.log` through `record_sync_history` (`.sync-lib.sh`). `.sync` calls it only after the `SYNC_FAILURES` check, so a failed sync appends nothing. The function never fails the sync: it warns and skips the line when git cannot read HEAD. When the clone has uncommitted changes, the line ends with the word `dirty`, because HEAD does not describe the deployed tree. The field gate ignores dirty lines. `.sync` honors an exported `DOTFILES_STATE_DIR`, the same default that `bin/dots` and `hc_git.default_history_path` use. `last_sync` holds one overwritten timestamp, so it cannot anchor a measurement window. The `harness-climb` field gate reads this log to find the first sync that deployed a merge commit. See [[architecture/harness-climb]].
 
 ## Phase ordering: prepare → package-sync → final
 

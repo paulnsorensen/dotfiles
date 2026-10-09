@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import re
 from pathlib import Path
 from typing import Any
 
 import hc_gate
 import hc_git
+import hc_policy
 import hc_stats
 from hc_core import (
     InputError,
@@ -17,12 +17,10 @@ from hc_core import (
     repo_root,
     round_dir,
     state_root,
-    stopped,
 )
-from hc_db import duck, resolve_db
+from hc_db import DbError, duck, resolve_db
+from hc_denylist import load_denylist
 from hc_ledger import append_note, measured_rounds
-
-_GATE_NAME = re.compile(rf"^{re.escape(hc_gate.GATE_DIR)}/(.+)-r(\d+)\.json$")
 
 
 def touched_skills(repo: Path, base: str) -> set[str]:
@@ -50,6 +48,23 @@ def has_contract(repo: Path, base: str, names: set[str]) -> bool:
     )
 
 
+def leakage_problem(query: str, repo: Path) -> str | None:
+    """Why the targeted query cannot go to the public repo, or None. It never echoes the query."""
+    try:
+        deny, _ = load_denylist(None, repo)
+    except DbError as exc:
+        return f"session database unavailable: {exc}"
+    if deny is None:
+        return "leakage denylist unavailable"
+    added = {"targeted_query": list(enumerate(query.splitlines(), 1))}
+    hits = hc_policy.check_leakage(added, deny)
+    if not hits:
+        return None
+    return "targeted query leaks denylisted text: " + ", ".join(
+        sorted({hit["category"] for hit in hits})
+    )
+
+
 def query_problem(query: str) -> str | None:
     """Why the targeted query cannot freeze, or None. It dry-runs against the session database."""
     if ";" in query:
@@ -59,6 +74,8 @@ def query_problem(query: str) -> str | None:
             resolve_db(),
             f"SELECT harness, sessionId, value FROM ({query}) AS q LIMIT 0",
         )
+    except DbError as exc:
+        return f"session database unavailable: {exc}"
     except InputError as exc:
         return f"targeted query failed the dry run on harness, sessionId, value: {exc}"
     return None
@@ -83,10 +100,10 @@ def in_flight(
     measured: dict[str, set[str]] = {}
     pending = []
     for name in names:
-        match = _GATE_NAME.match(name)
-        if not match or (match.group(1), int(match.group(2))) == (thread, rnd):
+        parsed = hc_gate.parse_gate_path(name)
+        if not parsed or parsed == (thread, rnd):
             continue
-        gate_thread, gate_round = match.group(1), str(int(match.group(2)))
+        gate_thread, gate_round = parsed[0], str(parsed[1])
         if gate_thread not in measured:
             measured[gate_thread] = measured_rounds(root, gate_thread)
         gate = hc_gate.read_gate_at(repo, base, name)
@@ -118,13 +135,14 @@ def _refusal(
             f"component {args.component} has a merged unmeasured candidate: {', '.join(pending)}",
             {},
         )
+    names = touched_skills(repo, args.base)
+    if args.component == "skill" and len(names) > 1:
+        return (
+            f"a skill round must touch one skill, not {len(names)}: {', '.join(sorted(names))}",
+            {},
+        )
+    contract = has_contract(repo, args.base, names)
     try:
-        names = touched_skills(repo, args.base)
-        if args.component == "skill" and len(names) > 1:
-            raise InputError(
-                f"a skill round must touch one skill, not {len(names)}: {', '.join(sorted(names))}"
-            )
-        contract = has_contract(repo, args.base, names)
         return None, lab_result(args.component, contract, args.autoimprove_verdict)
     except InputError as exc:
         return str(exc), {}
@@ -149,8 +167,6 @@ def _gate_from_args(args: argparse.Namespace, query: str) -> dict[str, Any]:
 
 def cmd_freeze(args: argparse.Namespace) -> int:
     repo = repo_root(args.repo)
-    if stopped(args, repo):
-        return 0
     root = state_root(args, repo)
     refusal, lab = _refusal(args, repo, root)
     query = ""
@@ -160,10 +176,10 @@ def cmd_freeze(args: argparse.Namespace) -> int:
             if args.targeted_query_file
             else args.targeted_query
         )
-        query = (query or "").strip()
+        query = query.strip()
         if not query:
             raise InputError("freeze needs a targeted query")
-        refusal = query_problem(query)
+        refusal = leakage_problem(query, repo) or query_problem(query)
     if refusal:
         append_note(
             repo, root, args.thread, args.round, f"freeze refused: {refusal}", "n/a"
