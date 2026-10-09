@@ -296,11 +296,13 @@ class DenylistCase(unittest.TestCase):
         )
         self.assertEqual(deny["project"], {"zebracorp"})
 
-    def test_leakage_slash_command_prompts_are_not_denylisted(self) -> None:
+    def test_leakage_slash_command_token_is_stripped_but_arguments_are_denied(
+        self,
+    ) -> None:
         deny = hc_policy.build_denylist(
             ["/hill-climb run one iteration of the thread now please"], []
         )
-        self.assertEqual(deny["prompt"], set())
+        self.assertEqual(deny["prompt"], {"run one iteration of the thread now please"})
 
 
 if __name__ == "__main__":

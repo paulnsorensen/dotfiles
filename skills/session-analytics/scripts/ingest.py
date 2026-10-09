@@ -294,6 +294,8 @@ def codex_normalize(path):
     custom tools) are kept verbatim, and ``input.command`` is normalized to the
     executed command string for shell-ish tools so ``bash_cmd`` extracts.
     ``tool_search_output`` items have no matching call item and are dropped.
+    A forked rollout holds two ``session_meta`` records (own id first, parent
+    second); the first id names the file, so token row ids stay unique per file.
     ``session_meta.cli_version`` stamps ``version`` on every entry. Each
     non-duplicate ``token_count`` event with a ``last_token_usage`` becomes one
     assistant entry (unique ``message.id``, empty content) that model_turns
@@ -312,7 +314,7 @@ def codex_normalize(path):
         payload = entry.get("payload")
         etype = entry.get("type")
         if etype == "session_meta" and isinstance(payload, dict):
-            session_id = payload.get("id") or session_id
+            session_id = session_id or payload.get("id")
             cwd = payload.get("cwd") or cwd
             cli_version = payload.get("cli_version") or cli_version
             continue
@@ -967,6 +969,7 @@ def main():
     # usage takes one value. omp and other harnesses carry no `message.id` and
     # keep one row per entry. TRY_CAST keeps one malformed metric from
     # aborting the whole ingest. Latency and prompt_tokens are omp-only.
+    # Codex token rows carry no content, so tool_calls stays NULL (not measured).
     print("  Creating model_turns...")
     run_sql("""
         CREATE TABLE model_turns AS
@@ -975,9 +978,10 @@ def main():
                 harness, sessionId, cwd, timestamp, message,
                 coalesce(json_extract_string(message, '$.id'),
                          'row:' || row_number() OVER ()) AS turn_key,
+                CASE WHEN harness = 'codex' THEN NULL ELSE
                 (SELECT count(*)
                    FROM unnest(json_extract(json_extract(message, '$.content'), '$[*]')) AS c(block)
-                  WHERE json_extract_string(block, '$.type') = 'tool_use') AS tool_calls
+                  WHERE json_extract_string(block, '$.type') = 'tool_use') END AS tool_calls
             FROM raw_entries
             WHERE type = 'assistant'
               AND message IS NOT NULL

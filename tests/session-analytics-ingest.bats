@@ -91,7 +91,7 @@ q() { duckdb "$DB" -json -c "$1"; }
 }
 
 @test "codex ingest unittest" {
-    run python3 -m unittest discover -s "$REAL_DOTFILES_DIR/tests/session_analytics" -t "$REAL_DOTFILES_DIR/tests" -p 'test_codex_ingest.py'
+    run python3 -m unittest discover -s "$REAL_DOTFILES_DIR/tests/session_analytics" -t "$REAL_DOTFILES_DIR/tests" -p 'test_*.py'
     [ "$status" -eq 0 ] || { echo "$output" >&2; false; }
 }
 
@@ -120,6 +120,22 @@ JSONL
     assert_output_contains '"c":"50"'
     run q "SELECT count(*) AS n FROM tool_uses WHERE harness='codex';"
     assert_output_contains '"n":1'
+}
+
+@test "ingest: forked codex rollout and its parent keep separate model_turns rows with NULL tool_calls" {
+    local d="$TEST_HOME/.codex/sessions/2026/05/30"
+    local tok='{"timestamp":"2026-05-30T11:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}'
+    local ctx='{"timestamp":"2026-05-30T11:00:01Z","type":"turn_context","payload":{"cwd":"/work/codex","model":"gpt-x"}}'
+    local parent_meta='{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"parent-1","cwd":"/work/codex"}}'
+    local child_meta='{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"child-1","cwd":"/work/codex","forked_from_id":"parent-1"}}'
+    printf '%s\n' "$parent_meta" "$ctx" "$tok" > "$d/rollout-parent.jsonl"
+    printf '%s\n' "$child_meta" "$parent_meta" "$ctx" "$tok" > "$d/rollout-child.jsonl"
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT count(*) AS n, count(DISTINCT sessionId) AS s, count(tool_calls) AS t FROM model_turns WHERE harness='codex';"
+    assert_output_contains '"n":2'
+    assert_output_contains '"s":2'
+    assert_output_contains '"t":0'
 }
 
 

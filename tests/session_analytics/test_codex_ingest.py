@@ -189,6 +189,27 @@ class CodexIngestCase(unittest.TestCase):
             self.assertEqual(turn["message"]["content"], [])
             self.assertNotIn("stop_reason", turn["message"])
 
+    def test_forked_rollout_keeps_first_meta_id_and_unique_token_ids(self) -> None:
+        def session_meta(sid: str) -> dict[str, Any]:
+            return {
+                "timestamp": "t0",
+                "type": "session_meta",
+                "payload": {"id": sid, "cwd": "/work/x"},
+            }
+
+        body = [
+            turn_context("gpt-x"),
+            call("c1"),
+            token_count("t4", usage(1, 1, 0), usage(1, 1, 0)),
+        ]
+        parent = normalize([session_meta("parent-1"), *body])
+        fork = normalize([session_meta("child-1"), session_meta("parent-1"), *body])
+        self.assertEqual({e["sessionId"] for e in fork}, {"child-1"})
+        parent_ids = {e["message"]["id"] for e in token_turns(parent)}
+        fork_ids = {e["message"]["id"] for e in token_turns(fork)}
+        self.assertEqual(len(fork_ids), 1)
+        self.assertFalse(parent_ids & fork_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

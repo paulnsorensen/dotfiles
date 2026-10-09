@@ -69,7 +69,7 @@ into several raw entries; this table groups them by `message.id`.
 | input_tokens / output_tokens / cache_read_tokens | BIGINT | Token usage for the turn. Codex rows come from `token_count` events: one row per event with a non-null `last_token_usage`, skipping an event whose `total_token_usage` repeats the previous one. Codex `input_tokens` includes cached tokens |
 | prompt_tokens | BIGINT | Full context size sent for the turn (omp and pi) |
 | duration_ms / ttft_ms | DOUBLE | Model round-trip time and time to first token (omp and pi) |
-| tool_calls | BIGINT | Tool calls issued in the turn; 1 means the turn did not batch |
+| tool_calls | BIGINT | Tool calls issued in the turn; 1 means the turn did not batch. NULL for Codex: its token rows carry no content, so Codex tool calls and `stop_reason` are not measured |
 | timestamp, sessionId, cwd | VARCHAR | Join keys |
 
 ## `agent_spawns`

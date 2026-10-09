@@ -29,6 +29,9 @@ _CLASSES: dict[str, tuple[re.Pattern[str], ...]] = {
     "skill": (re.compile(r"^skills/[^/_][^/]*/.+"),),
 }
 
+# The loop must not edit its own critic, gate, soak check, or measurement.
+SELF_EDIT_PREFIXES = ("skills/harness-climb/", "skills/session-analytics/")
+
 BUDGET_CONFIG = "agents/instruction-budgets.toml"
 RUNTIME_PREFIXES = (
     ".claude/",
@@ -46,7 +49,21 @@ _VENDOR_ALIASES = {
 }
 
 NGRAM = 8
-MIN_PROJECT_LEN = 4
+MIN_PROJECT_LEN = 5
+
+# Words that name a directory or a common English word, not a project.
+# A session cwd basename in this set never enters the project denylist.
+PROJECT_STOPWORDS = frozenset(
+    """
+    scripts script tests test hooks hook press plate harness src docs doc specs spec
+    internal modules module package packages research wiki build builds config configs
+    skills skill agents agent notes tools tool utils common shared output outputs
+    cache temp tmpdir trash backup archive reference references examples example
+    sandbox scratch playground vendor assets static public private lib libs bin
+    about after again being below could every first green other right their there
+    these those three under until where which while would write local global
+    """.split()  # noqa: SIM905
+)
 
 
 def vendored_names(registry_text: str) -> set[str]:
@@ -99,6 +116,8 @@ def check_scope(paths: Iterable[str], vendored: set[str]) -> list[dict[str, str]
             violations.append(
                 {"check": "budget", "category": "budget-config", "path": path}
             )
+        elif clean.casefold().startswith(SELF_EDIT_PREFIXES):
+            violations.append({"check": "scope", "category": "self-edit", "path": path})
         elif (
             clean.startswith("skills/")
             and clean.split("/")[1].casefold() in folded_vendored
@@ -135,6 +154,8 @@ def check_tags(paths: Iterable[str], tags: dict[str, Any]) -> list[dict[str, str
 # --- leakage ---------------------------------------------------------------
 
 _WORD = re.compile(r"[^\W_]+")
+# A leading slash command; its arguments stay in the prompt text.
+_SLASH_COMMAND = re.compile(r"^\s*/\S*")
 
 
 def _tokens(text: str) -> list[str]:
@@ -153,14 +174,20 @@ def build_denylist(
     skip = {n.lower() for n in own_names}
     deny: dict[str, set[str]] = {"prompt": set(), "project": set(), "path": set()}
     for prompt in prompts:
-        if prompt and not prompt.lstrip().startswith("/"):
-            deny["prompt"].update(_ngram_keys(_tokens(prompt)))
+        if prompt:
+            deny["prompt"].update(_ngram_keys(_tokens(_SLASH_COMMAND.sub("", prompt))))
     for project in projects:
         if not project:
             continue
         base = Path(project).name.lower()
-        if len(base) >= MIN_PROJECT_LEN and base not in skip:
-            deny["project"].add(base)
+        key = " ".join(_tokens(base))
+        if (
+            len(base) >= MIN_PROJECT_LEN
+            and key
+            and base not in skip
+            and key not in PROJECT_STOPWORDS
+        ):
+            deny["project"].add(key)
         if project.count("/") >= 2:
             deny["path"].add(project.rstrip("/").lower())
     return deny
@@ -176,8 +203,16 @@ def check_leakage(
         previous = -2
         for lineno, text in lines:
             low = text.lower()
-            for category in ("path", "project"):
-                if any(span in low for span in deny.get(category, ())):
+            words = _tokens(text)
+            padded = f" {' '.join(words)} "
+            hits = {
+                "path": any(span in low for span in deny.get("path", ())),
+                "project": any(
+                    f" {name} " in padded for name in deny.get("project", ())
+                ),
+            }
+            for category, hit in hits.items():
+                if hit:
                     violations.append(
                         {
                             "check": "leakage",
