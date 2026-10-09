@@ -61,7 +61,7 @@ prek reads `.pre-commit-config.yaml`, so the same file works with pre-commit. Th
 | Default | Reason | Source |
 |---|---|---|
 | A short `AGENTS.md` with the gate, commands, and non-standard rules | A 2026 study of Python repos found that context files often lower task success and add cost. They help most for non-standard tooling. | <https://arxiv.org/abs/2602.11988> |
-| `CLAUDE.md` imports `@AGENTS.md` | Claude Code reads `AGENTS.md` only when no `CLAUDE.md` exists. The import gives both harnesses one source. Keep each file under 200 lines. | <https://code.claude.com/docs/en/memory> |
+| No `CLAUDE.md`; an existing one imports `@AGENTS.md` | Claude Code reads `AGENTS.md` only when no `CLAUDE.md` exists. One file gives both harnesses one source. Keep each file under 200 lines. | <https://code.claude.com/docs/en/memory> |
 | A repo-local python-authoring skill | easy-cheese, milknado, skillz-that-grillz, and next-gen-drafts keep long Python rules in a skill, not in `AGENTS.md`. The skill loads only for Python work. | local survey |
 
 Codex joins `AGENTS.md` files from the root to the working directory, and the closest file wins. The combined limit is 32 KiB. <https://agents.md>

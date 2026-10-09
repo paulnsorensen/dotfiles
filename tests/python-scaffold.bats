@@ -44,7 +44,6 @@ frontmatter() {
 
 @test "instruction assets carry template names so harnesses do not load them" {
     [[ -z "$(find "$SKILL_DIR" -mindepth 2 \( -name AGENTS.md -o -name CLAUDE.md -o -name SKILL.md \))" ]]
-    grep -qxF '@AGENTS.md' "$ASSETS/CLAUDE.template.md"
 }
 
 @test "pyproject fragment keeps the checker defaults" {
@@ -89,7 +88,6 @@ scaffold() {
     render pre-commit-config.yaml "$project" "$package" .pre-commit-config.yaml
     render ci.yml "$project" "$package" .github/workflows/ci.yml
     render AGENTS.template.md "$project" "$package" AGENTS.md
-    render CLAUDE.template.md "$project" "$package" CLAUDE.md
     render python-authoring.template.md "$project" "$package" .agents/skills/python-authoring/SKILL.md
     mkdir -p .claude/skills tests
     ln -s ../../.agents/skills/python-authoring .claude/skills/python-authoring
@@ -121,6 +119,10 @@ require_e2e() {
         [[ -z "$(git status --porcelain)" ]] || { git status --porcelain >&2; return 1; }
         run just ci
         [[ "$status" -eq 0 ]] || { echo "$mode ci: $output" >&2; return 1; }
+        if command -v prek >/dev/null; then
+            run prek run --all-files
+            [[ "$status" -eq 0 ]] || { echo "$mode prek: $output" >&2; return 1; }
+        fi
         run grep -rlE '__(PROJECT|PACKAGE|PYTHON)__' --exclude-dir=.venv .
         [[ "$status" -eq 1 ]] || { echo "placeholders left: $output" >&2; return 1; }
     done

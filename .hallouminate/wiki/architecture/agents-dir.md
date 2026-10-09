@@ -164,6 +164,7 @@ These decisions hold:
 - Placeholders are `__PROJECT__`, `__PACKAGE__`, and `__PYTHON__`. Reason: they cannot clash with Go templates, just interpolation, or GitHub expressions.[^python-scaffold]
 - vulture scans `src` at confidence 60, and basedpyright runs `recommended`. Reason: the local Python repos agree on both, and a higher vulture floor hides unused functions.[^python-scaffold]
 - `tests/python-scaffold.bats` runs the networked render test only with `PYTHON_SCAFFOLD_E2E=1`. Reason: it downloads the dev tools for two fresh projects.[^python-scaffold]
+- The scaffold writes `AGENTS.md` and no `CLAUDE.md`. Reason: Claude Code reads `AGENTS.md` when no `CLAUDE.md` exists, so one file serves every harness. An existing `CLAUDE.md` imports `@AGENTS.md`. User decision, PR #1222.[^python-scaffold]
 
 [^python-scaffold]: `skills/python-scaffold/SKILL.md`; `skills/python-scaffold/references/decisions.md`; `tests/python-scaffold.bats`.
 
