@@ -38,7 +38,7 @@ pi:
         maxRetryDelayMs: 60000
     packages:
       # renovate: datasource=npm depName=pi-subagents
-      - npm:pi-subagents@0.76.1
+      - npm:pi-subagents@0.77.0
       # renovate: datasource=npm depName=pi-web-access
       - npm:pi-web-access@0.37.0
       # renovate: datasource=npm depName=@gotgenes/pi-permission-system
