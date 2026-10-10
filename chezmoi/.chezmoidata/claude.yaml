@@ -127,6 +127,31 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/commit-hallouminate-reminder.sh"'
             timeout: 5
+      # Keep the session's wheypoint current: update it when one exists, else
+      # write one when work remains. Claude Code wraps this text as a stopping
+      # condition and shows the evaluator the transcript. Use the full model
+      # ID: the `haiku` alias fails here. stop_hook_active ends the follow-up.
+      - hooks:
+          - type: prompt
+            model: claude-haiku-5-5
+            timeout: 30
+            prompt: |
+              The agent may stop now.
+              Decide in this order.
+              1. If stop_hook_active in the hook input is true, the condition holds.
+              2. Find the task: everything that the user asked for in the session, including each named file and step.
+              3. Work remains if any part of the task is not done.
+                 A pause or a question does not complete the task, even when the user asked for the pause.
+                 A task is complete only when the agent did all of its parts or the user cancelled them.
+              4. The session has a wheypoint if the transcript shows a /wheypoint run or a "Wheypoint dropped:" line.
+              5. If the session has a wheypoint and work or decisions changed after its last write or update, the condition fails.
+                 Use this reason: "Update this session's wheypoint with /wheypoint, then stop."
+              6. If the session has no wheypoint and work remains, the condition fails.
+                 Use this reason: "Work remains. Write a wheypoint with /wheypoint, then stop."
+              7. Otherwise, the condition holds.
+                 This includes a turn that only answers the user's question or offers optional follow-up work.
+
+              Hook input JSON: $ARGUMENTS
     PostToolUse:
       - matcher: ".*"
         hooks:
