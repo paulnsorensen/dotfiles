@@ -31,7 +31,16 @@ PR #696 (2026-08-13) retired OpenCode together with Crush, its `ap` renderer, an
 | `mcp` | tilth (`--mcp --edit`), context7, tavily, milknado, hallouminate | The same server set as Codex and Pi. Secret-bearing servers use the broker sockets. |
 | `permission` | `*` allow; secret-path `read` denies; `sudo`/`rm -rf`/`security`/`bws` bash denies | Mirrors Claude `permissions.deny` and the Pi permission system. |
 
-Native `read`, `edit`, `grep`, and `glob` stay enabled, as in Claude and Codex; the preamble steers file work to Tilth. The `read` denies gate only OpenCode's native tools. MCP tools such as `tilth_read` are not path-gated by OpenCode.
+The native Tilth plugin hides and rejects `read`, `edit`, `write`, `apply_patch`, `grep`, `glob`, and `list`. It retains nonnative tools.[^tilth-plugin]
+
+**Why two hooks:** `chat.message` removes native file tools from model requests. `tool.execute.before` rejects them if another path exposes them.[^tilth-plugin]
+
+Legacy `tools.read=false` is insufficient on v1.18.33. Explicit `permission.read` rules override converted tool permissions. Keep the secret-path and dangerous-bash maps unchanged.[^tilth-precedence]
+
+OpenCode does not path-gate MCP tools such as `tilth_tilth_read`. Tilth owns its file-access policy.
+
+[^tilth-plugin]: chezmoi/dot_config/opencode/plugins/tilth-only.js:1-31; tests/opencode-plugin.bats:16-65
+[^tilth-precedence]: OpenCode v1.18.33, packages/opencode/src/config/config.ts:524-535; packages/opencode/src/session/llm/request.ts:193-199
 
 ## Shared resources
 
