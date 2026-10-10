@@ -18,7 +18,7 @@ The repo deploys shared agent configuration into seven active AI coding surfaces
 | Capability | Claude | Codex | Copilot | Cursor | OMP | Pi | OpenCode |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | Hooks / extension events | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✗ (JS plugins only) |
-| Sub-agents / agent defs | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ package | built-ins only |
+| Sub-agents / agent defs | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ package | ✅ shared + advisor |
 | MCP servers | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ adapter | ✅ |
 | System prompt / instructions | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Native settings | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |

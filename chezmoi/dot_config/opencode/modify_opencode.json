@@ -37,6 +37,18 @@ if ! printf '%s' "$desired" | jq -e 'type == "object"' >/dev/null 2>&1; then
     exit 1
 fi
 
+# Keep the POSIX modifier small; shared role rendering lives in the sourced Bash library.
+root=${CHEZMOI_SOURCE_DIR%/chezmoi}
+agent_registry=$root/agents/registry.yaml
+sync_lib=$root/.sync-lib.sh
+if [ ! -f "$sync_lib" ] || [ ! -f "$agent_registry" ]; then
+    echo "modify_opencode.json: agent source missing" >&2
+    exit 1
+fi
+shared_agents=$(bash -c 'set -euo pipefail; source "$1"; _cz_opencode_agents_json "$2" "$3"' \
+    bash "$sync_lib" "$agent_registry" "$root") || exit 1
+desired=$(printf '%s' "$desired" | jq --argjson shared "$shared_agents" '.agent += $shared')
+
 # The unknown-key gate below needs the shared helpers. Sourced ahead of the
 # fresh-machine check so that branch can clear a stale drift state file too.
 if [ ! -f "$gate" ]; then
@@ -60,6 +72,9 @@ fi
 
 retired_paths=$(drift_ignore_paths "$retired")
 live_json=$(printf '%s' "$live_json" | jq --argjson r "$retired_paths" 'delpaths($r)')
+# Reset source-owned agents without deleting unrelated live agents.
+managed_agents=$(printf '%s' "$desired" | jq '.agent | keys')
+live_json=$(printf '%s' "$live_json" | jq --argjson managed "$managed_agents" 'delpaths($managed | map(["agent", .]))')
 
 ignore_paths=$(drift_ignore_paths "$ignore")
 unknown=$(drift_unknown "$live_json" "$desired" "$ignore_paths")

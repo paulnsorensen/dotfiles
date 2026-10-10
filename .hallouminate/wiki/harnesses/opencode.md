@@ -50,16 +50,36 @@ OpenCode does not path-gate MCP tools such as `tilth_tilth_read`. Tilth owns its
 
 **Duplicate skills:** most skills exist in both `~/.claude/skills` and `~/.agents/skills`. OpenCode logs a `duplicate skill name` warning and keeps one copy; the `~/.agents/skills` copy won in a 2026-09-28 check (119 skills loaded). Set `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1` only if the warnings matter; that also hides the Claude-only synced skills.
 
+### Specialist policy
+
+OpenCode uses the existing shared role bodies. The registry contains 13 roles; the planning count of 12 is stale.[^shared-agents]
+
+**Why native composition:** `ap` does not accept OpenCode harness membership. Per-harness model metadata does not change other renderers.[^shared-agents]
+
+The root uses Sol. Narrow roles use Luna. Coding roles use Sol. Review, judgment, and advice use Astra.[^native-agents]
+
+Each specialist denies Task launches. Its step limit follows the shared registry. Native Task passes the dispatch prompt, not the parent transcript.[^task-context]
+
+The advisor accepts a concise contract and evidence packet. Four steps bound its work. A default-deny policy allows only Tilth read and search.[^native-agents]
+
+The hidden Luna checker has one step and no tools. It classifies checkpoint policy; it cannot change the repository.[^native-agents]
+
+Explicit model entries keep the selected IDs discoverable on the pinned binary. Their token limits match the official OpenAI model pages.[^model-limits]
+
+[^shared-agents]: agents/registry.yaml; .sync-lib.sh:756-801; agent-profile/agent_profile/harnesses.py:8-35
+[^native-agents]: chezmoi/.chezmoidata/opencode.yaml:13-53; tests/opencode-agents.bats:14-58
+[^task-context]: OpenCode v1.18.33, packages/opencode/src/tool/task.ts:144-195
+[^model-limits]: [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Sol](https://developers.openai.com/api/docs/models/gpt-6-sol), [Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)
+
 ## Installation
 
 `chezmoi/dot_config/mise/config.toml` pins `aqua:anomalyco/opencode`. `packages/sync.sh` removes a Homebrew `opencode` formula and a stale `~/.local/bin/opencode` so the mise shim wins. Crush stays retired.
 
 ## Gaps
 
-- No sub-agent definitions render for OpenCode. It uses its built-in `general` and `explore` subagents. The preamble's named specialists (`coder`, `reviewer`) do not exist there.
 - No hook parity. OpenCode exposes lifecycle events only through JS/TS plugins.
 - Claude Pro/Max subscriptions do not work in third-party harnesses. Use ChatGPT, Copilot, API keys, or OpenCode Zen through `/connect`.
-- `model` stays unset. A hand-set `model` shows as drift until it is folded into the registry.
+- Live OpenAI inference requires operator authentication through `/connect`. Sync never reads or copies authentication.
 
 ## Validation
 

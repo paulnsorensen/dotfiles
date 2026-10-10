@@ -90,6 +90,7 @@ make_isolated_chezmoi_source() {
     for sibling in agent-profile agents bin claude cursor; do
         ln -s "$REAL_DOTFILES_DIR/$sibling" "$root/$sibling"
     done
+    ln -s "$REAL_DOTFILES_DIR/.sync-lib.sh" "$root/.sync-lib.sh"
     echo "$source_dir"
 }
 
