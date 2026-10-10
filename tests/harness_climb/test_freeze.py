@@ -304,6 +304,15 @@ class DbFailureTests(FreezeCase):
         self.assertEqual(rc, 1)
         self.assertIn("session database unavailable", out["reason"])
 
+    def test_a_duckdb_failure_in_the_denylist_load_refuses_without_echoing_it(
+        self,
+    ) -> None:
+        failure = hc_db.InputError("duckdb failed: Parser Error near SECRETWORD")
+        with mock.patch("hc_freeze.load_denylist", side_effect=failure):
+            reason = hc_freeze.leakage_problem("SELECT SECRETWORD", self.repo)
+        self.assertIn("session database query failed", reason)
+        self.assertNotIn("SECRETWORD", reason)
+
     def test_a_missing_duckdb_is_not_reported_as_a_bad_query(self) -> None:
         db = Path("/x/s.duckdb")
         with (

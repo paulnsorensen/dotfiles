@@ -440,6 +440,20 @@ class GateCase(RepoCase):
             {v["reason"] for v in got["harnesses"].values()}, {"sync-regressed"}
         )
 
+    def test_dirty_sync_without_the_merge_inside_the_window_is_sync_regressed(
+        self,
+    ) -> None:
+        history = f"{self.history}{AFTER + DAY} {self.base} dirty\n"
+        got = self.run_gate(history)
+        self.assertEqual(got["candidate"], "inconclusive")
+        self.assertEqual(
+            {v["reason"] for v in got["harnesses"].values()}, {"sync-regressed"}
+        )
+
+    def test_dirty_sync_with_the_merge_does_not_start_the_after_window(self) -> None:
+        history = f"{T0 + DAY} {self.merge} dirty\n{self.history}"
+        self.assertEqual(self.run_gate(history)["sync"]["epoch"], AFTER)
+
     def test_sync_after_the_window_without_the_merge_is_ignored(self) -> None:
         history = f"{self.history}{AFTER + 8 * DAY} {self.base}\n"
         self.assertEqual(
@@ -448,13 +462,13 @@ class GateCase(RepoCase):
 
     def test_first_sync_allows_clock_skew_of_60_seconds(self) -> None:
         got = hc_git.first_sync_containing(
-            self.repo, self.merge, [(T0 - 60, self.merge)]
+            self.repo, self.merge, [(T0 - 60, self.merge, False)]
         )
         self.assertEqual(got, (T0 - 60, self.merge))
 
     def test_first_sync_skips_a_sync_600_seconds_before_the_merge(self) -> None:
         got = hc_git.first_sync_containing(
-            self.repo, self.merge, [(T0 - 600, self.merge)]
+            self.repo, self.merge, [(T0 - 600, self.merge, False)]
         )
         self.assertIsNone(got)
 
@@ -826,7 +840,7 @@ class WindowEdges(unittest.TestCase):
             + [(a + i * 600, "1.0") for i in range(3)],
         ) + self.sessions("codex", [(a - 100, "1"), (a + 100, "2")])
         out = hc_stats.evaluate_harness("claude", gate(), rows_, a)
-        self.assertNotEqual(out["reason"], "version-changed")
+        self.assertEqual(out["reason"], "no-effect")
 
     def test_evaluateHarness_exactlyMinSessions_isJudged(self) -> None:
         a = self.AFTER
@@ -835,7 +849,7 @@ class WindowEdges(unittest.TestCase):
         out = hc_stats.evaluate_harness(
             "claude", gate(), self.sessions("claude", spec), a
         )
-        self.assertNotEqual(out["reason"], "min-sessions")
+        self.assertEqual(out["reason"], "no-effect")
 
     def test_evaluateHarness_oneBelowMinSessions_reportsCounts(self) -> None:
         a = self.AFTER
@@ -998,6 +1012,11 @@ class FieldGateCase(RepoCase):
             str(T0 + 30 * DAY),
         )
         self.assertNotIn("Traceback", proc.stderr)
+        self.assertEqual(proc.returncode, 0)
+        out = self.out(proc)
+        self.assertEqual(out["status"], "ok")
+        self.assertEqual(out["candidate"], "inconclusive")
+        self.assertEqual(out["harnesses"]["claude"]["reason"], "sync-late")
 
     def test_defaultHistoryPath_stateDirWithSpaces(self) -> None:
         p = hc_git.default_history_path({"DOTFILES_STATE_DIR": "/tmp/a b/c"})

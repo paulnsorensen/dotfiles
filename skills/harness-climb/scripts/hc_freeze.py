@@ -54,6 +54,8 @@ def leakage_problem(query: str, repo: Path) -> str | None:
         deny, _ = load_denylist(None, repo)
     except DbError as exc:
         return f"session database unavailable: {exc}"
+    except InputError:
+        return "session database query failed; leakage denylist unavailable"
     if deny is None:
         return "leakage denylist unavailable"
     added = {"targeted_query": list(enumerate(query.splitlines(), 1))}

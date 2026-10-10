@@ -29,6 +29,10 @@ class VersionUnavailable(DbError):
     """The session database has no harness version column."""
 
 
+class SchemaOutdated(DbError):
+    """The session database predates the columns that the field gate reads."""
+
+
 class RefreshFailed(DbError):
     """The ingest that refreshes the session database failed or timed out."""
 
@@ -143,7 +147,7 @@ def load_rows(
         "SELECT count(*) AS n FROM information_schema.columns WHERE (table_name = 'sessions' AND column_name = 'parent_session_id') OR (table_name = 'model_turns' AND column_name = 'context_tokens')",
     )[0]["n"]
     if current != 2:
-        raise InputError(
+        raise SchemaOutdated(
             "session database predates parent_session_id/context_tokens; re-run ingest.py --force"
         )
     version = "arg_max(version, last_seen) FILTER (WHERE version IS NOT NULL)"

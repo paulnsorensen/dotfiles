@@ -140,7 +140,11 @@ class EnsureFreshDbTests(TestCase):
             hc_denylist.load_denylist(None, Path("/tmp/repo"))
 
     def test_db_failures_are_not_input_errors(self) -> None:
-        for cls in (hc_db.VersionUnavailable, hc_db.RefreshFailed):
+        for cls in (
+            hc_db.VersionUnavailable,
+            hc_db.RefreshFailed,
+            hc_db.SchemaOutdated,
+        ):
             self.assertTrue(issubclass(cls, hc_db.DbError), cls)
             self.assertFalse(issubclass(cls, hc_db.InputError), cls)
 
@@ -220,6 +224,7 @@ class LoadRowsTests(RepoCase):
         self.assertEqual(s1["permission_denials"], 2)
         self.assertEqual(s1["stop_hook_blocks"], 2)
         self.assertEqual(s1["tokens_per_turn"], 1225.0)
+        self.assertIn("s2", by)
         s2 = by["s2"]
         self.assertEqual((s2["harness"], s2["version"]), ("codex", None))
         self.assertEqual((s2["permission_denials"], s2["stop_hook_blocks"]), (0, 0))
@@ -234,8 +239,32 @@ class LoadRowsTests(RepoCase):
     def test_database_without_the_new_columns_names_the_reingest(self) -> None:
         ddl = SESSIONS_DDL.replace(", parent_session_id VARCHAR", "")
         db = self.build(sessions_ddl=ddl)
-        with self.assertRaisesRegex(hc_db.InputError, "re-run ingest.py --force"):
+        with self.assertRaisesRegex(hc_db.SchemaOutdated, "re-run ingest.py --force"):
             hc_db.load_rows(db, gate_json(), AFTER, AFTER + DAY)
+
+    def test_database_without_the_new_columns_is_inconclusive_schema_outdated(
+        self,
+    ) -> None:
+        ddl = SESSIONS_DDL.replace(", parent_session_id VARCHAR", "")
+        db = self.build(sessions_ddl=ddl)
+        self.commit({"README.md": "x"}, date=T0 - DAY)
+        merge = self.commit(
+            {"harness-climb/gates/t1-r1.json": json.dumps(gate_json())}, date=T0
+        )
+        got = hc_field_gate.field_gate(
+            self.repo,
+            "t1",
+            1,
+            merge,
+            f"{AFTER} {merge}\n",
+            None,
+            AFTER + 9 * DAY,
+            lambda: db,
+        )
+        self.assertEqual(got["candidate"], "inconclusive")
+        self.assertEqual(
+            {v["reason"] for v in got["harnesses"].values()}, {"schema-outdated"}
+        )
 
     def test_field_gate_reads_the_database_and_keeps_a_real_gain(self) -> None:
         statements = []

@@ -13,7 +13,13 @@ import hc_gate
 import hc_git
 import hc_stats
 from hc_core import emit, repo_root
-from hc_db import RefreshFailed, VersionUnavailable, load_rows, resolve_db
+from hc_db import (
+    RefreshFailed,
+    SchemaOutdated,
+    VersionUnavailable,
+    load_rows,
+    resolve_db,
+)
 
 
 def _both(reason: str, **extra: Any) -> dict[str, Any]:
@@ -65,6 +71,8 @@ def _judge_rows(
             rows = load_rows(path, gate, after_start - 2 * soak, after_start + soak)
         except VersionUnavailable:
             return {**out, **_both("version-unavailable")}
+        except SchemaOutdated:
+            return {**out, **_both("schema-outdated")}
     per = {
         h: hc_stats.evaluate_harness(h, gate, rows, after_start)
         for h in hc_stats.HARNESSES

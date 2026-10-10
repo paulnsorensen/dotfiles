@@ -6,7 +6,8 @@ set -euo pipefail
 #        ci-soak-gate guard <base-sha>  (run in the PR checkout)
 #        ci-soak-gate assert            (env EVENT, SHARDS, EXTRAS, SOAK)
 
-HOLD_SCRIPT="skills/harness-climb/scripts/soak_check.py"
+HOLD_DIR="skills/harness-climb/scripts/"
+HOLD_GATE="bin/ci-soak-gate"
 PIN_FILE="chezmoi/dot_config/mise/config.toml"
 
 cmd_labels() {
@@ -18,13 +19,15 @@ cmd_labels() {
     printf '%s\n' "$labels"
 }
 
-# The hold runs from the PR checkout. Fail when one PR changes both the hold
-# and the pin file, so a PR cannot weaken the check that gates it.
+# The hold runs from the PR checkout. It runs every module under HOLD_DIR and
+# this script. Fail when one PR changes any of them and the pin file, so a PR
+# cannot weaken the check that gates it.
 cmd_guard() {
     local base="${1:?usage: ci-soak-gate guard <base-sha>}" changed
     changed="$(git diff --name-only "$base" HEAD)" || return 1
-    if grep -qxF "$HOLD_SCRIPT" <<<"$changed" && grep -qxF "$PIN_FILE" <<<"$changed"; then
-        echo "One PR changes both $HOLD_SCRIPT and $PIN_FILE; split them" >&2
+    if { grep -q "^$HOLD_DIR" <<<"$changed" || grep -qxF "$HOLD_GATE" <<<"$changed"; } &&
+        grep -qxF "$PIN_FILE" <<<"$changed"; then
+        echo "One PR changes both the hold ($HOLD_DIR, $HOLD_GATE) and $PIN_FILE; split them" >&2
         return 1
     fi
 }

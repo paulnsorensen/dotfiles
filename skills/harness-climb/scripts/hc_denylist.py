@@ -178,6 +178,8 @@ def _write_cache(
         with os.fdopen(fd, "w") as handle:
             json.dump(payload, handle)
     except OSError:
+        # The cache is optional. A failed write means the next run rebuilds
+        # the denylist from DuckDB.
         pass
 
 

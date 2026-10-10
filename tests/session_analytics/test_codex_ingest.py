@@ -386,17 +386,18 @@ class CodexNormalizeAttacks(unittest.TestCase):
         self.assertIsNone(normalize([meta(""), call("c1")])[0]["version"])
 
     def test_cliVersion_nonStringValue_doesNotCrash(self) -> None:
-        normalize(
+        entries = normalize(
             [
-                meta(),
                 {
                     "timestamp": "t",
                     "type": "session_meta",
                     "payload": {"cli_version": 5},
                 },
+                meta(),
                 call("c1"),
             ]
         )
+        self.assertIsNotNone(entries[0]["version"])
 
     def test_tokenTurnIds_uniqueAcrossSessionsSharingNoId(self) -> None:
         a = normalize(

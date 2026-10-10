@@ -7,7 +7,7 @@ import re
 import subprocess
 from pathlib import Path
 
-SYNC_LINE = re.compile(r"^(\d+) ([0-9a-f]{40})$")
+SYNC_LINE = re.compile(r"^(\d+) ([0-9a-f]{40})( dirty)?$")
 CLOCK_SKEW_S = 300
 
 
@@ -79,19 +79,22 @@ def default_history_path(env: dict[str, str] | None = None) -> Path:
     return Path(state) / "sync-history.log"
 
 
-def parse_sync_history(text: str) -> list[tuple[int, str]]:
+def parse_sync_history(text: str) -> list[tuple[int, str, bool]]:
+    """(epoch, sha, dirty) per log line. A dirty line deployed uncommitted changes."""
     entries = []
     for line in text.splitlines():
         match = SYNC_LINE.match(line.strip())
         if match:
-            entries.append((int(match.group(1)), match.group(2)))
+            entries.append((int(match.group(1)), match.group(2), bool(match.group(3))))
     return entries
 
 
 def first_sync_containing(
-    repo: str | Path, merge: str, history: list[tuple[int, str]]
+    repo: str | Path, merge: str, history: list[tuple[int, str, bool]]
 ) -> tuple[int, str] | None:
-    """First history line whose sha has the merge commit as an ancestor.
+    """First clean history line whose sha has the merge commit as an ancestor.
+
+    A dirty line is skipped: its working tree can differ from the sha.
 
     A sync older than the merge commit cannot contain it, and each sha needs one check.
     The time skip allows `CLOCK_SKEW_S` of clock skew between the merge and the sync.
@@ -99,8 +102,8 @@ def first_sync_containing(
     merge_sha = git_out(repo, "rev-parse", "--verify", f"{merge}^{{commit}}")
     merged_at = commit_time(repo, merge_sha)
     checked: set[str] = set()
-    for epoch, sha in history:
-        if epoch < merged_at - CLOCK_SKEW_S or sha in checked:
+    for epoch, sha, dirty in history:
+        if dirty or epoch < merged_at - CLOCK_SKEW_S or sha in checked:
             continue
         checked.add(sha)
         if is_ancestor(repo, merge_sha, sha):
@@ -111,17 +114,18 @@ def first_sync_containing(
 def has_regressing_sync(
     repo: str | Path,
     merge: str,
-    history: list[tuple[int, str]],
+    history: list[tuple[int, str, bool]],
     start: float,
     end: float,
 ) -> bool:
     """True when a sync after `start` and up to `end` deploys a sha without the merge.
 
     The log is shared by every clone and worktree, so such a line means a deploy dropped the change.
+    Dirty lines count here, because they still deploy.
     """
     merge_sha = git_out(repo, "rev-parse", "--verify", f"{merge}^{{commit}}")
     return any(
         not is_ancestor(repo, merge_sha, sha)
-        for epoch, sha in history
+        for epoch, sha, _dirty in history
         if start < epoch <= end
     )

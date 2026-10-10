@@ -6,7 +6,6 @@ import json
 import unittest
 from pathlib import Path
 from typing import Any
-from unittest import mock
 
 from .support import RepoCase, call, gate_json, hc_git, run_cli
 
@@ -133,7 +132,7 @@ class StopTests(LedgerCase):
         }
         for name, argv in commands.items():
             with self.subTest(command=name):
-                with mock.patch.object(
+                with unittest.mock.patch.object(
                     hc_git, "resolve_main", side_effect=AssertionError("resolved")
                 ) as resolve:
                     rc, out = call(*argv)
@@ -149,8 +148,7 @@ class StopTests(LedgerCase):
         stop.write_text("hold the climb for the audit\n")
         rc, out = call("soak-check", "--repo", str(self.repo))
         self.assertEqual(rc, 0)
-        self.assertNotEqual(out.get("status"), "stopped")
-        self.assertTrue(out)
+        self.assertEqual(out["status"], "pass")
 
 
 class AppendTests(LedgerCase):

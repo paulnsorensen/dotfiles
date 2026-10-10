@@ -25,6 +25,7 @@ Scope the targeted query to `harness IN ('claude','codex')`.
 - A sync inside the after window whose SHA lacks the merge commit gives `inconclusive` with reason `sync-regressed`. Every clone and worktree writes the log, so that line means a deploy dropped the change.
 - A `not-due` result is never a ledger verdict.
 - A session database with no `version` column gives `inconclusive` with reason `version-unavailable`.
+- A session database without the `parent_session_id` and `context_tokens` columns gives `inconclusive` with reason `schema-outdated`. Run `ingest.py --force` to fix it.
 - The before window ends where the after window starts. It begins `soak_days` earlier.
 - A harness version change inside the two windows does not clip a window. The gate keeps the dominant version: the version with at least `min_sessions` sessions in both windows and the most sessions in total. It drops the sessions of other versions. The result reports `version`, `versions`, and `excluded`, the count of dropped sessions.
 - No version with `min_sessions` in both windows gives `inconclusive` with reason `version-changed`.

@@ -6,7 +6,6 @@ import tempfile
 import unittest
 import unittest.mock
 from pathlib import Path
-from unittest import mock
 
 from .support import (
     HAVE_DUCKDB,
@@ -445,7 +444,7 @@ class CriticGit(RepoCase):
             }
         )
         self.git("checkout", "-q", "-b", "harness-climb/t1/r1")
-        env = mock.patch.dict(os.environ, {hc_critic.DENYLIST_ENV: "1"})
+        env = unittest.mock.patch.dict(os.environ, {hc_critic.DENYLIST_ENV: "1"})
         env.start()
         self.addCleanup(env.stop)
 

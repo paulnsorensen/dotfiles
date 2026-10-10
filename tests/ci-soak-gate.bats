@@ -59,6 +59,28 @@ assert_gate() {
     [[ "$output" == *"split them"* ]]
 }
 
+@test "guard fails when one PR changes another hold module and the pin file" {
+    echo b > "$REPO/${HOLD%/*}/hc_stats.py"
+    echo b >> "$REPO/$PIN"
+    git -C "$REPO" add -A
+    git -C "$REPO" commit -q -m module-and-pin
+    cd "$REPO"
+    run "$GATE" guard "$BASE"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"split them"* ]]
+}
+
+@test "guard fails when one PR changes the gate script and the pin file" {
+    mkdir -p "$REPO/bin"
+    echo b > "$REPO/bin/ci-soak-gate"
+    echo b >> "$REPO/$PIN"
+    git -C "$REPO" add -A
+    git -C "$REPO" commit -q -m gate-and-pin
+    cd "$REPO"
+    run "$GATE" guard "$BASE"
+    [ "$status" -eq 1 ]
+}
+
 @test "guard passes when the PR changes only the hold" {
     echo b >> "$REPO/$HOLD"
     git -C "$REPO" commit -q -am hold

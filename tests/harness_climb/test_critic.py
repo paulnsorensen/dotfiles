@@ -101,6 +101,16 @@ class CriticCase(RepoCase):
         _rc, out = self.propose({"AGENTS.md": "better\n"}, tags={"AGENTS.md": "prompt"})
         self.assertIn("tag-unknown", self.categories(out))
 
+    def test_hook_path_adds_exactly_one_executable_warning(self) -> None:
+        rc, out = self.propose({"claude/hooks/x.js": "x\n"})
+        self.assertEqual((rc, out["status"]), (0, "pass"), out)
+        self.assertEqual(
+            out["warnings"],
+            [
+                "executable change: claude/hooks/x.js is a hook and runs code in every later session"
+            ],
+        )
+
     def test_tag_path_classes_cover_the_five_components(self) -> None:
         cases = {
             "AGENTS.md": "global-doc",
