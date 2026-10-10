@@ -320,6 +320,7 @@ claude:
     - land
     - nih-audit
     - prompt-analytics
+    - python-bdd
     - python-scaffold
     - rennet
     - session-analytics

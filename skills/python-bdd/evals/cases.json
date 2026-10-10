@@ -1,0 +1,208 @@
+{
+  "schema": "repo-local/python-bdd-evals/v1",
+  "schema_note": "Runner-neutral authoring data. No compatibility with external eval runners is claimed.",
+  "intent_file": "EVAL.md",
+  "cases": [
+    {
+      "id": "CLI-LEDGER",
+      "requirement_ids": [
+        "BDD-01",
+        "BDD-02",
+        "BDD-03",
+        "BDD-10"
+      ],
+      "prompt": "Use python-bdd to add behavior specifications for a new Python CLI expense ledger. Add positive amounts with at most two decimal places. Reject abc, zero, negative, and more precise amounts without changing saved state. A fresh process reports the saved entries and their total in one stable currency. Choose a clear command interface and document it.",
+      "fixture_setup": "Fresh empty uv Python project with a CLI entry point and persistent storage path supplied through an environment variable. Use a unique temporary storage path per scenario. Specify expected interface and exact text before the first run.",
+      "expected_artifacts": [
+        "Feature file covering acceptance, each invalid class, and fresh-process report",
+        "Step definitions invoking the actual CLI in separate processes",
+        "Production code and local test commands"
+      ],
+      "deterministic_verification": [
+        "Run focused pytest-bdd tests against the chosen CLI.",
+        "For each invalid input, compare persisted state byte-for-byte or via an exact state query before and after; require a nonzero exit.",
+        "In a fresh process, assert exact entry list and total after two accepted values, including the chosen currency.",
+        "Check the authored oracle predates the observed output; do not update it to fit a failure."
+      ],
+      "qualitative_rubric": "Pass if scenarios read as product behavior and cover success, rejection, persistence, and stable currency through the public CLI. Review interface clarity without requiring one command spelling.",
+      "fail_conditions": [
+        "Mocked CLI or duplicate ledger algorithm supplies the result.",
+        "An invalid input changes state or the report comes from the same process.",
+        "Expected output changes only to match an observed failure."
+      ]
+    },
+    {
+      "id": "BROWNFIELD-PRESERVE",
+      "requirement_ids": [
+        "BDD-04",
+        "BDD-07",
+        "BDD-08"
+      ],
+      "prompt": "Add one high-value end-to-end behavior check to this existing Python project. It uses Poetry, Behave, and useful unit tests. Keep its tools and tests unless a demonstrated defect requires a targeted change.",
+      "fixture_setup": "Provide a pinned brownfield fixture with pyproject.toml using Poetry, existing Behave features and steps, a passing unit suite, and one uncovered public behavior. Capture its pre-change test inventory and CI commands.",
+      "expected_artifacts": [
+        "One focused behavior scenario and public-boundary steps",
+        "Preserved Poetry and Behave configuration",
+        "Before-and-after test inventory and command results"
+      ],
+      "deterministic_verification": [
+        "Run the existing unit and Behave commands before and after the change.",
+        "Compare tracked test and configuration paths to the baseline; explain any targeted edit.",
+        "If the behavior has a defect, observe the new scenario fail before repair and pass after repair. If it already works, observe a pass, then make a safe, reversible production mutation and confirm the scenario fails. Restore the exact production code and confirm the scenario passes again."
+      ],
+      "qualitative_rubric": "Pass if the added check follows local conventions and preserves useful tests. Do not score a wholesale uv or pytest-bdd migration as an improvement.",
+      "fail_conditions": [
+        "Replaces Poetry or Behave without user authorization.",
+        "Deletes or weakens unrelated unit tests.",
+        "Claims faster execution without timings."
+      ]
+    },
+    {
+      "id": "API-PERSISTENCE",
+      "requirement_ids": [
+        "BDD-02",
+        "BDD-03"
+      ],
+      "prompt": "Write BDD coverage for a Python HTTP API that creates an item and later lists it. The data must survive a fresh app process. Include a failed create request that leaves storage unchanged.",
+      "fixture_setup": "Provide a small uv API project with an HTTP server, a real test database, and a configurable isolated database path. Seed no items.",
+      "expected_artifacts": [
+        "Feature scenarios for create, restart/list, and rejected create",
+        "Step definitions making HTTP requests to the running app",
+        "Isolated database setup and teardown"
+      ],
+      "deterministic_verification": [
+        "Start the app against a temporary database, POST one item, stop it, then start a new process and GET the list.",
+        "Assert status codes and exact parsed JSON fields and values.",
+        "For failed POST, compare the exact GET list before and after."
+      ],
+      "qualitative_rubric": "Pass if tests cross HTTP and database boundaries, isolate scenarios, and state exact outcomes.",
+      "fail_conditions": [
+        "Directly calls a route function instead of HTTP.",
+        "Uses a mocked repository or shared dirty database.",
+        "Checks only that a response is nonempty."
+      ]
+    },
+    {
+      "id": "FALSE-GREEN-TRAP",
+      "requirement_ids": [
+        "BDD-02",
+        "BDD-03",
+        "BDD-10"
+      ],
+      "prompt": "Review these passing BDD tests for a Python CLI. They mock the storage adapter and call a private parser. The installed command drops saved entries. Repair the coverage so it detects the public failure.",
+      "fixture_setup": "Provide a CLI project whose mocked/private tests pass while a real subprocess write and fresh-process read loses an entry. Keep the defect visible until the new test runs.",
+      "expected_artifacts": [
+        "Public CLI regression scenario",
+        "Removed or revised false-green assertions",
+        "Failure evidence for the real defect"
+      ],
+      "deterministic_verification": [
+        "Confirm the old tests pass and the new scenario fails against the defective product.",
+        "Confirm the new scenario uses the real CLI and persistent storage.",
+        "After a targeted production fix, confirm the scenario passes without changing its expected result."
+      ],
+      "qualitative_rubric": "Pass if the repair targets the false-green cause and retains useful lower-level tests.",
+      "fail_conditions": [
+        "Keeps only the mocked/private assertions.",
+        "Changes the expected result to the defective output.",
+        "Declares the project correct from a green unit suite."
+      ]
+    },
+    {
+      "id": "REGRESSION-PROOF",
+      "requirement_ids": [
+        "BDD-05",
+        "BDD-10"
+      ],
+      "prompt": "Prove that one representative BDD scenario detects a production regression. Make a reversible one-line production change, run the focused test, restore the line, and rerun.",
+      "fixture_setup": "Provide a passing Python CLI ledger with one public-boundary BDD scenario. Record a clean source revision. Choose a production change that alters the saved total but not the test.",
+      "expected_artifacts": [
+        "Exact production mutation and restoration record",
+        "Failing focused test output during mutation",
+        "Passing focused test output after restoration"
+      ],
+      "deterministic_verification": [
+        "Record baseline pass.",
+        "Apply the production-only mutation and require the selected scenario to fail for the expected observable mismatch.",
+        "Restore the production line; require the same command to pass and the production diff to return to baseline."
+      ],
+      "qualitative_rubric": "Pass if the mutation represents a plausible defect and the test fails for a public outcome, not for a syntax or setup error.",
+      "fail_conditions": [
+        "Mutates a test or expected output.",
+        "Failure is an import, syntax, or fixture error.",
+        "Does not restore the production change."
+      ]
+    },
+    {
+      "id": "INSTALL-CI-PARITY",
+      "requirement_ids": [
+        "BDD-06",
+        "BDD-07"
+      ],
+      "prompt": "Finish BDD verification for this Python package. Show an installed-wheel smoke test, focused local results, and the full commands that CI runs. Mark anything not run.",
+      "fixture_setup": "Provide a uv package with console script, build metadata, a focused BDD test command, and CI workflow with lint, type, unit, and BDD legs. Allow an isolated temporary environment.",
+      "expected_artifacts": [
+        "Built wheel and isolated-environment invocation record",
+        "Focused test command and exact result",
+        "CI-equivalent command list with pass, fail, or unrun status"
+      ],
+      "deterministic_verification": [
+        "Build the wheel and install that wheel into a clean environment without editable mode.",
+        "Invoke its console script outside the source tree and assert exact output.",
+        "Compare reported full commands with the CI workflow; do not mark an unrun command passed."
+      ],
+      "qualitative_rubric": "Pass if evidence distinguishes source tests from installed behavior and lists every CI leg honestly.",
+      "fail_conditions": [
+        "Smoke test imports from the checkout.",
+        "Omits a CI leg or reports an unrun leg as passing.",
+        "Claims a speedup without baseline and candidate timings."
+      ]
+    },
+    {
+      "id": "LIMITED-TIME",
+      "requirement_ids": [
+        "BDD-04",
+        "BDD-08"
+      ],
+      "prompt": "You have time for one BDD improvement in this Python repo. Its unit suite is useful. Cover the highest-risk customer path and stop without broad test or tool churn.",
+      "fixture_setup": "Provide a pinned project with several passing unit tests and one untested CLI persistence path. State a fixed time budget and keep a baseline test inventory.",
+      "expected_artifacts": [
+        "One focused feature and public-boundary steps",
+        "Reason for path selection",
+        "Preserved unit-test inventory and honest unrun list"
+      ],
+      "deterministic_verification": [
+        "Compare test paths and assertions against baseline for removal or weakening.",
+        "Run the focused new scenario and existing relevant units.",
+        "Check that deferred full gates are listed as unrun, not passed."
+      ],
+      "qualitative_rubric": "Pass if the chosen path carries meaningful user risk and the response avoids speculative migration.",
+      "fail_conditions": [
+        "Deletes unit tests to save time.",
+        "Adds broad scaffolding instead of the focused path.",
+        "Conceals unrun checks."
+      ]
+    },
+    {
+      "id": "NEGATIVE-ROUTING",
+      "requirement_ids": [
+        "BDD-09"
+      ],
+      "prompt": "First request: explain a non-Python documentation sentence. Second request: improve one isolated Python unit test without adding BDD. Do not select python-bdd unless I explicitly ask.",
+      "fixture_setup": "Run as a routing assessment with the python-bdd skill available but not selected. Provide no repository that needs BDD.",
+      "expected_artifacts": [
+        "Direct answers to both requests",
+        "No BDD feature files or tool migration"
+      ],
+      "deterministic_verification": [
+        "Inspect the agent transcript for skill invocation and edits.",
+        "Require no implicit python-bdd invocation or BDD artifact for either request."
+      ],
+      "qualitative_rubric": "Pass if the assistant serves each request directly and does not impose BDD. This checks behavior, not universal harness enforcement.",
+      "fail_conditions": [
+        "Implicitly invokes python-bdd.",
+        "Adds BDD files or recommends migration as a requirement."
+      ]
+    }
+  ]
+}

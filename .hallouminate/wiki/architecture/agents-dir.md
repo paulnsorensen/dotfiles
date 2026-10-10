@@ -168,6 +168,25 @@ These decisions hold:
 
 [^python-scaffold]: `skills/python-scaffold/SKILL.md`; `skills/python-scaffold/references/decisions.md`; `tests/python-scaffold.bats`.
 
+#### Python BDD standard (2026-10-10)
+
+`/python-bdd` complements `/python-scaffold` with behavioral integration tests and build verification.[^python-bdd]
+New projects use uv and pytest-bdd. Existing projects retain their tools unless the user approves migration.
+The skill separates scenario language from the real production boundary that the test exercises.
+It keeps focused unit coverage instead of prescribing a unit-first loop for every behavior.
+A reversible regression probe must fail for the intended reason before coverage claims become evidence.
+An isolated installed-wheel smoke test checks packaging separately from editable-source tests.
+These checks target false-green suites without equating integration coverage with browser-only testing.
+
+The skill packages cited research and runner-neutral evaluation requirements.
+The cases do not claim compatibility with skillz autoimprove or NVIDIA dataset schemas.
+A live optimization run still needs the selected runner's approvals and budget.
+User-only frontmatter and the Codex sidecar preserve explicit invocation across supported hosts.[^python-bdd]
+
+[^python-bdd]: `skills/python-bdd/SKILL.md`; `skills/python-bdd/references/research.md`; `skills/python-bdd/evals/EVAL.md`; `skills/python-bdd/agents/openai.yaml`; user decision, 2026-10-10.
+
+*Source: Python BDD skill design and user-approved tooling choice · Updated: 2026-10-10 · Supersedes: none*
+
 `npx skills add` never prunes: renaming a local skill leaves the old copy under `~/.agents/skills/<old-name>` until it is deleted by hand (seen with `skill-improver` → `skillz`).
 
 #### Vendored skills overwrite local skills of the same name (2026-09-22)
