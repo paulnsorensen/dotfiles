@@ -1,0 +1,128 @@
+name: deferral-detector
+type: decide
+event: PreToolUse
+prompt: |
+  Does this PR reply defer the reviewer's concern to future work? Answer "violation" or "clean".
+
+  VIOLATION if the reply:
+  - Promises to address it later ("follow-up PR", "next iteration", "future commit")
+  - Creates a ticket/issue INSTEAD of fixing now ("I'll create a ticket", "I'll open an issue to track it")
+  - Uses "circle back", "revisit", "leave it for now", "future pass"
+  - Says the PR is too large to include the fix
+
+  CRITICAL: Technical reasoning about WHY something is hard to fix is still deferral if the conclusion is "later" or "not now". Only classify as clean if the reasoning explains why the CURRENT approach is correct.
+
+  CLEAN if the reply:
+  - Describes a fix already applied ("Fixed in latest commit", "Added null check")
+  - Pushes back: argues the current approach is correct/intentional ("I disagree because...")
+  - Explains why something is already covered or not a problem
+  - Creates a ticket AND explains with evidence why it's genuinely out of scope (different service, requires migration, etc.) with specific technical justification
+
+  Examples:
+
+  Reply: "Good point! I'll address this in a follow-up PR."
+  VERDICT: violation
+  REASON: Defers to follow-up PR
+
+  Reply: "Good catch! Fixed in the latest commit -- added null check before dereferencing."
+  VERDICT: clean
+  REASON: Describes fix already applied
+
+  Reply: "Will handle in a separate commit. The current PR is already large enough."
+  VERDICT: violation
+  REASON: Defers to separate commit
+
+  Reply: "I disagree -- the current approach is intentional. We need backward compatibility."
+  VERDICT: clean
+  REASON: Pushes back with technical reasoning
+
+  Reply: "I'll circle back to this. For now this is good enough to ship."
+  VERDICT: violation
+  REASON: Defers with "circle back" language
+
+  Reply: "Good point about the N+1 query. I've added eager loading for the relationship."
+  VERDICT: clean
+  REASON: Describes fix already applied
+
+  Reply: "The test coverage looks thin but these code paths are covered by integration tests."
+  VERDICT: clean
+  REASON: Explains existing coverage, not deferring
+outcomes: [violation, clean]
+"on":
+  violation: block
+tier: shadow
+
+test_cases:
+  # Violations — deferring to follow-up work
+  - text: "Good point! I'll address this concern in a follow-up PR rather than blocking this one."
+    outcome: violation
+  - text: "This is worth a separate PR. I'll create a ticket to track it."
+    outcome: violation
+  - text: "I'll fix this in the next iteration once we've landed the current change."
+    outcome: violation
+  - text: "We can revisit this in a future commit. For now the current approach works."
+    outcome: violation
+  - text: "I'll address your feedback in a follow-up. Let's merge this first."
+    outcome: violation
+  - text: "This can be improved later. I'll open an issue to track it."
+    outcome: violation
+  - text: "Will handle in a separate commit. The current PR is already large enough."
+    outcome: violation
+  - text: "This is worth improving but let's leave it for a future pass."
+    outcome: violation
+  - text: "I'll circle back to this. For now this is good enough to ship."
+    outcome: violation
+
+  # Clean — addressing feedback or pushing back with reasoning
+  - text: "Good catch! Fixed in the latest commit — added null check before dereferencing."
+    outcome: clean
+  - text: "You're right, I've refactored this to use the builder pattern instead. See the updated commit."
+    outcome: clean
+  - text: "Updated the implementation to handle the edge case you identified. Added a test for it too."
+    outcome: clean
+  - text: "I disagree — the current approach is intentional. We need to maintain backward compatibility with the legacy API. The comment I added explains this."
+    outcome: clean
+  - text: "Fixed. The function now validates input before processing, which was the issue you flagged."
+    outcome: clean
+  - text: "Good point about the N+1 query. I've added eager loading for the relationship. The query now runs in O(1) instead of O(n)."
+    outcome: clean
+  - text: "This is out of scope for this PR (we'd need to change the API contract which requires a separate migration), but I've opened issue #456 to track it with full context."
+    outcome: clean
+  - text: "Agreed, extracted the logic into a separate helper function as you suggested. See commit bcd456."
+    outcome: clean
+  - text: "The test coverage looks thin but these code paths are covered by integration tests in tests/integration/. Added a comment pointing there."
+    outcome: clean
+
+  # === Production-length violations (200-500 chars) ===
+
+  - text: "Good point about the error handling in the retry logic. I agree it's not ideal — the current implementation swallows connection timeouts silently. However, fixing this properly would require changes to the connection pool interface which is used by three other services. I'll create a ticket to track it and address it in a follow-up PR."
+    outcome: violation
+
+  - text: "You're right that the validation is incomplete — it doesn't handle the edge case where the payload contains nested arrays. The fix would require updating the schema parser and adding new test fixtures. This PR is already touching 15 files so I'd prefer to handle it in a separate commit. Let's merge this first and I'll circle back."
+    outcome: violation
+
+  - text: "I see the issue with the race condition in the event handler. The mutex should be held for the entire publish-then-ack sequence, not just the publish. However, changing the lock scope here could affect the throughput characteristics of the pipeline. I'll note this for future consideration and we can revisit it in the next iteration."
+    outcome: violation
+
+  - text: "The N+1 query issue you flagged is valid. The current loop makes a separate DB call for each user in the batch. Fixing it requires adding a batch query method to the repository interface and updating the ORM mappings. I'll open an issue to track it since it's a bigger refactor than this PR scope."
+    outcome: violation
+
+  - text: "Fair point about the hardcoded timeout. It should be configurable. But adding config support means touching the settings module, adding a migration for the default value, and updating the deployment docs. That's a separate concern from this PR. I'll handle it in a future pass."
+    outcome: violation
+
+  # === Production-length clean (200-500 chars) ===
+
+  - text: "Good catch! Fixed in commit abc1234. The issue was that the retry decorator was catching all exceptions including KeyboardInterrupt. I've narrowed the exception filter to only catch ConnectionError and TimeoutError, and added a test that verifies KeyboardInterrupt propagates correctly."
+    outcome: clean
+
+  - text: "I disagree with this suggestion. The current approach uses a single atomic write instead of the proposed read-modify-write pattern. The atomic approach is safer under concurrent access because there's no window where another process can read stale state. The comment on line 45 explains this tradeoff."
+    outcome: clean
+
+  - text: "You're right, I've refactored this to use the builder pattern instead of the telescoping constructor. The new API is UserBuilder::new(name).with_email(email).with_role(role).build(). See commit def5678. Also added a test for the validation that builder.build() fails without required fields."
+    outcome: clean
+
+  - text: "This is genuinely out of scope — it requires migrating the auth service from JWT to OAuth2 which is a multi-sprint initiative tracked in PROJ-1234. The current PR adds rate limiting to the existing JWT endpoint. I've documented the OAuth2 dependency in the ADR and linked the tracking issue."
+    outcome: clean
+
+  - text: "Updated the implementation to handle the edge case you identified. The function now checks for empty input before processing and returns a clear error message. Added 3 test cases covering: empty list, single element, and the boundary condition at MAX_BATCH_SIZE. All 87 tests pass."
+    outcome: clean
