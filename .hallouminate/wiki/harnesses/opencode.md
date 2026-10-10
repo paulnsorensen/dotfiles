@@ -83,13 +83,35 @@ Explicit model entries keep the selected IDs discoverable on the pinned binary. 
 [^task-context]: OpenCode v1.18.33, packages/opencode/src/tool/task.ts:144-195
 [^model-limits]: [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Sol 6.1](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)
 
+## Post-idle checkpoint policy
+
+The native plugin checks a successful root assistant turn after `session.idle`. It does not veto a stop.[^idle-hook]
+
+**Why post-idle:** the pinned runtime exposes lifecycle events through plugins. The approved policy permits one follow-up instead of synchronous stop control.
+
+A hidden Luna child receives bounded transcript evidence. The packet retains the initial request and latest checkpoint, with explicit truncation notices.[^idle-hook]
+
+The checker applies the PR #1235 policy in order. A pause or question does not complete unfinished requested work.[^idle-hook]
+
+An existing checkpoint requires UPDATE after work or decision changes, even when the requested work finishes. Unfinished work without a checkpoint requires WRITE.
+
+Pure questions, cancellation, completed unchanged work, and an active synthetic follow-up allow idle. The follow-up uses the exact approved reason.[^idle-hook]
+
+**Why persistent markers:** a synthetic text part identifies the real user turn. Restarted plugins detect this marker without treating quoted user text as synthetic.
+
+The plugin serializes checks per root. Before sending, it checks the same completed assistant, latest real user, and idle status again.[^idle-hook]
+
+Child sessions, errors, and aborts receive no follow-up. A failed check logs once for its turn and does not retry automatically.
+
+[^idle-hook]: chezmoi/dot_config/opencode/plugins/wheypoint-idle.js:1-125; tests/opencode-wheypoint.test.js
+
 ## Installation
 
 `chezmoi/dot_config/mise/config.toml` pins `aqua:anomalyco/opencode`. `packages/sync.sh` removes a Homebrew `opencode` formula and a stale `~/.local/bin/opencode` so the mise shim wins. Crush stays retired.
 
 ## Gaps
 
-- No hook parity. OpenCode exposes lifecycle events only through JS/TS plugins.
+- Post-idle checkpoint checks cannot provide a synchronous pre-stop veto.
 - Claude Pro/Max subscriptions do not work in third-party harnesses. Use ChatGPT, Copilot, API keys, or OpenCode Zen through `/connect`.
 - Live OpenAI inference requires operator authentication through `/connect`. Sync never reads or copies authentication.
 
