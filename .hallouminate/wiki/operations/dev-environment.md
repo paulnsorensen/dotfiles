@@ -16,6 +16,12 @@ Managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run on commit: 
 
 **Always `dots sync` before committing** — the sync check blocks the commit if `~/.claude/` (settings, agents, commands, hooks, skills) is out of sync with the repo. `git commit --no-verify` overrides, but only for rare temporary cases; fix the underlying issue (e.g. a detected secret) instead. Run `prek install` after cloning to set up the hooks.
 
+### CI ruff pin and local ruff drift (2026-10-09)
+
+The CI lint job pins ruff in `.github/workflows/test.yml` (`version:` on `astral-sh/ruff-action`, tracked by a Renovate custom manager). Without a pin, the action installs the latest ruff, and a ruff release turned lint red with no code change (PR #1224, ruff 0.17.0). `packages/packages.yaml` pins the local ruff separately, so the two versions can differ. Ruff 0.16 and 0.17 sort `tomllib` differently, so `soak_check.py` imports it inside `_pin_values`. Ruff 0.17 PLR0402 rejects `import unittest.mock as mock`; use `import unittest.mock` or from-imports.
+
+*Source: PR #1224 lint failure and cure · Updated: 2026-10-09*
+
 ## Claude marketplace plugins
 
 Distinct from the `agents/` registry system (see [[../architecture/agents-dir]]) and from the `global@local` plugin that `ap` wires (see [[../architecture/agent-profile]]): these are third-party plugins from external marketplaces, managed declaratively via `claude/plugins/registry.yaml`.

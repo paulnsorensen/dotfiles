@@ -29,7 +29,7 @@ When work establishes a durable decision or gotcha, record its *why* with `add_m
 | TUI design suite, agent-tty, VHS | [[architecture/tui-suite]] |
 | T3 Code launch args, permission mode, connectors | [[architecture/t3-code-launch]] |
 
-**Layout:** `bin/` (live CLI), `agents/` (registries and definitions), `agent-profile/` (`ap`), `profiles/`, harness directories, `skills/`, `.agents/skills/` (repo-local skills), `chezmoi/`, `packages/`, `zsh/`, `tests/`, and `.hallouminate/wiki/`.
+**Layout:** `bin/` (live CLI), `agents/` (registries and definitions), `agent-profile/` (`ap`), `profiles/`, harness directories, `skills/`, `harness-climb/` (frozen gate files), `.agents/skills/` (repo-local skills), `chezmoi/`, `packages/`, `zsh/`, `tests/`, and `.hallouminate/wiki/`.
 
 ## Source of truth
 

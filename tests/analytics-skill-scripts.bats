@@ -197,6 +197,18 @@ assert_not_contains() {
     assert_contains "$output" "tilth_read"
 }
 
+@test "analyze.sh token-economics counts codex token_usage rows as incl_cache" {
+    make_fixture
+    duckdb -init /dev/null "$FIXTURE_DB" -c "
+INSERT INTO raw_entries VALUES
+    ('codex','token_usage','{\"usage\": {\"input_tokens\": 100, \"output_tokens\": 7, \"cache_read_input_tokens\": 40}}','2026-08-01T11:00:04Z','cx1');
+"
+    run "$SKILLS/tool-efficiency/scripts/analyze.sh" token-economics Bash
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "cx1"
+    assert_contains "$output" "incl_cache"
+}
+
 @test "analyze.sh rejects an unknown domain" {
     make_fixture
     run "$SKILLS/tool-efficiency/scripts/analyze.sh" bogus Bash

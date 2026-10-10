@@ -14,6 +14,10 @@ How `dots sync` deploys this repo to a machine. Two mechanisms coexist: a custom
 
 The custom backup/restore/rollback subsystem has been **deleted** (chezmoi-consolidation, Stage 1). `dots rollback` no longer snapshots — it prints the git-backed undo path (`git revert` + `dots sync`). `dots backups` / `dots clean` are gone (`tests/dots.bats` asserts the retirement). The manifest/backup scaffolding in `.sync` has been removed; only `last_sync` (timestamp) remains. The file has been renamed from `.sync-with-rollback` to `.sync`.
 
+### Sync history log (2026-10-09)
+
+A successful sync appends `<unix epoch> <40-hex dotfiles HEAD sha>` to `$DOTFILES_STATE_DIR/sync-history.log` through `record_sync_history` (`.sync-lib.sh`). `.sync` calls it only after the `SYNC_FAILURES` check, so a failed sync appends nothing. The function never fails the sync: it warns and skips the line when git cannot read HEAD. When the clone has uncommitted changes, the line ends with the word `dirty`, because HEAD does not describe the deployed tree. The field gate ignores dirty lines. `.sync` honors an exported `DOTFILES_STATE_DIR`, the same default that `bin/dots` and `hc_git.default_history_path` use. `last_sync` holds one overwritten timestamp, so it cannot anchor a measurement window. The `harness-climb` field gate reads this log to find the first sync that deployed a merge commit. See [[architecture/harness-climb]].
+
 ## Phase ordering: prepare → package-sync → final
 
 `dots sync` applies chezmoi **twice**, with package convergence in between, because the two have a circular dependency: packages are pinned by a chezmoi-managed manifest, and some chezmoi templates need the converged binaries.

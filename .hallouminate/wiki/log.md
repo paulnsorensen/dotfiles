@@ -93,3 +93,12 @@
 
 2026-10-08 · 1e3c11d2eab700a0 · merged · architecture/agents-dir.md · Records executable skill assets, reference separation, and recursive deployment for PR #1209.
 2026-10-08 · pr-1217-progressive-disclosure · merged · architecture/agents-dir.md · Credits the progressive-disclosure decisions to PR #1217. Adds the button-group and SVG group roles and the stricter check-widget stub from the review fix.
+
+2026-10-09 · harness-climb · new-page · architecture/harness-climb.md · Recorded the harness-climb skill: propose-only PRs, frozen gate file, field gate after the deploying sync, Codex n/a guards, self-edit denial, label-event-free soak override (re-run reads labels).
+2026-10-09 · harness-climb · merged · operations/sync-and-chezmoi.md, domain-model.md, architecture/index.md · Added the sync-history log, the Field gate and Soak window terms, and the architecture index entry.
+
+2026-10-09 · pr-1224-cure · skipped-near-duplicate · architecture/harness-climb.md · Dominant-version window rule was already on the page.
+2026-10-09 · pr-1224-cure · merged · architecture/harness-climb.md · Context-token cost, sub-agent exclusion, freeze leakage check, single STOP check and stop-check, sync-regressed, ci-soak-gate guard and aggregate checkout, re-ingest note.
+2026-10-09 · pr-1224-cure · merged · operations/session-analytics-gotchas.md · Codex token_usage rows, per-harness token fields, parent_session_id for sub-agent rollouts.
+2026-10-09 · pr-1224-cure · merged · operations/sync-and-chezmoi.md · Dirty marker on sync-history lines and the shared DOTFILES_STATE_DIR default.
+2026-10-09 · pr-1224-cure · merged · operations/dev-environment.md · CI ruff pin, local ruff drift, tomllib sort and PLR0402 gotchas.
