@@ -1,0 +1,113 @@
+# OpenCode registry. Chezmoi authors ~/.config/opencode/opencode.json from
+# `opencode.config`. OpenCode owns auth (~/.local/share/opencode/auth.json),
+# sessions, state, and the plugin install files it writes beside the config.
+# Schema: https://opencode.ai/config.json. Docs: https://opencode.ai/docs/config/
+
+opencode:
+  config:
+    $schema: https://opencode.ai/config.json
+    # mise pins the binary (chezmoi/dot_config/mise/config.toml); Renovate
+    # bumps the pin. Self-update would fight that pin.
+    autoupdate: false
+    share: disabled
+    # Built-in LSP servers feed diagnostics back to the model after each
+    # edit. Omitting the key disables them.
+    lsp: true
+    # Built-in formatters run after native edits when the project has the
+    # formatter configured. Omitting the key disables them.
+    formatter: true
+    snapshot: true
+    compaction:
+      auto: true
+      # Drop old tool outputs before a full compaction (default false).
+      prune: true
+    # The shared preamble, appended to OpenCode's own system prompt. Global
+    # preferences load natively from ~/.config/opencode/AGENTS.md.
+    instructions:
+      - "~/.config/opencode/preamble.md"
+    watcher:
+      ignore:
+        - .git/**
+        - node_modules/**
+        - target/**
+        - dist/**
+        - .venv/**
+    # Same servers as Codex and Pi. Secret-bearing servers connect through
+    # the root-owned broker sockets, so this file holds no credentials.
+    mcp:
+      tilth:
+        type: local
+        # `--edit` enables tilth_write (hash-anchored edits).
+        command: [tilth, --mcp, --edit]
+      context7:
+        type: local
+        command: [/usr/local/libexec/dotfiles/agent-secret-proxy, --socket, /var/run/dotfiles-agent-secrets/context7.sock]
+      tavily:
+        type: local
+        command: [/usr/local/libexec/dotfiles/agent-secret-proxy, --socket, /var/run/dotfiles-agent-secrets/tavily.sock]
+      milknado:
+        type: local
+        command: [uvx, --from, "git+https://github.com/paulnsorensen/milknado@main", milknado-mcp]
+      hallouminate:
+        type: local
+        command: [hallouminate, serve]
+    # Rules match with `*` = any characters (including `/`); the last
+    # matching rule wins. The deny lists mirror Claude's permissions.deny and
+    # Pi's permission-system paths. They gate native tools only; MCP tools
+    # such as tilth_read are not path-gated here.
+    permission:
+      "*": allow
+      # Claude and Codex run without approval prompts; match them.
+      external_directory: allow
+      doom_loop: ask
+      read:
+        "*": allow
+        "*.env": deny
+        "*.env.*": deny
+        "*.env.example": allow
+        "*.env.sample": allow
+        "*.env.template": allow
+        "*.env.dist": allow
+        "*.env.defaults": allow
+        "*/.netrc": deny
+        "*/.pgpass": deny
+        "*/.npmrc": deny
+        "*/.pypirc": deny
+        "*/.git-credentials": deny
+        "*/kubeconfig": deny
+        "*/id_rsa": deny
+        "*/id_dsa": deny
+        "*/id_ecdsa": deny
+        "*/id_ed25519": deny
+        "*.pem": deny
+        "*.key": deny
+        "*.p12": deny
+        "*.pfx": deny
+        "*.keystore": deny
+        "*.jks": deny
+        "*.ppk": deny
+        "*.secret": deny
+        "*/secret.yaml": deny
+        "*/secret.yml": deny
+        "*/secret.json": deny
+        "*/secret.toml": deny
+        "*/secret.env": deny
+        "*/secrets.yaml": deny
+        "*/secrets.yml": deny
+        "*/secrets.json": deny
+        "*/secrets.toml": deny
+        "*/secrets.env": deny
+        "~/.aws/credentials": deny
+        "~/.gnupg/*": deny
+        "~/.ssh/*": deny
+        "~/.ssh/*.pub": allow
+        "~/.ssh/known_hosts": allow
+        "~/.ssh/config": allow
+        "~/.ssh/authorized_keys": allow
+      bash:
+        "*": allow
+        "sudo *": deny
+        "rm -rf *": deny
+        "security *": deny
+        "/usr/bin/security *": deny
+        "bws *": deny

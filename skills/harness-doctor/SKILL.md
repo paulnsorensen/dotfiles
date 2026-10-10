@@ -47,6 +47,7 @@ user-owned, and users may add valid entries.
 | Copilot | Chezmoi templates and the live profile projection | Treat ~/.copilot as user-owned; report extras without stale classification |
 | OMP | chezmoi/.chezmoidata/omp.yaml and dot_omp/private_agent/modify_config.yml when in scope | ~/.omp/agent/config.yml; native plugins reconcile separately |
 | Pi | chezmoi/.chezmoidata/pi.yaml and dot_pi/private_agent/modify_settings.json | ~/.pi/agent/settings.json; preserve Pi runtime state |
+| OpenCode | chezmoi/.chezmoidata/opencode.yaml and dot_config/opencode/modify_opencode.json | ~/.config/opencode/opencode.json; preserve OpenCode auth, state, and plugin install files |
 | T3 Code | chezmoi/.chezmoidata/t3.yaml, dot_t3/userdata/modify_settings.json, and dot_t3/userdata/claude-settings.json | ~/.t3/userdata/settings.json; preserve T3 UI state and runtime caches |
 
 The current wiki defines ownership and overrides stale details in this document.

@@ -45,7 +45,7 @@ Never edit a rendered target. Edit the source, then deploy.
 | Codex MCP, config scalar, or agent selection | `chezmoi/.chezmoidata/codex.yaml` | `dots sync` |
 | T3 Code Claude launch args or T3-only Claude settings | `chezmoi/.chezmoidata/t3.yaml` / `chezmoi/dot_t3/userdata/claude-settings.json` | `dots sync`, then restart T3 |
 | Cursor plugin | `cursor/plugins/local/<name>/` | `dots sync` |
-| Package / profile / OMP or Pi config | `packages/packages.yaml` / `profiles/<name>/profile.yaml` / `chezmoi/.chezmoidata/{omp,pi}.yaml` | relevant `dots` command |
+| Package / profile / OMP, Pi, or OpenCode config | `packages/packages.yaml` / `profiles/<name>/profile.yaml` / `chezmoi/.chezmoidata/{omp,pi,opencode}.yaml` | relevant `dots` command |
 | Secret (API key, token) | the vault — never `.env`. Key names: `secrets/secrets.env.tmpl` | run `bin/vault-provision` as the operator |
 | Repo-local skill (this repo only) | `.agents/skills/<name>/` + `.claude/skills/<name>` symlink | none — reads directly, no `dots sync` |
 
