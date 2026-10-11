@@ -989,11 +989,15 @@ retire_harnesses() {
         brew uninstall crush </dev/null || FAILED+=("retired-crush-brew")
     fi
 
-    if command -v mise &>/dev/null && ! MISE_GLOBAL_CONFIG_FILE="$MISE_BOOTSTRAP_CONFIG_FILE" \
-        mise uninstall --yes --all aqua:charmbracelet/crush </dev/null; then
-        log_error "failed to uninstall the retired Crush mise package"
-        FAILED+=("retired-harnesses")
-    fi
+    # OpenCode v2 installs from npm:@opencode/cli, so the old aqua backend is retired too.
+    local package
+    for package in aqua:charmbracelet/crush aqua:anomalyco/opencode; do
+        if command -v mise &>/dev/null && ! MISE_GLOBAL_CONFIG_FILE="$MISE_BOOTSTRAP_CONFIG_FILE" \
+            mise uninstall --yes --all "$package" </dev/null; then
+            log_error "failed to uninstall the retired mise package $package"
+            FAILED+=("retired-harnesses")
+        fi
+    done
 
     rm -f "$HOME/.local/bin/crush"
 }

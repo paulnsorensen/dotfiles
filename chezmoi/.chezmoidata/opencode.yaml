@@ -60,8 +60,8 @@ opencode:
         permission:
           "*": deny
     # Built-in formatters run after edits when the project has the formatter
-    # configured. Omitting the key disables them. OpenCode v2 runs no language
-    # servers, so the v1 `lsp` key is retired.
+    # configured. Omitting the key disables them. OpenCode v2 has no language
+    # servers, so this config does not set the v1 `lsp` key.
     formatter: true
     snapshot: true
     compaction:
@@ -80,12 +80,15 @@ opencode:
     # Same servers as Codex and Pi. Secret-bearing servers connect through
     # the root-owned broker sockets, so this file holds no credentials.
     mcp:
-      tilth:
-        type: local
-        # `--edit` enables tilth_write (hash-anchored edits). Native file tools
-        # are disabled, so Tilth stays on the native tool list, not Code Mode.
-        command: [tilth, --mcp, --edit]
-        codemode: false
+      # OpenCode v2 reads v1-shaped entries through a v1 schema that has no
+      # `codemode`, so Tilth uses the v2 `servers` shape. Native file tools
+      # are disabled, so Tilth stays on the native tool list, not Code Mode.
+      servers:
+        tilth:
+          type: local
+          # `--edit` enables tilth_write (hash-anchored edits).
+          command: [tilth, --mcp, --edit]
+          codemode: false
       context7:
         type: local
         command: [/usr/local/libexec/dotfiles/agent-secret-proxy, --socket, /var/run/dotfiles-agent-secrets/context7.sock]
@@ -100,8 +103,10 @@ opencode:
         command: [hallouminate, serve]
     # Rules match with `*` = any characters (including `/`); the last
     # matching rule wins. The deny lists mirror Claude's permissions.deny and
-    # Pi's permission-system paths. They gate native tools only; MCP tools
-    # such as tilth_read are not path-gated here.
+    # Pi's permission-system paths. Only the native read tool checks the
+    # `read` map, and tilth-only.js removes that tool, so the map applies
+    # only if the plugin does not load. MCP tools such as tilth_read are not
+    # path-gated here.
     permission:
       "*": allow
       # Claude and Codex run without approval prompts; match them.

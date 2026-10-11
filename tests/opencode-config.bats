@@ -37,12 +37,13 @@ JSON
 
 @test "opencode config deletes retired v1 keys" {
     run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
-{"tools":{"read":false},"lsp":true,"compaction":{"auto":true,"prune":true},"permission":{"doom_loop":"ask"}}
+{"tools":{"read":false},"lsp":true,"compaction":{"auto":true,"prune":true},"permission":{"doom_loop":"ask"},"mcp":{"tilth":{"type":"local","command":["tilth"]}}}
 JSON
     [ "$status" -eq 0 ]
     [[ "$stderr" != *"WARNING"* ]]
-    jq -e 'has("tools") or has("lsp") or (.compaction | has("prune")) or (.permission | has("doom_loop")) | not' <<<"$output"
+    jq -e 'has("tools") or has("lsp") or (.compaction | has("prune")) or (.permission | has("doom_loop")) or (.mcp | has("tilth")) | not' <<<"$output"
     [ "$(jq -r '.compaction.auto' <<<"$output")" = "true" ]
+    [ "$(jq -r '.mcp.servers.tilth.codemode' <<<"$output")" = "false" ]
 }
 
 @test "opencode config rejects a corrupt live file" {
@@ -55,13 +56,37 @@ JSON
     local config
     config=$(yq -o=json '.opencode.config' "$REGISTRY")
 
-    [ "$(jq -c '.mcp.tilth' <<<"$config")" = '{"type":"local","command":["tilth","--mcp","--edit"],"codemode":false}' ]
+    [ "$(jq -c '.mcp.servers.tilth' <<<"$config")" = '{"type":"local","command":["tilth","--mcp","--edit"],"codemode":false}' ]
+    [ "$(jq -r '.mcp.tilth' <<<"$config")" = "null" ]
     [ "$(jq -r '.mcp.hallouminate.command[0]' <<<"$config")" = "hallouminate" ]
     [ "$(jq -r '.mcp.milknado.command[0]' <<<"$config")" = "uvx" ]
     [ "$(jq -r '.mcp.context7.command[0]' <<<"$config")" = "/usr/local/libexec/dotfiles/agent-secret-proxy" ]
     [ "$(jq -r '.mcp.tavily.command[0]' <<<"$config")" = "/usr/local/libexec/dotfiles/agent-secret-proxy" ]
-    run jq -e '[.mcp[] | has("environment")] | any' <<<"$config"
+    run jq -e '[.mcp | .. | objects | has("environment")] | any' <<<"$config"
     [ "$status" -ne 0 ]
+}
+
+# Runs OpenCode against the sandboxed home. `debug config` starts a background
+# service, so callers set a private port and stop the service afterwards.
+opencode_in_test_home() {
+    (cd "$TEST_HOME" && HOME="$TEST_HOME" XDG_CONFIG_HOME="$TEST_HOME/.config" timeout 120 opencode "$@")
+}
+
+@test "OpenCode v2 keeps Tilth out of Code Mode after it normalizes the config" {
+    command -v opencode >/dev/null 2>&1 || skip "opencode not installed"
+    command -v python3 >/dev/null 2>&1 || skip "python3 not installed"
+    [[ "$(opencode --version 2>/dev/null)" == *"v2."* ]] || skip "opencode v2 not installed"
+    mkdir -p "$TEST_HOME/.config/opencode"
+    env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null > "$TEST_HOME/.config/opencode/opencode.json"
+    local port
+    port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+    opencode_in_test_home service set port "$port"
+
+    run --separate-stderr opencode_in_test_home debug config
+    local config_status=$status config_output=$output
+    opencode_in_test_home service stop >/dev/null 2>&1 || true
+    [ "$config_status" -eq 0 ]
+    jq -e '[.[] | select(.type == "document") | .info.mcp.servers.tilth.codemode] == [false]' <<<"$config_output"
 }
 
 @test "opencode config appends the preamble and enables formatters without v1 LSP" {

@@ -6,7 +6,7 @@ OpenCode (`anomalyco/opencode`, docs at [opencode.ai/docs](https://opencode.ai/d
 
 PR #696 (2026-08-13) retired OpenCode together with Crush, its `ap` renderer, and its local-LLM paths. OpenCode returned on 2026-09-28 as a native sibling. The `ap` renderer stays retired: a Pi-style registry plus a modify script needs no renderer code.
 
-On 2026-10-11 the harness moved from v1.18.33 to v2.0.26. Renovate PR #1249 tried an aqua bump, but v2 has no GitHub release assets. The v2 port changed the install backend, both plugins, and the CLI config file.
+On 2026-10-11 the harness moved from v1.18.33 to v2.0.26. Renovate PR #1249 tried an aqua bump, but v2 has no GitHub release assets. The v2 port (PR #1251) changed the install backend, both plugins, the Tilth MCP entry, and the CLI config file.
 
 ## Ownership
 
@@ -14,7 +14,7 @@ On 2026-10-11 the harness moved from v1.18.33 to v2.0.26. Renovate PR #1249 trie
 
 - `chezmoi/dot_config/opencode/modify_opencode.json` writes `~/.config/opencode/opencode.json` from the registry.
 - The modifier uses the shared drift gate (`chezmoi/lib/drift-gate.sh`). It keeps unknown live keys with a warning and records them in `harness-drift/opencode-config`.
-- `lib/opencode-config-retired.txt` deletes retired v1 keys: `tools`, `lsp`, `compaction.prune`, and `permission.doom_loop`.
+- `lib/opencode-config-retired.txt` deletes retired keys: `tools`, `lsp`, `compaction.prune`, `permission.doom_loop`, and the v1-shaped `mcp.tilth`.
 - `cli.json` and `themes/*.json` deploy as plain files. `.chezmoiremove` deletes the v1 `tui.json`.
 - `~/.local/share/opencode/` (auth, database, logs) stays OpenCode-owned.
 
@@ -22,7 +22,10 @@ On 2026-10-11 the harness moved from v1.18.33 to v2.0.26. Renovate PR #1249 trie
 
 **Why v1 config syntax stays:** v2 normalizes v1 keys on load (`autoupdate` to `update`, `mcp` to `mcp.servers`, `permission` maps to ordered `permissions`, `bash` to `shell`, `task` to `subagent`). Supported v1 functionality outside plugins, the server API, and `tui.json` stays compatible.[^migrate] Do not mix v1 and v2 fields inside one agent or provider.
 
+**Exception: a v2-only field needs the v2 shape.** v2 decodes each v1-shaped `mcp.<name>` entry with the v1 schema and drops fields that schema lacks, such as `codemode`.[^mcp-normalize] Tilth therefore uses `mcp.servers.tilth`. The other servers stay v1-shaped; v2 merges both shapes.
+
 [^migrate]: OpenCode v2.0.26, services/www/src/docs/content/migrate-v1.mdx:8-19
+[^mcp-normalize]: OpenCode v2.0.26, packages/core/src/config/normalize.ts:264-297; packages/core/src/v1/config/migrate.ts:80-105
 
 ## Settings
 
@@ -33,15 +36,15 @@ On 2026-10-11 the harness moved from v1.18.33 to v2.0.26. Renovate PR #1249 trie
 | `formatter` | `true` | Built-in formatters run after edits. The schema disables them when the key is absent. |
 | `compaction.auto` | `true` | v2 ignores `compaction.prune` with a warning, so the key is retired. |
 | `instructions` | `~/.config/opencode/preamble.md` | Loads the shared execution preamble. Custom work-agent prompts replace native tool guidance. |
-| `mcp` | tilth (`--mcp --edit`, `codemode: false`), context7, tavily, milknado, hallouminate | The same server set as Codex and Pi. Secret-bearing servers use the broker sockets. |
+| `mcp` | `servers.tilth` (`--mcp --edit`, `codemode: false`); context7, tavily, milknado, hallouminate | The same server set as Codex and Pi. Secret-bearing servers use the broker sockets. |
 | `permission` | `*` allow; secret-path `read` denies; `sudo`/`rm -rf`/`security`/`bws` bash denies | Mirrors Claude `permissions.deny` and the Pi permission system. |
 
 v2 runs no language servers. It accepts `lsp` but produces no diagnostics, so the key is retired.[^lsp]
 
-**Why `codemode: false` on Tilth:** v2 puts MCP tools behind a Code Mode `execute` tool by default. Native file tools are removed, so Tilth must stay on the native tool list.[^codemode]
+**Why `codemode: false` on Tilth:** v2 puts MCP tools behind a Code Mode `execute` tool by default. Native file tools are removed, so Tilth must stay on the native tool list.[^codemode] An agent with a `"*": deny` default also denies `execute`; behind Code Mode, such an agent would have no file access.
 
 [^lsp]: OpenCode v2.0.26, services/www/src/docs/content/migrate-v1.mdx:415-416
-[^codemode]: OpenCode v2.0.26, services/www/src/docs/content/mcp-servers.mdx:322-338
+[^codemode]: OpenCode v2.0.26, services/www/src/docs/content/mcp-servers.mdx:322-338; packages/schema/src/mcp.ts:26-39
 
 ## Tilth-only plugin
 
@@ -49,13 +52,14 @@ The plugin removes `read`, `edit`, `write`, `patch`, `grep`, and `glob` from the
 
 **Why two layers:** `ctx.tool.transform` removes the built-ins from every model request. The hook rejects them if another path registers them again.
 
-v2 renamed `apply_patch` to `patch` and has no `list` tool; `read` also lists directories. Keep the secret-path and dangerous-bash permission maps unchanged.
+v2 renamed `apply_patch` to `patch` and has no `list` tool; `read` also lists directories.
 
-OpenCode does not path-gate MCP tools such as `tilth_tilth_read`. Tilth owns its file-access policy.
+Only the native `read` tool checks the `read` permission map. The plugin removes that tool, so the secret-path denies apply only if the plugin does not load.[^authorize-read] OpenCode does not path-gate MCP tools such as `tilth_tilth_read`. Tilth owns its file-access policy.
 
 **Why a plain object export:** local plugins load from `~/.config/opencode/plugins/` with no `node_modules`. `Plugin.define` is an identity function, so `export default { id, setup }` behaves the same.[^define]
 
 [^tilth-plugin]: chezmoi/dot_config/opencode/plugins/tilth-only.js; tests/opencode-plugin.bats
+[^authorize-read]: OpenCode v2.0.26, packages/core/src/tool/plugin/read.ts:55,66
 [^define]: OpenCode v2.0.26, packages/plugin/src/promise/plugin.ts:56-65; packages/core/src/plugin/module.ts:78-133
 
 ## Shared resources
@@ -96,7 +100,7 @@ The native plugin checks a root session after `session.execution.succeeded`. It 
 
 **Why execution events:** they are durable and always published (`packages/core/src/session/execution.ts:125`). `session.status` and `session.idle` are ephemeral, and `session.idle` is deprecated.
 
-A hidden Luna child session (`agent: wheypoint-check`) receives bounded transcript evidence. The plugin prompts it, waits for idle, and reads its last assistant reply.[^idle-hook]
+A hidden Luna child session (`agent: wheypoint-check`) receives bounded transcript evidence. The plugin prompts it, waits for idle, reads its last assistant reply, and then removes the child session.[^idle-hook]
 
 The checker applies the PR #1235 policy in order. A pause or question does not complete unfinished requested work.
 
@@ -104,13 +108,19 @@ An existing checkpoint requires UPDATE after work or decision changes, even when
 
 Pure questions, cancellation, completed unchanged work, and an active follow-up allow idle. The follow-up uses the exact approved reason.
 
-**Why synthetic follow-ups:** `ctx.session.synthetic` wakes the session and stores a `type: "synthetic"` message. Real user turns are always `type: "user"`, so quoted marker text never counts as a follow-up.
+**Why synthetic follow-ups:** `ctx.session.synthetic` wakes the session and stores a `type: "synthetic"` message. Real user turns are always `type: "user"`, so quoted marker text never counts as a follow-up. The plugin matches a follow-up against the `marker` and `reasons` constants, not a copy of their text.
 
-The plugin serializes checks per root. Before sending, it checks the same completed assistant, latest real user, and that no execution started.
+**Why `delivery: "queue"`:** the v2 default `steer` delivers at the next step boundary. A queued follow-up waits behind a user prompt that arrived during the check.[^synthetic]
+
+**Why a compaction is a turn boundary:** `ctx.session.context` returns messages from the latest compaction onward.[^history] After an auto-compaction no user message can remain, so a completed compaction message starts the turn, and its summary leads the checker evidence.
+
+The plugin serializes checks per root. Before sending, it checks the same turn start and completed assistant, and that no execution started.
 
 Child sessions, failed turns, and interrupted turns receive no follow-up. A failed check logs once for its turn and does not retry automatically.
 
-[^idle-hook]: chezmoi/dot_config/opencode/plugins/wheypoint-idle.js; tests/opencode-wheypoint.test.js
+[^idle-hook]: chezmoi/dot_config/opencode/plugins/wheypoint-idle.js; tests/opencode-wheypoint.test.js; tests/opencode-wheypoint-guards.test.js
+[^synthetic]: OpenCode v2.0.26, packages/core/src/session/session.ts:296; packages/schema/src/session-inbox.ts:11
+[^history]: OpenCode v2.0.26, packages/core/src/session/history.ts:78-95
 
 ## Installation
 
@@ -120,19 +130,22 @@ Child sessions, failed turns, and interrupted turns receive no follow-up. A fail
 
 **Why `allow_builds`:** mise's npm installer skips lifecycle scripts by default. The package `postinstall` links the platform binary; without it, `opencode` exits with "postinstall script was not run".
 
-`packages/sync.sh` removes a Homebrew `opencode` formula and a stale `~/.local/bin/opencode` so the mise shim wins. Crush stays retired.
+`packages/sync.sh` removes a Homebrew `opencode` formula and a stale `~/.local/bin/opencode` so the mise shim wins. `retire_harnesses` uninstalls the old `aqua:anomalyco/opencode` install and keeps Crush retired.
 
 ## Gaps
 
 - Post-idle checkpoint checks cannot provide a synchronous pre-stop veto.
+- v2 has no `doom_loop` guard. The v1 prompt for repeated identical tool calls is gone, and `build`, `plan`, `general`, and `explore` set no `steps`, so v2 does not bound their turns.[^doom-loop] The operator chose to keep this unbounded.
 - The live checker path (child prompt, wait, synthetic follow-up) has unit coverage only; no authenticated model run verified it.
 - Claude Pro/Max subscriptions do not work in third-party harnesses. Use ChatGPT, Copilot, API keys, or OpenCode Zen.
 - Live inference requires operator authentication. Sync never reads or copies authentication.
 
+[^doom-loop]: OpenCode v2.0.26, services/www/src/docs/content/permissions.mdx:136; packages/core/src/session/runner/llm.ts:223
+
 ## Validation
 
-`tests/opencode-config.bats` covers rendering, drift handling, retired keys, MCP wiring, permissions, `cli.json`, the mise pin, and the chezmoi apply.
+`tests/opencode-config.bats` covers rendering, drift handling, retired keys, MCP wiring, permissions, `cli.json`, the mise pin, and the chezmoi apply. When OpenCode v2 is installed, it also runs `opencode debug config` in a sandboxed `HOME` on a private service port and checks that Tilth keeps `codemode: false` after normalization.
 
-On 2026-10-11, OpenCode v2.0.26 ran in a sandboxed `HOME` against the rendered config. `debug config` and `debug agents` accepted it, and `mcp list` connected all five servers. Both plugins reported `active`. A probe plugin showed that no native file tool remained in `ctx.tool.list()`, and that the Tilth tools stayed native.
+On 2026-10-11, OpenCode v2.0.26 ran in a sandboxed `HOME` against the rendered config. `debug config` and `debug agents` accepted it, and `mcp list` connected all five servers. Both plugins reported `active`, and no native file tool remained in `ctx.tool.list()`. That first run used the v1-shaped Tilth entry, and `debug config` showed that v2 dropped `codemode`; PR #1251 review found this, and the `mcp.servers` shape fixed it.
 
 Related: [[index]], [[pi]], [[../operations/sync-and-chezmoi]], [[../architecture/config-drift]].
