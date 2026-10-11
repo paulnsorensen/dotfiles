@@ -17,7 +17,7 @@ The repo deploys shared agent configuration into seven active AI coding surfaces
 
 | Capability | Claude | Codex | Copilot | Cursor | OMP | Pi | OpenCode |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Hooks / extension events | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✗ (JS plugins only) |
+| Hooks / extension events | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ post-idle plugin |
 | Sub-agents / agent defs | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ package | ✅ shared + advisor |
 | MCP servers | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ adapter | ✅ |
 | System prompt / instructions | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -34,7 +34,7 @@ Pi and OpenCode read the shared `~/.agents/skills` cache directly. They do not r
 | Surface | Source of truth | Destinations |
 |---|---|---|
 | MCP servers | shared and native registries | harness-native MCP files; Pi uses built-in MCP from `agent/mcp.json`; OpenCode uses `opencode.json` `mcp` |
-| Hooks | `agents/hooks/registry.yaml` plus native extensions | harness-native hooks and OMP/Pi TypeScript extensions |
+| Hooks | `agents/hooks/registry.yaml` plus native extensions | harness-native hooks, OMP/Pi TypeScript extensions, and OpenCode JavaScript plugins |
 | Sub-agents | `agents/registry.yaml` plus native packages | rendered definitions and native agent packages |
 | Skills | `skills/` plus `skills/_registry.yaml` | native trees and the shared `~/.agents/skills` cache |
 | System prompt | `agents/preamble.md` plus native addenda | Claude/Codex prompt files, OpenCode `instructions`, and OMP/Pi addenda |

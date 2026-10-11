@@ -71,7 +71,7 @@ teardown() {
 @test "OpenCode Node tests run through the Bats gate when present" {
     local js_tests=("$REAL_DOTFILES_DIR"/tests/opencode-*.test.js)
     [ -f "${js_tests[0]}" ] || skip "no OpenCode Node tests"
-    run node --test "${js_tests[@]}"
+    run node --test --test-reporter=tap "${js_tests[@]}"
     [ "$status" -eq 0 ]
     [[ "$output" == *"# fail 0"* ]]
 }
