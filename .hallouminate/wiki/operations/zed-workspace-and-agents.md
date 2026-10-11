@@ -37,6 +37,8 @@ A theme cannot make status accessible when Zed communicates it by color alone. V
 
 `theme/generate.sh` gained a `generate_zed_theme()` target: the active base24 scheme renders to `chezmoi/dot_config/zed/themes/dotfiles-theme.json` (fixed filename so scheme switches never strand a stale file; theme name inside is the scheme name). The checked-in Modus Deuteranopia pair stays the default — the generated theme is a manual-select alternative and is dark-only. Zed theme gotchas learned: the theme `$schema` is v0.2.0 (a v0.2.1 bump PR exists but is unmerged as of Aug 2026); `players[]` entries must set `background` to the same accent as `cursor` and `selection` to that accent with a `3d` alpha suffix, or participant chips vanish and selections paint opaque; provenance is folded into the `author` field because loader tolerance for JSONC comments/unknown keys is unverified. Regression coverage: `tests/zed-config.bats` (template render) and the zed test in `tests/theme-palette.bats` (generator).
 
+**Chocolate Donut 2 (2026-10-10).** `generate_zed_theme()` also renders every scheme in `ZED_EXTRA_SCHEMES` (`theme/generate.sh`) to `themes/<scheme-id>.json` without making it the active scheme. `chocolate-donut-2` (Brownfield native base24 solve from the PR #1233 comment) ships this way, and `settings.json.tmpl` selects `Chocolate Donut 2` for dark mode. The rest of the stack (ghostty, tmux, vim) stays on `chocolate-donut` until `theme/config.yaml` changes. The same palette feeds the OpenCode theme `chocolate-donut-2.json`, which is hand-mirrored like the existing OpenCode theme.
+
 ## MCP context servers + built-in LSP (2026-08-27)
 
 `settings.json.tmpl` now wires MCPs and Zed's own language servers.

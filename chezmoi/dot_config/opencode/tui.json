@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/tui.json",
-  "theme": "chocolate-donut",
+  "theme": "chocolate-donut-2",
   "keybinds": {
     "editor_open": "ctrl+o"
   }

@@ -173,3 +173,7 @@ Keep the device code, OAuth token, and `secrets/` files out of Git.
   T3 UI keys to `lib/t3-settings-ignore.txt`, not to the registry.
 - Tests: `tests/t3-config.bats` (settings) and `tests/lib-t3-service.bats`
   (service upgrade).
+- T3 themes are not chezmoi-managed. The theme library (upstream PR #5226)
+  keeps custom themes in app storage, not in `settings.json`. Import
+  `theme/t3/chocolate-donut-2-color-theme.json` (VS Code format) through
+  Settings → Appearance → import, then pick it for dark mode.

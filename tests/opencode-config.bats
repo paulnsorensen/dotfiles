@@ -110,16 +110,20 @@ TOML
     [ "$(jq -S . "$destination/.config/opencode/opencode.json")" = "$(yq -o=json '.opencode.config' "$REGISTRY" | jq -S .)" ]
     cmp -s "$CZ_SRC/dot_config/opencode/tui.json" "$destination/.config/opencode/tui.json"
     cmp -s "$CZ_SRC/dot_config/opencode/themes/chocolate-donut.json" "$destination/.config/opencode/themes/chocolate-donut.json"
+    cmp -s "$CZ_SRC/dot_config/opencode/themes/chocolate-donut-2.json" "$destination/.config/opencode/themes/chocolate-donut-2.json"
     [ "$(cat "$destination/.local/share/opencode/auth.json")" = "runtime state" ]
     [ -f "$destination/.config/opencode/package.json" ]
 }
 
-@test "opencode tui uses the chocolate-donut theme" {
-    [ "$(jq -r '.theme' "$CZ_SRC/dot_config/opencode/tui.json")" = "chocolate-donut" ]
+@test "opencode tui uses the chocolate-donut-2 theme" {
+    [ "$(jq -r '.theme' "$CZ_SRC/dot_config/opencode/tui.json")" = "chocolate-donut-2" ]
     # Every theme slot names a palette def, so a renamed def cannot dangle.
     run jq -e '(.defs | keys) as $defs | [.theme[] | strings | select(IN($defs[]) | not)] == []' \
-        "$CZ_SRC/dot_config/opencode/themes/chocolate-donut.json"
+        "$CZ_SRC/dot_config/opencode/themes/chocolate-donut-2.json"
     [ "$status" -eq 0 ]
+    # The theme mirrors the base24 scheme background and foreground.
+    [ "$(jq -r '.defs.bg' "$CZ_SRC/dot_config/opencode/themes/chocolate-donut-2.json")" = "#$(yq -r '.palette.base00' "$REAL_DOTFILES_DIR/theme/schemes/chocolate-donut-2.yaml")" ]
+    [ "$(jq -r '.defs.fg' "$CZ_SRC/dot_config/opencode/themes/chocolate-donut-2.json")" = "#$(yq -r '.palette.base05' "$REAL_DOTFILES_DIR/theme/schemes/chocolate-donut-2.yaml")" ]
 }
 
 @test "opencode CLI install is pinned through mise" {
