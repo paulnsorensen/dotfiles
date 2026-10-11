@@ -14,11 +14,11 @@ function packetOk(dims = DIMS, slug = 'parent') {
 }
 
 function reviewOk(dim, findings = []) {
-  return { findings: findings.length ? findings : [{ dimension: dim, severity: 'medium', file: 'src/a.ts', line: 1, claim: 'x', why_it_matters: 'y', fix_direction: 'z', also_relevant_to: [] }] }
+  return { status: 'ok', findings: findings.length ? findings : [{ dimension: dim, severity: 'medium', file: 'src/a.ts', line: 1, claim: 'x', why_it_matters: 'y', fix_direction: 'z', also_relevant_to: [] }] }
 }
 
 function reconcileOk({ hasMediumPlus = true, slug = 'parent', perCurd } = {}) {
-  const out = { has_medium_plus_findings: hasMediumPlus, artifact: `.cheese/age/${slug}.md` }
+  const out = { status: 'ok', has_medium_plus_findings: hasMediumPlus, has_cheap_lows: false, artifact: `.cheese/age/${slug}.md` }
   if (perCurd) out.per_curd = perCurd
   return out
 }
@@ -117,14 +117,18 @@ test('happy path fans out one review agent per dimension and reconciles', async 
   assert.equal(result.has_medium_plus_findings, true)
   assert.deepEqual(JSON.parse(JSON.stringify(result.dimensions)), DIMS)
   assert.equal(result.per_curd, null)
+  const reviewers = trace.agents.filter((c) => c.opts.agentType === 'reviewer')
+  assert.equal(reviewers.length, DIMS.length + 1)
+  for (const c of reviewers) assert.match(c.prompt, /^Review mode: severity-report\n/)
 })
 
-test('one worker throws: the other two still dispatch, reconcile sees only survivors, a lost-worker message is logged', async () => {
+test('a worker that throws once is retried, and reconcile sees every dimension', async () => {
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({
     respond: ({ opts }) => {
       if (opts.label === 'packet') return packetOk()
       if (opts.label === 'review:correctness') throw new Error('worker crashed')
+      if (opts.label === 'review:correctness:retry') return reviewOk('correctness', [{ dimension: 'correctness', severity: 'high', file: 'src/a.ts', line: 1, claim: 'bug', why_it_matters: 'y', fix_direction: 'z', also_relevant_to: [] }])
       if (opts.label === 'review:security') return reviewOk('security', [{ dimension: 'security', severity: 'high', file: 'src/b.ts', line: 2, claim: 'sec', why_it_matters: 'y', fix_direction: 'z', also_relevant_to: [] }])
       if (opts.label === 'review:deslop') return reviewOk('deslop', [{ dimension: 'deslop', severity: 'low', file: 'src/c.ts', line: 3, claim: 'slop', why_it_matters: 'y', fix_direction: 'z', also_relevant_to: [] }])
       if (opts.label === 'reconcile') return reconcileOk()
@@ -135,16 +139,70 @@ test('one worker throws: the other two still dispatch, reconcile sees only survi
   const result = await workflow.run({ ...globals, args: BASE_ARGS })
 
   const reviewCalls = trace.agents.filter((c) => c.opts.label.startsWith('review:'))
-  assert.equal(reviewCalls.length, 3)
+  assert.equal(reviewCalls.length, 4)
 
   const reconcileCall = trace.agents.find((c) => c.opts.label === 'reconcile')
-  assert.ok(reconcileCall)
-  assert.ok(reconcileCall.prompt.includes('src/b.ts'))
-  assert.ok(reconcileCall.prompt.includes('src/c.ts'))
-  assert.ok(!reconcileCall.prompt.includes('correctness'))
-
-  assert.ok(trace.logs.some((l) => /lost/.test(l)))
+  for (const file of ['src/a.ts', 'src/b.ts', 'src/c.ts']) assert.ok(reconcileCall.prompt.includes(file))
+  assert.ok(trace.logs.some((l) => /review:correctness attempt 1 failed/.test(l)))
   assert.equal(result.status, 'ok')
+})
+
+test('a worker blocked by its contract twice blocks the run instead of passing clean', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'packet') return packetOk()
+      if (opts.label.startsWith('review:security')) return { status: 'blocked', blocked_reason: 'missing-contract', findings: [] }
+      if (opts.label.startsWith('review:')) return reviewOk(opts.label.slice('review:'.length))
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: BASE_ARGS })
+
+  assert.equal(result.status, 'blocked')
+  assert.match(result.error, /dimensions not reviewed: security/)
+  assert.equal(trace.agents.filter((c) => c.opts.label.startsWith('review:security')).length, 2)
+  assert.equal(trace.agents.some((c) => c.opts.label === 'reconcile'), false)
+})
+
+test('a blocked reconcile blocks the run', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'packet') return packetOk()
+      if (opts.label.startsWith('review:')) return reviewOk(opts.label.slice('review:'.length))
+      if (opts.label === 'reconcile') return { status: 'blocked', blocked_reason: 'missing-contract', has_medium_plus_findings: true, has_cheap_lows: false, artifact: '' }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: BASE_ARGS })
+
+  assert.equal(result.status, 'blocked')
+  assert.match(result.error, /reconcile blocked: missing-contract/)
+})
+
+test('reviewer prompts read the age files directly and reconcile writes the report by absolute path', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'packet') return packetOk()
+      if (opts.label.startsWith('review:')) return reviewOk(opts.label.slice('review:'.length))
+      if (opts.label === 'reconcile') return { ...reconcileOk(), artifact: '/elsewhere/report.md' }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: BASE_ARGS })
+
+  for (const c of trace.agents.filter((a) => a.opts.agentType === 'reviewer')) {
+    assert.match(c.prompt, /Do not load the age skill or any other skill through the Skill tool/)
+    assert.match(c.prompt, /Never return status ok for a review you did not run/)
+  }
+  const reconcileCall = trace.agents.find((c) => c.opts.label === 'reconcile')
+  assert.ok(reconcileCall.prompt.includes('tilth_write to the absolute path `/tmp/worktrees/parent/.cheese/age/parent.md`'))
+  assert.equal(result.artifact, '.cheese/age/parent.md')
 })
 
 test('packet returns no dimensions: blocked after exactly one agent call', async () => {
@@ -198,7 +256,7 @@ test('a review prompt points at dimensions.md and does not copy its rubric text'
   assert.ok(!securityReview.prompt.includes('caller-shadowed domain invariant'))
 })
 
-test('all review workers lost: returns blocked, no reconcile call', async () => {
+test('all review workers lost: each retries once, returns blocked, no reconcile call', async () => {
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({
     respond: ({ opts }) => {
@@ -211,6 +269,7 @@ test('all review workers lost: returns blocked, no reconcile call', async () => 
   const result = await workflow.run({ ...globals, args: BASE_ARGS })
 
   assert.equal(result.status, 'blocked')
+  assert.equal(trace.agents.filter((c) => c.opts.label.startsWith('review:')).length, DIMS.length * 2)
   assert.equal(trace.agents.some((c) => c.opts.label === 'reconcile'), false)
 })
 

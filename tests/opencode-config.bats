@@ -234,9 +234,8 @@ TOML
     [ ! -e "$destination/.config/opencode/tui.json" ]
     cmp -s "$CZ_SRC/dot_config/opencode/themes/chocolate-donut.json" "$destination/.config/opencode/themes/chocolate-donut.json"
     cmp -s "$CZ_SRC/dot_config/opencode/themes/chocolate-donut-2.json" "$destination/.config/opencode/themes/chocolate-donut-2.json"
-    cmp -s "$REAL_DOTFILES_DIR/agents/lib/wheypoint-stop-gate.cjs" "$destination/.config/opencode/lib/wheypoint-stop-gate.cjs"
-    run node --input-type=module -e 'import { pathToFileURL } from "node:url"; const module = await import(pathToFileURL(process.argv[1])); if (module.default.id !== "dotfiles.wheypoint-idle") process.exit(1)' "$destination/.config/opencode/plugins/wheypoint-idle.js"
-    [ "$status" -eq 0 ]
+    [ ! -e "$destination/.config/opencode/plugins/wheypoint-idle.js" ]
+    [ ! -e "$destination/.config/opencode/lib/wheypoint-stop-gate.cjs" ]
     [ "$(cat "$destination/.local/share/opencode/auth.json")" = "runtime state" ]
     [ -f "$destination/.config/opencode/package.json" ]
 }
