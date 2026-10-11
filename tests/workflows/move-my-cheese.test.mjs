@@ -81,7 +81,8 @@ function router(routes) {
   }
 }
 
-const reconRoutes = (opens, details) => [['recon:index', index(opens)], ['recon:detail', { prs: details }]]
+const cleanup = { removed: [], note: '' }
+const reconRoutes = (opens, details) => [['recon:index', index(opens)], ['recon:detail', { prs: details }], ['cleanup', cleanup]]
 
 // Two PRs with one duplicate tension; the single planner consolidates them.
 const planRoutes = (overrides = []) => [
@@ -272,7 +273,10 @@ test('land merges a stack bottom-up with --match-head-commit and restacks the ch
   assert.equal(labels.some((l) => l.startsWith('integrate:') || l.startsWith('verify:')), false)
   const merge2 = trace.agents.find(({ opts }) => opts.label === 'merge:2')
   assert.match(merge2.prompt, new RegExp(`Run gh pr merge 2 --squash --match-head-commit ${sha(2, 3)}\\.`))
-  const restack = trace.agents.find(({ opts }) => opts.label === 'restack:2').prompt
+  const restackCall = trace.agents.find(({ opts }) => opts.label === 'restack:2')
+  assert.equal(restackCall.opts.isolation, 'worktree')
+  const restack = restackCall.prompt
+  assert.ok(restack.includes('git checkout --detach origin/feat/pr-2'))
   assert.ok(restack.includes('git rebase --onto origin/main origin/feat/pr-1'))
   assert.ok(!restack.includes('git checkout -B feat/pr-2 '))
 })
@@ -298,7 +302,7 @@ test('an approved consolidation builds, verifies, publishes, and drafts the supe
     ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, evidence: 'grep -c printed 1' }],
     ['publish', { results: [{ target: 'T-1', pr_number: 10, url: 'https://example.test/pr/10', head_sha: sha(50), changed_files: 2, lines_changed: 30 }] }],
     ['age:10', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-10', artifact: '.cheese/age/pr-10.md', worktree_path: '/tmp/wt-t1', has_medium_plus_findings: false, has_cheap_lows: false }],
-    ['finalize:10', { pushed: false, head_sha: sha(50), marker_updated: true }],
+    ['finalize:10', { marker_updated: true }],
     ['review:10:status', ready(10, { head_sha: sha(50) })],
     ['mark', { results: [{ pr: 1, action: 'drafted', note: '' }, { pr: 2, action: 'drafted', note: '' }] }],
   ]))
@@ -353,7 +357,7 @@ const builtConsolidation = (overrides = []) => planRoutes([
   ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, evidence: 'grep -c printed 1' }],
   ['publish', { results: [{ target: 'T-1', pr_number: 10, url: 'https://example.test/pr/10', head_sha: sha(50), changed_files: 2, lines_changed: 30 }] }],
   ['age:10', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-10', artifact: '.cheese/age/pr-10.md', worktree_path: '/tmp/wt-t1', has_medium_plus_findings: false, has_cheap_lows: false }],
-  ['finalize:10', { pushed: false, head_sha: sha(50), marker_updated: true }],
+  ['finalize:10', { marker_updated: true }],
   ['review:10:status', ready(10, { head_sha: sha(50) })],
   ['mark', { results: [{ pr: 1, action: 'drafted', note: '' }, { pr: 2, action: 'drafted', note: '' }] }],
 ])
@@ -375,7 +379,7 @@ test('a malformed aged marker reads as no marker, so the PR is reviewed', async 
     ['survey', survey],
     ['tensions', noTensions],
     ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: '.cheese/age/pr-1.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false, has_cheap_lows: false }],
-    ['finalize:1', { pushed: false, head_sha: sha(1), marker_updated: true }],
+    ['finalize:1', { marker_updated: true }],
     ['review:1:status', ready(1)],
   ])
   assert.ok(labels.includes('age:1'))
@@ -383,20 +387,18 @@ test('a malformed aged marker reads as no marker, so the PR is reviewed', async 
   assert.match(trace.agents.find(({ opts }) => opts.label === 'recon:detail').prompt, /select\(\.user\.login == "me"\)/)
 })
 
-test('cure commits that finalize could not push fail the review instead of reading as ready', async () => {
+test('cure commits that cure could not push fail the review before re-age, finalize, or polling', async () => {
   const { result, labels } = await run({ prs: [1], auto: true }, [
     ...reconRoutes([openPr(1)], [detail(1)]),
     ['survey', survey],
     ['tensions', noTensions],
     ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: true, has_cheap_lows: false }],
-    ['cure:1', { status: 'ok', committed: true, artifact: 'c.md' }],
-    ['reage:1', { mode: 'incremental', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a2.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false, has_cheap_lows: false }],
-    ['finalize:1', { pushed: false, head_sha: sha(1), marker_updated: false }],
+    ['cure:1', { status: 'blocked', committed: true, pushed: false, head_sha: sha(1, 5), worktree_path: '/tmp/wt-c', artifact: 'c.md' }],
   ])
   assert.equal(result.status, 'partial')
   assert.equal(result.targets[0].review, 'failed')
   assert.match(result.targets[0].reason, /cure commits were not pushed/)
-  assert.equal(labels.some((l) => l.startsWith('review:1:status')), false)
+  assert.equal(labels.some((l) => l === 'reage:1' || l === 'finalize:1' || l.startsWith('review:1:status')), false)
 })
 
 test('cheap lows alone trigger the cure, and cure and affinage never ask what to cure', async () => {
@@ -405,8 +407,8 @@ test('cheap lows alone trigger the cure, and cure and affinage never ask what to
     ['survey', survey],
     ['tensions', noTensions],
     ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false, has_cheap_lows: true }],
-    ['cure:1', { status: 'ok', committed: false, artifact: 'c.md' }],
-    ['finalize:1', { pushed: false, head_sha: sha(1), marker_updated: true }],
+    ['cure:1', { status: 'ok', committed: false, pushed: false, head_sha: sha(1), worktree_path: '/tmp/wt-c', artifact: 'c.md' }],
+    ['finalize:1', { marker_updated: true }],
     ['review:1:status', ready(1)],
   ])
   assert.ok(labels.includes('cure:1'))
@@ -422,9 +424,9 @@ test('every reviewer dispatch opens with the severity-report contract line', asy
     ['survey', survey],
     ['tensions', noTensions],
     ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: true, has_cheap_lows: false }],
-    ['cure:1', { status: 'ok', committed: true, artifact: 'c.md' }],
+    ['cure:1', { status: 'ok', committed: true, pushed: true, head_sha: sha(1, 5), worktree_path: '/tmp/wt-c', artifact: 'c.md' }],
     ['reage:1', { mode: 'incremental', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a2.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false, has_cheap_lows: false }],
-    ['finalize:1', { pushed: true, head_sha: sha(1), marker_updated: true }],
+    ['finalize:1', { marker_updated: true }],
     ['review:1:status', ready(1)],
   ])
   const reviewers = trace.agents.filter(({ opts }) => opts.agentType === 'reviewer')
@@ -480,10 +482,14 @@ test('builders, integration, and publish use a run-scoped local branch, never th
   const { result, trace } = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest }, builtConsolidation())
   assert.equal(result.status, 'ready')
   const prompt = (label) => trace.agents.find(({ opts }) => opts.label === label).prompt
-  assert.ok(prompt('target:T-1').includes(`git checkout -B ${local} origin/main`))
+  const target = prompt('target:T-1')
+  assert.ok(target.includes('git checkout --detach origin/main'))
+  assert.ok(target.includes(`git update-ref refs/heads/${local} HEAD`))
+  assert.ok(!target.includes('git checkout -B'))
   assert.ok(prompt('integrate:pre').includes(`T-1=${local}`))
   assert.ok(prompt('publish').includes(`"local_branch": "${local}"`))
   assert.ok(prompt('publish').includes('<local_branch>:refs/heads/<branch>'))
+  assert.doesNotMatch(prompt('publish'), /worktree_path|\bcd /)
 })
 
 test('publish never reruns after an invalid report', async () => {
@@ -500,4 +506,91 @@ test('an approved plan with open questions cannot execute', async () => {
   const first = await run({ prs: [1, 2] }, planRoutes([['plan:minimal', consolidatePlan({ open_questions: ['which helper wins?'] })]]))
   assert.equal(first.result.status, 'needs-input')
   assert.equal(first.result.digest, undefined)
+})
+
+// Isolated worktrees live under <main>/.claude/worktrees/<id>.
+const wt = (name) => `/repo/.claude/worktrees/wf_test-${name}`
+const curedReviewRoutes = (cure) => [
+  ...reconRoutes([openPr(1)], [detail(1)]),
+  ['survey', survey],
+  ['tensions', noTensions],
+  ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: '.cheese/age/pr-1.md', worktree_path: wt('age'), has_medium_plus_findings: true, has_cheap_lows: false }],
+  ['cure:1', cure],
+  ['reage:1', { mode: 'incremental', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: '.cheese/age/pr-1.md', worktree_path: wt('reage'), has_medium_plus_findings: false, has_cheap_lows: false }],
+  ['finalize:1', { marker_updated: true }],
+  ['review:1:status:1', ready(1, { ci: 'fail', head_sha: sha(1, 5) })],
+  ['review:1:status:2', ready(1, { ci: 'fail', head_sha: sha(1, 6) })],
+  ['review:1:status', ready(1, { head_sha: sha(1, 7) })],
+  ['review:1:affinage', ({ opts }) => ({ status: 'ok', pushed: true, worktree_path: wt(opts.label.replaceAll(':', '-')), note: '' })],
+]
+const pushedCure = { status: 'ok', committed: true, pushed: true, head_sha: sha(1, 5), worktree_path: wt('cure'), artifact: '.cheese/cure/pr-1.md' }
+
+test('every stage that edits code runs in its own isolated worktree and never enters another agent tree', async () => {
+  const { result, trace, labels } = await run({ prs: [1], auto: true }, curedReviewRoutes(pushedCure))
+  assert.equal(result.status, 'ready')
+  const call = (label) => trace.agents.find(({ opts }) => opts.label === label)
+  for (const label of ['age:1', 'cure:1', 'reage:1', 'review:1:affinage:1', 'review:1:affinage:2']) {
+    assert.equal(call(label).opts.isolation, 'worktree', label)
+  }
+  for (const { prompt, opts } of trace.agents) assert.doesNotMatch(prompt, /\bcd \//, opts.label)
+  assert.ok(call('age:1').prompt.includes(`git checkout --detach ${sha(1)}`))
+  const cure = call('cure:1').prompt
+  assert.ok(cure.includes(`git checkout --detach ${sha(1)}`))
+  assert.ok(cure.includes(`cp ${wt('age')}/.cheese/age/pr-1.md .cheese/age/pr-1.md`))
+  assert.ok(cure.includes('git push origin HEAD:feat/pr-1'))
+  assert.ok(call('reage:1').prompt.includes(`git checkout --detach ${sha(1, 5)}`))
+  const local = `mmc/${result.digest.slice(0, 8)}/feat/pr-1`
+  assert.ok(call('review:1:affinage:1').prompt.includes(`git checkout -B ${local}--review-1 origin/feat/pr-1`))
+  assert.ok(call('review:1:affinage:2').prompt.includes(`git checkout -B ${local}--review-2 origin/feat/pr-1`))
+  assert.ok(labels.includes('cleanup'))
+})
+
+test('finalize stamps the pushed cure head from refs alone, with no worktree and no push', async () => {
+  const { trace } = await run({ prs: [1], auto: true }, curedReviewRoutes(pushedCure))
+  const finalize = trace.agents.find(({ opts }) => opts.label === 'finalize:1')
+  assert.equal(finalize.opts.isolation, undefined)
+  assert.ok(finalize.prompt.includes(`sha: ${sha(1, 5)}`))
+  assert.ok(finalize.prompt.includes(`git diff origin/main...${sha(1, 5)}`))
+  assert.doesNotMatch(finalize.prompt, /git push/)
+})
+
+test('a successful run removes every recorded scratch worktree and its run refs', async () => {
+  const { result, trace } = await run({ prs: [1], auto: true }, curedReviewRoutes(pushedCure))
+  const sweep = trace.agents.find(({ opts }) => opts.label === 'cleanup')
+  for (const name of ['age', 'cure', 'reage', 'review-1-affinage-1', 'review-1-affinage-2']) assert.ok(sweep.prompt.includes(wt(name)), name)
+  assert.ok(sweep.prompt.includes(`refs/heads/mmc/${result.digest.slice(0, 8)}/`))
+  assert.equal(sweep.opts.isolation, undefined)
+})
+
+test('a failed run keeps its worktrees for inspection', async () => {
+  const { result, labels } = await run({ prs: [1], auto: true }, curedReviewRoutes({ ...pushedCure, status: 'blocked', pushed: false }))
+  assert.equal(result.status, 'partial')
+  assert.equal(labels.includes('cleanup'), false)
+})
+
+test('an unsafe age report path never reaches the cure prompt', async () => {
+  const { result, labels } = await run({ prs: [1], auto: true }, [
+    ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: '../../etc/x; rm -rf ~', worktree_path: wt('age'), has_medium_plus_findings: true, has_cheap_lows: false }],
+    ...curedReviewRoutes(pushedCure),
+  ])
+  assert.equal(result.targets[0].review, 'failed')
+  assert.match(result.targets[0].reason, /no readable age report path/)
+  assert.equal(labels.includes('cure:1'), false)
+})
+
+test('a target build continuation resumes in a fresh isolated worktree from the run-scoped ref', async () => {
+  const first = await run({ prs: [1, 2] }, planRoutes())
+  const local = `mmc/${first.result.digest.slice(0, 8)}/land/combined`
+  const { result, trace } = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest }, builtConsolidation([
+    ['target:T-1:c1', { status: 'done', completed: ['a', 'b'], remaining: [], checkpoint: sha(50), head_sha: sha(50), worktree_path: wt('t1-c1'), note: '' }],
+    ['target:T-1', { status: 'partial', completed: ['a'], remaining: ['b'], checkpoint: sha(40), head_sha: '', worktree_path: wt('t1'), note: '' }],
+  ]))
+  assert.equal(result.status, 'ready')
+  const resume = trace.agents.find(({ opts }) => opts.label === 'target:T-1:c1')
+  assert.equal(resume.opts.isolation, 'worktree')
+  assert.ok(resume.prompt.includes(`git checkout --detach ${sha(40)}`))
+  assert.ok(resume.prompt.includes(`git update-ref refs/heads/${local} HEAD`))
+  assert.doesNotMatch(resume.prompt, /\bcd \//)
+  const sweep = trace.agents.find(({ opts }) => opts.label === 'cleanup')
+  assert.ok(sweep.prompt.includes(wt('t1')) && sweep.prompt.includes(wt('t1-c1')))
 })

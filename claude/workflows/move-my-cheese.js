@@ -32,9 +32,14 @@ export const meta = {
 //   - land: merge the final PRs when every target is ready.
 //   - allowNoChecks: treat a PR with no CI checks as ready (repos without CI).
 //
-// Agents never check out a PR branch by name. Each works on a run-scoped local
-// branch mmc/<digest8>/<branch> and pushes with HEAD:<branch>, so the user's
-// local branches and checkouts stay untouched.
+// Agents never check out a PR branch by name, so the user's local branches and
+// checkouts stay untouched. Every stage that edits code runs in its own
+// isolated worktree, so the worktree guard roots it in the tree it edits. No
+// agent works in a directory that another agent returned. State moves through
+// refs and SHAs: builders record progress on the run-scoped ref
+// mmc/<digest8>/<branch> with git update-ref on a detached HEAD, and review
+// writers push with HEAD:<branch>. A successful run removes its scratch
+// worktrees and run branches.
 //
 // The Workflow runtime cannot pause for input, so the user gate is two runs.
 // The digest binds approval to the exact landing object. It detects edits; it
@@ -84,6 +89,9 @@ const SHA_RE = /^[0-9a-f]{7,40}$/i
 const FULL_SHA_RE = /^[0-9a-f]{40}$/i
 const VIEWER_RE = /^[A-Za-z0-9][A-Za-z0-9-]*(?:\[bot\])?$/
 const isSafeRef = (ref) => typeof ref === 'string' && SAFE_REF_RE.test(ref) && !ref.includes('..') && !ref.endsWith('.lock')
+const SAFE_PATH_RE = /^\/[A-Za-z0-9._/@+-]+$/
+// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>.
+const SCRATCH_WORKTREE_RE = /^\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+$/
 
 // ---- Schemas: one constant per contract; enums for closed sets ----
 const str = { type: 'string' }
@@ -165,18 +173,19 @@ const LANDING_SCHEMA = obj({ inputs: ints, recon: obj({ base_sha: str, heads: { 
 const PLAN_ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), chosen: { type: 'string', pattern: '^P-[0-9]+$' }, concerns: strs, guidance: text('Under 80 words') })
 const ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), concerns: strs, guidance: text('Under 80 words') })
 const TARGET_SCHEMA = obj({ status: oneOf(TASK_STATUSES), completed: strs, remaining: strs, checkpoint: text('Last commit SHA, or empty'), head_sha: str, worktree_path: str, note: str })
-const SALVAGE_SCHEMA = obj({ found: bool, checkpoint: str, worktree_path: str, completed: strs, remaining: strs })
+const SALVAGE_SCHEMA = obj({ found: bool, checkpoint: str, completed: strs, remaining: strs })
 const INTEGRATE_SCHEMA = obj({ status: oneOf(INTEGRATE_STATUSES), worktree_path: text('Absolute path of the integration worktree'), head: text('Commit SHA of the integration HEAD'), merged: strs, conflicted: strs })
 const VERDICT_SCHEMA = obj({ criterion: str, passes: bool, evidence: text('Command run and its observed result') })
 const PUBLISH_SCHEMA = obj({ results: list(obj({ target: str, pr_number: int, url: str, head_sha: str, changed_files: int, lines_changed: int })) })
 const AGE_SCHEMA = obj({ mode: oneOf(AGE_MODES), scope: text('The exact ref range reviewed, empty when skipped'), slug: text('The /age handoff slug, empty when skipped'), artifact: str, worktree_path: str, has_medium_plus_findings: bool, has_cheap_lows: bool })
-const CURE_SCHEMA = obj({ status: oneOf(FIX_STATUSES), committed: bool, artifact: str })
-const FINALIZE_SCHEMA = obj({ pushed: bool, head_sha: str, marker_updated: bool })
+const CURE_SCHEMA = obj({ status: oneOf(FIX_STATUSES), committed: bool, pushed: bool, head_sha: str, worktree_path: str, artifact: str })
+const FINALIZE_SCHEMA = obj({ marker_updated: bool })
 const STATUS_SCHEMA = obj({ state: oneOf(PR_STATES), head_sha: str, ci: oneOf(CI_STATES), merge_state: text('gh mergeStateStatus'), review_decision: oneOf(REVIEW_DECISIONS), unresolved_threads: int })
 const FIX_SCHEMA = obj({ status: oneOf(FIX_STATUSES), pushed: bool, worktree_path: str, note: str })
 const MERGE_SCHEMA = obj({ result: oneOf(MERGE_RESULTS), note: str })
 const STATE_SCHEMA = obj({ state: oneOf(PR_STATES) })
 const MARK_SCHEMA = obj({ results: list(obj({ pr: int, action: oneOf(MARK_ACTIONS), note: str })) })
+const CLEANUP_SCHEMA = obj({ removed: strs, note: str })
 
 // ---- Validators: the schema checks shape; code checks meaning ----
 // Each error is { kind, msg }. 'form' errors are mechanical, so a cheap model
@@ -380,7 +389,6 @@ function checkTarget(result) {
   if (result.status !== 'done') return []
   const errors = []
   if (!SHA_RE.test(result.head_sha.trim())) errors.push(substance('head_sha must be the commit SHA of the target branch'))
-  if (!absolute(result.worktree_path)) errors.push(substance('worktree_path must be the absolute path of your worktree'))
   return errors
 }
 
@@ -563,14 +571,19 @@ const prompt = (...parts) => [PREAMBLE, ...parts.filter(Boolean)].join('\n\n')
 const judgePrompt = (mode, ...parts) => `Judge mode: ${mode}\n\n${prompt(...parts)}`
 // The reviewer agent type returns blocked: missing-contract without this line.
 const reviewerPrompt = (...parts) => `Review mode: severity-report\n\n${prompt(...parts)}`
-// Agents never check out a PR's real branch: a run-scoped local branch stands in for it.
+// Agents never check out a PR's real branch: a run-scoped ref stands in for it.
 // That keeps the user's local branches and checkouts out of reach. runTag is set once the digest exists.
 let runTag = 'unset'
 const localOf = (branch) => `mmc/${runTag}/${branch}`
-const checkoutStep = (branch, worktreePath) => [
-  worktreePath ? `cd ${worktreePath} first.` : 'You are in a fresh isolated worktree.',
-  `Run git fetch origin && git checkout -B ${localOf(branch)} origin/${branch} && git branch --set-upstream-to=origin/${branch}.`,
-  `The local branch ${localOf(branch)} stands in for ${branch}. Never check out ${branch} itself. Push only with git push origin HEAD:${branch}, adding --force-with-lease=${branch}:<old remote sha> when history changes.`,
+// Each stage starts in its own fresh worktree. Git refuses a branch that another worktree has
+// checked out, so no stage holds a shared branch: read-only stages and most writers detach.
+const pinStep = (branch, sha) => `You are in a fresh isolated worktree. Run git fetch origin ${branch} && git checkout --detach ${sha}. Never check out a branch.`
+const writerStep = (branch, start, own) => [
+  'You are in a fresh isolated worktree. Edit only inside it.',
+  own
+    ? `Run git fetch origin ${branch} && git checkout -B ${own} ${start} && git branch --set-upstream-to=origin/${branch}. The local branch ${own} belongs to this stage alone and stands in for ${branch}.`
+    : `Run git fetch origin ${branch} && git checkout --detach ${start}. Commit on the detached HEAD.`,
+  `Never check out ${branch} itself. Push only with git push origin HEAD:${branch}, adding --force-with-lease=${branch}:<old remote sha> when history changes.`,
 ].join(' ')
 
 const indexPrompt = () => prompt(
@@ -638,35 +651,35 @@ const advisorPrompt = (stage, payload) => judgePrompt('advise',
   data('payload', payload),
 )
 
-const targetPrompt = (job, resumeFrom) => prompt(
-  `Build landing target ${job.target.id} on the run-scoped local branch ${localOf(job.target.branch)}. It stands in for ${job.target.branch}; never check out ${job.target.branch} itself. Use Bash and the Skill tool.`,
-  resumeFrom
-    ? (resumeFrom.worktree_path
-      ? `Resume in ${resumeFrom.worktree_path}: cd there first. Do not recreate it, reset it, or check out another branch. Continue from commit ${resumeFrom.checkpoint}.`
-      : `Resume in this fresh worktree: run git checkout ${localOf(job.target.branch)}. Continue from commit ${resumeFrom.checkpoint}.`)
-    : job.target.kind === 'existing'
-      ? `Start: git fetch origin && git checkout -B ${localOf(job.target.branch)} origin/${job.target.branch}.`
-      : `Start: git fetch origin && git checkout -B ${localOf(job.target.branch)} ${job.baseRef}.`,
-  `The base is ${job.baseRef}. When the branch does not start from it, rebase onto it. Resolve conflicts with /melt through the Skill tool. Return blocked when conflicts remain.`,
-  job.sources.length
-    ? 'Bring in the changes of the source PRs below. Cherry-pick the commits of each source (git log --reverse --format=%H origin/<source base>..origin/<source branch>), or merge it with --no-ff. Resolve conflicts as the brief and the tensions require.'
-    : 'This target brings in no other PR.',
-  'Apply the brief exactly. Change nothing outside it.',
-  'Run the repository quality gate (just check when the justfile defines check). Fix the failures that this work causes.',
-  'Commit with Conventional Commits after each step. Do not push, open a PR, comment, or touch any other branch.',
-  'Return done only when remaining is empty, with head_sha from git rev-parse HEAD and worktree_path from git rev-parse --show-toplevel. Return partial with checkpoint set to the last commit SHA when context runs low. Return blocked with a note when you cannot proceed.',
-  NO_CHAIN,
-  data('target', job.target),
-  data('sources', job.sources),
-  data('tensions', job.tensions),
-  data('criteria', job.criteria),
-  resumeFrom && data('resume_from', resumeFrom),
-)
+const targetPrompt = (job, resumeFrom) => {
+  const local = localOf(job.target.branch)
+  const start = resumeFrom ? resumeFrom.checkpoint : job.target.kind === 'existing' ? `origin/${job.target.branch}` : job.baseRef
+  return prompt(
+    `Build landing target ${job.target.id}. The run-scoped ref ${local} records your progress and stands in for ${job.target.branch}. Use Bash and the Skill tool.`,
+    `You are in a fresh isolated worktree. Start: git fetch origin && git checkout --detach ${start}.`,
+    `Keep HEAD detached: never check out ${local} or ${job.target.branch}. Run git update-ref refs/heads/${local} HEAD right after the checkout, after each commit, and before you return.`,
+    resumeFrom && `Continue the work from commit ${resumeFrom.checkpoint}. Do not redo the completed steps.`,
+    `The base is ${job.baseRef}. When the branch does not start from it, rebase onto it. Resolve conflicts with /melt through the Skill tool. Return blocked when conflicts remain.`,
+    job.sources.length
+      ? 'Bring in the changes of the source PRs below. Cherry-pick the commits of each source (git log --reverse --format=%H origin/<source base>..origin/<source branch>), or merge it with --no-ff. Resolve conflicts as the brief and the tensions require.'
+      : 'This target brings in no other PR.',
+    'Apply the brief exactly. Change nothing outside it.',
+    'Run the repository quality gate (just check when the justfile defines check). Fix the failures that this work causes.',
+    'Commit with Conventional Commits after each step. Do not push, open a PR, comment, or touch any other branch.',
+    'Return done only when remaining is empty, with head_sha from git rev-parse HEAD and worktree_path from git rev-parse --show-toplevel. Return partial with checkpoint set to the last commit SHA when context runs low. Return blocked with a note when you cannot proceed.',
+    NO_CHAIN,
+    data('target', job.target),
+    data('sources', job.sources),
+    data('tensions', job.tensions),
+    data('criteria', job.criteria),
+    resumeFrom && data('resume_from', resumeFrom),
+  )
+}
 
 const salvagePrompt = (target) => prompt(
   `Target ${target.id} ended without a result. Recover its durable state. Do not continue the work or change anything.`,
-  `Run git rev-parse --verify ${localOf(target.branch)} and git worktree list --porcelain. Return found=false when that local branch does not exist. Otherwise set checkpoint to its SHA, and set worktree_path to the worktree that has ${localOf(target.branch)} checked out, or to an empty string.`,
-  'Fill completed from git log of the branch. Leave remaining empty when you cannot tell.',
+  `Run git rev-parse --verify refs/heads/${localOf(target.branch)}. Return found=false when that ref does not exist. Otherwise set checkpoint to its SHA.`,
+  'Fill completed from git log of the ref. Leave remaining empty when you cannot tell.',
 )
 
 const integratePrompt = (refs, defaultBranch, round) => prompt(
@@ -687,7 +700,7 @@ const verifyPrompt = (ac, integration) => judgePrompt('verify',
 
 const publishPrompt = (jobs) => prompt(
   'Publish the landing targets. Use Bash. Never merge anything.',
-  'Work through the targets in the listed order. For each target, cd into its worktree_path first. Each target was built on its local_branch, which stands in for branch; never check out branch itself.',
+  'Work through the targets in the listed order from the current directory. Worktrees share refs, so each local_branch is visible here. Each target was built on its local_branch, which stands in for branch; never check out branch itself.',
   'Existing target: run git push --force-with-lease=<branch>:<expected_remote_sha> origin <local_branch>:refs/heads/<branch>. When base_branch differs from the current PR base, run gh pr edit <pr> --base <base_branch>. Never open a second PR for an existing target.',
   `New target: when gh pr list --head <branch> --state open shows a PR, report it and push nothing. Otherwise run git push origin <local_branch>:refs/heads/<branch>, then gh pr create --head <branch> --base <base_branch> --title <title> --body-file - fed by a quoted heredoc (<<'EOF'). Name each superseded PR in the body as Supersedes #<n>.`,
   'Push only the listed branches. Never use --force without a lease, --admin, or --no-verify.',
@@ -696,11 +709,11 @@ const publishPrompt = (jobs) => prompt(
   data('targets', jobs),
 )
 
-function agePrompt(m, worktreePath) {
+function agePrompt(m) {
   const full = `/age origin/${m.base}...HEAD --auto`
   return reviewerPrompt(
     `You are a read-only reviewer running the Age stage for PR #${m.number}.`,
-    checkoutStep(m.branch, worktreePath),
+    pinStep(m.branch, m.head_sha),
     `Last aged marker: sha=${JSON.stringify(m.aged_sha)}, patch=${JSON.stringify(m.aged_patch)}, dirty=${m.aged_dirty ? 1 : 0}. Decide the scope before you invoke /age:`,
     m.aged_dirty
       ? `The last age left medium+ findings (dirty=1). Do not skip and do not scope incrementally. Run ${full} through the Skill tool. Mode full.`
@@ -711,41 +724,48 @@ function agePrompt(m, worktreePath) {
           `4. Else run ${full} through the Skill tool. Mode full.`,
         ].join('\n'),
     `${NO_CHAIN} Do not invoke /cure, even when /age --auto documents that chain.`,
-    'Read the report. Set has_medium_plus_findings to true when any finding is medium or above. Set has_cheap_lows to true when any low finding has fix-cost-now: contained. Set worktree_path to the output of git rev-parse --show-toplevel.',
+    'Read the report. Set has_medium_plus_findings to true when any finding is medium or above. Set has_cheap_lows to true when any low finding has fix-cost-now: contained. Set artifact to the report path and worktree_path to the output of git rev-parse --show-toplevel.',
   )
 }
 
 const PREP_SCHEMA = obj({ worktree_path: str })
 const ageFanoutPrepPrompt = (m) => prompt(
   `Prepare a worktree for PR #${m.number}. Use Bash.`,
-  `Run git fetch origin ${m.branch} ${m.base} && git checkout -B ${localOf(m.branch)} origin/${m.branch}. Never check out ${m.branch} itself.`,
+  `Run git fetch origin ${m.branch} ${m.base} && git checkout --detach ${m.head_sha}. Never check out a branch.`,
   'Return worktree_path from git rev-parse --show-toplevel.',
 )
 
-const curePrompt = (m, worktreePath, age) => prompt(
-  `You are the Cure stage for PR #${m.number}. cd ${worktreePath} first (branch ${m.branch}).`,
-  `Run /cure ${age.slug} --auto --stake medium+ through the Skill tool. This floor selects every blocker, high, and medium finding in ${age.artifact}, plus every low with fix-cost-now: contained.`,
+// The age report stays in the reviewer's worktree. Cure copies that one file by absolute path and works in its own tree.
+const curePrompt = (m, age, report) => prompt(
+  `You are the Cure stage for PR #${m.number}.`,
+  writerStep(m.branch, m.head_sha),
+  `Copy the age report into this worktree first: mkdir -p .cheese/age && cp ${report} .cheese/age/${age.slug}.md. Return status blocked when the copy fails.`,
+  `Run /cure ${age.slug} --auto --stake medium+ through the Skill tool. This floor selects every blocker, high, and medium finding in .cheese/age/${age.slug}.md, plus every low with fix-cost-now: contained.`,
   'Never ask which findings to cure and never render a selection gate. Apply sprawling and structural findings too. Defer a finding only when it rests on a false premise or conflicts with another finding, and record why under ### Deferred.',
-  `Commit locally on the checked-out branch ${localOf(m.branch)}. Do not push; a later stage pushes. ${NO_CHAIN}`,
+  `Commit the fixes, then push them with git push origin HEAD:${m.branch}. Never force-push. When the push is rejected, return status blocked. ${NO_CHAIN}`,
+  'Set committed to true when you made commits, and pushed to true only when the push succeeded. Set head_sha to the output of git rev-parse HEAD and worktree_path to the output of git rev-parse --show-toplevel.',
 )
 
-const reagePrompt = (m, worktreePath, scope) => reviewerPrompt(
-  `You are a read-only reviewer running the Re-age stage for PR #${m.number} after a cure. cd ${worktreePath} first.`,
-  `Run /age ${scope} --auto through the Skill tool. HEAD now includes the cure commits.`,
+const reagePrompt = (m, scope, sha) => reviewerPrompt(
+  `You are a read-only reviewer running the Re-age stage for PR #${m.number} after a cure.`,
+  pinStep(m.branch, sha),
+  `Run /age ${scope} --auto through the Skill tool. HEAD is the cured commit.`,
   `${NO_CHAIN} Do not invoke /cure.`,
   'Read the report. Return mode incremental, the scope, slug, artifact, and worktree_path, whether any finding is medium or above, and whether any low finding has fix-cost-now: contained.',
 )
 
-const finalizePrompt = (m, worktreePath, dirty) => prompt(
-  `Finalize the review of PR #${m.number}. Use Bash. cd ${worktreePath} first (branch ${m.branch}).`,
-  `1. Run git fetch origin ${m.branch}. When HEAD has commits that origin/${m.branch} lacks, run git push origin HEAD:${m.branch}. Never force-push and never push another branch.`,
+// Finalize needs no worktree: it reads remote-tracking refs and writes only the PR comment.
+const finalizePrompt = (m, sha, dirty) => prompt(
+  `Finalize the review of PR #${m.number}. Use Bash. Change no files and push nothing.`,
+  `1. Run git fetch origin ${m.base} ${m.branch}. The reviewed commit is ${sha}.`,
   [
     '2. Upsert the aged marker comment on the PR:',
-    '   - sha: git rev-parse HEAD',
-    `   - patch: git diff origin/${m.base}...HEAD | git patch-id --stable | cut -d' ' -f1 (fetch origin/${m.base} first)`,
-    `   - body: <!-- ${MARKER_PREFIX} sha=<sha> patch=<patch> dirty=${dirty ? 1 : 0} --> followed by one line: move-my-cheese: aged at <short sha>${dirty ? ', medium+ findings remain' : ''}.`,
+    `   - sha: ${sha}`,
+    `   - patch: git diff origin/${m.base}...${sha} | git patch-id --stable | cut -d' ' -f1`,
+    `   - body: <!-- ${MARKER_PREFIX} sha=${sha} patch=<patch> dirty=${dirty ? 1 : 0} --> followed by one line: move-my-cheese: aged at ${sha.slice(0, 12)}${dirty ? ', medium+ findings remain' : ''}.`,
     `   - Find the comment that contains ${MARKER_PREFIX} through gh api repos/{owner}/{repo}/issues/${m.number}/comments. PATCH it when found, else post it with gh pr comment ${m.number}.`,
   ].join('\n'),
+  'Set marker_updated to true when the comment holds the new marker.',
 )
 
 const statusPrompt = (number) => prompt(
@@ -754,9 +774,9 @@ const statusPrompt = (number) => prompt(
   `Then run gh pr view ${number} --json state,headRefOid,mergeStateStatus,reviewDecision. Classify gh pr checks ${number} as pass, fail, pending, or none. Count review threads with isResolved=false through gh api graphql. Map an empty reviewDecision to NONE.`,
 )
 
-const affinagePrompt = (number, branch, worktreePath) => prompt(
+const affinagePrompt = (number, branch, own) => prompt(
   `Make PR #${number} ready to merge. Use Bash and the Skill tool.`,
-  checkoutStep(branch, worktreePath),
+  writerStep(branch, `origin/${branch}`, own),
   `Run /affinage ${number} --auto --no-age --stake medium+ --plate through the Skill tool. It grades review threads and CI failures, cures what it accepts, replies, and publishes through /plate.`,
   'Never ask which findings to cure. The medium+ floor selects every blocker, high, and medium finding plus every low with fix-cost-now: contained. A cure selection is never a human decision.',
   'When the branch is behind its base or conflicts with it, let /affinage resolve that through /melt and /plate.',
@@ -764,9 +784,9 @@ const affinagePrompt = (number, branch, worktreePath) => prompt(
   NO_CHAIN,
 )
 
-const restackPrompt = (number, branch, parentBranch, defaultBranch, worktreePath) => prompt(
+const restackPrompt = (number, branch, parentBranch, defaultBranch) => prompt(
   `The parent of PR #${number} has merged. Move #${number} onto ${defaultBranch}. Use Bash and the Skill tool.`,
-  checkoutStep(branch, worktreePath),
+  writerStep(branch, `origin/${branch}`),
   `Record LEASE=$(git rev-parse origin/${branch}). Run gh pr edit ${number} --base ${defaultBranch}. Then run git rebase --onto origin/${defaultBranch} origin/${parentBranch}, so only this PR's own commits move. Resolve conflicts with /melt through the Skill tool. Push with git push --force-with-lease=${branch}:$LEASE origin HEAD:${branch}.`,
   'Never merge or close a PR. Return blocked with a note when conflicts remain. Set worktree_path to the output of git rev-parse --show-toplevel.',
   NO_CHAIN,
@@ -792,6 +812,14 @@ const markPrompt = (items, close) => prompt(
     : `For each PR: post its comment with gh pr comment <pr> --body-file - fed by a quoted heredoc (<<'EOF'), never with --body. Then convert it to a draft with gh pr ready <pr> --undo.`,
   'Return one result per PR. Use skipped with a note when a command fails.',
   data('prs', items),
+)
+
+const cleanupPrompt = (paths) => prompt(
+  'Remove the scratch worktrees and local branches of this finished run. Use Bash. Never touch the remote. Never remove the main worktree or the current directory.',
+  `Run git worktree list --porcelain. Remove each path in the list below that it shows, and each worktree whose branch is under refs/heads/mmc/${runTag}/, with git worktree remove --force <path>. Skip every other worktree.`,
+  `Then delete the run refs: git for-each-ref --format='%(refname)' refs/heads/mmc/${runTag}/ | while read -r ref; do git update-ref -d "$ref"; done. Then run git worktree prune.`,
+  'Return the removed paths. Put each skipped path and its reason in note.',
+  data('worktrees', paths),
 )
 
 const redoPrompt = (original, errors) => `${original}\n\nYour previous answer failed these checks. Fix each one.\n${data('errors', errors.map((e) => e.msg))}`
@@ -835,28 +863,31 @@ async function salvage(target) {
   const found = await agent(salvagePrompt(target),
     { label: `salvage:${target.id}`, phase: 'Assemble', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA })
   return found && found.found && !blank(found.checkpoint)
-    ? { completed: found.completed, remaining: found.remaining, checkpoint: found.checkpoint.trim(), worktree_path: absolute(found.worktree_path) ? found.worktree_path.trim() : '' }
+    ? { completed: found.completed, remaining: found.remaining, checkpoint: found.checkpoint.trim() }
     : null
 }
 
+// Every round, the first included, starts in a fresh worktree; the run-scoped ref carries the work between rounds.
 async function buildTarget(job) {
   const id = job.target.id
-  const opts = { phase: 'Assemble', model: 'sonnet', schema: TARGET_SCHEMA }
-  let result = await agent(targetPrompt(job, null), { ...opts, label: `target:${id}`, isolation: 'worktree' })
+  const opts = { phase: 'Assemble', model: 'sonnet', schema: TARGET_SCHEMA, isolation: 'worktree' }
+  let result = await agent(targetPrompt(job, null), { ...opts, label: `target:${id}` })
   let lastCheckpoint = null
   for (let round = 1; ; round++) {
+    if (result) noteWorktree(result.worktree_path)
     const state = normalizeTask(result)
-    if (state.status === 'done') return { id, status: 'done', local: true, head_sha: state.head_sha.trim(), worktree_path: state.worktree_path.trim() }
+    if (state.status === 'done') return { id, status: 'done', local: true, head_sha: state.head_sha.trim() }
     if (state.status === 'blocked') return { id, status: 'blocked', reason: state.note }
     if (round > LIMITS.continuations) return { id, status: 'exhausted', reason: `no done result after ${LIMITS.continuations} continuations` }
     const resumeFrom = state.status === 'partial'
-      ? { completed: state.completed, remaining: state.remaining, checkpoint: state.checkpoint.trim(), worktree_path: absolute(state.worktree_path) ? state.worktree_path.trim() : '' }
+      ? { completed: state.completed, remaining: state.remaining, checkpoint: state.checkpoint.trim() }
       : await salvage(job.target)
-    if (!resumeFrom) return { id, status: 'lost', reason: 'no result and no local branch to resume from' }
+    if (!resumeFrom) return { id, status: 'lost', reason: 'no result and no run-scoped ref to resume from' }
+    if (!SHA_RE.test(resumeFrom.checkpoint)) return { id, status: 'lost', reason: 'the checkpoint is not a commit SHA' }
     if (resumeFrom.checkpoint === lastCheckpoint) return { id, status: 'stalled', reason: `no new commit since ${lastCheckpoint}` }
     lastCheckpoint = resumeFrom.checkpoint
     log(`${id}: resuming from ${lastCheckpoint} (continuation ${round})`)
-    result = await agent(targetPrompt(job, resumeFrom), { ...opts, label: `target:${id}:c${round}`, ...(resumeFrom.worktree_path ? {} : { isolation: 'worktree' }) })
+    result = await agent(targetPrompt(job, resumeFrom), { ...opts, label: `target:${id}:c${round}` })
   }
 }
 
@@ -868,6 +899,7 @@ async function integrateAndVerify(round, refs) {
     (r) => checkIntegrate(r, ids))
   if (!integrated.value) return { ok: false, reason: `integration failed: ${errorText(integrated.errors)}`, verdicts: [] }
   const integration = integrated.value
+  noteWorktree(integration.worktree_path)
   if (integration.status !== 'done') return { ok: false, reason: 'integration blocked', verdicts: [] }
   if (integration.conflicted.length) return { ok: false, reason: `targets conflict when combined: ${integration.conflicted.join(', ')}`, verdicts: [] }
   // Judges run one after another, each in its own worktree at the pinned integration commit.
@@ -888,7 +920,7 @@ async function integrateAndVerify(round, refs) {
 }
 
 // ---- Poll: status, then /affinage when work remains; bounded, with a stall guard ----
-async function pollUntilReady(id, number, branch, prefix, phaseName) {
+async function pollUntilReady(number, branch, prefix, phaseName) {
   let before = null
   let last = null
   for (let round = 1; round <= LIMITS.pollRounds; round++) {
@@ -901,11 +933,12 @@ async function pollUntilReady(id, number, branch, prefix, phaseName) {
     const print = statusFingerprint(status)
     if (print === before) return { verdict: 'stalled', reason: '/affinage made no progress since the last round', status }
     before = print
-    const wt = worktrees.get(id) || ''
-    const fix = await agent(affinagePrompt(number, branch, wt),
-      { label: `${prefix}:affinage:${round}`, phase: phaseName, model: 'opus', schema: FIX_SCHEMA, ...(wt ? {} : { isolation: 'worktree' }) })
+    // A branch of its own per round: an earlier round's worktree may still hold its branch.
+    const own = `${localOf(branch)}--${phaseName.toLowerCase()}-${round}`
+    const fix = await agent(affinagePrompt(number, branch, own),
+      { label: `${prefix}:affinage:${round}`, phase: phaseName, model: 'opus', schema: FIX_SCHEMA, isolation: 'worktree' })
     if (!fix) return { verdict: 'failed', reason: '/affinage agent returned no output', status }
-    if (absolute(fix.worktree_path)) worktrees.set(id, fix.worktree_path.trim())
+    noteWorktree(fix.worktree_path)
     if (fix.status === 'blocked') return { verdict: 'needs-human', reason: fix.note, status }
   }
   return { verdict: 'exhausted', reason: `not ready after ${LIMITS.pollRounds} poll rounds`, status: last }
@@ -922,14 +955,11 @@ function markerFor(t) {
   }
 }
 
-async function runAgeFanout(id, m) {
-  let wt = worktrees.get(id) || ''
-  if (!wt) {
-    const prep = await agent(ageFanoutPrepPrompt(m), { label: `age-fanout-prep:${m.number}`, phase: 'Review', model: 'haiku', effort: 'low', isolation: 'worktree', schema: PREP_SCHEMA })
-    if (!prep || !absolute(prep.worktree_path)) throw new Error('age-fanout prep returned no worktree')
-    wt = prep.worktree_path.trim()
-    worktrees.set(id, wt)
-  }
+async function runAgeFanout(m) {
+  const prep = await agent(ageFanoutPrepPrompt(m), { label: `age-fanout-prep:${m.number}`, phase: 'Review', model: 'haiku', effort: 'low', isolation: 'worktree', schema: PREP_SCHEMA })
+  if (!prep || !absolute(prep.worktree_path)) throw new Error('age-fanout prep returned no worktree')
+  const wt = prep.worktree_path.trim()
+  noteWorktree(wt)
   const scope = `origin/${m.base}...HEAD`
   const slug = `pr-${m.number}`
   const fan = await workflow('age-fanout', { worktree_path: wt, range: scope, slug })
@@ -945,48 +975,57 @@ async function ageStage(t) {
   }
   if (wantsAgeFanout(m)) {
     try {
-      return { t, m, age: await runAgeFanout(t.id, m) }
+      return { t, m, age: await runAgeFanout(m) }
     } catch (e) {
       log(`#${m.number}: age-fanout unavailable (${e.message}); falling back to one reviewer.`)
     }
   }
-  const wt = worktrees.get(t.id) || ''
-  const raw = await agent(agePrompt(m, wt), { label: `age:${m.number}`, phase: 'Review', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA, ...(wt ? {} : { isolation: 'worktree' }) })
+  const raw = await agent(agePrompt(m), { label: `age:${m.number}`, phase: 'Review', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA, isolation: 'worktree' })
   if (!raw) return { t, m, failure: 'age agent returned no output' }
   // A skipped review has no findings by definition; a real review must name its scope.
   const age = raw.mode === 'skipped-unchanged' ? { ...raw, has_medium_plus_findings: false, has_cheap_lows: false } : raw
   if (age.mode !== 'skipped-unchanged' && blank(age.scope)) return { t, m, failure: 'age agent returned no review scope' }
-  if (absolute(age.worktree_path)) worktrees.set(t.id, age.worktree_path.trim())
+  noteWorktree(age.worktree_path)
   return { t, m, age }
+}
+
+// The age report stays in the reviewer's worktree; a writer copies that file and never works there.
+function reportPath(age) {
+  const artifact = age.artifact.trim()
+  if (!artifact) return ''
+  const path = artifact.startsWith('/') ? artifact : absolute(age.worktree_path) ? `${age.worktree_path.trim().replace(/\/+$/, '')}/${artifact}` : ''
+  return SAFE_PATH_RE.test(path) && !path.split('/').includes('..') ? path : ''
 }
 
 async function cureStage(r) {
   // Cure the medium+ floor, which includes contained lows, without asking.
   if (r.failure || !(r.age.has_medium_plus_findings || r.age.has_cheap_lows)) return r
-  const wt = worktrees.get(r.t.id) || r.age.worktree_path
-  if (!absolute(wt)) return { ...r, failure: 'no review worktree for cure' }
-  const cure = await agent(curePrompt(r.m, wt, r.age), { label: `cure:${r.m.number}`, phase: 'Review', model: 'sonnet', schema: CURE_SCHEMA })
+  const report = reportPath(r.age)
+  if (!report) return { ...r, failure: 'no readable age report path for cure' }
+  const cure = await agent(curePrompt(r.m, r.age, report), { label: `cure:${r.m.number}`, phase: 'Review', model: 'sonnet', schema: CURE_SCHEMA, isolation: 'worktree' })
   if (!cure) return { ...r, failure: 'cure agent returned no output' }
+  noteWorktree(cure.worktree_path)
   if (!cure.committed) return { ...r, cure }
-  const reage = await agent(reagePrompt(r.m, wt, r.age.scope), { label: `reage:${r.m.number}`, phase: 'Review', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA })
-  return reage ? { ...r, cure, reage } : { ...r, cure, failure: 're-age agent returned no output' }
+  // Cure commits must reach the remote, or the re-age and the poll would judge a head without the fix.
+  if (!cure.pushed || !FULL_SHA_RE.test(cure.head_sha.trim())) return { ...r, cure, failure: 'cure commits were not pushed' }
+  const reage = await agent(reagePrompt(r.m, r.age.scope, cure.head_sha.trim()), { label: `reage:${r.m.number}`, phase: 'Review', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA, isolation: 'worktree' })
+  if (!reage) return { ...r, cure, failure: 're-age agent returned no output' }
+  noteWorktree(reage.worktree_path)
+  return { ...r, cure, reage }
 }
 
 async function finalizeStage(r) {
   if (r.failure || r.stamped) return r
-  const wt = worktrees.get(r.t.id) || r.age.worktree_path
-  if (!absolute(wt)) return { ...r, failure: 'no review worktree to finalize from' }
-  const finalize = await agent(finalizePrompt(r.m, wt, isDirtyChain(r)), { label: `finalize:${r.m.number}`, phase: 'Review', model: 'haiku', effort: 'low', schema: FINALIZE_SCHEMA })
+  const sha = r.cure && r.cure.committed ? r.cure.head_sha.trim() : r.m.head_sha
+  const finalize = await agent(finalizePrompt(r.m, sha, isDirtyChain(r)), { label: `finalize:${r.m.number}`, phase: 'Review', model: 'haiku', effort: 'low', schema: FINALIZE_SCHEMA })
   if (!finalize) return { ...r, failure: 'finalize agent returned no output' }
-  // Cure commits must reach the remote, or the poll would judge a head without the fix.
-  if (r.cure && r.cure.committed && (!finalize.pushed || !FULL_SHA_RE.test(finalize.head_sha.trim()))) return { ...r, finalize, failure: 'cure commits were not pushed' }
   return { ...r, finalize }
 }
 
 async function pollStage(r) {
   if (r.failure) return { ...r, verdict: 'failed', reason: r.failure }
   if (isDirtyChain(r)) return { ...r, verdict: 'dirty', reason: 'medium+ findings remain after cure' }
-  return { ...r, ...(await pollUntilReady(r.t.id, r.m.number, r.t.branch, `review:${r.m.number}`, 'Review')) }
+  return { ...r, ...(await pollUntilReady(r.m.number, r.t.branch, `review:${r.m.number}`, 'Review')) }
 }
 
 async function markPrs(items, close) {
@@ -1005,12 +1044,11 @@ async function landAll() {
       continue
     }
     if (t.base !== idx.default_branch) {
-      const wt = worktrees.get(id) || ''
-      const moved = await agent(restackPrompt(n, t.branch, targetsById.get(t.base).branch, idx.default_branch, wt), { label: `restack:${n}`, phase: 'Land', model: 'sonnet', schema: FIX_SCHEMA, ...(wt ? {} : { isolation: 'worktree' }) })
+      const moved = await agent(restackPrompt(n, t.branch, targetsById.get(t.base).branch, idx.default_branch), { label: `restack:${n}`, phase: 'Land', model: 'sonnet', schema: FIX_SCHEMA, isolation: 'worktree' })
+      if (moved) noteWorktree(moved.worktree_path)
       if (!moved || moved.status !== 'ok') return stop(id, `restack failed: ${moved ? moved.note : 'no output'}`)
-      if (absolute(moved.worktree_path)) worktrees.set(id, moved.worktree_path.trim())
     }
-    const poll = await pollUntilReady(id, n, t.branch, `land:${n}`, 'Land')
+    const poll = await pollUntilReady(n, t.branch, `land:${n}`, 'Land')
     if (poll.verdict !== 'ready') return stop(id, `not ready before merge: ${poll.verdict}${poll.reason ? ` (${poll.reason})` : ''}`)
     const sha = poll.status.head_sha.trim()
     if (!FULL_SHA_RE.test(sha)) return stop(id, 'status returned no full head SHA')
@@ -1261,7 +1299,12 @@ const waveOrder = waves(plan.targets).order
 const order = waveOrder.flat()
 const baseBranchOf = (t) => (t.base === idx.default_branch ? t.base : targetsById.get(t.base).branch)
 const outcomes = new Map()
-const worktrees = new Map()
+// Cleanup hints only: no stage works in a directory that another agent returned.
+const scratchWorktrees = new Set()
+function noteWorktree(path) {
+  const p = typeof path === 'string' ? path.trim() : ''
+  if (SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')) scratchWorktrees.add(p)
+}
 const published = new Map()
 const reviewById = new Map()
 const landed = new Map()
@@ -1308,7 +1351,6 @@ for (const wave of waveOrder) {
   const results = await parallel(runnable.map((t) => () => buildTarget(jobOf(t))))
   results.forEach((r, i) => outcomes.set(runnable[i].id, r || { id: runnable[i].id, status: 'lost', reason: 'builder threw' }))
 }
-for (const o of outcomes.values()) if (rebuilt(o.id)) worktrees.set(o.id, o.worktree_path)
 const notBuilt = order.filter((id) => outcomes.get(id).status !== 'done')
 if (notBuilt.length) return report('fail', `targets not built: ${notBuilt.map((id) => `${id} (${outcomes.get(id).status})`).join(', ')}; nothing was pushed`)
 
@@ -1337,7 +1379,7 @@ const pushJobs = order.filter(rebuilt).map((id) => {
   const pr = t.kind === 'existing' ? byNumber.get(t.pr) : null
   return {
     target: id, kind: t.kind, pr: pr ? pr.number : 0, branch: t.branch, local_branch: localOf(t.branch), base_branch: baseBranchOf(t), title: t.title,
-    worktree_path: worktrees.get(id) || '', expected_remote_sha: pr ? pr.head_sha : '',
+    expected_remote_sha: pr ? pr.head_sha : '',
     supersedes: plan.dispositions.filter((d) => d.action === 'supersede' && d.target === id).map((d) => d.pr),
   }
 })
@@ -1407,4 +1449,11 @@ phase('Report')
 const finalStatus = LAND
   ? (order.every((id) => landed.get(id)?.status === 'merged') ? 'landed' : 'partial')
   : (allReady ? 'ready' : 'partial')
+// The runtime removes only unchanged isolated worktrees. A successful run removes the rest and its run refs;
+// a failed run keeps them for inspection and salvage.
+if (['landed', 'ready'].includes(finalStatus) && (scratchWorktrees.size || order.some(rebuilt))) {
+  const swept = await agent(cleanupPrompt([...scratchWorktrees]), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA })
+  if (!swept) log(`cleanup returned no output; remove the mmc/${runTag}/ refs and these worktrees by hand: ${[...scratchWorktrees].join(', ') || 'none recorded'}`)
+  else if (swept.note) log(`cleanup: ${swept.note}`)
+}
 return report(finalStatus, landNote)
