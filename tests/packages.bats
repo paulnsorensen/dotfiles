@@ -2321,6 +2321,8 @@ MOCKCARGO
 
     grep -qx "brew uninstall crush" "$BREW_LOG"
     grep -q "^mise uninstall --yes --all aqua:charmbracelet/crush config=" "$MISE_LOG"
+    # OpenCode v2 moved from the aqua backend to npm:@opencode/cli; the old aqua install is retired.
+    grep -q "^mise uninstall --yes --all aqua:anomalyco/opencode config=" "$MISE_LOG"
     [[ ! -e "$TEST_HOME/.local/bin/crush" ]]
 }
 
@@ -2335,7 +2337,7 @@ MOCKCARGO
     assert_output_contains "Removing Homebrew opencode (now native-managed)"
 
     grep -qx "brew uninstall opencode" "$BREW_LOG"
-    run grep -q "uninstall.*aqua:anomalyco/opencode" "$MISE_LOG"
+    run grep -q "uninstall.*npm:@opencode/cli" "$MISE_LOG"
     assert_failure
     [[ ! -e "$TEST_HOME/.local/bin/opencode" ]]
 }

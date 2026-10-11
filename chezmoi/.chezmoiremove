@@ -37,3 +37,6 @@ local-llm/configs/lean.json
 # Retired 2026-09-29: the milknado-fleet workflow and its worker MCP file. The
 # ~/.claude/workflows copies leave through exact_workflows; this target does not.
 .config/milknado/worker-mcp.json
+
+# OpenCode v2 replaced tui.json with cli.json (dot_config/opencode/cli.json).
+.config/opencode/tui.json

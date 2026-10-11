@@ -35,14 +35,15 @@ JSON
     grep -qx 'preserved runtime_key' "$DOTFILES_STATE_DIR/harness-drift/opencode-config"
 }
 
-@test "opencode config deletes the retired tools map" {
+@test "opencode config deletes retired v1 keys" {
     run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
-{"tools":{"read":false}}
+{"tools":{"read":false},"lsp":true,"compaction":{"auto":true,"prune":true},"permission":{"doom_loop":"ask"},"mcp":{"tilth":{"type":"local","command":["tilth"]}}}
 JSON
     [ "$status" -eq 0 ]
     [[ "$stderr" != *"WARNING"* ]]
-    run jq -e '.tools' <<<"$output"
-    [ "$status" -ne 0 ]
+    jq -e 'has("tools") or has("lsp") or (.compaction | has("prune")) or (.permission | has("doom_loop")) or (.mcp | has("tilth")) | not' <<<"$output"
+    [ "$(jq -r '.compaction.auto' <<<"$output")" = "true" ]
+    [ "$(jq -r '.mcp.servers.tilth.codemode' <<<"$output")" = "false" ]
 }
 
 @test "opencode config rejects a corrupt live file" {
@@ -55,21 +56,45 @@ JSON
     local config
     config=$(yq -o=json '.opencode.config' "$REGISTRY")
 
-    [ "$(jq -c '.mcp.tilth' <<<"$config")" = '{"type":"local","command":["tilth","--mcp","--edit"]}' ]
+    [ "$(jq -c '.mcp.servers.tilth' <<<"$config")" = '{"type":"local","command":["tilth","--mcp","--edit"],"codemode":false}' ]
+    [ "$(jq -r '.mcp.tilth' <<<"$config")" = "null" ]
     [ "$(jq -r '.mcp.hallouminate.command[0]' <<<"$config")" = "hallouminate" ]
     [ "$(jq -r '.mcp.milknado.command[0]' <<<"$config")" = "uvx" ]
     [ "$(jq -r '.mcp.context7.command[0]' <<<"$config")" = "/usr/local/libexec/dotfiles/agent-secret-proxy" ]
     [ "$(jq -r '.mcp.tavily.command[0]' <<<"$config")" = "/usr/local/libexec/dotfiles/agent-secret-proxy" ]
-    run jq -e '[.mcp[] | has("environment")] | any' <<<"$config"
+    run jq -e '[.mcp | .. | objects | has("environment")] | any' <<<"$config"
     [ "$status" -ne 0 ]
 }
 
-@test "opencode config appends the preamble and enables LSP and formatters" {
+# Runs OpenCode against the sandboxed home. `debug config` starts a background
+# service, so callers set a private port and stop the service afterwards.
+opencode_in_test_home() {
+    (cd "$TEST_HOME" && HOME="$TEST_HOME" XDG_CONFIG_HOME="$TEST_HOME/.config" timeout 120 opencode "$@")
+}
+
+@test "OpenCode v2 keeps Tilth out of Code Mode after it normalizes the config" {
+    command -v opencode >/dev/null 2>&1 || skip "opencode not installed"
+    command -v python3 >/dev/null 2>&1 || skip "python3 not installed"
+    [[ "$(opencode --version 2>/dev/null)" == *"v2."* ]] || skip "opencode v2 not installed"
+    mkdir -p "$TEST_HOME/.config/opencode"
+    env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null > "$TEST_HOME/.config/opencode/opencode.json"
+    local port
+    port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+    opencode_in_test_home service set port "$port"
+
+    run --separate-stderr opencode_in_test_home debug config
+    local config_status=$status config_output=$output
+    opencode_in_test_home service stop >/dev/null 2>&1 || true
+    [ "$config_status" -eq 0 ]
+    jq -e '[.[] | select(.type == "document") | .info.mcp.servers.tilth.codemode] == [false]' <<<"$config_output"
+}
+
+@test "opencode config appends the preamble and enables formatters without v1 LSP" {
     local config
     config=$(yq -o=json '.opencode.config' "$REGISTRY")
 
     [ "$(jq -c '.instructions' <<<"$config")" = '["~/.config/opencode/preamble.md"]' ]
-    [ "$(jq -r '.lsp' <<<"$config")" = "true" ]
+    [ "$(jq -r '.lsp' <<<"$config")" = "null" ]
     [ "$(jq -r '.formatter' <<<"$config")" = "true" ]
     [ "$(jq -r '.autoupdate' <<<"$config")" = "false" ]
 }
@@ -108,6 +133,7 @@ JSON
     mkdir -p "$destination/.config/opencode" "$destination/.local/share/opencode"
     printf 'runtime state\n' > "$destination/.local/share/opencode/auth.json"
     printf '{"dependencies":{}}\n' > "$destination/.config/opencode/package.json"
+    printf '{"theme":"opencode"}\n' > "$destination/.config/opencode/tui.json"
     cat > "$cfg" <<TOML
 sourceDir = "$CZ_SRC"
 destDir = "$destination"
@@ -122,15 +148,18 @@ TOML
     [ "$status" -eq 0 ]
     [ "$(jq -S 'del(.agent)' "$destination/.config/opencode/opencode.json")" = "$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S .)" ]
     [ "$(jq '.agent | length' "$destination/.config/opencode/opencode.json")" -eq 19 ]
-    cmp -s "$CZ_SRC/dot_config/opencode/tui.json" "$destination/.config/opencode/tui.json"
+    cmp -s "$CZ_SRC/dot_config/opencode/cli.json" "$destination/.config/opencode/cli.json"
+    [ ! -e "$destination/.config/opencode/tui.json" ]
     cmp -s "$CZ_SRC/dot_config/opencode/themes/chocolate-donut.json" "$destination/.config/opencode/themes/chocolate-donut.json"
     cmp -s "$CZ_SRC/dot_config/opencode/themes/chocolate-donut-2.json" "$destination/.config/opencode/themes/chocolate-donut-2.json"
     [ "$(cat "$destination/.local/share/opencode/auth.json")" = "runtime state" ]
     [ -f "$destination/.config/opencode/package.json" ]
 }
 
-@test "opencode tui uses the chocolate-donut-2 theme" {
-    [ "$(jq -r '.theme' "$CZ_SRC/dot_config/opencode/tui.json")" = "chocolate-donut-2" ]
+@test "opencode cli config uses the chocolate-donut-2 theme and v2 keybind" {
+    [ "$(jq -r '."$schema"' "$CZ_SRC/dot_config/opencode/cli.json")" = "https://opencode.ai/v2/cli.json" ]
+    [ "$(jq -r '.theme.name' "$CZ_SRC/dot_config/opencode/cli.json")" = "chocolate-donut-2" ]
+    [ "$(jq -r '.keybinds["prompt.editor"]' "$CZ_SRC/dot_config/opencode/cli.json")" = "ctrl+o" ]
     # Every theme slot names a palette def, so a renamed def cannot dangle.
     run jq -e '(.defs | keys) as $defs | [.theme[] | strings | select(IN($defs[]) | not)] == []' \
         "$CZ_SRC/dot_config/opencode/themes/chocolate-donut-2.json"
@@ -140,6 +169,8 @@ TOML
     [ "$(jq -r '.defs.fg' "$CZ_SRC/dot_config/opencode/themes/chocolate-donut-2.json")" = "#$(yq -r '.palette.base05' "$REAL_DOTFILES_DIR/theme/schemes/chocolate-donut-2.yaml")" ]
 }
 
-@test "opencode CLI install is pinned through mise" {
-    grep -Eq '^"aqua:anomalyco/opencode" = "v[0-9]+\.[0-9]+\.[0-9]+"$' "$CZ_SRC/dot_config/mise/config.toml"
+@test "opencode CLI install is pinned through the mise npm backend" {
+    grep -Eq '^"npm:@opencode/cli" = \{ version = "[0-9]+\.[0-9]+\.[0-9]+", allow_builds = \["@opencode/cli"\] \}$' "$CZ_SRC/dot_config/mise/config.toml"
+    run grep -F 'aqua:anomalyco/opencode' "$CZ_SRC/dot_config/mise/config.toml"
+    [ "$status" -ne 0 ]
 }
