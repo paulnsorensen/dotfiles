@@ -242,6 +242,12 @@ STUB
 exit 0
 STUB
     chmod +x "$stub_bin/zsh"
+    # Keep the host broker inventory fixed across both doctor runs.
+    cat > "$stub_bin/ps" <<'STUB'
+#!/bin/bash
+exit 0
+STUB
+    chmod +x "$stub_bin/ps"
 
     run dots doctor
     local before=0
