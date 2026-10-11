@@ -1,0 +1,14 @@
+#!/bin/bash
+# run_onchange — reload systemd user units after the t3code.service drop-in
+# changes. Do not restart the service here: a restart stops running T3 threads.
+# The new settings apply at the next service start.
+#
+# drop-in hash: {{ include "dot_config/systemd/user/t3code.service.d/telemetry.conf" | sha256sum }}
+
+set -euo pipefail
+{{ if eq .chezmoi.os "linux" }}
+if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+    systemctl --user daemon-reload ||
+        echo "⚠ could not reload systemd user units; run: systemctl --user daemon-reload" >&2
+fi
+{{ end }}
