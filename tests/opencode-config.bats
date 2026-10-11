@@ -114,7 +114,41 @@ JSON
 # Runs OpenCode against the sandboxed home. `debug config` starts a background
 # service, so callers set a private port and stop the service afterwards.
 opencode_in_test_home() {
-    (cd "$TEST_HOME" && HOME="$TEST_HOME" XDG_CONFIG_HOME="$TEST_HOME/.config" timeout 120 opencode "$@")
+    (cd "$TEST_HOME" && HOME="$TEST_HOME" XDG_CONFIG_HOME="$TEST_HOME/.config" python3 -c 'import subprocess, sys; sys.exit(subprocess.run(sys.argv[1:], timeout=120).returncode)' opencode "$@")
+}
+
+@test "OpenCode test wrapper avoids GNU timeout and preserves status and sandbox" {
+    mkdir -p "$TEST_HOME/bin"
+    cat > "$TEST_HOME/bin/timeout" <<'MOCKTIMEOUT'
+#!/bin/sh
+exit 99
+MOCKTIMEOUT
+    cat > "$TEST_HOME/bin/opencode" <<'MOCKOPENCODE'
+#!/bin/sh
+printf '%s|%s|%s\n' "$HOME" "$XDG_CONFIG_HOME" "$*"
+exit 7
+MOCKOPENCODE
+    chmod +x "$TEST_HOME/bin/timeout" "$TEST_HOME/bin/opencode"
+
+    PATH="$TEST_HOME/bin:$PATH" run opencode_in_test_home debug config
+    [ "$status" -eq 7 ]
+    [ "$output" = "$TEST_HOME|$TEST_HOME/.config|debug config" ]
+}
+
+assert_tilth_codemode_disabled() {
+    jq -e '[.[] | select(.type == "document") | .info.mcp.servers.tilth | select(. != null) | .codemode] == [false]'
+}
+
+@test "Tilth Code Mode assertion ignores empty records but rejects absent or enabled settings" {
+    run assert_tilth_codemode_disabled <<<'[{"type":"document","info":{"mcp":{"servers":{"tilth":{"codemode":false}}}}},{"type":"document","info":{}}]'
+    assert_success
+
+    run assert_tilth_codemode_disabled <<<'[{"type":"document","info":{}}]'
+    [ "$status" -ne 0 ]
+    run assert_tilth_codemode_disabled <<<'[{"type":"document","info":{"mcp":{"servers":{"tilth":{"codemode":true}}}}}]'
+    [ "$status" -ne 0 ]
+    run assert_tilth_codemode_disabled <<<'[{"type":"document","info":{"mcp":{"servers":{"tilth":{}}}}}]'
+    [ "$status" -ne 0 ]
 }
 
 @test "OpenCode v2 keeps Tilth out of Code Mode after it normalizes the config" {
@@ -131,7 +165,7 @@ opencode_in_test_home() {
     local config_status=$status config_output=$output
     opencode_in_test_home service stop >/dev/null 2>&1 || true
     [ "$config_status" -eq 0 ]
-    jq -e '[.[] | select(.type == "document") | .info.mcp.servers.tilth.codemode] == [false]' <<<"$config_output"
+    assert_tilth_codemode_disabled <<<"$config_output"
 }
 
 @test "opencode config appends the preamble and enables formatters without v1 LSP" {

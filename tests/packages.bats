@@ -1656,7 +1656,7 @@ YAML
     run_sync
     assert_success
     ! grep -q "claude.ai/install.sh" "$CURL_LOG"
-    ! grep -q "codex" "$CURL_LOG"
+    ! grep -Eq 'https?://[^[:space:]]*codex' "$CURL_LOG"
     [[ ! -f "$CLAUDE_LOG" ]] || ! grep -q "update" "$CLAUDE_LOG"
     [[ ! -f "$CODEX_LOG" ]] || ! grep -q "update" "$CODEX_LOG"
 }
@@ -1671,7 +1671,9 @@ YAML
     PATH="$MOCK_BIN:${clean_path%:}" run bash "$SYNC_SCRIPT"
     assert_success
 
-    [[ ! -f "$CURL_LOG" ]] || ! grep -q "codex" "$CURL_LOG"
+    printf 'curl -L -o %s https://example.invalid/omp\n' "$TEST_HOME/codex-download" >> "$CURL_LOG"
+    ! grep -Eq 'https?://[^[:space:]]*codex' "$CURL_LOG"
+    grep -Eq 'https?://[^[:space:]]*codex' <<<"curl https://example.invalid/codex/install.sh"
 }
 
 @test "migration: lingering brew claude-code cask and omp formula are uninstalled" {
