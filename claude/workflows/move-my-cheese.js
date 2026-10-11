@@ -169,7 +169,7 @@ const SALVAGE_SCHEMA = obj({ found: bool, checkpoint: str, worktree_path: str, c
 const INTEGRATE_SCHEMA = obj({ status: oneOf(INTEGRATE_STATUSES), worktree_path: text('Absolute path of the integration worktree'), head: text('Commit SHA of the integration HEAD'), merged: strs, conflicted: strs })
 const VERDICT_SCHEMA = obj({ criterion: str, passes: bool, evidence: text('Command run and its observed result') })
 const PUBLISH_SCHEMA = obj({ results: list(obj({ target: str, pr_number: int, url: str, head_sha: str, changed_files: int, lines_changed: int })) })
-const AGE_SCHEMA = obj({ mode: oneOf(AGE_MODES), scope: text('The exact ref range reviewed, empty when skipped'), slug: text('The /age handoff slug, empty when skipped'), artifact: str, worktree_path: str, has_medium_plus_findings: bool })
+const AGE_SCHEMA = obj({ mode: oneOf(AGE_MODES), scope: text('The exact ref range reviewed, empty when skipped'), slug: text('The /age handoff slug, empty when skipped'), artifact: str, worktree_path: str, has_medium_plus_findings: bool, has_cheap_lows: bool })
 const CURE_SCHEMA = obj({ status: oneOf(FIX_STATUSES), committed: bool, artifact: str })
 const FINALIZE_SCHEMA = obj({ pushed: bool, head_sha: str, marker_updated: bool })
 const STATUS_SCHEMA = obj({ state: oneOf(PR_STATES), head_sha: str, ci: oneOf(CI_STATES), merge_state: text('gh mergeStateStatus'), review_decision: oneOf(REVIEW_DECISIONS), unresolved_threads: int })
@@ -704,12 +704,12 @@ function agePrompt(m, worktreePath) {
       ? `The last age left medium+ findings (dirty=1). Do not skip and do not scope incrementally. Run ${full} through the Skill tool. Mode full.`
       : [
           `1. Compute the full-diff patch-id: git diff origin/${m.base}...HEAD | git patch-id --stable | cut -d' ' -f1.`,
-          '2. When it equals the marker patch, the content is unchanged. Do not invoke /age. Return mode skipped-unchanged with has_medium_plus_findings false.',
+          '2. When it equals the marker patch, the content is unchanged. Do not invoke /age. Return mode skipped-unchanged with has_medium_plus_findings and has_cheap_lows false.',
           '3. Else, when the marker sha is not empty and git merge-base --is-ancestor <marker sha> HEAD succeeds, run /age <marker sha>..HEAD --auto through the Skill tool. Mode incremental.',
           `4. Else run ${full} through the Skill tool. Mode full.`,
         ].join('\n'),
     `${NO_CHAIN} Do not invoke /cure, even when /age --auto documents that chain.`,
-    'Read the report. Set has_medium_plus_findings to true when any finding is medium or above. Set worktree_path to the output of git rev-parse --show-toplevel.',
+    'Read the report. Set has_medium_plus_findings to true when any finding is medium or above. Set has_cheap_lows to true when any low finding has fix-cost-now: contained. Set worktree_path to the output of git rev-parse --show-toplevel.',
   )
 }
 
@@ -722,7 +722,8 @@ const ageFanoutPrepPrompt = (m) => prompt(
 
 const curePrompt = (m, worktreePath, age) => prompt(
   `You are the Cure stage for PR #${m.number}. cd ${worktreePath} first (branch ${m.branch}).`,
-  `Run /cure ${age.slug} --auto --stake medium+ through the Skill tool to apply the medium+ findings in ${age.artifact}.`,
+  `Run /cure ${age.slug} --auto --stake medium+ through the Skill tool. This floor selects every blocker, high, and medium finding in ${age.artifact}, plus every low with fix-cost-now: contained.`,
+  'Never ask which findings to cure and never render a selection gate. Apply sprawling and structural findings too. Defer a finding only when it rests on a false premise or conflicts with another finding, and record why under ### Deferred.',
   `Commit locally on the checked-out branch ${localOf(m.branch)}. Do not push; a later stage pushes. ${NO_CHAIN}`,
 )
 
@@ -730,7 +731,7 @@ const reagePrompt = (m, worktreePath, scope) => prompt(
   `You are a read-only reviewer running the Re-age stage for PR #${m.number} after a cure. cd ${worktreePath} first.`,
   `Run /age ${scope} --auto through the Skill tool. HEAD now includes the cure commits.`,
   `${NO_CHAIN} Do not invoke /cure.`,
-  'Read the report. Return mode incremental, the scope, slug, artifact, and worktree_path, and whether any finding is medium or above.',
+  'Read the report. Return mode incremental, the scope, slug, artifact, and worktree_path, whether any finding is medium or above, and whether any low finding has fix-cost-now: contained.',
 )
 
 const finalizePrompt = (m, worktreePath, dirty) => prompt(
@@ -755,6 +756,7 @@ const affinagePrompt = (number, branch, worktreePath) => prompt(
   `Make PR #${number} ready to merge. Use Bash and the Skill tool.`,
   checkoutStep(branch, worktreePath),
   `Run /affinage ${number} --auto --no-age --stake medium+ --plate through the Skill tool. It grades review threads and CI failures, cures what it accepts, replies, and publishes through /plate.`,
+  'Never ask which findings to cure. The medium+ floor selects every blocker, high, and medium finding plus every low with fix-cost-now: contained. A cure selection is never a human decision.',
   'When the branch is behind its base or conflicts with it, let /affinage resolve that through /melt and /plate.',
   'Never merge or close a PR. Never force-push without a lease. Set pushed to true when the remote head changed. Return blocked with a note when a human decision is needed. Set worktree_path to the output of git rev-parse --show-toplevel.',
   NO_CHAIN,
@@ -931,13 +933,13 @@ async function runAgeFanout(id, m) {
   const fan = await workflow('age-fanout', { worktree_path: wt, range: scope, slug })
   // age-fanout reports failure by returning status blocked, not by throwing.
   if (!fan || fan.status !== 'ok') throw new Error((fan && fan.error) || 'age-fanout returned non-ok')
-  return { mode: 'full', scope, slug, artifact: fan.artifact, worktree_path: wt, has_medium_plus_findings: fan.has_medium_plus_findings }
+  return { mode: 'full', scope, slug, artifact: fan.artifact, worktree_path: wt, has_medium_plus_findings: fan.has_medium_plus_findings, has_cheap_lows: fan.has_cheap_lows === true }
 }
 
 async function ageStage(t) {
   const m = markerFor(t)
   if (m.aged_sha && m.aged_sha === m.head_sha && !m.aged_dirty) {
-    return { t, m, stamped: true, age: { mode: 'skipped-unchanged', scope: '', slug: '', artifact: '', worktree_path: '', has_medium_plus_findings: false } }
+    return { t, m, stamped: true, age: { mode: 'skipped-unchanged', scope: '', slug: '', artifact: '', worktree_path: '', has_medium_plus_findings: false, has_cheap_lows: false } }
   }
   if (wantsAgeFanout(m)) {
     try {
@@ -950,14 +952,15 @@ async function ageStage(t) {
   const raw = await agent(agePrompt(m, wt), { label: `age:${m.number}`, phase: 'Review', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA, ...(wt ? {} : { isolation: 'worktree' }) })
   if (!raw) return { t, m, failure: 'age agent returned no output' }
   // A skipped review has no findings by definition; a real review must name its scope.
-  const age = raw.mode === 'skipped-unchanged' ? { ...raw, has_medium_plus_findings: false } : raw
+  const age = raw.mode === 'skipped-unchanged' ? { ...raw, has_medium_plus_findings: false, has_cheap_lows: false } : raw
   if (age.mode !== 'skipped-unchanged' && blank(age.scope)) return { t, m, failure: 'age agent returned no review scope' }
   if (absolute(age.worktree_path)) worktrees.set(t.id, age.worktree_path.trim())
   return { t, m, age }
 }
 
 async function cureStage(r) {
-  if (r.failure || !r.age.has_medium_plus_findings) return r
+  // Cure the medium+ floor, which includes contained lows, without asking.
+  if (r.failure || !(r.age.has_medium_plus_findings || r.age.has_cheap_lows)) return r
   const wt = worktrees.get(r.t.id) || r.age.worktree_path
   if (!absolute(wt)) return { ...r, failure: 'no review worktree for cure' }
   const cure = await agent(curePrompt(r.m, wt, r.age), { label: `cure:${r.m.number}`, phase: 'Review', model: 'sonnet', schema: CURE_SCHEMA })

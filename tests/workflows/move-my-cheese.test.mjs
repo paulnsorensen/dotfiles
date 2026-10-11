@@ -297,7 +297,7 @@ test('an approved consolidation builds, verifies, publishes, and drafts the supe
     ['integrate:pre', { status: 'done', worktree_path: '/tmp/int', head: sha(98), merged: ['T-1'], conflicted: [] }],
     ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, evidence: 'grep -c printed 1' }],
     ['publish', { results: [{ target: 'T-1', pr_number: 10, url: 'https://example.test/pr/10', head_sha: sha(50), changed_files: 2, lines_changed: 30 }] }],
-    ['age:10', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-10', artifact: '.cheese/age/pr-10.md', worktree_path: '/tmp/wt-t1', has_medium_plus_findings: false }],
+    ['age:10', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-10', artifact: '.cheese/age/pr-10.md', worktree_path: '/tmp/wt-t1', has_medium_plus_findings: false, has_cheap_lows: false }],
     ['finalize:10', { pushed: false, head_sha: sha(50), marker_updated: true }],
     ['review:10:status', ready(10, { head_sha: sha(50) })],
     ['mark', { results: [{ pr: 1, action: 'drafted', note: '' }, { pr: 2, action: 'drafted', note: '' }] }],
@@ -352,7 +352,7 @@ const builtConsolidation = (overrides = []) => planRoutes([
   ['integrate:pre', { status: 'done', worktree_path: '/tmp/int', head: sha(98), merged: ['T-1'], conflicted: [] }],
   ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, evidence: 'grep -c printed 1' }],
   ['publish', { results: [{ target: 'T-1', pr_number: 10, url: 'https://example.test/pr/10', head_sha: sha(50), changed_files: 2, lines_changed: 30 }] }],
-  ['age:10', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-10', artifact: '.cheese/age/pr-10.md', worktree_path: '/tmp/wt-t1', has_medium_plus_findings: false }],
+  ['age:10', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-10', artifact: '.cheese/age/pr-10.md', worktree_path: '/tmp/wt-t1', has_medium_plus_findings: false, has_cheap_lows: false }],
   ['finalize:10', { pushed: false, head_sha: sha(50), marker_updated: true }],
   ['review:10:status', ready(10, { head_sha: sha(50) })],
   ['mark', { results: [{ pr: 1, action: 'drafted', note: '' }, { pr: 2, action: 'drafted', note: '' }] }],
@@ -374,7 +374,7 @@ test('a malformed aged marker reads as no marker, so the PR is reviewed', async 
     ...reconRoutes([openPr(1)], [detail(1, { aged_sha: 'abc; rm -rf /', aged_patch: 'x' })]),
     ['survey', survey],
     ['tensions', noTensions],
-    ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: '.cheese/age/pr-1.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false }],
+    ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: '.cheese/age/pr-1.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false, has_cheap_lows: false }],
     ['finalize:1', { pushed: false, head_sha: sha(1), marker_updated: true }],
     ['review:1:status', ready(1)],
   ])
@@ -388,15 +388,32 @@ test('cure commits that finalize could not push fail the review instead of readi
     ...reconRoutes([openPr(1)], [detail(1)]),
     ['survey', survey],
     ['tensions', noTensions],
-    ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: true }],
+    ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: true, has_cheap_lows: false }],
     ['cure:1', { status: 'ok', committed: true, artifact: 'c.md' }],
-    ['reage:1', { mode: 'incremental', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a2.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false }],
+    ['reage:1', { mode: 'incremental', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a2.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false, has_cheap_lows: false }],
     ['finalize:1', { pushed: false, head_sha: sha(1), marker_updated: false }],
   ])
   assert.equal(result.status, 'partial')
   assert.equal(result.targets[0].review, 'failed')
   assert.match(result.targets[0].reason, /cure commits were not pushed/)
   assert.equal(labels.some((l) => l.startsWith('review:1:status')), false)
+})
+
+test('cheap lows alone trigger the cure, and cure and affinage never ask what to cure', async () => {
+  const { trace, labels } = await run({ prs: [1], auto: true }, [
+    ...reconRoutes([openPr(1)], [detail(1)]),
+    ['survey', survey],
+    ['tensions', noTensions],
+    ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false, has_cheap_lows: true }],
+    ['cure:1', { status: 'ok', committed: false, artifact: 'c.md' }],
+    ['finalize:1', { pushed: false, head_sha: sha(1), marker_updated: true }],
+    ['review:1:status', ready(1)],
+  ])
+  assert.ok(labels.includes('cure:1'))
+  const cure = trace.agents.find(({ opts }) => opts.label === 'cure:1').prompt
+  assert.match(cure, /--auto --stake medium\+/)
+  assert.match(cure, /every low with fix-cost-now: contained/)
+  assert.match(cure, /Never ask which findings to cure/)
 })
 
 test('a keep-only plan with a command criterion still integrates and verifies in an isolated judge worktree', async () => {

@@ -111,9 +111,10 @@ const REVIEW_SCHEMA = {
 
 const RECONCILE_SCHEMA = {
   type: 'object',
-  required: ['has_medium_plus_findings', 'artifact'],
+  required: ['has_medium_plus_findings', 'has_cheap_lows', 'artifact'],
   properties: {
     has_medium_plus_findings: { type: 'boolean' },
+    has_cheap_lows: { type: 'boolean' },
     artifact: { type: 'string' },
     per_curd: {
       type: 'array',
@@ -189,7 +190,9 @@ ${JSON.stringify(routeCurds)}
 
 Return a "per_curd" array: one entry per curd with its slug, whether it has any medium-or-above finding, and the full deduped finding objects attributed to it (same field shape as the worker findings, minus also_relevant_to) — downstream cure agents consume these objects, so keep file/line/fix_direction intact.` : ''}
 
-Return {"has_medium_plus_findings":true|false,"artifact":".cheese/age/${slug}.md"${routeCurds ? ',"per_curd":[{"slug":"...","has_medium_plus_findings":true|false,"findings":[{"dimension":"...","severity":"...","file":"...","line":<int>,"claim":"...","why_it_matters":"...","fix_direction":"..."}]}]' : ''}}.`
+Set has_cheap_lows to true when any low finding has fix-cost-now: contained.
+
+Return {"has_medium_plus_findings":true|false,"has_cheap_lows":true|false,"artifact":".cheese/age/${slug}.md"${routeCurds ? ',"per_curd":[{"slug":"...","has_medium_plus_findings":true|false,"findings":[{"dimension":"...","severity":"...","file":"...","line":<int>,"claim":"...","why_it_matters":"...","fix_direction":"..."}]}]' : ''}}.`
 }
 
 // ---- Packet ----
@@ -252,6 +255,7 @@ return {
   status: 'ok',
   artifact: reconcile.artifact,
   has_medium_plus_findings: reconcile.has_medium_plus_findings,
+  has_cheap_lows: reconcile.has_cheap_lows === true,
   dimensions,
   per_curd: ROUTE_CURDS ? (reconcile.per_curd || []) : null,
 }

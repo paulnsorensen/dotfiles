@@ -18,7 +18,7 @@ function reviewOk(dim, findings = []) {
 }
 
 function reconcileOk({ hasMediumPlus = true, slug = 'parent', perCurd } = {}) {
-  const out = { has_medium_plus_findings: hasMediumPlus, artifact: `.cheese/age/${slug}.md` }
+  const out = { has_medium_plus_findings: hasMediumPlus, has_cheap_lows: false, artifact: `.cheese/age/${slug}.md` }
   if (perCurd) out.per_curd = perCurd
   return out
 }
