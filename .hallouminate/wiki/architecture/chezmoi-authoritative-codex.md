@@ -45,6 +45,15 @@ the declared `input_mode`.
 `mcp_servers` is the single exception: **replaced wholesale**, so deleting a server
 from the registry evicts it from the live file. That is the serena fix.
 
+GitHub connector tools can remain available without a `[mcp_servers.github]`
+entry. Codex controls connectors through `apps.<id>.enabled`, separately from
+standalone MCP servers.[^github-app] Disable only GitHub in `codex.config.apps`
+to preserve other connectors. The recursive merge deploys that setting without
+changing MCP membership or plugin state.[^github-source]
+
+[^github-app]: [Official OpenAI configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference) (`apps.<id>.enabled`)
+[^github-source]: chezmoi/.chezmoidata/codex.yaml; chezmoi/private_dot_codex/modify_private_config.toml:69-97
+
 The merge also removes only legacy `[[hooks.<event>]]` entries whose first command
 points to a Codex-harnessed hook basename in `agents/hooks/registry.yaml`; it keeps
 `hooks.state` trust hashes and user-authored hook blocks.[^1]
