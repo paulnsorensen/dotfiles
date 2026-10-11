@@ -19,14 +19,15 @@ setup() {
     expected=$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S .)
     actual=$(jq -S 'del(.agent)' <<<"$output")
     [ "$actual" = "$expected" ]
-    [ "$(jq '.agent | length' <<<"$output")" -eq 15 ]
+    [ "$(jq '.agent | length' <<<"$output")" -eq 19 ]
 }
 
 @test "opencode config resets managed drift and keeps unknown live keys with a warning" {
     run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
-{"share":"auto","autoupdate":true,"runtime_key":"kept"}
+{"model":"openai/gpt-6-sol","share":"auto","autoupdate":true,"runtime_key":"kept"}
 JSON
     [ "$status" -eq 0 ]
+    [ "$(jq -r '.model' <<<"$output")" = "openai/gpt-6.1-sol" ]
     [ "$(jq -r '.share' <<<"$output")" = "disabled" ]
     [ "$(jq -r '.autoupdate' <<<"$output")" = "false" ]
     [ "$(jq -r '.runtime_key' <<<"$output")" = "kept" ]
@@ -73,6 +74,17 @@ JSON
     [ "$(jq -r '.autoupdate' <<<"$config")" = "false" ]
 }
 
+@test "native agents use the shared execution preamble instead of provider prompts" {
+    run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null
+    [ "$status" -eq 0 ]
+    jq -e '
+        .instructions == ["~/.config/opencode/preamble.md"] and
+        ([.agent.build,.agent.plan,.agent.general,.agent.explore] | all(.prompt | type == "string" and length > 0 and contains("shared execution preamble"))) and
+        (.agent.plan.prompt | contains("Plan only. Do not change workspace files.")) and
+        (.agent.explore.prompt | contains("Read only. Do not change files."))
+    ' <<<"$output"
+}
+
 @test "opencode permissions deny secret paths and keep public companions" {
     local config
     config=$(yq -o=json '.opencode.config' "$REGISTRY")
@@ -109,7 +121,7 @@ TOML
     run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$CZ_SRC" apply --force --exclude=scripts
     [ "$status" -eq 0 ]
     [ "$(jq -S 'del(.agent)' "$destination/.config/opencode/opencode.json")" = "$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S .)" ]
-    [ "$(jq '.agent | length' "$destination/.config/opencode/opencode.json")" -eq 15 ]
+    [ "$(jq '.agent | length' "$destination/.config/opencode/opencode.json")" -eq 19 ]
     cmp -s "$CZ_SRC/dot_config/opencode/tui.json" "$destination/.config/opencode/tui.json"
     cmp -s "$CZ_SRC/dot_config/opencode/themes/chocolate-donut.json" "$destination/.config/opencode/themes/chocolate-donut.json"
     [ "$(cat "$destination/.local/share/opencode/auth.json")" = "runtime state" ]

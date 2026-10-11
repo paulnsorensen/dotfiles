@@ -773,7 +773,7 @@ _cz_opencode_agents_json() {
             printf "opencode agent '%s': invalid or missing body_path\n" "$name" >&2
             return 1
         fi
-        if [[ ! "$model" =~ ^gpt-6-(luna|sol|astra)$ ]]; then
+        if [[ ! "$model" =~ ^gpt-6-(luna|astra)$|^gpt-6\.1-sol$ ]]; then
             printf "opencode agent '%s': models.opencode missing or invalid\n" "$name" >&2
             return 1
         fi

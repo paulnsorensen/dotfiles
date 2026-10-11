@@ -10,17 +10,25 @@ opencode:
     # bumps the pin. Self-update would fight that pin.
     autoupdate: false
     share: disabled
-    model: openai/gpt-6-sol
+    model: openai/gpt-6.1-sol
     provider:
       openai:
         models:
           gpt-6-luna:
             limit: {context: 1050000, output: 128000}
-          gpt-6-sol:
+          gpt-6.1-sol:
             limit: {context: 1050000, output: 128000}
           gpt-6-astra:
             limit: {context: 1050000, output: 128000}
     agent:
+      build:
+        prompt: Follow the shared execution preamble and applicable project instructions.
+      plan:
+        prompt: Follow the shared execution preamble and applicable project instructions. Plan only. Do not change workspace files.
+      general:
+        prompt: Follow the shared execution preamble and applicable project instructions.
+      explore:
+        prompt: Follow the shared execution preamble and applicable project instructions. Read only. Do not change files.
       advisor:
         description: Review a concise contract and evidence packet. Return advice only; never launch another agent.
         mode: subagent
@@ -62,8 +70,8 @@ opencode:
       auto: true
       # Drop old tool outputs before a full compaction (default false).
       prune: true
-    # The shared preamble, appended to OpenCode's own system prompt. Global
-    # preferences load natively from ~/.config/opencode/AGENTS.md.
+    # Load the shared preamble; custom work-agent prompts replace native guidance.
+    # Global preferences load natively from ~/.config/opencode/AGENTS.md.
     instructions:
       - "~/.config/opencode/preamble.md"
     watcher:

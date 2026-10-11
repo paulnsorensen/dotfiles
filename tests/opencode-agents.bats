@@ -15,7 +15,7 @@ setup() {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
     local name body model turns
-    [ "$(jq '.agent | length' <<<"$output")" -eq 15 ]
+    [ "$(jq '.agent | length' <<<"$output")" -eq 19 ]
     while IFS=$'\t' read -r name body model turns; do
         [ "$(jq -r --arg n "$name" '.agent[$n].model' <<<"$output")" = "openai/$model" ]
         [ "$(jq -r --arg n "$name" '.agent[$n].steps' <<<"$output")" = "$turns" ]
@@ -28,8 +28,9 @@ setup() {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
     jq -e '
-        .model == "openai/gpt-6-sol" and
-        ([.agent.ghostbuster,.agent.explorer,.agent.researcher,.agent["taste-tester"],.agent.coder,.agent.generalist] | all(.model == "openai/gpt-6-sol")) and
+        .model == "openai/gpt-6.1-sol" and
+        ([.agent.ghostbuster,.agent.explorer,.agent.researcher,.agent["taste-tester"],.agent.coder,.agent.generalist] | all(.model == "openai/gpt-6.1-sol")) and
+        (.provider.openai.models | keys == ["gpt-6-astra", "gpt-6-luna", "gpt-6.1-sol"]) and
         ([.agent["nih-scanner"],.agent["roquefort-wrecker"],.agent["duckdb-expert"],.agent["whey-drainer"],.agent["worktree-content-digest"]] | all(.model == "openai/gpt-6-luna")) and
         ([.agent.reviewer,.agent.judge,.agent.advisor] | all(.model == "openai/gpt-6-astra")) and
         ([.provider.openai.models[] | .limit] | all(.context == 1050000 and .output == 128000))

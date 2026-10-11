@@ -22,6 +22,16 @@ The CI lint job pins ruff in `.github/workflows/test.yml` (`version:` on `astral
 
 *Source: PR #1224 lint failure and cure · Updated: 2026-10-09*
 
+### Health-check test isolation
+
+The `dots doctor` drift-count test compares two real health checks.
+Host broker processes can change between checks, even when the test isolates `HOME`.
+A test-local `ps` stub fixes the broker inventory and preserves the exact two-issue drift assertion.
+A controlled process fixture reproduces this failure mode.
+The original failing host process is not captured.
+
+*Source: tests/dots.bats:236-263; bin/dots:340-372; controlled fixture and parallel Bats verification · Updated: 2026-10-10*
+
 ## Claude marketplace plugins
 
 Distinct from the `agents/` registry system (see [[../architecture/agents-dir]]) and from the `global@local` plugin that `ap` wires (see [[../architecture/agent-profile]]): these are third-party plugins from external marketplaces, managed declaratively via `claude/plugins/registry.yaml`.
