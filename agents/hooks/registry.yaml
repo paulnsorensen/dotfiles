@@ -313,16 +313,25 @@ hooks:
     description: After a commit omits knowledge changes, remind the agent to include wiki and corpus files
 
   # ─── Wheypoint stop gate ─────────────────────────────────────────
-  # Keeps the session's wheypoint current, but only while work is in progress.
-  # Reads the transcript for file changes after the last wheypoint; a Q&A turn
-  # stops normally. Deterministic bash + jq, so it replaces the Haiku prompt
-  # hook that fired on every stop. claude-only: the transcript shape and the
-  # {decision:"block"} Stop output are Claude surfaces. Deploys the script; the
-  # live settings.json half lives in chezmoi/.chezmoidata/claude.yaml.
-  # Opt out with WHEYPOINT_STOP_GATE=0.
+  # The shared policy reads native transcripts and blocks only after verified
+  # mutations. The Claude settings hook also lives in claude.yaml.
   wheypoint-stop-gate:
     event: Stop
     script: agents/hooks/wheypoint-stop-gate.sh
-    harnesses: [claude]
+    shared_assets:
+      - agents/lib/wheypoint-stop-gate.sh
+      - agents/lib/wheypoint-stop-gate.cjs
+    harnesses: [claude, codex]
     timeout: 10
     description: Block a stop to update or write the wheypoint only when files changed since the last one
+
+  wheypoint-stop-gate-observe:
+    event: PostToolUse
+    script: agents/hooks/wheypoint-stop-gate.sh
+    shared_assets:
+      - agents/lib/wheypoint-stop-gate.sh
+      - agents/lib/wheypoint-stop-gate.cjs
+    harnesses: [codex]
+    matcher: "Bash|apply_patch|.*tilth_write"
+    timeout: 10
+    description: Record completed Codex mutations and checkpoints for the Stop gate

@@ -46,19 +46,6 @@ opencode:
           tilth_tilth_write: deny
           bash: deny
           task: deny
-      wheypoint-check:
-        description: Classify a bounded session summary as WRITE, UPDATE, or ALLOW.
-        hidden: true
-        mode: subagent
-        model: openai/gpt-6-luna
-        steps: 1
-        prompt: >-
-          Classify the supplied bounded session summary. Return exactly WRITE,
-          UPDATE, or ALLOW. WRITE means unfinished work has no checkpoint.
-          UPDATE means work or a decision changed after a checkpoint.
-          Otherwise return ALLOW. Do not use tools or launch an agent.
-        permission:
-          "*": deny
     # Built-in formatters run after edits when the project has the formatter
     # configured. Omitting the key disables them. OpenCode v2 has no language
     # servers, so this config does not set the v1 `lsp` key.

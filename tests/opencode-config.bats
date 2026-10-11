@@ -19,7 +19,7 @@ setup() {
     expected=$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S .)
     actual=$(jq -S 'del(.agent)' <<<"$output")
     [ "$actual" = "$expected" ]
-    [ "$(jq '.agent | length' <<<"$output")" -eq 19 ]
+    [ "$(jq '.agent | length' <<<"$output")" -eq 18 ]
 }
 
 @test "opencode config resets managed drift and keeps unknown live keys with a warning" {
@@ -44,6 +44,15 @@ JSON
     jq -e 'has("tools") or has("lsp") or (.compaction | has("prune")) or (.permission | has("doom_loop")) or (.mcp | has("tilth")) | not' <<<"$output"
     [ "$(jq -r '.compaction.auto' <<<"$output")" = "true" ]
     [ "$(jq -r '.mcp.servers.tilth.codemode' <<<"$output")" = "false" ]
+}
+
+@test "opencode config removes the retired checker from live state" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"agent":{"wheypoint-check":{"model":"openai/gpt-6-luna"},"unknown":{"model":"kept"}}}
+JSON
+    [ "$status" -eq 0 ]
+    jq -e '.agent["wheypoint-check"] == null and .agent.unknown.model == "kept"' <<<"$output"
+    [[ "$stderr" != *"wheypoint-check"* ]]
 }
 
 @test "opencode config replaces the complete live MCP subtree" {
@@ -185,12 +194,15 @@ TOML
     run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$CZ_SRC" apply --force --exclude=scripts
     [ "$status" -eq 0 ]
     [ "$(jq -S 'del(.agent)' "$destination/.config/opencode/opencode.json")" = "$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S .)" ]
-    [ "$(jq '.agent | length' "$destination/.config/opencode/opencode.json")" -eq 19 ]
+    [ "$(jq '.agent | length' "$destination/.config/opencode/opencode.json")" -eq 18 ]
     [ "$(jq -cS . "$destination/opencode.json")" = '{"custom":{"nested":[1,false]},"model":"kept"}' ]
     cmp -s "$CZ_SRC/dot_config/opencode/cli.json" "$destination/.config/opencode/cli.json"
     [ ! -e "$destination/.config/opencode/tui.json" ]
     cmp -s "$CZ_SRC/dot_config/opencode/themes/chocolate-donut.json" "$destination/.config/opencode/themes/chocolate-donut.json"
     cmp -s "$CZ_SRC/dot_config/opencode/themes/chocolate-donut-2.json" "$destination/.config/opencode/themes/chocolate-donut-2.json"
+    cmp -s "$REAL_DOTFILES_DIR/agents/lib/wheypoint-stop-gate.cjs" "$destination/.config/opencode/lib/wheypoint-stop-gate.cjs"
+    run node --input-type=module -e 'import { pathToFileURL } from "node:url"; const module = await import(pathToFileURL(process.argv[1])); if (module.default.id !== "dotfiles.wheypoint-idle") process.exit(1)' "$destination/.config/opencode/plugins/wheypoint-idle.js"
+    [ "$status" -eq 0 ]
     [ "$(cat "$destination/.local/share/opencode/auth.json")" = "runtime state" ]
     [ -f "$destination/.config/opencode/package.json" ]
 }
