@@ -28,6 +28,11 @@ export const meta = {
 // Return: { status: 'ok'|'blocked', artifact, has_medium_plus_findings,
 //   dimensions: [...], per_curd: route_curds ? (reconcile.per_curd || []) :
 //   null, error? }
+//
+// Every dimension must return a review. A worker that is lost or blocked
+// gets one retry. A dimension that still has no review blocks the run, so a
+// parent falls back to one full reviewer and never reads partial coverage as
+// a clean pass.
 
 const NO_CHAIN_DIRECTIVE = 'Do not chain forward to the next phase even though your auto-mode contract documents that. Write your handoff slug and stop. The parent workflow orchestrating /age-fanout is driving the chain. Run in the foreground — do not background yourself, spawn detached processes, or defer work to a later session. If you cannot complete the phase within your context window, write a partial slug with status: halt: <reason> and stop; do not silently timeout.'
 
@@ -86,10 +91,14 @@ const PACKET_SCHEMA = {
   },
 }
 
+const REVIEW_STATUSES = ['ok', 'blocked']
+
 const REVIEW_SCHEMA = {
   type: 'object',
-  required: ['findings'],
+  required: ['status', 'findings'],
   properties: {
+    status: { type: 'string', enum: REVIEW_STATUSES },
+    blocked_reason: { type: 'string' },
     findings: {
       type: 'array',
       items: {
@@ -111,8 +120,10 @@ const REVIEW_SCHEMA = {
 
 const RECONCILE_SCHEMA = {
   type: 'object',
-  required: ['has_medium_plus_findings', 'has_cheap_lows', 'artifact'],
+  required: ['status', 'has_medium_plus_findings', 'has_cheap_lows', 'artifact'],
   properties: {
+    status: { type: 'string', enum: REVIEW_STATUSES },
+    blocked_reason: { type: 'string' },
     has_medium_plus_findings: { type: 'boolean' },
     has_cheap_lows: { type: 'boolean' },
     artifact: { type: 'string' },
@@ -145,6 +156,11 @@ const RECONCILE_SCHEMA = {
 }
 
 // ---- prompts ----
+// The reviewer contract loads the age skill by default. These prompts name the
+// skill's reference files, so the reviewer reads them and skips the Skill tool.
+const AGE_FILES_DIRECTIVE = 'The files named below are the age skill references. Read them directly. Do not load the age skill or any other skill through the Skill tool.'
+const BLOCKED_DIRECTIVE = 'When you cannot do this review, return status blocked with blocked_reason. Never return status ok for a review you did not run.'
+
 function packetPrompt(worktreePath, range, slug) {
   // Explorer agents carry Bash, so the packet is assembled and written via
   // shell redirection rather than a write tool.
@@ -168,13 +184,17 @@ You are a read-only reviewer for dimension "${dim}" in the /age-fanout Review ph
 
 cd ${worktreePath} first.
 
+${AGE_FILES_DIRECTIVE}
+
 Read the packet at ${packetPath}, and read ONLY the "${dim}" section of \`~/.claude/skills/age/references/dimensions.md\` (its \`### ${dim}\` heading through the next heading). If "${dim}" is "deslop", also read the matching de-slop language reference for every language present in the diff.
 
-Review only \`git diff ${range}\`. For each finding, compute its full severity per the rubric you just read — base tier, then the location bump and compounding bump described in dimensions.md's severity-computation section, capped at blocker. Tag \`also_relevant_to\` with any other dimension a finding also touches, per that dimension's own rubric. Do NOT dedup against other workers' findings — the orchestrator reconciles those. Do NOT invoke any Skill tool (no /age, no /cure, no other skill) — read the referenced files directly and review from first principles.
+Review only \`git diff ${range}\`. For each finding, compute its full severity per the rubric you just read — base tier, then the location bump and compounding bump described in dimensions.md's severity-computation section, capped at blocker. Tag \`also_relevant_to\` with any other dimension a finding also touches, per that dimension's own rubric. Do NOT dedup against other workers' findings — the orchestrator reconciles those.
+
+${BLOCKED_DIRECTIVE}
 
 ${NO_CHAIN_DIRECTIVE}
 
-Return {"findings":[{"dimension":"${dim}","severity":"blocker|high|medium|low","file":"<path>","line":<int>,"claim":"<what's wrong>","why_it_matters":"<impact>","fix_direction":"<how to fix>","also_relevant_to":["<dim>", ...]}]}.`
+Return {"status":"ok","findings":[{"dimension":"${dim}","severity":"blocker|high|medium|low","file":"<path>","line":<int>,"claim":"<what's wrong>","why_it_matters":"<impact>","fix_direction":"<how to fix>","also_relevant_to":["<dim>", ...]}]}.`
 }
 
 function reconcilePrompt(worktreePath, slug, findings, routeCurds, packetPath, range) {
@@ -182,12 +202,14 @@ function reconcilePrompt(worktreePath, slug, findings, routeCurds, packetPath, r
 
 You are the Reconcile phase for /age-fanout, curd "${slug}". cd ${worktreePath} first.
 
+${AGE_FILES_DIRECTIVE}
+
 Context packet: ${packetPath}. Diff range reviewed: \`${range}\`.
 
 Worker findings (JSON, not yet deduped):
 ${JSON.stringify(findings)}
 
-Apply the "§ Dimension boundaries" table (verbatim) from \`~/.claude/skills/age/references/dimensions.md\` to (a) any file:line flagged by 2 or more workers, and (b) every \`also_relevant_to\` tag. Dedup findings describing the same defect. Write the findings report to \`.cheese/age/${slug}.md\` in the format described in \`~/.claude/skills/age/SKILL.md § Output\`, including the handoff slug at the top per that section's template — read it there rather than assuming the shape. Ground the report's Orientation and Confidence sections in the context packet and the diff range above.
+Apply the "§ Dimension boundaries" table (verbatim) from \`~/.claude/skills/age/references/dimensions.md\` to (a) any file:line flagged by 2 or more workers, and (b) every \`also_relevant_to\` tag. Dedup findings describing the same defect. Write the findings report with tilth_write to the absolute path \`${worktreePath}/.cheese/age/${slug}.md\`. A \`cd\` does not carry into tilth_write, so never use a relative path. Use the format described in \`~/.claude/skills/age/SKILL.md § Output\`, including the handoff slug at the top per that section's template — read it there rather than assuming the shape. Ground the report's Orientation and Confidence sections in the context packet and the diff range above.
 
 ${routeCurds ? `This review spans multiple curd branches. Determine per-finding ownership by running \`git log <branch> --name-only\` for each of these branches and matching each finding's file to the branch that touched it:
 ${JSON.stringify(routeCurds)}
@@ -196,7 +218,9 @@ Return a "per_curd" array: one entry per curd with its slug, whether it has any 
 
 Set has_cheap_lows to true when any low finding has fix-cost-now: contained.
 
-Return {"has_medium_plus_findings":true|false,"has_cheap_lows":true|false,"artifact":".cheese/age/${slug}.md"${routeCurds ? ',"per_curd":[{"slug":"...","has_medium_plus_findings":true|false,"findings":[{"dimension":"...","severity":"...","file":"...","line":<int>,"claim":"...","why_it_matters":"...","fix_direction":"..."}]}]' : ''}}.`
+${BLOCKED_DIRECTIVE} Return status ok only after the report file exists.
+
+Return {"status":"ok","has_medium_plus_findings":true|false,"has_cheap_lows":true|false,"artifact":".cheese/age/${slug}.md"${routeCurds ? ',"per_curd":[{"slug":"...","has_medium_plus_findings":true|false,"findings":[{"dimension":"...","severity":"...","file":"...","line":<int>,"claim":"...","why_it_matters":"...","fix_direction":"..."}]}]' : ''}}.`
 }
 
 // ---- Packet ----
@@ -230,20 +254,31 @@ const dimensions = packet.dimensions
 
 // ---- Review (fanned out, one worker per dimension) ----
 phase('Review')
-const reviewResults = await parallel(
-  dimensions.map((dim) => () => agent(reviewPrompt(dim, WORKTREE_PATH, RANGE, packet.packet_path), { label: `review:${dim}`, phase: 'Review', agentType: 'reviewer', model: 'opus', schema: REVIEW_SCHEMA })),
-)
-
-const lostCount = reviewResults.filter((r) => r == null).length
-if (lostCount) log(`${lostCount} of ${dimensions.length} review worker(s) lost (thrown or invalid response).`)
-
-const survivors = reviewResults.filter(Boolean)
-if (survivors.length === 0) {
-  log('All review workers lost — cannot reconcile.')
-  return { status: 'blocked', error: 'all review workers lost' }
+// A lost (null or thrown) or blocked worker gets one retry; a second miss leaves the dimension uncovered.
+async function reviewDimension(dim) {
+  for (const attempt of [1, 2]) {
+    const label = attempt === 1 ? `review:${dim}` : `review:${dim}:retry`
+    let result = null
+    try {
+      result = await agent(reviewPrompt(dim, WORKTREE_PATH, RANGE, packet.packet_path), { label, phase: 'Review', agentType: 'reviewer', model: 'opus', schema: REVIEW_SCHEMA })
+    } catch (e) {
+      log(`review:${dim} attempt ${attempt} failed: ${e.message}`)
+    }
+    if (result && result.status === 'ok') return result
+    if (result) log(`review:${dim} attempt ${attempt} blocked: ${result.blocked_reason || 'no reason given'}`)
+  }
+  return null
 }
 
-const allFindings = survivors.flatMap((r) => r.findings || [])
+const reviewResults = await parallel(dimensions.map((dim) => () => reviewDimension(dim)))
+
+const uncovered = dimensions.filter((_, i) => !reviewResults[i])
+if (uncovered.length) {
+  log(`No review for ${uncovered.length} of ${dimensions.length} dimension(s) after a retry: ${uncovered.join(', ')}.`)
+  return { status: 'blocked', error: `dimensions not reviewed: ${uncovered.join(', ')}` }
+}
+
+const allFindings = reviewResults.flatMap((r) => r.findings || [])
 
 // ---- Reconcile ----
 phase('Reconcile')
@@ -254,10 +289,16 @@ try {
   log(`Reconcile phase failed: ${e.message}`)
   return { status: 'blocked', error: `reconcile phase failed: ${e.message}` }
 }
+if (!reconcile || reconcile.status !== 'ok') {
+  const reason = (reconcile && reconcile.blocked_reason) || 'reconcile returned no report'
+  log(`Reconcile phase blocked: ${reason}`)
+  return { status: 'blocked', error: `reconcile blocked: ${reason}` }
+}
 
 return {
   status: 'ok',
-  artifact: reconcile.artifact,
+  // The prompt fixes the report path, so the reconciler cannot redirect it.
+  artifact: `.cheese/age/${SLUG}.md`,
   has_medium_plus_findings: reconcile.has_medium_plus_findings,
   has_cheap_lows: reconcile.has_cheap_lows === true,
   dimensions,
