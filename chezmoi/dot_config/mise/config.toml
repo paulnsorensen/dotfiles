@@ -85,7 +85,6 @@
 "aqua:rust-lang/mdBook" = "v0.5.4"
 "aqua:anthropics/claude-code" = "v2.1.296"
 "aqua:openai/codex" = "rust-v0.160.0"
-"aqua:anomalyco/opencode" = "v1.18.33"
 
 node = "26.11.1"
 bun = "1.4.2"
@@ -95,5 +94,8 @@ rust = "1.99.0"
 "npm:bash-language-server" = "5.8.1"
 "npm:yaml-language-server" = "1.25.0"
 "npm:basedpyright" = "1.40.2"
+# OpenCode v2 ships on npm only; its GitHub tags carry no release assets for aqua.
+# The package postinstall links the platform binary, so allow its build script.
+"npm:@opencode/cli" = { version = "2.0.26", allow_builds = ["@opencode/cli"] }
 "cargo:eza" = { version = "0.23.5", features = "vendored-libgit2" }
 "cargo:tokei" = "15.0.0"
