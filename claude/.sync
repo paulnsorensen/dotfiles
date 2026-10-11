@@ -13,50 +13,12 @@ SOURCE_DIR="$(cd "${BASH_SOURCE%/*}" && pwd)"
 # chezmoi/.chezmoidata/claude.yaml + chezmoi — see the deploy table in
 # AGENTS.md): skills/, agents/, commands/, hooks/, lib/, reference/,
 # workflows/, settings.json, and user-scope MCPs in ~/.claude.json.
-# plugins/ stays Claude's own lifecycle (marketplace bootstrap below).
-
-# Set up local-marketplace + cache symlinks for ~/Dev/vaudeville so plugin sync
-# can resolve it. Gate name is read from the registry to keep the gate field
-# as the single source of truth (rename `gate:` and this function follows).
-sync_vaudeville_cache() {
-  local registry="$SOURCE_DIR/plugins/registry.yaml"
-  [[ -f "$registry" ]] || return 0
-
-  local gate
-  gate=$(yq -r '.plugins."vaudeville@local".gate // ""' "$registry")
-  [[ -z "$gate" ]] || [[ "${!gate:-false}" == "true" ]] || return 0
-
-  local local_mkt="$HOME/.claude/plugins/marketplaces/local"
-  mkdir -p "$local_mkt/.claude-plugin"
-  [[ -L "$local_mkt/vaudeville" ]] || ln -sf "$HOME/Dev/vaudeville" "$local_mkt/vaudeville"
-
-  local plugin_json="$HOME/Dev/vaudeville/.claude-plugin/plugin.json"
-  [[ -f "$plugin_json" ]] || return 0
-
-  local vaud_ver vaud_cache
-  vaud_ver=$(jq -r '.version // "0.1.0"' "$plugin_json")
-  vaud_cache="$HOME/.claude/plugins/cache/local/vaudeville/$vaud_ver"
-  mkdir -p "${vaud_cache%/*}"
-
-  if [[ ! -L "$vaud_cache" ]] || [[ "$(readlink "$vaud_cache")" != "$HOME/Dev/vaudeville" ]]; then
-    rm -rf "$vaud_cache"
-    ln -sf "$HOME/Dev/vaudeville" "$vaud_cache"
-    echo "  Linked vaudeville cache → ~/Dev/vaudeville (v$vaud_ver)"
-  fi
-
-  local old
-  for old in "$HOME/.claude/plugins/cache/local/vaudeville"/*; do
-    [[ -e "$old" ]] || continue
-    [[ "${old##*/}" == "$vaud_ver" ]] && continue
-    rm -rf "$old"
-    echo "  Pruned stale vaudeville cache: ${old##*/}"
-  done
-}
+# plugins/ stays Claude's own lifecycle: plugins/sync.sh registers local
+# marketplaces with the CLI and installs the registry's plugins.
 
 # MCP sync moved to chezmoi (see run_onchange_install-mcp.sh.tmpl).
 # Plugin sync stays here — it's claude-only and tied to local marketplace setup.
 if command -v claude &>/dev/null; then
-  sync_vaudeville_cache
   if [[ -x "$SOURCE_DIR/plugins/sync.sh" ]]; then
     echo "  Running plugin sync..."
     bash "$SOURCE_DIR/plugins/sync.sh" --force
