@@ -127,14 +127,6 @@ claude:
           - type: command
             command: '"$HOME/.claude/hooks/commit-hallouminate-reminder.sh"'
             timeout: 5
-      # Keep the session's wheypoint current while work is in progress. The
-      # script blocks the stop only when the transcript shows a file change after
-      # the last wheypoint; a Q&A turn stops normally. Registry entry
-      # `wheypoint-stop-gate` deploys the script; this authors the live half.
-      - hooks:
-          - type: command
-            command: '"$HOME/.claude/hooks/wheypoint-stop-gate.sh"'
-            timeout: 10
     PostToolUse:
       - matcher: ".*"
         hooks:
