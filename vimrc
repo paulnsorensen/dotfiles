@@ -1,4 +1,4 @@
-" Vim configuration with Chocolate Donut theme
+" Vim configuration with Brownfield theme
 " This configuration provides a vim-centric experience with themed colors
 
 " Basic Settings
@@ -43,8 +43,8 @@ set sidescrolloff=10          " Keep 10 columns left/right of cursor
 " Enable syntax highlighting
 syntax enable
 
-" Chocolate Donut color scheme
-" These colors match your terminal's Chocolate Donut theme
+" Brownfield color scheme
+" These colors match your terminal's Brownfield theme
 set background=dark
 
 " Enable 256 colors in terminal
@@ -52,57 +52,57 @@ if !has('gui_running')
   set t_Co=256
 endif
 
-" Chocolate Donut color definitions
-" Using terminal colors that match Chocolate Donut
-highlight Normal ctermfg=181 ctermbg=NONE
-highlight Comment ctermfg=246
-highlight Constant ctermfg=179
-highlight String ctermfg=108
-highlight Character ctermfg=108
-highlight Number ctermfg=179
-highlight Boolean ctermfg=179
-highlight Float ctermfg=179
-highlight Identifier ctermfg=103
-highlight Function ctermfg=103
-highlight Statement ctermfg=140
-highlight Conditional ctermfg=140
-highlight Repeat ctermfg=140
-highlight Label ctermfg=140
-highlight Operator ctermfg=140
-highlight Keyword ctermfg=140
-highlight Exception ctermfg=140
-highlight PreProc ctermfg=214
-highlight Include ctermfg=214
-highlight Define ctermfg=214
-highlight Macro ctermfg=214
-highlight PreCondit ctermfg=214
-highlight Type ctermfg=214
-highlight StorageClass ctermfg=214
-highlight Structure ctermfg=214
-highlight Typedef ctermfg=214
-highlight Special ctermfg=167
-highlight SpecialChar ctermfg=167
-highlight Tag ctermfg=167
-highlight Delimiter ctermfg=167
-highlight SpecialComment ctermfg=167
-highlight Debug ctermfg=167
-highlight Underlined ctermfg=103 cterm=underline
-highlight Error ctermfg=231 ctermbg=167
-highlight Todo ctermfg=234 ctermbg=214
-highlight CursorLine cterm=NONE ctermbg=236
-highlight CursorLineNr ctermfg=214 ctermbg=236
-highlight LineNr ctermfg=246 ctermbg=NONE
-highlight Visual ctermbg=238
-highlight Search ctermfg=234 ctermbg=214
-highlight IncSearch ctermfg=234 ctermbg=45
-highlight StatusLine ctermfg=181 ctermbg=238
-highlight StatusLineNC ctermfg=246 ctermbg=236
-highlight VertSplit ctermfg=238 ctermbg=NONE
-highlight Pmenu ctermfg=181 ctermbg=236
-highlight PmenuSel ctermfg=234 ctermbg=214
-highlight Directory ctermfg=103
-highlight Folded ctermfg=246 ctermbg=236
-highlight FoldColumn ctermfg=246 ctermbg=NONE
+" Brownfield color definitions
+" Using terminal colors that match Brownfield
+highlight Normal ctermfg=253 ctermbg=NONE
+highlight Comment ctermfg=245
+highlight Constant ctermfg=209
+highlight String ctermfg=148
+highlight Character ctermfg=148
+highlight Number ctermfg=209
+highlight Boolean ctermfg=209
+highlight Float ctermfg=209
+highlight Identifier ctermfg=105
+highlight Function ctermfg=105
+highlight Statement ctermfg=170
+highlight Conditional ctermfg=170
+highlight Repeat ctermfg=170
+highlight Label ctermfg=170
+highlight Operator ctermfg=170
+highlight Keyword ctermfg=170
+highlight Exception ctermfg=170
+highlight PreProc ctermfg=220
+highlight Include ctermfg=220
+highlight Define ctermfg=220
+highlight Macro ctermfg=220
+highlight PreCondit ctermfg=220
+highlight Type ctermfg=220
+highlight StorageClass ctermfg=220
+highlight Structure ctermfg=220
+highlight Typedef ctermfg=220
+highlight Special ctermfg=138
+highlight SpecialChar ctermfg=138
+highlight Tag ctermfg=138
+highlight Delimiter ctermfg=138
+highlight SpecialComment ctermfg=138
+highlight Debug ctermfg=138
+highlight Underlined ctermfg=105 cterm=underline
+highlight Error ctermfg=231 ctermbg=138
+highlight Todo ctermfg=234 ctermbg=220
+highlight CursorLine cterm=NONE ctermbg=234
+highlight CursorLineNr ctermfg=220 ctermbg=234
+highlight LineNr ctermfg=245 ctermbg=NONE
+highlight Visual ctermbg=235
+highlight Search ctermfg=234 ctermbg=220
+highlight IncSearch ctermfg=234 ctermbg=109
+highlight StatusLine ctermfg=253 ctermbg=235
+highlight StatusLineNC ctermfg=245 ctermbg=234
+highlight VertSplit ctermfg=235 ctermbg=NONE
+highlight Pmenu ctermfg=253 ctermbg=234
+highlight PmenuSel ctermfg=234 ctermbg=220
+highlight Directory ctermfg=105
+highlight Folded ctermfg=245 ctermbg=234
+highlight FoldColumn ctermfg=245 ctermbg=NONE
 
 " Key Mappings (matching your VS Code vim setup)
 let mapleader = " "           " Set leader key to space

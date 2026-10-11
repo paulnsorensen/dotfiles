@@ -19,18 +19,18 @@
 [color]
   ui = true
 [color "diff"]
-	meta = 246      # dim (#939393)
-	func = 140      # magenta (#b287cd)
-	old = 167       # red (#eb6b6f)
-	new = 108       # green (#88b994)
-	frag = 140      # magenta (#b287cd)
+	meta = 245      # dim (#8b8b8b)
+	func = 170      # magenta (#d36bd1)
+	old = 138       # red (#b69599)
+	new = 148       # green (#a1cb2d)
+	frag = 170      # magenta (#d36bd1)
 [color "status"]
-	added = 108     # green (#88b994)
-	untracked = 167 # red (#eb6b6f)
-	nobranch = bold 167
-	changed = 214   # yellow (#ffae00)
+	added = 148     # green (#a1cb2d)
+	untracked = 138 # red (#b69599)
+	nobranch = bold 138
+	changed = 220   # yellow (#f5d710)
 [color "interactive"]
-	prompt = 103    # blue (#8196a8)
+	prompt = 105    # blue (#799af9)
 
 [alias]
 	cpersonal = !git config user.email paulnsorensen@gmail.com
@@ -75,9 +75,9 @@
 	process = git-lfs filter-process
 	required = true
 [color "branch"]
-	current = 45    # cyan (#00c4fb)
-	local = 103     # blue (#8196a8)
-	remote = 108    # green (#88b994)
+	current = 109   # cyan (#99bec2)
+	local = 105     # blue (#799af9)
+	remote = 148    # green (#a1cb2d)
 [init]
 	defaultBranch = main
 
@@ -97,20 +97,20 @@
 	features = chocolate-donut
 
 [delta "chocolate-donut"]
-	# Diff backgrounds: theme bg #2a1c12 blended with red/green
-	minus-style = syntax "#3d2219"
-	minus-emph-style = syntax "#5a2b24"
-	plus-style = syntax "#2d3520"
-	plus-emph-style = syntax "#364428"
+	# Diff backgrounds: theme bg #211a16 blended with red/green
+	minus-style = syntax "#3f3330"
+	minus-emph-style = syntax "#554544"
+	plus-style = syntax "#3b3d1b"
+	plus-emph-style = syntax "#4e581e"
 	# Line numbers
-	line-numbers-minus-style = "#eb6b6f"
-	line-numbers-plus-style = "#88b994"
-	line-numbers-zero-style = "#939393"
+	line-numbers-minus-style = "#b69599"
+	line-numbers-plus-style = "#a1cb2d"
+	line-numbers-zero-style = "#8b8b8b"
 	# Decorations
-	commit-decoration-style = "#ffae00" box ul
-	file-style = "#ffae00" ul
+	commit-decoration-style = "#f5d710" box ul
+	file-style = "#f5d710" ul
 	file-decoration-style = none
-	hunk-header-decoration-style = "#8196a8" box
-	hunk-header-style = file line-number "#8196a8"
-	hunk-header-file-style = "#ffae00"
-	hunk-header-line-number-style = "#8196a8"
+	hunk-header-decoration-style = "#799af9" box
+	hunk-header-style = file line-number "#799af9"
+	hunk-header-file-style = "#f5d710"
+	hunk-header-line-number-style = "#799af9"

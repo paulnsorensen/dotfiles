@@ -1,30 +1,36 @@
 system: "base24"
-name: "Brownfield Warm"
-author: "Paul Sorensen"
+name: "Brownfield"
+author: "Brownfield"
 variant: "dark"
-description: "Brownfield deutan solve on a warm cocoa background; extra base24 slots interpolated in OKLab"
+description: "User-selected Brownfield base24 palette"
 palette:
-  base00: "2c1f16" # Main background
-  base01: "3b2d24" # Lighter background (Black)
-  base02: "504238" # Selection background
-  base03: "979797" # Comments, invisibles (B.Black)
-  base04: "bfb6b0" # Dark foreground (dim)
-  base05: "ecdace" # Default foreground (White)
-  base06: "f2e9e3" # Light foreground
+  base00: "211a16" # Main background
+  base01: "261f1b" # Lighter background (Black)
+  base02: "2b231f" # Selection background
+  base03: "8b8b8b" # Comments, invisibles (B.Black)
+  base04: "b7b2b0" # Dark foreground (dim)
+  base05: "e6dcd6" # Default foreground (White)
+  base06: "efeae7" # Light foreground
   base07: "f8f8f8" # Lightest foreground (B.White)
-  base08: "de7b7b" # Red - errors, variables
-  base09: "ff9f65" # Orange - warnings, integers
-  base0A: "c3b79c" # Yellow - types, classes
-  base0B: "a1cb2e" # Green - success, strings
-  base0C: "9abcc7" # Cyan - regex, info
-  base0D: "7d99bf" # Blue - functions
-  base0E: "d678b2" # Magenta - keywords
-  base0F: "de7b7b" # Red (reused) - deprecated
-  base10: "23170e" # Darker background
-  base11: "1b0f07" # Darkest background
-  base12: "fd6a6c" # Bright red
-  base13: "fdcf56" # Bright yellow
-  base14: "beda89" # Bright green
-  base15: "6be7e8" # Bright cyan
-  base16: "8f93f7" # Bright blue
-  base17: "d59af9" # Bright magenta
+  base08: "b69599" # Red - errors, variables
+  base09: "ff7643" # Orange - warnings, integers
+  base0A: "f5d710" # Yellow - types, classes
+  base0B: "a1cb2d" # Green - success, strings
+  base0C: "99bec2" # Cyan - regex, info
+  base0D: "799af9" # Blue - functions
+  base0E: "d36bd1" # Magenta - keywords
+  base0F: "cf805d" # Red - deprecated
+  base10: "1c1512" # Darker background
+  base11: "18110d" # Darkest background
+  base12: "f49c89" # Bright red
+  base13: "f3d19f" # Bright yellow
+  base14: "8be46a" # Bright green
+  base15: "10edef" # Bright cyan
+  base16: "8abcff" # Bright blue
+  base17: "f1b3c5" # Bright magenta
+zed:
+  panel_background: "322b26"
+  elevated_background: "3c322b"
+  border: "8b8b8b"
+  ui_placeholder: "b7b2b0"
+  ui_accent: "799af9"
