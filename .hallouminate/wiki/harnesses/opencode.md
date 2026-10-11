@@ -93,36 +93,47 @@ Each specialist denies Task launches. Its step limit follows the shared registry
 
 The advisor accepts a concise contract and evidence packet. Four steps bound its work. A default-deny policy allows only Tilth read and search.[^native-agents]
 
-The hidden Luna checker has one step and no tools. It classifies checkpoint policy; it cannot change the repository.[^native-agents]
+Checkpoint checks use the shared deterministic classifier, not a hidden model agent.[^idle-hook]
 
 [^shared-agents]: agents/registry.yaml; .sync-lib.sh `_cz_opencode_agents_json`
 [^native-agents]: chezmoi/.chezmoidata/opencode.yaml; tests/opencode-agents.bats
 
 ## Post-idle checkpoint policy
 
-The native plugin checks a root session after `session.execution.succeeded`. It does not veto a stop.[^idle-hook]
+The native plugin applies the shared deterministic wheypoint policy after `session.execution.succeeded`.[^idle-hook]
+It does not veto a stop.
+The plugin creates no checker session and makes no model call.
 
-**Why execution events:** they are durable and always published (`packages/core/src/session/execution.ts:125`). `session.status` and `session.idle` are ephemeral, and `session.idle` is deprecated.
+Completed tool records supply mutation and checkpoint evidence.
+The shared classifier accepts only successful persistence results.
+Skill calls and marker quotations do not clear pending changes.
+Verified child-session mutations count toward their root session.
+Read-only child work does not count as a mutation.
 
-A hidden Luna child session (`agent: wheypoint-check`) receives bounded transcript evidence. The plugin prompts it, waits for idle, reads its last assistant reply, and then removes the child session.[^idle-hook]
+No confirmed mutation allows idle.
+Later mutations after a checkpoint require UPDATE.
+A mutation without a checkpoint requires WRITE only when Git reports uncommitted work.
+Q&A with a pre-existing dirty tree remains silent.
 
-The checker applies the PR #1235 policy in order. A pause or question does not complete unfinished requested work.
+**Why execution events:** successful completion provides the post-turn check boundary.
+Failed and interrupted executions do not receive a follow-up.
 
-An existing checkpoint requires UPDATE after work or decision changes, even when the requested work finishes. Unfinished work without a checkpoint requires WRITE.
+**Why synthetic follow-ups:** `ctx.session.synthetic` wakes the session and stores a `type: "synthetic"` message.[^synthetic]
+A real user quotation cannot count as the plugin's follow-up.
 
-Pure questions, cancellation, completed unchanged work, and an active follow-up allow idle. The follow-up uses the exact approved reason.
+**Why `delivery: "queue"`:** the follow-up waits behind a user prompt that arrives during the check.[^synthetic]
 
-**Why synthetic follow-ups:** `ctx.session.synthetic` wakes the session and stores a `type: "synthetic"` message. Real user turns are always `type: "user"`, so quoted marker text never counts as a follow-up. The plugin matches a follow-up against the `marker` and `reasons` constants, not a copy of their text.
+The plugin serializes checks per root.
+Before sending, it rechecks the same turn, completed assistant, and execution state.
+It sends at most one follow-up for a root turn.
+Child sessions do not receive their own follow-up.
+Errors fail open and produce a bounded diagnostic.
 
-**Why `delivery: "queue"`:** the v2 default `steer` delivers at the next step boundary. A queued follow-up waits behind a user prompt that arrived during the check.[^synthetic]
+The context API starts at the latest compaction.[^history]
+Compaction summary prose does not prove checkpoint persistence.
+Offline tests prove the shared classifier and deployed module import, not authenticated model behavior.
 
-**Why a compaction is a turn boundary:** `ctx.session.context` returns messages from the latest compaction onward.[^history] After an auto-compaction no user message can remain, so a completed compaction message starts the turn, and its summary leads the checker evidence.
-
-The plugin serializes checks per root. Before sending, it checks the same turn start and completed assistant, and that no execution started.
-
-Child sessions, failed turns, and interrupted turns receive no follow-up. A failed check logs once for its turn and does not retry automatically.
-
-[^idle-hook]: chezmoi/dot_config/opencode/plugins/wheypoint-idle.js; tests/opencode-wheypoint.test.js; tests/opencode-wheypoint-guards.test.js
+[^idle-hook]: chezmoi/dot_config/opencode/plugins/wheypoint-idle.js; agents/lib/wheypoint-stop-gate.cjs; tests/opencode-wheypoint.test.js; tests/opencode-wheypoint-guards.test.js
 [^synthetic]: OpenCode v2.0.26, packages/core/src/session/session.ts:296; packages/schema/src/session-inbox.ts:11
 [^history]: OpenCode v2.0.26, packages/core/src/session/history.ts:78-95
 
@@ -140,7 +151,7 @@ Child sessions, failed turns, and interrupted turns receive no follow-up. A fail
 
 - Post-idle checkpoint checks cannot provide a synchronous pre-stop veto.
 - v2 has no `doom_loop` guard. The v1 prompt for repeated identical tool calls is gone, and `build`, `plan`, `general`, and `explore` set no `steps`, so v2 does not bound their turns.[^doom-loop] The operator chose to keep this unbounded.
-- The live checker path (child prompt, wait, synthetic follow-up) has unit coverage only; no authenticated model run verified it.
+- The checkpoint path has offline coverage. No authenticated model turn verifies its queued follow-up.
 - Claude Pro/Max subscriptions do not work in third-party harnesses. Use ChatGPT, Copilot, API keys, or OpenCode Zen.
 - Live inference requires operator authentication. Sync never reads or copies authentication.
 

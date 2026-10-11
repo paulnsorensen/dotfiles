@@ -17,3 +17,6 @@ permission.doom_loop
 # OpenCode v2 drops `codemode` from v1-shaped MCP entries; Tilth moved to
 # mcp.servers.tilth.
 mcp.tilth
+
+# The model-based wheypoint checker is replaced by the deterministic plugin.
+agent.wheypoint-check

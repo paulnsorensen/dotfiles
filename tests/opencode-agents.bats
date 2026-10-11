@@ -15,7 +15,7 @@ setup() {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
     local name body model turns
-    [ "$(jq '.agent | length' <<<"$output")" -eq 19 ]
+    [ "$(jq '.agent | length' <<<"$output")" -eq 18 ]
     while IFS=$'\t' read -r name body model turns; do
         [ "$(jq -r --arg n "$name" '.agent[$n].model' <<<"$output")" = "openai/$model" ]
         [ "$(jq -r --arg n "$name" '.agent[$n].steps' <<<"$output")" = "$turns" ]
@@ -50,11 +50,11 @@ setup() {
     ' <<<"$output"
 }
 
-@test "advisor and hidden checker use exact models and bounded permissions" {
+@test "advisor uses its exact model and bounded permissions without a checker" {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
     jq -e '.agent.advisor.model == "openai/gpt-6-astra" and .agent.advisor.mode == "subagent" and .agent.advisor.steps == 4 and .agent.advisor.permission["*"] == "deny" and .agent.advisor.permission.tilth_tilth_read == "allow" and .agent.advisor.permission.tilth_tilth_search == "allow" and .agent.advisor.permission.tilth_tilth_write == "deny" and .agent.advisor.permission.bash == "deny" and .agent.advisor.permission.task == "deny"' <<<"$output"
-    jq -e '.agent["wheypoint-check"].model == "openai/gpt-6-luna" and .agent["wheypoint-check"].hidden == true and .agent["wheypoint-check"].steps == 1 and .agent["wheypoint-check"].permission["*"] == "deny"' <<<"$output"
+    jq -e '.agent["wheypoint-check"] == null' <<<"$output"
     jq -e '.agent.coder.permission.tilth_tilth_write != "deny" and .agent["roquefort-wrecker"].permission.tilth_tilth_write != "deny" and .agent.reviewer.permission.tilth_tilth_write != "deny" and .agent.ghostbuster.permission.tilth_tilth_write == "deny"' <<<"$output"
 }
 

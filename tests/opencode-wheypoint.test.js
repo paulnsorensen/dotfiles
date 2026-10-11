@@ -1,22 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { UPDATE, WRITE, assistant, compaction, fixture, plugin, root, synthetic, user } from "./opencode-wheypoint-fixture.js";
+import { UPDATE, WRITE, assistant, compaction, fixture, plugin, root, tool, user } from "./opencode-wheypoint-fixture.js";
+
+const checkpoint = (time = 2, output = { ok: true, command: "checkpoint" }) => {
+  const call = tool("checkpoint", "shell", { command: "python wheypoint.pyz checkpoint" },
+    [{ type: "text", text: JSON.stringify(output) }], time);
+  call.state.metadata = { status: "completed", exit: 0 };
+  return call;
+};
+const edit = (time = 3) => tool("edit", "tilth_tilth_write",
+  { edits: [{ path: "a.js", ops: [{ op: "replace_text", old: "a", new: "b" }] }] },
+  [{ type: "text", text: "## a.js\napplied" }], time);
 
 test("plugin exports one v2 definition", () => {
   assert.equal(plugin.id, "dotfiles.wheypoint-idle");
   assert.equal(typeof plugin.setup, "function");
 });
 
-test("unfinished root sends one queued, marked WRITE through the hidden checker", async () => {
+test("a successful tracked mutation and dirty tree sends one queued WRITE without a model call", async () => {
   const f = fixture(root());
   await f.start();
-  assert.deepEqual(f.calls.create, [{ parentID: "root", title: "Wheypoint check", agent: "wheypoint-check", metadata: { source: "wheypoint-idle" } }]);
-  assert.equal(f.calls.prompt[0].sessionID, "check-1");
-  assert.match(f.calls.prompt[0].text, /a\.js and b\.js/);
-  assert.match(f.calls.prompt[0].text, /pause or question.*not completion/i);
-  assert.match(f.calls.prompt[0].text, /UPDATE.*WRITE.*ALLOW/s);
-  assert.deepEqual(f.calls.wait, [{ sessionID: "check-1" }]);
-  assert.deepEqual(f.calls.remove, [{ sessionID: "check-1" }]);
   assert.deepEqual(f.calls.synthetic, [{
     sessionID: "root",
     text: `[[opencode-wheypoint-idle:user-1]]\n${WRITE}`,
@@ -24,113 +27,137 @@ test("unfinished root sends one queued, marked WRITE through the hidden checker"
     metadata: { source: "wheypoint-idle", turn: "user-1" },
     delivery: "queue",
   }]);
+  assert.deepEqual(Object.keys(f.ctx.session).sort(), ["context", "get", "synthetic"]);
   f.stop();
 });
 
-test("UPDATE is sent after completed work or changed decisions despite completion", async () => {
-  for (const text of ["Finished all named files after /wheypoint.", "Changed the architecture decision after Wheypoint dropped:"]) {
-    const f = fixture([user("user-1", "Implement a.js"), assistant("a-1", "Wheypoint dropped:"), user("user-2", text), assistant("a-2", "Complete.")], "UPDATE");
-    await f.start();
-    assert.equal(f.calls.synthetic.length, 1);
-    assert.equal(f.calls.synthetic[0].text, `[[opencode-wheypoint-idle:user-2]]\n${UPDATE}`);
-    f.stop();
-  }
-});
-
-test("the checker packet carries the user's pause or question", async () => {
-  for (const text of ["Pause now, b.js is still unfinished.", "What about b.js? It still needs work."]) {
-    const f = fixture([user("user-1", "Implement a.js and b.js."), assistant("a-1", "a.js done."), user("user-2", text), assistant("a-2", "I will stop.")]);
-    await f.start();
-    assert.equal(f.calls.prompt.length, 1);
-    assert.ok(f.calls.prompt[0].text.includes(text));
-    f.stop();
-  }
-});
-
-test("long history keeps the first request and checkpoint in a bounded packet", async () => {
-  const history = [user("user-1", "Implement alpha.js, beta.js, and gamma.js.")];
-  for (let i = 0; i < 80; i++) {
-    history.push(assistant(`reply-${i}`, i === 2 ? "Wheypoint dropped: initial plan" : "Progress ".repeat(200)));
-  }
-  const f = fixture(history, "UPDATE");
+test("dirty pre-existing files and pure Q&A do not trigger a follow-up", async () => {
+  const f = fixture([user("user-1", "What is a wheypoint?"), assistant("a-1", "It records state.")]);
   await f.start();
-  const packet = f.calls.prompt[0].text;
-  assert.match(packet, /alpha\.js, beta\.js, and gamma\.js/);
-  assert.match(packet, /Wheypoint dropped: initial plan/);
-  assert.match(packet, /[1-9][0-9]* omitted/);
-  assert.ok(packet.length < 32000, packet.length);
-  f.stop();
-});
-
-test("an ALLOW verdict sends no follow-up", async () => {
-  const f = fixture([user("user-1", "What is a wheypoint?"), assistant("a-1", "Done.")], "ALLOW");
-  await f.start();
-  assert.equal(f.calls.prompt.length, 1);
   assert.equal(f.calls.synthetic.length, 0);
   f.stop();
 });
 
-test("a completed auto-compaction is the turn boundary when no user message remains", async () => {
-  const f = fixture([compaction("compact-1", "Goal: implement a.js and b.js.", "a.js done."), assistant("a-1", "b.js remains.")]);
+test("a confirmed checkpoint before a later mutation sends UPDATE even with a clean tree", async () => {
+  const f = fixture([user("user-1", "Implement a.js"), assistant("a-1", [checkpoint(), edit()])], { dirty: false });
   await f.start();
-  assert.match(f.calls.prompt[0].text, /Goal: implement a\.js and b\.js\./);
-  assert.equal(f.calls.synthetic[0].text, `[[opencode-wheypoint-idle:compact-1]]\n${WRITE}`);
+  assert.equal(f.calls.synthetic[0].text, `[[opencode-wheypoint-idle:user-1]]\n${UPDATE}`);
   f.stop();
 });
 
-test("persisted synthetic follow-up suppresses duplicates after restart; next turn remains eligible", async () => {
-  const f = fixture(root());
+test("a checkpoint after the mutation clears the update request", async () => {
+  const f = fixture([user("user-1", "Implement a.js"), assistant("a-1", [edit(2), checkpoint(3)])]);
   await f.start();
-  await f.emit();
-  assert.equal(f.calls.synthetic.length, 1);
-  f.state.messages.push(assistant("reply-f", "Wheypoint dropped: b.js remains."));
-  f.stop();
-  await f.load();
-  const gets = f.calls.get.length;
-  await f.emit();
-  assert.equal(f.calls.get.length, gets + 1);
-  assert.equal(f.calls.create.length, 1);
-  assert.equal(f.calls.synthetic.length, 1);
-  f.state.messages.push(user("user-2", "Continue b.js"), assistant("reply-2", "Still working."));
-  await f.emit();
-  assert.equal(f.calls.synthetic.length, 2);
-  assert.equal(f.calls.synthetic[1].text, `[[opencode-wheypoint-idle:user-2]]\n${WRITE}`);
+  assert.equal(f.calls.synthetic.length, 0);
   f.stop();
 });
 
-test("a follow-up is not mistaken for a checkpoint in the packet", async () => {
-  const followup = synthetic("s-1", `[[opencode-wheypoint-idle:user-1]]\n${WRITE}`);
-  const f = fixture([...root(), followup, assistant("a-2", "Still on b.js."), user("user-2", "Go on"), assistant("a-3", "b.js remains.")]);
-  await f.start();
-  assert.doesNotMatch(f.calls.prompt[0].text, /opencode-wheypoint-idle:user-1/);
-  f.stop();
+test("quoted markers and failed checkpoint output do not prove a checkpoint", async () => {
+  for (const content of [
+    [tool("edit", "tilth_tilth_write", { edits: [{ path: "a.js" }] }, [{ type: "text", text: "## a.js\napplied" }]), { type: "text", text: "Wheypoint dropped:" }],
+    [checkpoint(2, { ok: false, command: "checkpoint" }), edit(3)],
+  ]) {
+    const f = fixture([user("user-1", "/wheypoint"), assistant("a-1", content)]);
+    await f.start();
+    assert.equal(f.calls.synthetic[0].text, `[[opencode-wheypoint-idle:user-1]]\n${WRITE}`);
+    f.stop();
+  }
 });
 
-test("a marked synthetic notice with another reason is not a follow-up", async () => {
-  const f = fixture([...root(), synthetic("s-1", "[[opencode-wheypoint-idle:user-1]]\nSubagent finished."), assistant("a-2", "b.js remains.")]);
-  await f.start();
-  assert.equal(f.calls.synthetic.length, 1);
-  f.stop();
+test("a failed mutation and a clean tree do not request WRITE", async () => {
+  const failed = tool("edit", "tilth_tilth_write", { edits: [{ path: "a.js" }] }, [{ type: "text", text: "## a.js\\nerror: denied" }]);
+  for (const [messages, options] of [
+    [[user("user-1", "Edit"), assistant("a-1", [failed])], {}],
+    [root(), { dirty: false }],
+  ]) {
+    const f = fixture(messages, options);
+    await f.start();
+    assert.equal(f.calls.synthetic.length, 0);
+    f.stop();
+  }
 });
 
-test("a real user quoting the marker is not a follow-up", async () => {
-  const f = fixture([user("user-1", `[[opencode-wheypoint-idle:user-1]]\n${WRITE}`), assistant("a-1", "Not done.")]);
-  await f.start();
-  assert.equal(f.calls.synthetic.length, 1);
-  f.stop();
+test("native shell metadata decides whether a Git mutation completed", async () => {
+  for (const [name, metadata, executed, state, expected] of [
+    ["nonzero exit", { status: "completed", exit: 1 }, true, "completed", false],
+    ["successful exit", { status: "completed", exit: 0 }, true, "completed", true],
+    ["background", { status: "running" }, true, "completed", false],
+    ["pending", { status: "running" }, true, "running", false],
+    ["not executed", { status: "completed", exit: 0 }, false, "completed", false],
+    ["signalled", { status: "completed", exit: 0, signal: "SIGTERM" }, true, "completed", false],
+    ["timed out", { status: "completed", exit: 0, timeout: true }, true, "completed", false],
+  ]) {
+    const commit = tool("commit", "shell", { command: "git commit -m x" },
+      [{ type: "text", text: metadata.exit === 1 ? "Exited with code 1" : "Command completed" }], 3);
+    commit.executed = executed;
+    commit.state.status = state;
+    commit.state.metadata = metadata;
+    const f = fixture([user("user-1", "Commit"), assistant("a-1", [checkpoint(), commit])], { dirty: false });
+    await f.start();
+    assert.equal(f.calls.synthetic.length, expected ? 1 : 0, name);
+    if (expected) assert.equal(f.calls.synthetic[0].text, `[[opencode-wheypoint-idle:user-1]]\n${UPDATE}`);
+    f.stop();
+  }
 });
 
-test("other synthetic notices are neither follow-ups nor real turns", async () => {
-  const f = fixture([user("user-1", "Implement a.js"), assistant("a-1", "Started."), synthetic("s-1", "Subagent finished."), assistant("a-2", "a.js remains.")]);
+test("only a completed direct child with verified parent contributes mutations", async () => {
+  const dispatch = tool("dispatch", "subagent", { agent: "coder" }, [{ type: "text", text: "done" }]);
+  dispatch.state.metadata = { sessionID: "child-1" };
+  const messages = [user("user-1", "Edit"), assistant("a-1", [dispatch])];
+  const f = fixture(messages);
+  f.state.children["child-1"] = [assistant("child-a", [edit()])];
   await f.start();
-  assert.match(f.calls.prompt[0].text, /synthetic s-1: Subagent finished\./);
   assert.equal(f.calls.synthetic[0].text, `[[opencode-wheypoint-idle:user-1]]\n${WRITE}`);
   f.stop();
+  const foreign = fixture(messages);
+  foreign.state.children["child-1"] = [assistant("child-a", [edit()])];
+  foreign.state.childParentID = "another-root";
+  await foreign.start();
+  assert.equal(foreign.calls.synthetic.length, 0);
+  foreign.stop();
 });
 
-test("non-conversation messages do not hide the completed assistant turn", async () => {
-  const f = fixture([user("user-1", "Implement a.js"), assistant("a-1", "a.js remains."), { type: "idle", id: "idle-1", outcome: "succeeded" }]);
+test("child checkpoint and root mutation merge by completion time", async () => {
+  const dispatch = tool("dispatch", "subagent", { agent: "coder" }, [{ type: "text", text: "done" }]);
+  dispatch.state.metadata = { sessionID: "child-1" };
+  const f = fixture([user("user-1", "Edit"), assistant("a-1", [dispatch, edit(3)])], { dirty: false });
+  f.state.children["child-1"] = [assistant("child-a", [checkpoint(2)])];
+  await f.start();
+  assert.equal(f.calls.synthetic[0].text, `[[opencode-wheypoint-idle:user-1]]\n${UPDATE}`);
+  f.stop();
+});
+
+test("compaction is a turn boundary and stored synthetic follow-up suppresses restart duplicates", async () => {
+  const f = fixture([compaction("compact-1"), assistant("a-1", [edit()])]);
+  await f.start();
+  assert.equal(f.calls.synthetic[0].text, `[[opencode-wheypoint-idle:compact-1]]\n${WRITE}`);
+  f.stop();
+  await f.load();
+  await f.emit();
+  assert.equal(f.calls.synthetic.length, 1);
+  f.state.messages.push(user("user-2", "Continue"), assistant("a-2", [edit()]));
+  await f.emit();
+  assert.equal(f.calls.synthetic.length, 2);
+  f.stop();
+});
+
+test("a quoted marker from a real user cannot suppress a follow-up", async () => {
+  const f = fixture([user("user-1", `[[opencode-wheypoint-idle:user-1]]\n${WRITE}`), assistant("a-1", [edit()])]);
   await f.start();
   assert.equal(f.calls.synthetic.length, 1);
   f.stop();
+});
+
+test("WHEYPOINT_STOP_GATE=0 disables the plugin", async () => {
+  const old = process.env.WHEYPOINT_STOP_GATE;
+  process.env.WHEYPOINT_STOP_GATE = "0";
+  try {
+    const f = fixture(root());
+    await f.start();
+    assert.equal(f.calls.synthetic.length, 0);
+    f.stop();
+  } finally {
+    if (old === undefined) delete process.env.WHEYPOINT_STOP_GATE;
+    else process.env.WHEYPOINT_STOP_GATE = old;
+  }
 });

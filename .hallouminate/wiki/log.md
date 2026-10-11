@@ -104,3 +104,5 @@
 2026-10-09 · pr-1224-cure · merged · operations/session-analytics-gotchas.md · Codex token_usage rows, per-harness token fields, parent_session_id for sub-agent rollouts.
 2026-10-09 · pr-1224-cure · merged · operations/sync-and-chezmoi.md · Dirty marker on sync-history lines and the shared DOTFILES_STATE_DIR default.
 2026-10-09 · pr-1224-cure · merged · operations/dev-environment.md · CI ruff pin, local ruff drift, tomllib sort and PLR0402 gotchas.
+
+2026-10-11 · 69cdb117d9385336 · merged · harnesses/wheypoint-stop-hook.md, harnesses/opencode.md · PR #1253: confirmed mutation and checkpoint results replace model verdicts across Claude, Codex, and OpenCode.
