@@ -1,7 +1,7 @@
 export const meta = {
   name: 'move-my-cheese',
   description: 'Land a set of PRs or stacks: digest each PR intent, find tensions, plan the landing with fresh opus planners and an advisor, gate on user approval, assemble the final PRs, age and affinage them until ready, and merge when land is set.',
-  whenToUse: 'Several open PRs or stacks that should land, where some may overlap, conflict, or replace each other. The first run returns a landing plan and an approve digest. Re-run with { prs, plan, approve } to execute it. Pass auto:true to skip the user gate and land:true to merge.',
+  whenToUse: 'Several open PRs or stacks that should land, where some may overlap, conflict, or replace each other. The first run returns a landing plan and an approve digest. Re-run with { prs, plan, approve } to execute it, or add revise:"<change>" to change the plan first. Pass auto:true to skip the user gate and land:true to merge.',
   phases: [
     { title: 'Recon', detail: 'haiku indexes open PRs; code expands stacks; haiku collects per-PR detail' },
     { title: 'Survey', detail: 'one read-only sonnet explorer per PR writes an intent digest' },
@@ -24,13 +24,19 @@ export const meta = {
 //   expandStacks? = true, auto? = false, land? = false, mergeMethod? = 'squash',
 //   allowNoChecks? = false, plan?: <landing object from a needs-approval or
 //   needs-input result>, approve?: <its digest>, answers?: { <question text or
-//   1-based number>: <answer> } }
+//   1-based number>: <answer> }, revise?: <one change request> }
 //   - no prs and no plan: return the open-PR candidates.
 //   - prs: plan the landing and return needs-approval with { landing, digest }.
 //   - prs + plan + approve: check the digest and staleness, then execute.
 //   - plan + approve + answers: one planner folds the answers into a
 //     needs-input landing. The run returns needs-approval with a fresh digest,
 //     or needs-input again when questions remain. It never executes.
+//   - plan + approve + revise: one planner folds the change request into the
+//     landing, alone or together with answers. The previous plan need not
+//     validate, so revise also repairs a plan that a newer check rejects.
+//     The run returns needs-approval with a fresh digest. It never executes.
+//   - Each new or folded plan goes to the advisor. A revise verdict gets one
+//     planner revision, so the user approves the plan that the advisor read last.
 //   - auto: plan and execute in one run. A run that holds any PR by another
 //     author still stops at needs-approval, because later stages push and merge.
 //   - land: merge the final PRs when every target is ready.
@@ -61,7 +67,7 @@ export const meta = {
 // viewer's comments, and a marker without full 40-hex values reads as none.
 
 // ---- Limits and closed sets: every loop has a bound in code ----
-const LIMITS = { maxPrs: 12, maxTargets: 12, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000 }
+const LIMITS = { maxPrs: 12, maxTargets: 12, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000 }
 // Worst case for one age-fanout child: packet, two attempts for each of about 12 dimensions, reconcile.
 const AGE_FANOUT_MAX_AGENTS = 27
 const MARKER_PREFIX = 'move-my-cheese:aged'
@@ -266,6 +272,15 @@ const UNSAFE_CHECKS = [
   ['GitHub API field write', /\bgh\s+api\b.*\s(?:-f|-F|--field|--raw-field|--input)[\s=]/i],
 ]
 
+// grep and rg exit 2 on a missing file, and a leading ! turns that into a pass.
+// So a negated search needs an existence test before it, or the check can never fail.
+const NEGATED_SEARCH_RE = /!\s*(?:[ef]?grep|rg)\b/
+const EXISTS_TEST_RE = /(?:\btest|\[\[?)\s+-[def]\s/
+function vacuousCheck(check) {
+  const at = check.search(NEGATED_SEARCH_RE)
+  return at >= 0 && !EXISTS_TEST_RE.test(check.slice(0, at))
+}
+
 function checkIndex(index) {
   const errors = []
   if (!isSafeRef(index.default_branch)) errors.push(substance(`default_branch '${index.default_branch}' is not a safe ref`))
@@ -369,6 +384,7 @@ function checkPlan(plan, ctx) {
     for (const [label, pattern] of UNSAFE_CHECKS) {
       if (typeof c.check === 'string' && pattern.test(c.check)) errors.push(substance(`${c.id} check is unsafe (${label}); use a read-only check`))
     }
+    if (typeof c.check === 'string' && vacuousCheck(c.check)) errors.push(substance(`${c.id} check negates a grep with no existence test, so a missing file passes it; start the check with test -e <path> && for each path that the grep reads`))
   }
   for (const id of acIds) {
     if (!plan.targets.some((t) => t.satisfies.includes(id))) errors.push(substance(`${id} has no target`))
@@ -685,8 +701,12 @@ const tensionsPrompt = (digests, overlaps, edges, pairs) => prompt(
 )
 
 const ANSWER_ANGLE = { id: 'answers', text: 'Revise previous_plan with the user answers. Change only what an answer requires.' }
+const REVISE_ANGLE = { id: 'revise', text: 'Revise previous_plan with the user change request. Change only what the request requires.' }
+// A plan that the user shaped has no planning angle of its own, so an advisor revision uses this one.
+const ADVICE_ANGLE = { id: 'advice', text: 'Revise previous_plan to resolve the advisor concerns. Change only what a concern requires.' }
 
-const planPrompt = (angle, context, concerns, previous, answers) => prompt(
+// fold: { previous, advice, answers, revision, flaws }; every field is optional.
+const planPrompt = (angle, context, fold = {}) => prompt(
   'Write a landing plan for the PRs in this run. You are read-only: do not edit, commit, push, or comment.',
   `Planning angle: ${angle.text}`,
   'Give every input PR exactly one disposition. keep: it lands as it is. modify: its branch changes. supersede: a target replaces it, and that target lists it in sources. close: it does not land.',
@@ -694,18 +714,25 @@ const planPrompt = (angle, context, concerns, previous, answers) => prompt(
   'Each tension id must appear in the resolves list of a target. Each target satisfies at least one criterion.',
   'Criteria are observable outcomes, such as an intent that holds on the combined result. Give each an exact read-only check: a test command or a grep. Use check_kind ci with the target id as the check when the outcome is that the target passes its required CI. Never use a check that writes, pushes, fetches from the network, or calls a mutating gh command.',
   'Write each check as one bash command that runs from the repository root. When a tool reads its config from a subdirectory, such as a workspace member with its own pyproject.toml or package.json, start the check with cd <that directory> && and make its paths relative to that directory. Quote every glob. Put every option before --.',
+  'A check must be able to fail. Every path that it reads must exist on the default branch or come from a target. grep exits 2 on a missing file, and a leading ! turns that into a pass, so start a negated grep with test -e <path> && for each path it reads.',
   `Use at most ${LIMITS.maxTargets} targets. Put each unresolved question in open_questions. Do not guess.`,
-  answers && 'The user answered open questions of previous_plan. Apply each answer and remove its question from open_questions. Settle an unanswered question from repository evidence, or keep it in open_questions.',
+  fold.answers?.length && 'The user answered open questions of previous_plan. Apply each answer and remove its question from open_questions. Settle an unanswered question from repository evidence, or keep it in open_questions.',
+  fold.revision && 'The user asks for the change in user_change. Apply it to previous_plan. Keep the open questions of previous_plan unless the change settles them.',
+  fold.advice && 'The advisor asked for revisions of previous_plan. Resolve each concern in advisor. When the guidance names a fix, apply that fix.',
+  fold.flaws?.length && 'previous_plan fails the checks in plan_errors. Fix each one.',
   data('context', context),
-  previous && data('previous_plan', previous),
-  concerns && data('advisor_concerns', concerns),
-  answers && data('answers', answers),
+  fold.previous && data('previous_plan', fold.previous),
+  fold.advice && data('advisor', { concerns: fold.advice.concerns, guidance: fold.advice.guidance }),
+  fold.answers?.length && data('answers', fold.answers),
+  fold.revision && data('user_change', fold.revision),
+  fold.flaws?.length && data('plan_errors', fold.flaws.map((e) => e.msg)),
 )
 
 const planAdvicePrompt = (pool, context) => judgePrompt('advise',
   'You are the advisor: a read-only judge one level above the planners. Do not edit files or change state.',
   'Stage: plan. Pick the candidate that lands the most intent with the least risk. Check that each resolution removes its tension, that no close or supersede drops intent without a reason, and that the target order is safe.',
-  'Return approve with chosen set to that candidate, revise with chosen and concrete concerns, or stop when no candidate is safe. Keep guidance under 80 words.',
+  'Check that each criterion can fail: every path that its check reads exists on the default branch or comes from a target. A check that passes on a missing file proves nothing.',
+  'Return approve with chosen set to that candidate, revise with chosen and concrete concerns, or stop when no candidate is safe. A planner applies a revise once, so put the exact fix in guidance. Keep guidance under 80 words.',
   data('candidates', pool.map((c) => ({ id: c.id, angle: c.angle, plan: c.plan }))),
   data('context', context),
 )
@@ -1219,6 +1246,12 @@ if (ANSWERS !== null) {
   if (matched.errors.length) return { status: 'blocked', error: `args.answers is invalid: ${matched.errors.slice(0, 5).join('; ')}` }
   answered = matched.answers
 }
+const REVISION = typeof input.revise === 'string' ? input.revise.trim() : ''
+if (input.revise !== undefined) {
+  if (!REVISION) return { status: 'blocked', error: 'args.revise must be a non-empty string that describes one change to the plan' }
+  if (REVISION.length > LIMITS.revisionChars) return { status: 'blocked', error: `args.revise exceeds ${LIMITS.revisionChars} characters` }
+  if (APPROVED === null) return { status: 'blocked', error: 'args.revise needs args.plan set to the landing of a needs-approval or needs-input result, and args.approve set to its digest' }
+}
 
 // ---- Recon ----
 phase('Recon')
@@ -1290,46 +1323,75 @@ let landing
 let digest
 let planSource = 'approved'
 const adviceLog = []
-const APPROVE_USAGE = 'To execute, re-run with { prs: landing.inputs, plan: landing, approve: digest }. Add land:true to merge.'
+const APPROVE_USAGE = 'To execute, re-run with { prs: landing.inputs, plan: landing, approve: digest }. Add land:true to merge. To change the plan first, re-run with the same fields and revise: "<change>".'
 const needsInput = (questions) => ({
   status: 'needs-input', questions, plan_source: planSource, digest, landing, advice: adviceLog, skipped,
-  usage: 'Answer with { prs: landing.inputs, plan: landing, approve: digest, answers: { "<question text or 1-based number>": "<answer>" } }. One planner folds the answers in, and the run returns needs-approval.',
+  usage: 'Answer with { prs: landing.inputs, plan: landing, approve: digest, answers: { "<question text or 1-based number>": "<answer>" } }. Add revise: "<change>" to change the plan in the same run. One planner folds the input in, and the run returns needs-approval.',
 })
+
+// The advisor picks a candidate, then approves, stops, or asks for revisions. A revise verdict gets
+// one planner revision, so the plan that comes back is the one the advisor read last.
+// Returns { verdict: 'approve' | 'stop' | 'unsettled', pool, reason? }; on approve, pool[0] is the chosen plan.
+async function advisePlans(pool, context, ctx, adviseLabel) {
+  for (let round = 0; ; round++) {
+    const advised = await typed(planAdvicePrompt(pool, context),
+      { label: adviseLabel(round), phase: 'Advise', agentType: 'judge', model: 'opus', schema: PLAN_ADVICE_SCHEMA }, (a) => checkPlanAdvice(a, pool.map((c) => c.id)))
+    if (!advised.value) return { verdict: 'unsettled', reason: `the advisor returned no valid advice: ${errorText(advised.errors)}`, pool }
+    const advice = advised.value
+    adviceLog.push(advice)
+    const chosen = pool.find((c) => c.id === advice.chosen)
+    if (advice.verdict === 'approve') return { verdict: 'approve', pool: [chosen] }
+    if (advice.verdict === 'stop') return { verdict: 'stop', pool }
+    if (round >= LIMITS.advisorRevisions) return { verdict: 'unsettled', reason: `the advisor still asks for revisions: ${advice.concerns.join('; ')}`, pool }
+    const angle = PLAN_ANGLES.find((a) => a.id === chosen.angle) || ADVICE_ANGLE
+    const revised = await typed(planPrompt(angle, context, { previous: chosen.plan, advice }),
+      { label: `plan:${chosen.angle}:r${round + 1}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))
+    // A failed revision leaves the advised candidates; the user can still approve or revise one.
+    if (!revised.value) return { verdict: 'unsettled', reason: `the advisor asks for revisions (${advice.concerns.join('; ')}), and the revised plan failed validation: ${errorText(revised.errors)}`, pool }
+    pool = [{ id: 'P-1', angle: chosen.angle, plan: revised.value }]
+  }
+}
+
 if (APPROVED) {
   digest = digestOf(APPROVED)
   if (digest !== APPROVE) return { status: 'blocked', error: 'approve does not match the digest of args.plan; the plan changed after approval', skipped }
   const stale = staleReasons(APPROVED, active, idx.base_sha.trim())
   if (stale.length) return { status: 'needs-replan', reasons: stale, skipped, usage: 'Re-run with { prs } to plan against the current state.' }
   const ctx = planCtx(APPROVED.tensions.map((t) => t.id))
-  const errors = checkPlan(APPROVED.plan, ctx)
-  if (errors.length) return { status: 'blocked', error: `the approved plan no longer validates: ${errorText(errors)}`, skipped }
+  const flaws = checkPlan(APPROVED.plan, ctx)
+  const folding = answered.length > 0 || Boolean(REVISION)
+  // A fold never executes and its result passes checkPlan, so it may repair a plan that a newer check rejects.
+  if (flaws.length && !folding) return { status: 'blocked', error: `the approved plan no longer validates: ${errorText(flaws)}. Re-run with revise: "<change>" to repair it, or with { prs } to plan again.`, skipped }
   landing = APPROVED
-  if (answered.length) {
-    // One planner folds the answers in. Survey, tensions, and the advisor do not run again, and the user approves the result.
+  if (folding) {
+    // One planner folds the user input in. Survey and tensions do not run again, and the user approves the result.
     phase('Plan')
+    const fold = answered.length ? ANSWER_ANGLE : REVISE_ANGLE
+    planSource = fold.id
     const context = {
       default_branch: idx.default_branch,
       prs: active.map((p) => ({ number: p.number, title: p.title, branch: p.branch, base: p.base, author: p.author, ci: p.ci, merge_state: p.merge_state, changed_files: p.changed_files })),
       tensions: APPROVED.tensions, overlaps: fileOverlaps(active), stack_edges: stackEdges(active),
     }
-    const revised = await typed(planPrompt(ANSWER_ANGLE, context, null, APPROVED.plan, answered),
-      { label: 'plan:answers', phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))
-    if (!revised.value) return { status: 'blocked', error: `the answered plan failed validation: ${errorText(revised.errors)}`, skipped }
-    landing = { ...APPROVED, plan: revised.value }
-    digest = digestOf(landing)
-    planSource = 'answers'
-    if (revised.value.open_questions.length) return needsInput(revised.value.open_questions)
-    // Answers can restructure targets, so the advisor reads the answered plan before the user does.
-    const advised = await typed(planAdvicePrompt([{ id: 'P-1', angle: ANSWER_ANGLE.id, plan: revised.value }], context),
-      { label: 'advise:plan:answers', phase: 'Advise', agentType: 'judge', model: 'opus', schema: PLAN_ADVICE_SCHEMA }, (a) => checkPlanAdvice(a, ['P-1']))
-    const advice = advised.value
-    if (advice) adviceLog.push(advice)
-    else log(`advise:plan:answers: no valid advice (${errorText(advised.errors)})`)
-    if (advice && advice.verdict === 'stop') return { status: 'stopped', landing, digest, advice: adviceLog, skipped }
-    const reason = !advice ? 'review the plan with your answers; the advisor returned no valid advice'
-      : advice.verdict === 'revise' ? `review the plan with your answers; the advisor asks for revisions: ${advice.concerns.join('; ')}`
-        : 'review the plan with your answers'
-    return { status: 'needs-approval', reason, plan_source: planSource, digest, landing, answers: answered, estimate: estimateOf(revised.value), advice: adviceLog, skipped, usage: APPROVE_USAGE }
+    const folded = await typed(planPrompt(fold, context, { previous: APPROVED.plan, answers: answered, revision: REVISION, flaws }),
+      { label: `plan:${fold.id}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))
+    if (!folded.value) return { status: 'blocked', error: `the ${fold.id === 'answers' ? 'answered' : 'revised'} plan failed validation: ${errorText(folded.errors)}`, skipped }
+    const settle = (plan) => {
+      landing = { ...APPROVED, plan }
+      digest = digestOf(landing)
+    }
+    settle(folded.value)
+    if (folded.value.open_questions.length) return needsInput(folded.value.open_questions)
+    // User input can restructure targets, so the advisor reads the folded plan before the user does.
+    phase('Advise')
+    const settled = await advisePlans([{ id: 'P-1', angle: fold.id, plan: folded.value }], context, ctx,
+      (round) => (round ? `advise:plan:${fold.id}:${round}` : `advise:plan:${fold.id}`))
+    const plan = settled.pool[0].plan
+    settle(plan)
+    if (settled.verdict === 'stop') return { status: 'stopped', landing, digest, advice: adviceLog, skipped }
+    if (plan.open_questions.length) return needsInput(plan.open_questions)
+    const reason = settled.verdict === 'approve' ? 'review the revised plan; the advisor approved it' : `review the revised plan; ${settled.reason}`
+    return { status: 'needs-approval', reason, plan_source: planSource, digest, landing, answers: answered, revision: REVISION, estimate: estimateOf(plan), advice: adviceLog, skipped, usage: APPROVE_USAGE }
   }
 } else {
   phase('Survey')
@@ -1353,7 +1415,7 @@ if (APPROVED) {
   const choose = (reason, pool) => ({
     status: 'needs-input', reason, advice: adviceLog, skipped,
     candidates: pool.map((c) => { const l = landingOf(c.plan); return { id: c.id, angle: c.angle, digest: digestOf(l), landing: l } }),
-    usage: 'Pick one candidate. To execute it, re-run with { prs: landing.inputs, plan: <candidate>.landing, approve: <candidate>.digest }. A candidate with open questions takes args.answers first.',
+    usage: 'Pick one candidate. To execute it, re-run with { prs: landing.inputs, plan: <candidate>.landing, approve: <candidate>.digest }. To change it first, add revise: "<change>". A candidate with open questions takes args.answers first.',
   })
 
   phase('Plan')
@@ -1373,7 +1435,7 @@ if (APPROVED) {
     }
     const angles = PLAN_ANGLES.slice(0, PLANNER_COUNT[found.value.blast_radius])
     log(`${tensions.length} tension(s), ${incomplete.length} incomplete PR(s), blast radius ${found.value.blast_radius}: ${angles.length} planner(s).`)
-    const drafted = await parallel(angles.map((angle) => () => typed(planPrompt(angle, context, null, null),
+    const drafted = await parallel(angles.map((angle) => () => typed(planPrompt(angle, context),
       { label: `plan:${angle.id}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))))
     let pool = []
     angles.forEach((angle, i) => {
@@ -1383,26 +1445,11 @@ if (APPROVED) {
     if (!pool.length) return { status: 'blocked', error: 'no planner produced a valid plan', tensions, skipped }
 
     phase('Advise')
-    for (let round = 0; !chosenPlan; round++) {
-      const advised = await typed(planAdvicePrompt(pool, context),
-        { label: `advise:plan:${round}`, phase: 'Advise', agentType: 'judge', model: 'opus', schema: PLAN_ADVICE_SCHEMA }, (a) => checkPlanAdvice(a, pool.map((c) => c.id)))
-      if (!advised.value) return choose(`the advisor returned no valid advice: ${errorText(advised.errors)}`, pool)
-      const advice = advised.value
-      adviceLog.push(advice)
-      const chosen = pool.find((c) => c.id === advice.chosen)
-      if (advice.verdict === 'stop') return { status: 'stopped', candidates: pool, advice: adviceLog, skipped }
-      if (advice.verdict === 'approve') {
-        chosenPlan = chosen.plan
-        planSource = chosen.angle
-        break
-      }
-      if (round >= LIMITS.advisorRevisions) return choose(`the advisor still asks for revisions: ${advice.concerns.join('; ')}`, pool)
-      const angle = PLAN_ANGLES.find((a) => a.id === chosen.angle)
-      const revised = await typed(planPrompt(angle, context, advice.concerns, chosen.plan),
-        { label: `plan:${angle.id}:r${round + 1}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))
-      if (!revised.value) return { status: 'blocked', error: `the revised plan failed validation: ${errorText(revised.errors)}`, advice: adviceLog, skipped }
-      pool = [{ id: 'P-1', angle: angle.id, plan: revised.value }]
-    }
+    const settled = await advisePlans(pool, context, ctx, (round) => `advise:plan:${round}`)
+    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped }
+    if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool)
+    chosenPlan = settled.pool[0].plan
+    planSource = settled.pool[0].angle
   }
 
   landing = landingOf(chosenPlan)

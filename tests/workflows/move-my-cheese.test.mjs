@@ -604,6 +604,140 @@ test('answers with a stale approve digest are refused', async () => {
   assert.equal(labels.includes('plan:answers'), false)
 })
 
+const reconOnly = () => reconRoutes([openPr(1), openPr(2)], [detail(1), detail(2)])
+const vacuousCheck = 'cd src && ! grep -q helper gone.js'
+const vacuousPlan = () => consolidatePlan({ criteria: [{ id: 'AC-1', statement: 'the old helper is gone', check_kind: 'command', check: vacuousCheck }] })
+
+test('an advisor revise on an answered plan gets one planner revision before needs-approval', async () => {
+  const first = await run({ prs: [1, 2] }, askingRoutes())
+  const revise = { verdict: 'revise', chosen: 'P-1', concerns: ['AC-1 reads src/1.js only'], guidance: 'check src/2.js too' }
+  const fixed = consolidatePlan({ criteria: [{ id: 'AC-1', statement: 'the helper exists once', check_kind: 'command', check: 'grep -c helper src/1.js src/2.js' }] })
+  const second = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest, answers: { 1: 'x', 2: 'y' } }, [
+    ...reconOnly(),
+    ['plan:answers:r1', fixed],
+    ['plan:answers', consolidatePlan()],
+    ['advise:plan:answers:1', approveP1],
+    ['advise:plan:answers', revise],
+  ])
+  assert.equal(second.result.status, 'needs-approval')
+  assert.match(second.result.reason, /the advisor approved it/)
+  assert.deepEqual(second.labels, ['recon:index', 'recon:detail', 'plan:answers', 'advise:plan:answers', 'plan:answers:r1', 'advise:plan:answers:1'])
+  assert.equal(second.result.landing.plan.criteria[0].check, 'grep -c helper src/1.js src/2.js')
+  const planner = second.trace.agents.find(({ opts }) => opts.label === 'plan:answers:r1').prompt
+  assert.ok(planner.includes('Revise previous_plan to resolve the advisor concerns'))
+  assert.ok(planner.includes('"guidance": "check src/2.js too"'))
+  const executed = await run({ prs: [1, 2], plan: plain(second.result.landing), approve: second.result.digest }, builtConsolidation())
+  assert.equal(executed.result.status, 'ready')
+})
+
+test('an answered plan that the advisor still rejects returns needs-approval with the revised plan and the concerns', async () => {
+  const first = await run({ prs: [1, 2] }, askingRoutes())
+  const revise = { verdict: 'revise', chosen: 'P-1', concerns: ['split the helper'], guidance: '' }
+  const second = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest, answers: { 1: 'x', 2: 'y' } }, [
+    ...reconOnly(),
+    ['plan:answers:r1', consolidatePlan({ summary: 'revised once' })],
+    ['plan:answers', consolidatePlan()],
+    ['advise:plan:answers', revise],
+  ])
+  assert.equal(second.result.status, 'needs-approval')
+  assert.match(second.result.reason, /still asks for revisions: split the helper/)
+  assert.equal(second.result.landing.plan.summary, 'revised once')
+  assert.match(second.result.usage, /revise/)
+})
+
+test('revise folds one change into an approved plan and returns a fresh digest that executes', async () => {
+  const first = await run({ prs: [1, 2] }, planRoutes())
+  const change = 'rename the summary to say combined'
+  const second = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest, revise: `  ${change} ` }, [
+    ...reconOnly(),
+    ['plan:revise', consolidatePlan({ summary: 'combined' })],
+    ['advise:plan:revise', approveP1],
+  ])
+  assert.equal(second.result.status, 'needs-approval')
+  assert.equal(second.result.plan_source, 'revise')
+  assert.equal(second.result.revision, change)
+  assert.deepEqual(second.labels, ['recon:index', 'recon:detail', 'plan:revise', 'advise:plan:revise'])
+  const planner = second.trace.agents.find(({ opts }) => opts.label === 'plan:revise').prompt
+  assert.ok(planner.includes('Revise previous_plan with the user change request'))
+  assert.ok(planner.includes(`<data name="user_change">\n${JSON.stringify(change)}`))
+  assert.doesNotMatch(planner, /plan_errors|<data name="answers">/)
+  assert.notEqual(second.result.digest, first.result.digest)
+  const executed = await run({ prs: [1, 2], plan: plain(second.result.landing), approve: second.result.digest }, builtConsolidation())
+  assert.equal(executed.result.status, 'ready')
+})
+
+test('revise and answers fold together through one planner', async () => {
+  const first = await run({ prs: [1, 2] }, askingRoutes())
+  const second = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest, answers: { 1: 'x', 2: 'y' }, revise: 'drop AC-2' }, [
+    ...reconOnly(),
+    ['plan:answers', consolidatePlan()],
+    ['advise:plan:answers', approveP1],
+  ])
+  assert.equal(second.result.status, 'needs-approval')
+  const planner = second.trace.agents.find(({ opts }) => opts.label === 'plan:answers').prompt
+  assert.ok(planner.includes('<data name="answers">') && planner.includes('<data name="user_change">'))
+})
+
+test('invalid revise args are refused before any agent runs', async () => {
+  const first = await run({ prs: [1, 2] }, planRoutes())
+  const landing = plain(first.result.landing)
+  for (const revise of ['', '   ', 5, ['a'], 'x'.repeat(4001)]) {
+    const { result, trace } = await run({ prs: [1, 2], plan: landing, approve: first.result.digest, revise }, [])
+    assert.equal(result.status, 'blocked', JSON.stringify(revise).slice(0, 40))
+    assert.match(result.error, /args\.revise/)
+    assert.equal(trace.agents.length, 0)
+  }
+  const noPlan = await run({ prs: [1, 2], revise: 'x' }, [])
+  assert.match(noPlan.result.error, /args\.revise needs args\.plan/)
+  assert.equal(noPlan.trace.agents.length, 0)
+})
+
+test('a negated grep without an existence test is rejected at plan time; a guarded one passes', async () => {
+  const { result, trace } = await run({ prs: [1, 2] }, planRoutes([['plan:minimal', vacuousPlan()]]))
+  assert.equal(result.status, 'blocked')
+  assert.ok(trace.logs.some((l) => /AC-1 check negates a grep with no existence test/.test(l)))
+  for (const check of ['test -e src/gone.js && ! grep -q helper src/gone.js', '[ -f src/1.js ] && ! rg -q helper src/1.js', 'grep -c helper src/1.js']) {
+    const guarded = consolidatePlan({ criteria: [{ id: 'AC-1', statement: 'the old helper is gone', check_kind: 'command', check }] })
+    const ok = await run({ prs: [1, 2] }, planRoutes([['plan:minimal', guarded]]))
+    assert.equal(ok.result.status, 'needs-approval', check)
+  }
+  const planner = trace.agents.find(({ opts }) => opts.label === 'plan:minimal').prompt
+  assert.ok(planner.includes('start a negated grep with test -e <path> &&'))
+})
+
+// Mirrors digestOf in the workflow, so a test can hold an approval that a newer plan check rejects.
+function digestOf(value) {
+  const stable = (v) => Array.isArray(v) ? `[${v.map(stable).join(',')}]`
+    : v && typeof v === 'object' ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(',')}}`
+      : JSON.stringify(v) ?? 'null'
+  const fnv1a = (input, seed) => {
+    let hash = seed >>> 0
+    for (let i = 0; i < input.length; i++) hash = Math.imul(hash ^ input.charCodeAt(i), 16777619) >>> 0
+    return hash.toString(16).padStart(8, '0')
+  }
+  const canonical = stable(value)
+  return `${fnv1a(canonical, 2166136261)}${fnv1a(canonical, 3735928559)}`
+}
+
+test('an approval that a newer check rejects blocks with a revise hint, and revise repairs it', async () => {
+  const first = await run({ prs: [1, 2] }, planRoutes())
+  assert.equal(digestOf(plain(first.result.landing)), first.result.digest)
+  const landing = { ...plain(first.result.landing), plan: vacuousPlan() }
+  const approve = digestOf(landing)
+  const blocked = await run({ prs: [1, 2], plan: landing, approve }, reconOnly())
+  assert.equal(blocked.result.status, 'blocked')
+  assert.match(blocked.result.error, /no longer validates: AC-1 check negates a grep.*revise/)
+  const repaired = await run({ prs: [1, 2], plan: landing, approve, revise: 'guard AC-1 with an existence test' }, [
+    ...reconOnly(),
+    ['plan:revise', consolidatePlan()],
+    ['advise:plan:revise', approveP1],
+  ])
+  assert.equal(repaired.result.status, 'needs-approval')
+  const planner = repaired.trace.agents.find(({ opts }) => opts.label === 'plan:revise').prompt
+  assert.ok(planner.includes('<data name="plan_errors">'))
+  assert.ok(planner.includes('AC-1 check negates a grep with no existence test'))
+})
+
 // Isolated worktrees live under <main>/.claude/worktrees/<id>.
 const wt = (name) => `/repo/.claude/worktrees/wf_test-${name}`
 const curedReviewRoutes = (cure) => [
