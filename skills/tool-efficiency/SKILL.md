@@ -23,6 +23,11 @@ relevant domain — pick by target:
 - "how do I fix X" / high error rate → `error-forensics` + `fix-recommendations`
 - broad audit → `all` (also runs `token-economics`)
 
+The script calls the public `agent-session-analytics` package for SQL and
+Markdown tables. Its default database follows package freshness rules.
+An explicit `SESSIONS_DB` must name a package-compatible database.
+A package failure is an error, not insufficient signal.
+
 Then calibrate each finding with
 `../session-analytics/references/calibration.md` — confidence
 (`<certain>`/`<speculative>`/`<don't know>`) × severity

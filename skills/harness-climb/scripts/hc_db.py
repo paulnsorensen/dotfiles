@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
-import functools
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
 from hc_core import InputError
 from hc_stats import HARNESSES
 
-SKILLS_DIR = Path(__file__).resolve().parents[2]
-DB_PATH_SH = SKILLS_DIR / "session-analytics" / "scripts" / "db-path.sh"
-INGEST_PY = SKILLS_DIR / "session-analytics" / "scripts" / "ingest.py"
+PACKAGE = ("uvx", "agent-session-analytics@latest")
 IN_SCOPE = f"harness IN ({','.join(repr(h) for h in HARNESSES)})"
-
-INGEST_TIMEOUT_S = 600
+PACKAGE_TIMEOUT_S = 600
 
 
 class DbError(ValueError):
@@ -37,99 +32,60 @@ class RefreshFailed(DbError):
     """The ingest that refreshes the session database failed or timed out."""
 
 
-def ensure_fresh_db() -> bool:
-    """Refresh the session database with the TTL-aware ingest. True when it is fresh.
-
-    `SESSIONS_DB` skips the ingest and counts as fresh.
-    """
-    if os.environ.get("SESSIONS_DB"):
-        return True
+def _package(*args: str, db: Path | None = None) -> Any:
+    env = os.environ.copy()
+    if db is not None:
+        env["SESSIONS_DB"] = str(db)
     try:
         proc = subprocess.run(
-            [sys.executable, str(INGEST_PY)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-            timeout=INGEST_TIMEOUT_S,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return proc.returncode == 0
-
-
-@functools.cache
-def _settings_for(
-    sessions_db: str, cache_home: str, home: str, limit: str, cwd: str
-) -> tuple[Path, str]:
-    """The database path and DuckDB memory limit, from one call to the shared resolver.
-
-    The arguments are the environment the resolver reads. They key the cache.
-    """
-    proc = subprocess.run(
-        [
-            "bash",
-            "-c",
-            'source "$1" && sessions_db_path && sessions_duckdb_memory_limit',
-            "_",
-            str(DB_PATH_SH),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    lines = proc.stdout.strip().splitlines()
-    if proc.returncode != 0 or len(lines) < 2:
-        raise DbError(f"cannot resolve the session database: {proc.stderr.strip()}")
-    return Path(lines[0].strip()), lines[1].strip()
-
-
-def _shell_settings() -> tuple[Path, str]:
-    env = os.environ.get
-    return _settings_for(
-        env("SESSIONS_DB", ""),
-        env("XDG_CACHE_HOME", ""),
-        env("HOME", ""),
-        env("SESSIONS_DUCKDB_MEMORY_LIMIT", ""),
-        os.getcwd(),
-    )
-
-
-def resolve_db() -> Path:
-    """The session database path, from the shared session-analytics resolver only.
-
-    Every caller reads the database next, so a stale one is refreshed here first.
-    """
-    if not ensure_fresh_db():
-        raise RefreshFailed("session database refresh failed")
-    return _shell_settings()[0]
-
-
-def duck(db: Path, sql: str) -> list[dict[str, Any]]:
-    limit = _shell_settings()[1]
-    try:
-        proc = subprocess.run(
-            [
-                "duckdb",
-                "-init",
-                "/dev/null",
-                "-readonly",
-                str(db),
-                "-cmd",
-                f"SET memory_limit='{limit}'",
-                "-json",
-                "-c",
-                sql,
-            ],
+            [*PACKAGE, *args],
             capture_output=True,
             text=True,
             check=False,
+            timeout=PACKAGE_TIMEOUT_S,
+            env=env,
         )
-    except OSError as exc:
-        raise DbError("duckdb not installed") from exc
-    if proc.returncode != 0:
-        raise InputError(f"duckdb failed: {proc.stderr.strip()[:300]}")
-    text = proc.stdout.strip()
-    return json.loads(text) if text else []
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise DbError("session analytics package unavailable") from exc
+    if proc.returncode:
+        if args[0] == "sql" and proc.returncode == 5:
+            raise InputError("session analytics SQL rejected")
+        raise DbError("session analytics database unavailable")
+    try:
+        return json.loads(proc.stdout)
+    except (TypeError, ValueError) as exc:
+        raise DbError("session analytics returned invalid JSON") from exc
+
+
+def ensure_fresh_db() -> bool:
+    """Let package SQL refresh its default database before readers start."""
+    if os.environ.get("SESSIONS_DB"):
+        return True
+    try:
+        rows = _package("sql", "SELECT 1 AS ready")
+    except DbError:
+        return False
+    return rows == [{"ready": 1}]
+
+
+def resolve_db() -> Path:
+    """Return the package-resolved path after its default database refresh."""
+    if not ensure_fresh_db():
+        raise RefreshFailed("session database refresh failed")
+    result = _package("db-path")
+    if not isinstance(result, dict):
+        raise DbError("session analytics returned an invalid database path")
+    path = result.get("path")
+    if not isinstance(path, str) or not path or not Path(path).is_absolute():
+        raise DbError("session analytics returned an invalid database path")
+    return Path(path)
+
+
+def duck(db: Path, sql: str) -> list[dict[str, Any]]:
+    rows = _package("sql", sql, db=db)
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise DbError("session analytics returned invalid SQL rows")
+    return rows
 
 
 def load_rows(
@@ -148,7 +104,7 @@ def load_rows(
     )[0]["n"]
     if current != 2:
         raise SchemaOutdated(
-            "session database predates parent_session_id/context_tokens; re-run ingest.py --force"
+            "session database predates parent_session_id/context_tokens; run agent-session-analytics ingest --force"
         )
     version = "arg_max(version, last_seen) FILTER (WHERE version IS NOT NULL)"
     query = gate["targeted_query"].strip().rstrip(";")

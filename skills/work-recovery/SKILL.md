@@ -27,6 +27,11 @@ assemble the brief:
 ### Next step       — last incomplete action or the explicit "next"
 ```
 
+Both scripts use the public `agent-session-analytics` package for SQL.
+Its default database follows package freshness rules. An explicit
+`SESSIONS_DB` must name a package-compatible database. Treat package failures
+as errors, not empty sessions.
+
 Judgment notes: a wrong goal inference must be correctable — quote the
 prompts. No test/build command → say so plainly, don't guess. Codex/OMP
 sessions lack Skill/Agent entries — reconstruct from tool_uses (paths and

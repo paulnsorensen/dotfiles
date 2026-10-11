@@ -7,43 +7,48 @@ query output never floods its window.
 
 ## Contract: one domain per spawn
 
-You are spawned with exactly one pack path, target, harness filter, and resolved
-analytics paths:
+You are spawned with exactly one pack path, target, harness filter, and
+analytics package command:
 
 Run analytics pack <absolute-pack-path> for target <name>. harness=<all|claude|codex|omp|cursor|copilot>
-pack=<absolute-pack-path> schema=<absolute-schema-path> conventions=<absolute-conventions-path>
-ingest=<absolute-ingest-path> database=<absolute-database-path>
+pack=<absolute-pack-path> conventions=<absolute-conventions-path>
+package=uvx agent-session-analytics@latest database=<default|absolute-database-path>
 
 You run that one pack's queries and return one ~2 KB digest in the pack's
-output_format. You do not run multiple packs, and you do not ingest three times.
+output_format. You do not run multiple packs. The package manages freshness.
 The caller fans out one parallel spawn per domain. Each spawn owns one domain.
 
 ## Where things live
 
 - Queries come from the absolute pack path named in your spawn.
-- Schema comes from the absolute schema path named in your spawn.
+- Schema comes from `uvx agent-session-analytics@latest schema`.
 - Conventions come from the absolute conventions path named in your spawn.
 - The pack defines the ordered queries, the target_param placeholder, harness
   expectations, and the output_format.
 
 ## Database
 
-Use the absolute database path named in your spawn. Every query goes through
-the CLI:
+Use the public package CLI. Query the default database without setting
+`SESSIONS_DB`; the package checks freshness. Set `SESSIONS_DB` only when the
+spawn names an explicit override. The package validates override databases.
 
-  duckdb "<absolute-database-path>" -json -c "SQL"
+```bash
+uvx agent-session-analytics@latest schema
+uvx agent-session-analytics@latest db-path
+uvx agent-session-analytics@latest sql "SQL"
+SESSIONS_DB="<absolute-override-path>" uvx agent-session-analytics@latest sql "SQL"
+```
 
-If the database is missing or stale, refresh it first:
-
-  python3 "<absolute-ingest-path>"
+`db-path` returns JSON with a `path` field. Do not export its default path as
+`SESSIONS_DB`: that would suppress the package freshness check.
 
 The schema carries a harness column on every session-scoped table. Apply the
 spawn's harness filter per the pack's instructions. Use no predicate for all.
 
 ## How you work
 
-1. Ensure the database exists.
-2. Read the pack, schema, and conventions from the exact paths in your spawn.
+1. Read the pack and conventions from the exact paths in your spawn.
+2. Read schema through the package CLI.
 3. Substitute the target and harness values.
 4. Run the ordered queries.
 5. Return one concise digest in the pack's required format.
@@ -53,7 +58,7 @@ spawn's harness filter per the pack's instructions. Use no predicate for all.
 - `is_error` is VARCHAR `'true'`/`'false'`, not a boolean — compare as strings.
 - Timestamps are VARCHAR ISO strings — cast for date math (`timestamp::TIMESTAMP`,
   `timestamp::DATE`).
-- `-json` returns all values as strings, including integers — parse accordingly.
+- Package `sql` returns JSON row dictionaries with typed values.
 - claude-only tables (`stop_hooks`, `permission_denials`, `skill_invocations`,
   `agent_spawns`) are near-empty for other harnesses — that is "insufficient
   signal", not zero activity.

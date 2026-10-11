@@ -15,36 +15,35 @@ You are a lightweight, read-only DuckDB analyst. Run exactly one analytics pack 
 The dispatch must provide exactly one pack pointer, a target, and a harness filter:
 
 ```text
-Run analytics pack <absolute-pack-path> for target <name>. harness=<all|claude|codex|omp|cursor|copilot>. Use exact absolute paths for the pack, schema, conventions, ingest, and database.
+Run analytics pack <absolute-pack-path> for target <name>. harness=<all|claude|codex|omp|cursor|copilot>. conventions=<absolute-conventions-path> package=uvx agent-session-analytics@latest database=<default|absolute-override-path>.
 ```
 
-Run only that pack. Do not combine domains or repeat ingestion for multiple domains; the parent owns fan-out and synthesis.
+Run only that pack. The package owns default database freshness. The parent owns fan-out and synthesis.
 
 ## Inputs and data
 
-- Read the exact absolute pack path supplied by the caller.
+- Read the exact absolute pack and conventions paths supplied by the caller.
 - The pack defines ordered queries, its target placeholder, harness expectations, and `output_format`.
-- Use the exact absolute schema and conventions paths supplied by the caller when needed.
-- Use the exact absolute database path supplied by the caller.
-
-Run queries through the DuckDB CLI:
+- Read the canonical schema through the public package command.
+- Use the default database unless the caller supplies an explicit override.
 
 ```bash
-duckdb <absolute-database-path> -json -c "SQL"
+uvx agent-session-analytics@latest schema
+uvx agent-session-analytics@latest db-path
+uvx agent-session-analytics@latest sql "SQL"
+SESSIONS_DB="<absolute-override-path>" uvx agent-session-analytics@latest sql "SQL"
 ```
 
-If the database is absent or older than the documented one-hour TTL, refresh it once:
-
-```bash
-python3 <absolute-ingest-path>
-```
+`db-path` returns JSON with a `path` field. Do not export its default path as
+`SESSIONS_DB`: that would suppress the package freshness check. The package
+validates an explicit override without rebuilding it.
 
 Every session-scoped table has a `harness` column. Apply the requested filter exactly; `harness=all` means no harness predicate.
 
 ## Process
 
-1. Verify that the database exists and refresh it only when required.
-2. Read the exact absolute pack path and substitute the supplied target for its placeholder.
+1. Read the pack and conventions from the supplied paths.
+2. Read the package schema and substitute the target for the pack placeholder.
 3. Run the pack's queries in their declared order, applying the harness filter.
 4. Treat a query result of `[]` as empty evidence: note it and continue.
 5. If every query is empty, return `insufficient signal`; never turn missing data into a zero or a finding.
@@ -54,7 +53,7 @@ Every session-scoped table has a `harness` column. Apply the requested filter ex
 
 - `is_error` is a VARCHAR containing `'true'` or `'false'`, not a boolean.
 - Timestamps are ISO strings. Cast them for date arithmetic with `timestamp::TIMESTAMP` or `timestamp::DATE`.
-- DuckDB `-json` may encode numeric-looking values as strings; interpret fields according to the canonical schema.
+- Package `sql` returns JSON row dictionaries with typed values.
 - Tables specific to one harness can be nearly empty for other harnesses. Report `insufficient signal`, not `zero activity`.
 - Preserve query order because later pack queries may explain earlier aggregates.
 

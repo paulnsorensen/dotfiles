@@ -308,6 +308,8 @@ class InjectedText(unittest.TestCase):
             db = make_db(
                 Path(tmp) / "s.duckdb",
                 "CREATE TABLE raw_entries(harness VARCHAR, type VARCHAR, message JSON)",
+                "CREATE TABLE schema_info (version INTEGER)",
+                "INSERT INTO schema_info VALUES (1)",
                 f"INSERT INTO raw_entries VALUES ('claude','user','{user}'),"
                 f"('codex','user','{plain}'),('claude','assistant','{user}')",
             )
