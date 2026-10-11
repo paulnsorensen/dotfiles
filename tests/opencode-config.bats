@@ -46,6 +46,42 @@ JSON
     [ "$(jq -r '.mcp.servers.tilth.codemode' <<<"$output")" = "false" ]
 }
 
+@test "opencode config replaces the complete live MCP subtree" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<'JSON'
+{"mcp":{"todoist":{"enabled":true},"code-review-graph":{"enabled":true},"serena":{"enabled":true},"extra":{},"context7":{"environment":{"TOKEN":"synthetic"}},"servers":{"serena":{"enabled":true},"extra":{},"tilth":{"codemode":true,"stale":"removed"}}}}
+JSON
+    [ "$status" -eq 0 ]
+    [ "$(jq -S '.mcp' <<<"$output")" = "$(yq -o=json '.opencode.config.mcp' "$REGISTRY" | jq -S .)" ]
+    [ "$stderr" = "" ]
+}
+
+@test "home opencode config removes MCP overrides and preserves unrelated settings" {
+    local script="$CZ_SRC/modify_opencode.json.tmpl"
+    local live='{"model":"kept","custom":{"nested":[1,false,null]},"mcp":{"todoist":{},"code-review-graph":{},"serena":{},"servers":{"serena":{}}}}'
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$script" <<<"$live"
+    [ "$status" -eq 0 ]
+    local cleaned="$output"
+    [ "$(jq -S . <<<"$cleaned")" = "$(jq -S 'del(.mcp)' <<<"$live")" ]
+    [ "$stderr" = "" ]
+    run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$script" <<<"$cleaned"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$cleaned" ]
+}
+
+@test "home opencode config handles missing input and rejects invalid documents" {
+    local script="$CZ_SRC/modify_opencode.json.tmpl"
+    run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$script" </dev/null
+    [ "$status" -eq 0 ]
+    [ "$output" = "{}" ]
+    local live
+    for live in '{bad' '[]' 'null' '{} {}' '   '; do
+        run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$script" <<<"$live"
+        [ "$status" -eq 1 ]
+        [ "$output" = "" ]
+        [ "$stderr" = "OpenCode config is not a JSON object" ]
+    done
+}
+
 @test "opencode config rejects a corrupt live file" {
     run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<<'{bad'
     [ "$status" -eq 1 ]
@@ -134,6 +170,8 @@ opencode_in_test_home() {
     printf 'runtime state\n' > "$destination/.local/share/opencode/auth.json"
     printf '{"dependencies":{}}\n' > "$destination/.config/opencode/package.json"
     printf '{"theme":"opencode"}\n' > "$destination/.config/opencode/tui.json"
+    printf '%s\n' '{"model":"kept","custom":{"nested":[1,false]},"mcp":{"todoist":{},"code-review-graph":{},"serena":{}}}' > "$destination/opencode.json"
+    printf '%s\n' '{"mcp":{"servers":{"extra":{},"tilth":{"stale":"removed"}}}}' > "$destination/.config/opencode/opencode.json"
     cat > "$cfg" <<TOML
 sourceDir = "$CZ_SRC"
 destDir = "$destination"
@@ -148,6 +186,7 @@ TOML
     [ "$status" -eq 0 ]
     [ "$(jq -S 'del(.agent)' "$destination/.config/opencode/opencode.json")" = "$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S .)" ]
     [ "$(jq '.agent | length' "$destination/.config/opencode/opencode.json")" -eq 19 ]
+    [ "$(jq -cS . "$destination/opencode.json")" = '{"custom":{"nested":[1,false]},"model":"kept"}' ]
     cmp -s "$CZ_SRC/dot_config/opencode/cli.json" "$destination/.config/opencode/cli.json"
     [ ! -e "$destination/.config/opencode/tui.json" ]
     cmp -s "$CZ_SRC/dot_config/opencode/themes/chocolate-donut.json" "$destination/.config/opencode/themes/chocolate-donut.json"

@@ -13,10 +13,14 @@ On 2026-10-11 the harness moved from v1.18.33 to v2.0.26. Renovate PR #1249 trie
 `chezmoi/.chezmoidata/opencode.yaml` holds the full `opencode.config` document.
 
 - `chezmoi/dot_config/opencode/modify_opencode.json` writes `~/.config/opencode/opencode.json` from the registry.
-- The modifier uses the shared drift gate (`chezmoi/lib/drift-gate.sh`). It keeps unknown live keys with a warning and records them in `harness-drift/opencode-config`.
-- `lib/opencode-config-retired.txt` deletes retired keys: `tools`, `lsp`, `compaction.prune`, `permission.doom_loop`, and the v1-shaped `mcp.tilth`.
+- The modifier replaces the complete MCP subtree from the registry. It preserves unrelated unknown live keys with a warning.[^mcp-authority]
+- `chezmoi/modify_opencode.json.tmpl` removes MCP overrides from `~/opencode.json` and preserves all other settings.[^home-mcp]
+- `lib/opencode-config-retired.txt` deletes retired keys outside the MCP subtree.
 - `cli.json` and `themes/*.json` deploy as plain files. `.chezmoiremove` deletes the v1 `tui.json`.
 - `~/.local/share/opencode/` (auth, database, logs) stays OpenCode-owned.
+
+**Why MCP authority needs home cleanup:** OpenCode searches ancestor directories, so a home config can override the managed global config.[^ancestor-config]
+Removing home MCP overrides prevents retired servers and credentials from returning. Project-local overrides remain outside this ownership boundary.
 
 **Why a modify script, not a plain file:** OpenCode writes to its global config at runtime. A plugin install writes `package.json`, `node_modules/`, and `.gitignore` into `~/.config/opencode/`. For this reason the directory is never an `exact_` target.
 
@@ -149,3 +153,7 @@ Child sessions, failed turns, and interrupted turns receive no follow-up. A fail
 On 2026-10-11, OpenCode v2.0.26 ran in a sandboxed `HOME` against the rendered config. `debug config` and `debug agents` accepted it, and `mcp list` connected all five servers. Both plugins reported `active`, and no native file tool remained in `ctx.tool.list()`. That first run used the v1-shaped Tilth entry, and `debug config` showed that v2 dropped `codemode`; PR #1251 review found this, and the `mcp.servers` shape fixed it.
 
 Related: [[index]], [[pi]], [[../operations/sync-and-chezmoi]], [[../architecture/config-drift]].
+
+[^mcp-authority]: chezmoi/dot_config/opencode/modify_opencode.json:67-82; tests/opencode-config.bats:49-56
+[^home-mcp]: chezmoi/modify_opencode.json.tmpl:1-8; chezmoi/lib/opencode-config.sh:1-16; tests/opencode-config.bats:58-83
+[^ancestor-config]: <https://opencode.ai/v2/docs/config#locations>

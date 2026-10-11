@@ -1,0 +1,8 @@
+#!/bin/sh
+# Remove home-directory MCP overrides without deleting unrelated settings.
+set -eu
+
+# shellcheck source=lib/opencode-config.sh
+. "${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/lib/opencode-config.sh"
+live=$(cat)
+opencode_without_mcp "$live"
