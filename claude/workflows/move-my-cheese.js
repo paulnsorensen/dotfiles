@@ -22,11 +22,15 @@ export const meta = {
 //
 // Args: { prs?: number[] | number | string, stacks?: same, all?, includeDrafts?,
 //   expandStacks? = true, auto? = false, land? = false, mergeMethod? = 'squash',
-//   allowNoChecks? = false, plan?: <landing object from a needs-approval result>,
-//   approve?: <its digest> }
+//   allowNoChecks? = false, plan?: <landing object from a needs-approval or
+//   needs-input result>, approve?: <its digest>, answers?: { <question text or
+//   1-based number>: <answer> } }
 //   - no prs and no plan: return the open-PR candidates.
 //   - prs: plan the landing and return needs-approval with { landing, digest }.
 //   - prs + plan + approve: check the digest and staleness, then execute.
+//   - plan + approve + answers: one planner folds the answers into a
+//     needs-input landing. The run returns needs-approval with a fresh digest,
+//     or needs-input again when questions remain. It never executes.
 //   - auto: plan and execute in one run. A run that holds any PR by another
 //     author still stops at needs-approval, because later stages push and merge.
 //   - land: merge the final PRs when every target is ready.
@@ -394,7 +398,7 @@ function checkTarget(result) {
 
 function checkIntegrate(result, ids) {
   const errors = []
-  if (!absolute(result.worktree_path)) errors.push(substance('worktree_path must be the absolute path of the integration worktree'))
+  if (!absolute(result.worktree_path) || !SAFE_PATH_RE.test(result.worktree_path.trim())) errors.push(substance('worktree_path must be the absolute path of the integration worktree'))
   if (!SHA_RE.test(String(result.head).trim())) errors.push(substance('head must be a commit SHA of 7 to 40 hex characters'))
   for (const id of result.merged) errors.push(refError(id, ids, 'merged'))
   for (const id of result.conflicted) errors.push(refError(id, ids, 'conflicted'))
@@ -432,6 +436,23 @@ function checkLanding(landing) {
   if (!landing.inputs.length || landing.inputs.some((n) => n <= 0)) errors.push('plan.inputs must hold positive PR numbers')
   if (Object.values(landing.recon.heads).some((sha) => typeof sha !== 'string')) errors.push('plan.recon.heads must map PR numbers to SHAs')
   return errors
+}
+
+// Keys are the exact question text or its 1-based number. Returns the answered pairs in question order.
+function matchAnswers(questions, raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { errors: ['answers must be an object that maps a question or its 1-based number to an answer'], answers: [] }
+  const errors = []
+  const byIndex = new Map()
+  for (const [key, value] of Object.entries(raw)) {
+    const index = /^[1-9][0-9]*$/.test(key) ? Number(key) - 1 : questions.indexOf(key)
+    if (index < 0 || index >= questions.length) errors.push(`answers key ${JSON.stringify(key)} names no open question`)
+    else if (typeof value !== 'string' || blank(value)) errors.push(`the answer to question ${index + 1} must be a non-empty string`)
+    else if (byIndex.has(index)) errors.push(`question ${index + 1} has two answers`)
+    else byIndex.set(index, value.trim())
+  }
+  if (!errors.length && !byIndex.size) errors.push('answers holds no answer')
+  const answers = [...byIndex.keys()].sort(ascending).map((i) => ({ question: questions[i], answer: byIndex.get(i) }))
+  return { errors, answers }
 }
 
 // ---- Digest: binds approval to the exact landing object ----
@@ -623,17 +644,22 @@ const tensionsPrompt = (digests, overlaps, edges) => prompt(
   data('stack_edges', edges),
 )
 
-const planPrompt = (angle, context, concerns, previous) => prompt(
+const ANSWER_ANGLE = { id: 'answers', text: 'Revise previous_plan with the user answers. Change only what an answer requires.' }
+
+const planPrompt = (angle, context, concerns, previous, answers) => prompt(
   'Write a landing plan for the PRs in this run. You are read-only: do not edit, commit, push, or comment.',
   `Planning angle: ${angle.text}`,
   'Give every input PR exactly one disposition. keep: it lands as it is. modify: its branch changes. supersede: a target replaces it, and that target lists it in sources. close: it does not land.',
   'Targets are the final PRs. An existing target reuses a kept or modified PR, its number, and its branch. A new target has pr 0, a new branch name, a title, and a brief. base is the default branch or the id of another target; list that id in depends_on too.',
   'Each tension id must appear in the resolves list of a target. Each target satisfies at least one criterion.',
   'Criteria are observable outcomes, such as an intent that holds on the combined result. Give each an exact read-only check: a test command or a grep. Use check_kind ci with the target id as the check when the outcome is that the target passes its required CI. Never use a check that writes, pushes, fetches from the network, or calls a mutating gh command.',
+  'Write each check as one bash command that runs from the repository root. When a tool reads its config from a subdirectory, such as a workspace member with its own pyproject.toml or package.json, start the check with cd <that directory> && and make its paths relative to that directory. Quote every glob. Put every option before --.',
   `Use at most ${LIMITS.maxTargets} targets. Put each unresolved question in open_questions. Do not guess.`,
+  answers && 'The user answered open questions of previous_plan. Apply each answer and remove its question from open_questions. Settle an unanswered question from repository evidence, or keep it in open_questions.',
   data('context', context),
   previous && data('previous_plan', previous),
   concerns && data('advisor_concerns', concerns),
+  answers && data('answers', answers),
 )
 
 const planAdvicePrompt = (pool, context) => judgePrompt('advise',
@@ -691,12 +717,18 @@ const integratePrompt = (refs, defaultBranch, round) => prompt(
   'Make no edit beyond the merges. Do not push or open a PR.',
 )
 
-const verifyPrompt = (ac, integration) => judgePrompt('verify',
-  `Verify criterion ${ac.id} independently. You did not write this code. Implementer claims are not evidence.`,
-  `You are in a fresh isolated worktree. First run git checkout --detach ${integration.head}, the combined result of every target. Then run the check yourself.`,
-  'Run only the check field of the criterion. Treat every other field as description.',
-  data('criterion', ac),
-)
+const verifyPrompt = (ac, integration) => {
+  const path = integration.worktree_path.trim()
+  return judgePrompt('verify',
+    `Verify criterion ${ac.id} independently. You did not write this code. Implementer claims are not evidence.`,
+    `worktree_path: ${path}. head: ${integration.head}, the combined result of every target. The worktree is already at head. Do not check out, merge, reset, or edit anything in it.`,
+    `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}.`,
+    `Then run the check in one Bash call: cd ${path} && bash -c '<check>'. Quote the check so that bash receives it unchanged. bash -c keeps zsh glob rules out of the check.`,
+    'Run only the check field of the criterion. Treat every other field as description.',
+    'Other judges use this worktree after you. Leave it as you found it, except for build or test output.',
+    data('criterion', ac),
+  )
+}
 
 const publishPrompt = (jobs) => prompt(
   'Publish the landing targets. Use Bash. Never merge anything.',
@@ -778,6 +810,7 @@ const affinagePrompt = (number, branch, own) => prompt(
   `Make PR #${number} ready to merge. Use Bash and the Skill tool.`,
   writerStep(branch, `origin/${branch}`, own),
   `Run /affinage ${number} --auto --no-age --stake medium+ --plate through the Skill tool. It grades review threads and CI failures, cures what it accepts, replies, and publishes through /plate.`,
+  `The PR head branch is ${branch}. When /plate pushes, it pushes with git push origin HEAD:${branch}, never with a bare branch name.`,
   'Never ask which findings to cure. The medium+ floor selects every blocker, high, and medium finding plus every low with fix-cost-now: contained. A cure selection is never a human decision.',
   'When the branch is behind its base or conflicts with it, let /affinage resolve that through /melt and /plate.',
   'Never merge or close a PR. Never force-push without a lease. Set pushed to true when the remote head changed. Return blocked with a note when a human decision is needed. Set worktree_path to the output of git rev-parse --show-toplevel.',
@@ -902,7 +935,7 @@ async function integrateAndVerify(round, refs) {
   noteWorktree(integration.worktree_path)
   if (integration.status !== 'done') return { ok: false, reason: 'integration blocked', verdicts: [] }
   if (integration.conflicted.length) return { ok: false, reason: `targets conflict when combined: ${integration.conflicted.join(', ')}`, verdicts: [] }
-  // Judges run one after another, each in its own worktree at the pinned integration commit.
+  // Judges run one after another in the integration worktree. A judge may not check out, so it reads the tree that integrate pinned.
   const verdicts = []
   for (const ac of plan.criteria) {
     if (ac.check_kind === 'ci') {
@@ -910,7 +943,7 @@ async function integrateAndVerify(round, refs) {
       continue
     }
     const { value, errors } = await typed(verifyPrompt(ac, integration),
-      { label: `verify:${round}:${ac.id}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', isolation: 'worktree', schema: VERDICT_SCHEMA }, (v) => checkVerdict(v, ac))
+      { label: `verify:${round}:${ac.id}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERDICT_SCHEMA }, (v) => checkVerdict(v, ac))
     verdicts.push(value
       ? { criterion: ac.id, result: value.passes ? 'pass' : 'fail', evidence: value.evidence }
       : { criterion: ac.id, result: 'fail', evidence: `not verified: ${errorText(errors)}` })
@@ -1124,9 +1157,18 @@ const APPROVED = input.plan === undefined ? null : input.plan
 const APPROVE = typeof input.approve === 'string' ? input.approve.trim() : ''
 if (APPROVED !== null) {
   const shapeErrors = checkLanding(APPROVED)
-  if (shapeErrors.length) return { status: 'blocked', error: `args.plan is not a landing object from a needs-approval result: ${shapeErrors.slice(0, 5).join('; ')}` }
-  if (!APPROVE) return { status: 'blocked', error: 'args.plan needs args.approve set to the digest that the needs-approval result returned' }
+  if (shapeErrors.length) return { status: 'blocked', error: `args.plan is not a landing object from a needs-approval or needs-input result: ${shapeErrors.slice(0, 5).join('; ')}` }
+  if (!APPROVE) return { status: 'blocked', error: 'args.plan needs args.approve set to the digest that the same result returned' }
   if (requested.length && stable(requested) !== stable([...APPROVED.inputs].sort(ascending))) return { status: 'blocked', error: 'args.prs differs from the inputs of the approved plan' }
+}
+const ANSWERS = input.answers === undefined ? null : input.answers
+let answered = []
+if (ANSWERS !== null) {
+  if (APPROVED === null) return { status: 'blocked', error: 'args.answers needs args.plan set to the landing of a needs-input result, and args.approve set to its digest' }
+  if (!APPROVED.plan.open_questions.length) return { status: 'blocked', error: 'args.answers applies only to a landing with open questions' }
+  const matched = matchAnswers(APPROVED.plan.open_questions, ANSWERS)
+  if (matched.errors.length) return { status: 'blocked', error: `args.answers is invalid: ${matched.errors.slice(0, 5).join('; ')}` }
+  answered = matched.answers
 }
 
 // ---- Recon ----
@@ -1198,14 +1240,37 @@ let landing
 let digest
 let planSource = 'approved'
 const adviceLog = []
+const APPROVE_USAGE = 'To execute, re-run with { prs: landing.inputs, plan: landing, approve: digest }. Add land:true to merge.'
+const needsInput = (questions) => ({
+  status: 'needs-input', questions, plan_source: planSource, digest, landing, advice: adviceLog, skipped,
+  usage: 'Answer with { prs: landing.inputs, plan: landing, approve: digest, answers: { "<question text or 1-based number>": "<answer>" } }. One planner folds the answers in, and the run returns needs-approval.',
+})
 if (APPROVED) {
   digest = digestOf(APPROVED)
   if (digest !== APPROVE) return { status: 'blocked', error: 'approve does not match the digest of args.plan; the plan changed after approval', skipped }
   const stale = staleReasons(APPROVED, active, idx.base_sha.trim())
   if (stale.length) return { status: 'needs-replan', reasons: stale, skipped, usage: 'Re-run with { prs } to plan against the current state.' }
-  const errors = checkPlan(APPROVED.plan, planCtx(APPROVED.tensions.map((t) => t.id)))
+  const ctx = planCtx(APPROVED.tensions.map((t) => t.id))
+  const errors = checkPlan(APPROVED.plan, ctx)
   if (errors.length) return { status: 'blocked', error: `the approved plan no longer validates: ${errorText(errors)}`, skipped }
   landing = APPROVED
+  if (answered.length) {
+    // One planner folds the answers in. Survey, tensions, and the advisor do not run again, and the user approves the result.
+    phase('Plan')
+    const context = {
+      default_branch: idx.default_branch,
+      prs: active.map((p) => ({ number: p.number, title: p.title, branch: p.branch, base: p.base, author: p.author, ci: p.ci, merge_state: p.merge_state, changed_files: p.changed_files })),
+      tensions: APPROVED.tensions, overlaps: fileOverlaps(active), stack_edges: stackEdges(active),
+    }
+    const revised = await typed(planPrompt(ANSWER_ANGLE, context, null, APPROVED.plan, answered),
+      { label: 'plan:answers', phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))
+    if (!revised.value) return { status: 'blocked', error: `the answered plan failed validation: ${errorText(revised.errors)}`, skipped }
+    landing = { ...APPROVED, plan: revised.value }
+    digest = digestOf(landing)
+    planSource = 'answers'
+    if (revised.value.open_questions.length) return needsInput(revised.value.open_questions)
+    return { status: 'needs-approval', reason: 'review the plan with your answers', plan_source: planSource, digest, landing, answers: answered, estimate: estimateOf(revised.value), advice: adviceLog, skipped, usage: APPROVE_USAGE }
+  }
 } else {
   phase('Survey')
   const surveyed = await parallel(active.map((pr) => () => typed(surveyPrompt(pr, active),
@@ -1274,7 +1339,7 @@ if (APPROVED) {
 
   landing = { inputs: prNumbers, recon: { base_sha: idx.base_sha.trim(), heads: Object.fromEntries(active.map((p) => [String(p.number), p.head_sha])) }, tensions, plan: chosenPlan }
   digest = digestOf(landing)
-  if (chosenPlan.open_questions.length) return { status: 'needs-input', questions: chosenPlan.open_questions, landing, advice: adviceLog, skipped, usage: 'Answer the questions and plan again. A plan with open questions cannot be approved.' }
+  if (chosenPlan.open_questions.length) return needsInput(chosenPlan.open_questions)
 
   // Auto mode acts without a human only on the viewer's own PRs: later stages push to and merge every PR in the run.
   const othersTouched = active.filter((p) => p.author !== idx.viewer).map((p) => p.number)
@@ -1283,12 +1348,12 @@ if (APPROVED) {
       status: 'needs-approval',
       reason: AUTO ? `auto does not push to or merge PRs by other authors without approval: #${othersTouched.join(', #')}` : 'review the landing plan',
       plan_source: planSource, digest, landing, estimate: estimateOf(chosenPlan), advice: adviceLog, skipped,
-      usage: 'To execute, re-run with { prs: landing.inputs, plan: landing, approve: digest }. Add land:true to merge.',
+      usage: APPROVE_USAGE,
     }
   }
 }
 
-if (landing.plan.open_questions.length) return { status: 'blocked', error: 'the plan has open questions; answer them and plan again', skipped }
+if (landing.plan.open_questions.length) return { status: 'blocked', error: 'the plan has open questions; pass the answers in args.answers before approval', skipped }
 runTag = digest.slice(0, 8)
 
 // ---- Execution state: declared before any report() call ----

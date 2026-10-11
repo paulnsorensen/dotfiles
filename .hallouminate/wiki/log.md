@@ -108,3 +108,4 @@
 2026-10-11 · 69cdb117d9385336 · merged · harnesses/wheypoint-stop-hook.md, harnesses/opencode.md · PR #1253: confirmed mutation and checkpoint results replace model verdicts across Claude, Codex, and OpenCode.
 2026-10-11 · pr-1267 · merged · harnesses/wheypoint-stop-hook.md, harnesses/opencode.md · Retired the wheypoint Stop hook and OpenCode idle plugin in every harness; the skill stays.
 2026-10-11 · pr-1267 · merged · architecture/move-my-cheese-workflow.md · #1268: every writer stage runs isolated, state moves through refs and SHAs, and a successful run cleans up.
+2026-10-11 · pr-1267 · merged · architecture/move-my-cheese-workflow.md · #1269–#1272: judges read the integration worktree, planners write runnable checks, age-fanout retries blocked dimensions, and needs-input takes answers back. The age-fanout reconcile gap was not real: the guard allows `.cheese/`.

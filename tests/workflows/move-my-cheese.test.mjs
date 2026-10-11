@@ -434,15 +434,19 @@ test('every reviewer dispatch opens with the severity-report contract line', asy
   for (const { prompt } of reviewers) assert.match(prompt, /^Review mode: severity-report\n/)
 })
 
-test('a keep-only plan with a command criterion still integrates and verifies in an isolated judge worktree', async () => {
+test('a keep-only plan with a command criterion verifies in the pinned integration worktree without a checkout', async () => {
   const { result, trace, labels } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['integrate:pre', { status: 'done', worktree_path: '/tmp/int', head: sha(97), merged: ['T-1', 'T-2'], conflicted: [] }],
     ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, evidence: 'grep printed 1 and 1' }],
   ]))
   assert.equal(result.status, 'ready')
   const verify = trace.agents.find(({ opts }) => opts.label === 'verify:pre:AC-1')
-  assert.equal(verify.opts.isolation, 'worktree')
-  assert.match(verify.prompt, new RegExp(`git checkout --detach ${sha(97)}`))
+  assert.equal(verify.opts.isolation, undefined)
+  assert.match(verify.prompt, /^Judge mode: verify\n/)
+  assert.ok(verify.prompt.includes(`worktree_path: /tmp/int. head: ${sha(97)}`))
+  assert.ok(verify.prompt.includes(`git -C /tmp/int rev-parse HEAD and confirm that it equals ${sha(97)}`))
+  assert.ok(verify.prompt.includes("cd /tmp/int && bash -c '<check>'"))
+  assert.doesNotMatch(verify.prompt, /git checkout --detach/)
   assert.deepEqual(plain(result.verification.verdicts).map((v) => v.result), ['pass'])
   assert.equal(labels.some((l) => l.startsWith('target:') || l === 'publish'), false)
 })
@@ -502,10 +506,83 @@ test('publish never reruns after an invalid report', async () => {
   assert.deepEqual(labels.filter((l) => l.startsWith('publish')), ['publish'])
 })
 
-test('an approved plan with open questions cannot execute', async () => {
-  const first = await run({ prs: [1, 2] }, planRoutes([['plan:minimal', consolidatePlan({ open_questions: ['which helper wins?'] })]]))
+const QUESTIONS = ['which helper wins?', 'keep the old name?']
+const askingRoutes = () => planRoutes([['plan:minimal', consolidatePlan({ open_questions: QUESTIONS })]])
+
+test('planners get the rules that keep criterion checks runnable', async () => {
+  const { trace } = await run({ prs: [1, 2] }, planRoutes())
+  const planner = trace.agents.find(({ opts }) => opts.label === 'plan:minimal').prompt
+  assert.ok(planner.includes('start the check with cd <that directory> &&'))
+  assert.ok(planner.includes('Quote every glob. Put every option before --.'))
+})
+
+test('needs-input returns a digest, and that landing cannot execute without answers', async () => {
+  const first = await run({ prs: [1, 2] }, askingRoutes())
   assert.equal(first.result.status, 'needs-input')
-  assert.equal(first.result.digest, undefined)
+  assert.match(first.result.digest, /^[0-9a-f]{16}$/)
+  assert.deepEqual(plain(first.result.questions), QUESTIONS)
+  assert.match(first.result.usage, /answers/)
+  const { result, labels } = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest }, reconRoutes([openPr(1), openPr(2)], [detail(1), detail(2)]))
+  assert.equal(result.status, 'blocked')
+  assert.match(result.error, /args\.answers/)
+  assert.deepEqual(labels, ['recon:index', 'recon:detail'])
+})
+
+test('answers fold into the plan through one planner and return needs-approval with a fresh digest', async () => {
+  const first = await run({ prs: [1, 2] }, askingRoutes())
+  const answers = { 1: 'the helper in #1', 'keep the old name?': 'yes' }
+  const second = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest, answers }, [
+    ...reconRoutes([openPr(1), openPr(2)], [detail(1), detail(2)]),
+    ['plan:answers', consolidatePlan()],
+  ])
+  assert.equal(second.result.status, 'needs-approval')
+  assert.equal(second.result.plan_source, 'answers')
+  assert.deepEqual(second.labels, ['recon:index', 'recon:detail', 'plan:answers'])
+  const planner = second.trace.agents.find(({ opts }) => opts.label === 'plan:answers').prompt
+  assert.ok(planner.includes('Revise previous_plan with the user answers'))
+  assert.ok(planner.includes('"answer": "the helper in #1"'))
+  assert.ok(planner.includes('"question": "keep the old name?"'))
+  assert.notEqual(second.result.digest, first.result.digest)
+  // The answered plan equals the plan that needs no questions, so the digest covers the plan itself.
+  const direct = await run({ prs: [1, 2] }, planRoutes())
+  assert.equal(second.result.digest, direct.result.digest)
+  const executed = await run({ prs: [1, 2], plan: plain(second.result.landing), approve: second.result.digest }, builtConsolidation())
+  assert.equal(executed.result.status, 'ready')
+})
+
+test('an answered plan that still has questions returns needs-input with its own digest', async () => {
+  const first = await run({ prs: [1, 2] }, askingRoutes())
+  const second = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest, answers: { 1: 'the helper in #1' } }, [
+    ...reconRoutes([openPr(1), openPr(2)], [detail(1), detail(2)]),
+    ['plan:answers', consolidatePlan({ open_questions: ['keep the old name?'] })],
+  ])
+  assert.equal(second.result.status, 'needs-input')
+  assert.deepEqual(plain(second.result.questions), ['keep the old name?'])
+  assert.notEqual(second.result.digest, first.result.digest)
+})
+
+test('invalid answers are refused before any agent runs', async () => {
+  const first = await run({ prs: [1, 2] }, askingRoutes())
+  const landing = plain(first.result.landing)
+  for (const answers of [{ 3: 'no such question' }, { 'unknown?': 'x' }, { 1: '  ' }, {}, ['a'], 'yes']) {
+    const { result, trace } = await run({ prs: [1, 2], plan: landing, approve: first.result.digest, answers }, [])
+    assert.equal(result.status, 'blocked', JSON.stringify(answers))
+    assert.match(result.error, /answers/)
+    assert.equal(trace.agents.length, 0)
+  }
+  const direct = await run({ prs: [1, 2] }, planRoutes())
+  const noQuestions = await run({ prs: [1, 2], plan: plain(direct.result.landing), approve: direct.result.digest, answers: { 1: 'x' } }, [])
+  assert.match(noQuestions.result.error, /only to a landing with open questions/)
+  const noPlan = await run({ prs: [1, 2], answers: { 1: 'x' } }, [])
+  assert.match(noPlan.result.error, /args\.answers needs args\.plan/)
+})
+
+test('answers with a stale approve digest are refused', async () => {
+  const first = await run({ prs: [1, 2] }, askingRoutes())
+  const { result, labels } = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: '0'.repeat(16), answers: { 1: 'x' } }, reconRoutes([openPr(1), openPr(2)], [detail(1), detail(2)]))
+  assert.equal(result.status, 'blocked')
+  assert.match(result.error, /approve does not match/)
+  assert.equal(labels.includes('plan:answers'), false)
 })
 
 // Isolated worktrees live under <main>/.claude/worktrees/<id>.
@@ -542,6 +619,7 @@ test('every stage that edits code runs in its own isolated worktree and never en
   const local = `mmc/${result.digest.slice(0, 8)}/feat/pr-1`
   assert.ok(call('review:1:affinage:1').prompt.includes(`git checkout -B ${local}--review-1 origin/feat/pr-1`))
   assert.ok(call('review:1:affinage:2').prompt.includes(`git checkout -B ${local}--review-2 origin/feat/pr-1`))
+  assert.ok(call('review:1:affinage:1').prompt.includes('When /plate pushes, it pushes with git push origin HEAD:feat/pr-1'))
   assert.ok(labels.includes('cleanup'))
 })
 
