@@ -1,0 +1,30 @@
+system: "base24"
+name: "Chocolate Donut 2"
+author: "Paul Sorensen"
+variant: "dark"
+description: "Chocolate Donut surfaces with accents from the brownfield deutan solver"
+palette:
+  base00: "221d1a" # Main background
+  base01: "312b27" # Lighter background (Black)
+  base02: "44403b" # Selection background
+  base03: "939393" # Comments, invisibles (B.Black)
+  base04: "9e9387" # Dark foreground (dim)
+  base05: "dac2b1" # Default foreground (White)
+  base06: "e9ddd4" # Light foreground
+  base07: "f8f8f8" # Lightest foreground (B.White)
+  base08: "a98c8f" # Red - errors, variables
+  base09: "f39035" # Orange - warnings, integers
+  base0A: "bcaa91" # Yellow - types, classes
+  base0B: "62ae78" # Green - success, strings
+  base0C: "46b7d7" # Cyan - regex, info
+  base0D: "6f97b8" # Blue - functions
+  base0E: "de6ab4" # Magenta - keywords
+  base0F: "a98c8f" # Red (reused) - deprecated
+  base10: "191513" # Darker background
+  base11: "100e0c" # Darkest background
+  base12: "ef6b27" # Bright red
+  base13: "f4b342" # Bright yellow
+  base14: "73cb51" # Bright green
+  base15: "5ccaea" # Bright cyan
+  base16: "7c9dfd" # Bright blue
+  base17: "c1aabf" # Bright magenta
