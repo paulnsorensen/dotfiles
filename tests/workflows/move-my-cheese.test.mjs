@@ -94,9 +94,12 @@ const planRoutes = (overrides = []) => [
   ['advise:plan:0', approveP1],
 ]
 
+// Fallbacks after each test's own routes: the done advisor approves unless a test routes it first.
+const DEFAULT_ROUTES = [['advise:done', { verdict: 'approve', concerns: [], guidance: '' }]]
+
 async function run(args, routes) {
   const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({ respond: router(routes) })
+  const { globals, trace } = createRuntime({ respond: router([...routes, ...DEFAULT_ROUTES]) })
   const result = await workflow.run({ ...globals, args })
   return { result, trace, labels: trace.agents.map(({ opts }) => opts.label) }
 }
@@ -299,7 +302,7 @@ test('an approved consolidation builds, verifies, publishes, and drafts the supe
   const { result, trace, labels } = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest }, planRoutes([
     ['target:T-1', { status: 'done', completed: ['combined'], remaining: [], checkpoint: sha(50), head_sha: sha(50), worktree_path: '/tmp/wt-t1', note: '' }],
     ['integrate:pre', { status: 'done', worktree_path: '/tmp/int', head: sha(98), merged: ['T-1'], conflicted: [] }],
-    ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, evidence: 'grep -c printed 1' }],
+    ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, tree_clean: true, evidence: 'grep -c printed 1' }],
     ['publish', { results: [{ target: 'T-1', pr_number: 10, url: 'https://example.test/pr/10', head_sha: sha(50), changed_files: 2, lines_changed: 30 }] }],
     ['age:10', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-10', artifact: '.cheese/age/pr-10.md', worktree_path: '/tmp/wt-t1', has_medium_plus_findings: false, has_cheap_lows: false }],
     ['finalize:10', { marker_updated: true }],
@@ -354,7 +357,7 @@ const builtConsolidation = (overrides = []) => planRoutes([
   ...overrides,
   ['target:T-1', { status: 'done', completed: ['combined'], remaining: [], checkpoint: sha(50), head_sha: sha(50), worktree_path: '/tmp/wt-t1', note: '' }],
   ['integrate:pre', { status: 'done', worktree_path: '/tmp/int', head: sha(98), merged: ['T-1'], conflicted: [] }],
-  ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, evidence: 'grep -c printed 1' }],
+  ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, tree_clean: true, evidence: 'grep -c printed 1' }],
   ['publish', { results: [{ target: 'T-1', pr_number: 10, url: 'https://example.test/pr/10', head_sha: sha(50), changed_files: 2, lines_changed: 30 }] }],
   ['age:10', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-10', artifact: '.cheese/age/pr-10.md', worktree_path: '/tmp/wt-t1', has_medium_plus_findings: false, has_cheap_lows: false }],
   ['finalize:10', { marker_updated: true }],
@@ -393,7 +396,7 @@ test('cure commits that cure could not push fail the review before re-age, final
     ['survey', survey],
     ['tensions', noTensions],
     ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: true, has_cheap_lows: false }],
-    ['cure:1', { status: 'blocked', committed: true, pushed: false, head_sha: sha(1, 5), worktree_path: '/tmp/wt-c', artifact: 'c.md' }],
+    ['cure:1', { status: 'blocked', committed: true, pushed: false, head_sha: sha(1, 5), worktree_path: '/tmp/wt-c', artifact: 'c.md', note: '' }],
   ])
   assert.equal(result.status, 'partial')
   assert.equal(result.targets[0].review, 'failed')
@@ -407,7 +410,7 @@ test('cheap lows alone trigger the cure, and cure and affinage never ask what to
     ['survey', survey],
     ['tensions', noTensions],
     ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false, has_cheap_lows: true }],
-    ['cure:1', { status: 'ok', committed: false, pushed: false, head_sha: sha(1), worktree_path: '/tmp/wt-c', artifact: 'c.md' }],
+    ['cure:1', { status: 'ok', committed: false, pushed: false, head_sha: sha(1), worktree_path: '/tmp/wt-c', artifact: 'c.md', note: '' }],
     ['finalize:1', { marker_updated: true }],
     ['review:1:status', ready(1)],
   ])
@@ -424,7 +427,7 @@ test('every reviewer dispatch opens with the severity-report contract line', asy
     ['survey', survey],
     ['tensions', noTensions],
     ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: true, has_cheap_lows: false }],
-    ['cure:1', { status: 'ok', committed: true, pushed: true, head_sha: sha(1, 5), worktree_path: '/tmp/wt-c', artifact: 'c.md' }],
+    ['cure:1', { status: 'ok', committed: true, pushed: true, head_sha: sha(1, 5), worktree_path: '/tmp/wt-c', artifact: 'c.md', note: '' }],
     ['reage:1', { mode: 'incremental', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a2.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false, has_cheap_lows: false }],
     ['finalize:1', { marker_updated: true }],
     ['review:1:status', ready(1)],
@@ -437,7 +440,7 @@ test('every reviewer dispatch opens with the severity-report contract line', asy
 test('a keep-only plan with a command criterion verifies in the pinned integration worktree without a checkout', async () => {
   const { result, trace, labels } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['integrate:pre', { status: 'done', worktree_path: '/tmp/int', head: sha(97), merged: ['T-1', 'T-2'], conflicted: [] }],
-    ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, evidence: 'grep printed 1 and 1' }],
+    ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, tree_clean: true, evidence: 'grep printed 1 and 1' }],
   ]))
   assert.equal(result.status, 'ready')
   const verify = trace.agents.find(({ opts }) => opts.label === 'verify:pre:AC-1')
@@ -445,10 +448,24 @@ test('a keep-only plan with a command criterion verifies in the pinned integrati
   assert.match(verify.prompt, /^Judge mode: verify\n/)
   assert.ok(verify.prompt.includes(`worktree_path: /tmp/int. head: ${sha(97)}`))
   assert.ok(verify.prompt.includes(`git -C /tmp/int rev-parse HEAD and confirm that it equals ${sha(97)}`))
-  assert.ok(verify.prompt.includes("cd /tmp/int && bash -c '<check>'"))
+  assert.ok(verify.prompt.includes("cd /tmp/int && bash -c 'grep -c helper src/1.js src/2.js'"))
+  assert.ok(verify.prompt.includes('git -C /tmp/int status --porcelain'))
   assert.doesNotMatch(verify.prompt, /git checkout --detach/)
   assert.deepEqual(plain(result.verification.verdicts).map((v) => v.result), ['pass'])
   assert.equal(labels.some((l) => l.startsWith('target:') || l === 'publish'), false)
+})
+
+test('code shell-quotes a criterion check, and a dirty tree before a check shows in the verdict', async () => {
+  const quoted = { ...keepPlan(), criteria: [{ id: 'AC-1', statement: 'the helper exists', check_kind: 'command', check: "grep -c 'helper' src/1.js" }] }
+  const { result, trace } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
+    ['plan:minimal', quoted],
+    ['integrate:pre', { status: 'done', worktree_path: '/tmp/int', head: sha(97), merged: ['T-1', 'T-2'], conflicted: [] }],
+    ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, tree_clean: false, evidence: 'grep printed 1' }],
+  ]))
+  const verify = trace.agents.find(({ opts }) => opts.label === 'verify:pre:AC-1')
+  assert.ok(verify.prompt.includes("cd /tmp/int && bash -c 'grep -c '\\''helper'\\'' src/1.js'"))
+  assert.match(plain(result.verification.verdicts)[0].evidence, /the worktree had changes from an earlier check/)
+  assert.ok(trace.logs.some((l) => /integration worktree had changes before the check/.test(l)))
 })
 
 test('an integration that drops a target fails before publish', async () => {
@@ -534,10 +551,12 @@ test('answers fold into the plan through one planner and return needs-approval w
   const second = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest, answers }, [
     ...reconRoutes([openPr(1), openPr(2)], [detail(1), detail(2)]),
     ['plan:answers', consolidatePlan()],
+    ['advise:plan:answers', approveP1],
   ])
   assert.equal(second.result.status, 'needs-approval')
   assert.equal(second.result.plan_source, 'answers')
-  assert.deepEqual(second.labels, ['recon:index', 'recon:detail', 'plan:answers'])
+  assert.deepEqual(second.labels, ['recon:index', 'recon:detail', 'plan:answers', 'advise:plan:answers'])
+  assert.match(second.trace.agents.find(({ opts }) => opts.label === 'advise:plan:answers').prompt, /^Judge mode: advise\n/)
   const planner = second.trace.agents.find(({ opts }) => opts.label === 'plan:answers').prompt
   assert.ok(planner.includes('Revise previous_plan with the user answers'))
   assert.ok(planner.includes('"answer": "the helper in #1"'))
@@ -600,7 +619,7 @@ const curedReviewRoutes = (cure) => [
   ['review:1:status', ready(1, { head_sha: sha(1, 7) })],
   ['review:1:affinage', ({ opts }) => ({ status: 'ok', pushed: true, worktree_path: wt(opts.label.replaceAll(':', '-')), note: '' })],
 ]
-const pushedCure = { status: 'ok', committed: true, pushed: true, head_sha: sha(1, 5), worktree_path: wt('cure'), artifact: '.cheese/cure/pr-1.md' }
+const pushedCure = { status: 'ok', committed: true, pushed: true, head_sha: sha(1, 5), worktree_path: wt('cure'), artifact: '.cheese/cure/pr-1.md', note: '' }
 
 test('every stage that edits code runs in its own isolated worktree and never enters another agent tree', async () => {
   const { result, trace, labels } = await run({ prs: [1], auto: true }, curedReviewRoutes(pushedCure))
@@ -617,8 +636,8 @@ test('every stage that edits code runs in its own isolated worktree and never en
   assert.ok(cure.includes('git push origin HEAD:feat/pr-1'))
   assert.ok(call('reage:1').prompt.includes(`git checkout --detach ${sha(1, 5)}`))
   const local = `mmc/${result.digest.slice(0, 8)}/feat/pr-1`
-  assert.ok(call('review:1:affinage:1').prompt.includes(`git checkout -B ${local}--review-1 origin/feat/pr-1`))
-  assert.ok(call('review:1:affinage:2').prompt.includes(`git checkout -B ${local}--review-2 origin/feat/pr-1`))
+  assert.ok(call('review:1:affinage:1').prompt.includes(`git checkout --ignore-other-worktrees -B ${local}--review-1 origin/feat/pr-1`))
+  assert.ok(call('review:1:affinage:2').prompt.includes(`git checkout --ignore-other-worktrees -B ${local}--review-2 origin/feat/pr-1`))
   assert.ok(call('review:1:affinage:1').prompt.includes('When /plate pushes, it pushes with git push origin HEAD:feat/pr-1'))
   assert.ok(labels.includes('cleanup'))
 })
@@ -671,4 +690,104 @@ test('a target build continuation resumes in a fresh isolated worktree from the 
   assert.doesNotMatch(resume.prompt, /\bcd \//)
   const sweep = trace.agents.find(({ opts }) => opts.label === 'cleanup')
   assert.ok(sweep.prompt.includes(wt('t1')) && sweep.prompt.includes(wt('t1-c1')))
+})
+
+// ---- Workflow assessment fixes ----
+const cleanAge = (overrides = {}) => ({ mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: '.cheese/age/pr-1.md', worktree_path: wt('age'), has_medium_plus_findings: false, has_cheap_lows: false, ...overrides })
+const singleReview = (routes) => [...reconRoutes([openPr(1)], [detail(1)]), ['survey', survey], ['tensions', noTensions], ...routes]
+
+test('an error during land still returns a report', async () => {
+  const { result } = await run({ prs: [1], auto: true, land: true }, [
+    ...reconRoutes([openPr(1)], [aged(1)]),
+    ['survey', survey],
+    ['tensions', noTensions],
+    ['review:1:status', ready(1)],
+    ['land:1:status', ready(1)],
+    ['merge:1', () => { throw new Error('budget spent') }],
+  ])
+  assert.equal(result.status, 'partial')
+  assert.match(result.note, /land stopped by an error: budget spent/)
+})
+
+test('a cure that stops with no commits fails the review instead of passing clean', async () => {
+  const { result, labels } = await run({ prs: [1], auto: true }, singleReview([
+    ['age:1', cleanAge({ has_cheap_lows: true })],
+    ['cure:1', { status: 'blocked', committed: false, pushed: false, head_sha: sha(1), worktree_path: wt('cure'), artifact: '', note: 'the report copy failed' }],
+  ]))
+  assert.equal(result.status, 'partial')
+  assert.equal(result.targets[0].review, 'failed')
+  assert.match(result.targets[0].reason, /cure blocked with no commits: the report copy failed/)
+  assert.equal(labels.some((l) => l.startsWith('finalize:') || l.startsWith('review:1:status')), false)
+})
+
+test('a cheap stage that returns nothing is redone once', async () => {
+  let calls = 0
+  const { result, labels } = await run({ prs: [1], auto: true }, [
+    ...reconRoutes([openPr(1)], [aged(1)]),
+    ['survey', survey],
+    ['tensions', noTensions],
+    ['review:1:status', () => (++calls === 1 ? null : ready(1))],
+  ])
+  assert.equal(result.status, 'ready')
+  assert.deepEqual(labels.filter((l) => l.startsWith('review:1:status')), ['review:1:status:1', 'review:1:status:1:redo1'])
+})
+
+test('a marker the finalizer could not write is redone, then logged without failing the PR', async () => {
+  const { result, labels, trace } = await run({ prs: [1], auto: true }, singleReview([
+    ['age:1', cleanAge()],
+    ['finalize:1', { marker_updated: false }],
+    ['review:1:status', ready(1)],
+  ]))
+  assert.equal(result.status, 'ready')
+  assert.deepEqual(labels.filter((l) => l.startsWith('finalize:')), ['finalize:1', 'finalize:1:redo1', 'finalize:1:redo2'])
+  assert.ok(trace.logs.some((l) => /aged marker not written/.test(l)))
+})
+
+test('when the advisor cannot settle, each candidate carries a landing and digest the user can approve', async () => {
+  const revise = { verdict: 'revise', chosen: 'P-1', concerns: ['split the helper'], guidance: '' }
+  const first = await run({ prs: [1, 2] }, planRoutes([['advise:plan:0', revise], ['advise:plan:1', revise]]))
+  assert.equal(first.result.status, 'needs-input')
+  assert.match(first.result.reason, /still asks for revisions: split the helper/)
+  assert.ok(first.labels.includes('plan:minimal:r1'))
+  const [candidate] = plain(first.result.candidates)
+  assert.match(candidate.digest, /^[0-9a-f]{16}$/)
+  const executed = await run({ prs: [1, 2], plan: candidate.landing, approve: candidate.digest }, builtConsolidation())
+  assert.equal(executed.result.status, 'ready')
+})
+
+test('without land, the done advisor gates the draft conversions and the ready verdict', async () => {
+  const first = await run({ prs: [1, 2] }, planRoutes())
+  const { result, labels } = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest }, builtConsolidation([
+    ['advise:done', { verdict: 'stop', concerns: ['wait for a human review'], guidance: '' }],
+  ]))
+  assert.equal(result.status, 'partial')
+  assert.match(result.note, /advisor did not approve: wait for a human review/)
+  assert.equal(labels.includes('mark'), false)
+  assert.equal(labels.includes('cleanup'), false)
+})
+
+test('recon reads counts and checks with exact commands, code caps the body, and tensions get every pair', async () => {
+  const { result, trace } = await run({ prs: [1, 2] }, planRoutes([
+    ['recon:detail', { prs: [detail(1, { body: 'x'.repeat(2000) }), detail(2)] }],
+  ]))
+  const prompt = (label) => trace.agents.find(({ opts }) => opts.label === label).prompt
+  assert.ok(prompt('recon:detail').includes(".body[:1500]"))
+  assert.ok(prompt('recon:detail').includes('reviewThreads(first: 100)'))
+  assert.ok(prompt('recon:detail').includes('gh pr checks <n> --json bucket'))
+  assert.ok(!prompt('survey:1').includes('x'.repeat(1501)))
+  assert.ok(prompt('tensions').includes('<data name="pairs">'))
+  assert.ok(result.estimate.agents_max > 0)
+})
+
+test('a redone integration records every attempt worktree for cleanup', async () => {
+  let calls = 0
+  const { result, trace } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
+    ['integrate:pre', () => (++calls === 1
+      ? { status: 'done', worktree_path: wt('int1'), head: sha(97), merged: ['T-1'], conflicted: [] }
+      : { status: 'done', worktree_path: wt('int2'), head: sha(97), merged: ['T-1', 'T-2'], conflicted: [] })],
+    ['verify:pre:AC-1', { criterion: 'AC-1', passes: true, tree_clean: true, evidence: 'grep printed 1 and 1' }],
+  ]))
+  assert.equal(result.status, 'ready')
+  const sweep = trace.agents.find(({ opts }) => opts.label === 'cleanup').prompt
+  assert.ok(sweep.includes(wt('int1')) && sweep.includes(wt('int2')))
 })
