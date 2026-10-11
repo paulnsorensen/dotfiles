@@ -6,7 +6,7 @@
 # live values without a warning. Keys listed in
 # lib/opencode-config-retired.txt are deleted from the live file before the
 # gate runs, so a key the registry retired never survives as drift. Other
-# unknown live keys keep their live values with a warning
+# unknown live keys outside the source-owned MCP subtree keep their values with a warning
 # (lib/drift-gate.sh); they never halt `chezmoi apply`. Fold each reported
 # key into the registry.
 
@@ -64,11 +64,9 @@ if [ -z "$live" ]; then
     exit 0
 fi
 
-live_json=$(printf '%s' "$live" | jq '.' 2>/dev/null) || live_json=
-if [ -z "$live_json" ] || ! printf '%s' "$live_json" | jq -e 'type == "object"' >/dev/null 2>&1; then
-    echo "modify_opencode.json: live config is not a JSON object" >&2
-    exit 1
-fi
+# shellcheck source=../../lib/opencode-config.sh
+. "$CHEZMOI_SOURCE_DIR/lib/opencode-config.sh"
+live_json=$(opencode_without_mcp "$live") || exit 1
 
 retired_paths=$(drift_ignore_paths "$retired")
 live_json=$(printf '%s' "$live_json" | jq --argjson r "$retired_paths" 'delpaths($r)')
