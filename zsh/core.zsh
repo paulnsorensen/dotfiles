@@ -54,6 +54,10 @@ fi
 # prek cache/logs — persistent location writable by Claude sandbox
 export PREK_HOME="$HOME/Dev/.prek"
 
+# Turn off T3 Code product telemetry. The macOS desktop app reads this from
+# the shell profile. The Linux service gets it from its systemd drop-in.
+export T3CODE_TELEMETRY_ENABLED=false
+
 # Editor configuration
 export EDITOR="$(which vim)"
 export VISUAL=$EDITOR
