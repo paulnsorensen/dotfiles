@@ -1,30 +1,32 @@
 system: "base24"
 name: "Chocolate Donut 2"
-author: "Paul Sorensen"
+author: "Brownfield"
 variant: "dark"
-description: "Chocolate Donut surfaces with accents from the brownfield deutan solver"
+description: "Brownfield native base24 solve on the chocolate background (deutan-aware)"
+# Source: `uv run brownfield theme --bg "#221d1a" --format base24 --verify`
+# (PR #1233 comment). Palette values are kept exactly as generated.
 palette:
   base00: "221d1a" # Main background
-  base01: "312b27" # Lighter background (Black)
-  base02: "44403b" # Selection background
-  base03: "939393" # Comments, invisibles (B.Black)
-  base04: "9e9387" # Dark foreground (dim)
-  base05: "dac2b1" # Default foreground (White)
-  base06: "e9ddd4" # Light foreground
-  base07: "f8f8f8" # Lightest foreground (B.White)
-  base08: "a98c8f" # Red - errors, variables
-  base09: "f39035" # Orange - warnings, integers
-  base0A: "bcaa91" # Yellow - types, classes
-  base0B: "62ae78" # Green - success, strings
-  base0C: "46b7d7" # Cyan - regex, info
-  base0D: "6f97b8" # Blue - functions
-  base0E: "de6ab4" # Magenta - keywords
-  base0F: "a98c8f" # Red (reused) - deprecated
-  base10: "191513" # Darker background
-  base11: "100e0c" # Darkest background
-  base12: "ef6b27" # Bright red
-  base13: "f4b342" # Bright yellow
-  base14: "73cb51" # Bright green
-  base15: "5ccaea" # Bright cyan
-  base16: "7c9dfd" # Bright blue
-  base17: "c1aabf" # Bright magenta
+  base01: "27221f" # Lighter background
+  base02: "2c2723" # Selection background
+  base03: "8e8e8e" # Comments, invisibles
+  base04: "b8b4b2" # Dark foreground (dim)
+  base05: "e3dcd8" # Default foreground
+  base06: "eeeae8" # Light foreground
+  base07: "f8f8f8" # Lightest foreground
+  base08: "ee6a25" # Red slot - errors, variables
+  base09: "f6cfa0" # Orange slot - warnings, integers
+  base0A: "d7aa26" # Yellow - types, classes
+  base0B: "26c694" # Green - success, strings
+  base0C: "99bec2" # Cyan - regex, info
+  base0D: "7191bd" # Blue - functions
+  base0E: "e47be2" # Magenta - keywords
+  base0F: "f0b1af" # Deprecated
+  base10: "1d1815" # Darker background
+  base11: "191411" # Darkest background
+  base12: "e69572" # Bright red
+  base13: "f2d502" # Bright yellow
+  base14: "8ae369" # Bright green
+  base15: "9ce5f4" # Bright cyan
+  base16: "60a2f9" # Bright blue
+  base17: "dfb3fb" # Bright magenta

@@ -33,27 +33,30 @@ sedi() {
 # ---------------------------------------------------------------------------
 # Read config
 # ---------------------------------------------------------------------------
-ACTIVE=$(yq -r '.active-scheme' "$SCRIPT_DIR/config.yaml")
-SCHEME_FILE="$SCRIPT_DIR/schemes/${ACTIVE}.yaml"
-
-if [[ ! -f "$SCHEME_FILE" ]]; then
-  log_err "Scheme file not found: $SCHEME_FILE"
-  exit 1
-fi
-
-SCHEME_NAME=$(yq -r '.name' "$SCHEME_FILE")
-SCHEME_AUTHOR=$(yq -r '.author' "$SCHEME_FILE")
-SCHEME_DESC=$(yq -r '.description' "$SCHEME_FILE")
-log_info "Active scheme: $SCHEME_NAME ($ACTIVE)"
-
-# ---------------------------------------------------------------------------
-# Read palette into individual variables (bash 3 compatible)
-# ---------------------------------------------------------------------------
 SLOTS="base00 base01 base02 base03 base04 base05 base06 base07 base08 base09 base0A base0B base0C base0D base0E base0F base10 base11 base12 base13 base14 base15 base16 base17"
 
-for slot in $SLOTS; do
-  eval "PAL_${slot}=$(yq -r ".palette.${slot}" "$SCHEME_FILE")"
-done
+# Load scheme metadata and palette (bash 3 compatible) into globals.
+load_scheme() {
+  ACTIVE="$1"
+  SCHEME_FILE="$SCRIPT_DIR/schemes/${ACTIVE}.yaml"
+
+  if [[ ! -f "$SCHEME_FILE" ]]; then
+    log_err "Scheme file not found: $SCHEME_FILE"
+    exit 1
+  fi
+
+  SCHEME_NAME=$(yq -r '.name' "$SCHEME_FILE")
+  SCHEME_AUTHOR=$(yq -r '.author' "$SCHEME_FILE")
+  SCHEME_DESC=$(yq -r '.description' "$SCHEME_FILE")
+
+  local slot
+  for slot in $SLOTS; do
+    eval "PAL_${slot}=$(yq -r ".palette.${slot}" "$SCHEME_FILE")"
+  done
+}
+
+load_scheme "$(yq -r '.active-scheme' "$SCRIPT_DIR/config.yaml")"
+log_info "Active scheme: $SCHEME_NAME ($ACTIVE)"
 
 # Helper to get palette value by slot name
 pal() { eval "echo \$PAL_$1"; }
@@ -659,10 +662,13 @@ GHOSTTY
 # ---------------------------------------------------------------------------
 # Generate Zed theme (chezmoi-managed user theme file)
 # ---------------------------------------------------------------------------
-generate_zed_theme() {
-  local out_dir="$REPO_DIR/chezmoi/dot_config/zed/themes"
-  local out="$out_dir/dotfiles-theme.json"
-  mkdir -p "$out_dir"
+# Inactive schemes that also ship as selectable Zed themes. Each lands in
+# <scheme-id>.json next to dotfiles-theme.json (the active scheme).
+ZED_EXTRA_SCHEMES="chocolate-donut-2"
+
+# Render the currently loaded scheme as a Zed theme file at $1.
+write_zed_theme() {
+  local out="$1"
 
   cat > "$out" <<ZED_THEME
 {
@@ -744,6 +750,19 @@ generate_zed_theme() {
   ]
 }
 ZED_THEME
+}
+
+generate_zed_theme() {
+  local out_dir="$REPO_DIR/chezmoi/dot_config/zed/themes"
+  mkdir -p "$out_dir"
+
+  write_zed_theme "$out_dir/dotfiles-theme.json"
+
+  local id
+  for id in $ZED_EXTRA_SCHEMES; do
+    # Subshell keeps the extra palette from leaking into later targets.
+    (load_scheme "$id" && write_zed_theme "$out_dir/$id.json")
+  done
 
   log_ok "Generated Zed theme"
 }

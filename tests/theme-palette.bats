@@ -68,3 +68,22 @@ teardown() { teardown_test_env; }
     [ "$(jq -r '.themes[0].style.players[0].cursor' "$theme_file")" = "#8196a8" ]
     [[ "$(jq -r '.themes[0].style.players[0].selection' "$theme_file")" == \#8196a83d ]]
 }
+
+@test "generate_zed_theme also writes the inactive chocolate-donut-2 theme" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    run bash "$THEME_REPO/theme/generate.sh"
+    assert_success
+
+    local active_file="$THEME_REPO/chezmoi/dot_config/zed/themes/dotfiles-theme.json"
+    local theme_file="$THEME_REPO/chezmoi/dot_config/zed/themes/chocolate-donut-2.json"
+    assert_file_exists "$theme_file"
+
+    jq empty "$theme_file"
+    [ "$(jq -r '.themes[0].name' "$theme_file")" = "Chocolate Donut 2" ]
+    [ "$(jq -r '.themes[0].style.background' "$theme_file")" = "#221d1a" ]
+    [ "$(jq -r '.themes[0].style.syntax.keyword.color' "$theme_file")" = "#e47be2" ]
+    [ "$(jq -r '.themes[0].style["terminal.ansi.bright_yellow"]' "$theme_file")" = "#f6cfa0" ]
+    # The extra scheme must not leak into the active theme or later targets.
+    [ "$(jq -r '.themes[0].name' "$active_file")" = "Chocolate Donut" ]
+    grep -qx 'set -g @thm_fg          "#dac2b1"' "$THEME_REPO/tmux/theme.conf"
+}
