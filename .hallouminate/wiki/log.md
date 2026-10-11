@@ -106,3 +106,5 @@
 2026-10-09 · pr-1224-cure · merged · operations/dev-environment.md · CI ruff pin, local ruff drift, tomllib sort and PLR0402 gotchas.
 
 2026-10-11 · 69cdb117d9385336 · merged · harnesses/wheypoint-stop-hook.md, harnesses/opencode.md · PR #1253: confirmed mutation and checkpoint results replace model verdicts across Claude, Codex, and OpenCode.
+
+2026-10-11 · wiki-harvest-20261011 · merged · harnesses/index.md · Listed harnesses/wheypoint-stop-hook.md, which no index linked.

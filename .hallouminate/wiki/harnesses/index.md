@@ -12,6 +12,7 @@ The repo deploys shared agent configuration into seven active AI coding surfaces
   - [[omp-plugins]] defines native marketplace and npm plugin ownership.
 - [[pi]] — upstream Pi, managed through `pi.yaml` and `dot_pi/`.
 - [[opencode]] — OpenCode, managed through `opencode.yaml` and `dot_config/opencode/`.
+- [[wheypoint-stop-hook]] — the shared deterministic wheypoint policy that Claude, Codex, and OpenCode apply at stop or idle.
 
 ## Capability support matrix
 
