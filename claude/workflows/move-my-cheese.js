@@ -561,6 +561,8 @@ const data = (name, value) => `<data name="${name}">\n${JSON.stringify(value, nu
 const prompt = (...parts) => [PREAMBLE, ...parts.filter(Boolean)].join('\n\n')
 // The judge agent type reads its mode from the first line of the prompt.
 const judgePrompt = (mode, ...parts) => `Judge mode: ${mode}\n\n${prompt(...parts)}`
+// The reviewer agent type returns blocked: missing-contract without this line.
+const reviewerPrompt = (...parts) => `Review mode: severity-report\n\n${prompt(...parts)}`
 // Agents never check out a PR's real branch: a run-scoped local branch stands in for it.
 // That keeps the user's local branches and checkouts out of reach. runTag is set once the digest exists.
 let runTag = 'unset'
@@ -696,7 +698,7 @@ const publishPrompt = (jobs) => prompt(
 
 function agePrompt(m, worktreePath) {
   const full = `/age origin/${m.base}...HEAD --auto`
-  return prompt(
+  return reviewerPrompt(
     `You are a read-only reviewer running the Age stage for PR #${m.number}.`,
     checkoutStep(m.branch, worktreePath),
     `Last aged marker: sha=${JSON.stringify(m.aged_sha)}, patch=${JSON.stringify(m.aged_patch)}, dirty=${m.aged_dirty ? 1 : 0}. Decide the scope before you invoke /age:`,
@@ -727,7 +729,7 @@ const curePrompt = (m, worktreePath, age) => prompt(
   `Commit locally on the checked-out branch ${localOf(m.branch)}. Do not push; a later stage pushes. ${NO_CHAIN}`,
 )
 
-const reagePrompt = (m, worktreePath, scope) => prompt(
+const reagePrompt = (m, worktreePath, scope) => reviewerPrompt(
   `You are a read-only reviewer running the Re-age stage for PR #${m.number} after a cure. cd ${worktreePath} first.`,
   `Run /age ${scope} --auto through the Skill tool. HEAD now includes the cure commits.`,
   `${NO_CHAIN} Do not invoke /cure.`,

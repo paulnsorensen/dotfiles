@@ -416,6 +416,22 @@ test('cheap lows alone trigger the cure, and cure and affinage never ask what to
   assert.match(cure, /Never ask which findings to cure/)
 })
 
+test('every reviewer dispatch opens with the severity-report contract line', async () => {
+  const { trace } = await run({ prs: [1], auto: true }, [
+    ...reconRoutes([openPr(1)], [detail(1)]),
+    ['survey', survey],
+    ['tensions', noTensions],
+    ['age:1', { mode: 'full', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: true, has_cheap_lows: false }],
+    ['cure:1', { status: 'ok', committed: true, artifact: 'c.md' }],
+    ['reage:1', { mode: 'incremental', scope: 'origin/main...HEAD', slug: 'pr-1', artifact: 'a2.md', worktree_path: '/tmp/wt-1', has_medium_plus_findings: false, has_cheap_lows: false }],
+    ['finalize:1', { pushed: true, head_sha: sha(1), marker_updated: true }],
+    ['review:1:status', ready(1)],
+  ])
+  const reviewers = trace.agents.filter(({ opts }) => opts.agentType === 'reviewer')
+  assert.deepEqual(reviewers.map(({ opts }) => opts.label), ['age:1', 'reage:1'])
+  for (const { prompt } of reviewers) assert.match(prompt, /^Review mode: severity-report\n/)
+})
+
 test('a keep-only plan with a command criterion still integrates and verifies in an isolated judge worktree', async () => {
   const { result, trace, labels } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['integrate:pre', { status: 'done', worktree_path: '/tmp/int', head: sha(97), merged: ['T-1', 'T-2'], conflicted: [] }],

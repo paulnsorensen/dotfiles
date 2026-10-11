@@ -162,7 +162,9 @@ Return {"skill_files_ok":true,"dimensions":["<dim>", ...],"packet_path":".cheese
 }
 
 function reviewPrompt(dim, worktreePath, range, packetPath) {
-  return `You are a read-only reviewer for dimension "${dim}" in the /age-fanout Review phase. Use Bash for read-only inspection only — do not edit, commit, or push anything.
+  return `Review mode: severity-report
+
+You are a read-only reviewer for dimension "${dim}" in the /age-fanout Review phase. Use Bash for read-only inspection only — do not edit, commit, or push anything.
 
 cd ${worktreePath} first.
 
@@ -176,7 +178,9 @@ Return {"findings":[{"dimension":"${dim}","severity":"blocker|high|medium|low","
 }
 
 function reconcilePrompt(worktreePath, slug, findings, routeCurds, packetPath, range) {
-  return `You are the Reconcile phase for /age-fanout, curd "${slug}". cd ${worktreePath} first.
+  return `Review mode: severity-report
+
+You are the Reconcile phase for /age-fanout, curd "${slug}". cd ${worktreePath} first.
 
 Context packet: ${packetPath}. Diff range reviewed: \`${range}\`.
 

@@ -40,6 +40,8 @@
 - When land stops partway, superseded PRs stay open even when their replacement merged.
 - After a merge-based rebuild, the incremental age scope `<marker sha>..HEAD` also covers the default-branch changes that the merge brought in.
 - The runtime rule for removing isolated worktrees is not confirmed. Judges therefore check out the pinned integration commit in their own worktrees instead of reusing the integrate agent's worktree.
+- **Open: non-isolated writers cannot edit the shared worktree.** An isolated worktree lives under `<main checkout>/.claude/worktrees/`. A non-isolated agent keeps the session cwd, and a Bash `cd` does not persist between calls. `worktree-guard.js` takes its root from that cwd, so it blocks `tilth_write`, Edit, and Write into another worktree. Cure and `/affinage` therefore cannot apply code fixes when the session runs in a T3 worktree. Bash-only git steps (finalize, restack) still work. A probe on 2026-10-11 confirmed the block for relative and absolute paths.
+- **Reviewer dispatches need the contract line.** The `reviewer` agent type returns `blocked: missing-contract` unless the prompt has `Review mode: severity-report`. A 2026-10 run lost its age report this way, so cure had nothing to apply. `reviewerPrompt` and the age-fanout prompts now send the line.
 
 ## Why a PR-comment marker (not git notes or a local artifact)
 

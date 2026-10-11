@@ -117,6 +117,9 @@ test('happy path fans out one review agent per dimension and reconciles', async 
   assert.equal(result.has_medium_plus_findings, true)
   assert.deepEqual(JSON.parse(JSON.stringify(result.dimensions)), DIMS)
   assert.equal(result.per_curd, null)
+  const reviewers = trace.agents.filter((c) => c.opts.agentType === 'reviewer')
+  assert.equal(reviewers.length, DIMS.length + 1)
+  for (const c of reviewers) assert.match(c.prompt, /^Review mode: severity-report\n/)
 })
 
 test('one worker throws: the other two still dispatch, reconcile sees only survivors, a lost-worker message is logged', async () => {
