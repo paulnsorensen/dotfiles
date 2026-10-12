@@ -950,7 +950,7 @@ async function salvage(curd) {
   const found = await typed(salvagePrompt(curd, baseSha), { label: `salvage:${curd.slug}`, phase: 'Cook', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA }, checkSalvage)
   const state = found.value
   if (!state) return { failed: errorText(found.errors) }
-  return  state.found
+  return state.found
     ? { completed: clipField(state.completed), remaining: clipField(state.remaining), checkpoint: state.checkpoint.trim(), source_ranges: [] }
     : null
 }
