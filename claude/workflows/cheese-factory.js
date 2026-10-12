@@ -983,7 +983,9 @@ Scope fence: submit those branches and open or update their PRs only through the
 Return {"results":[{"slug":"...","status":"ok|failed|blocked","pr_url":"...","reason":"..."}]}. Report status ok only for a slug that the plate skill submitted and whose PR is open; pr_url is then required. Add reason to every row whose status is not ok.`)
 }
 
-// Provenance: the judge helpers below are copied from claude/workflows/move-my-cheese.js (norm, blank, refError, UNSAFE_CHECKS, the negated-search gate, checkAdvice, checkVerdict, judgePrompt, shq, advisorPrompt, verifyPrompt). The check gate (UNSAFE_CHECKS, vacuousReason) is hardened beyond move-my-cheese: it covers redirects, tree mutations, and always-pass checks. Follow-up cfh-criteria-fu-3 ports the hardening back when the helpers move into the prelude.
+// Provenance: this section copies the judge helpers from claude/workflows/move-my-cheese.js (norm, blank, refError, the negated-search gate, checkAdvice, checkVerdict, judgePrompt, shq, advisorPrompt, verifyPrompt).
+// The check gate (UNSAFE_CHECKS, unsafeCheck, vacuousReason) is stricter than move-my-cheese: it adds a structural pre-filter, per-command rules, tree-mutation rules, and always-pass rules.
+// Follow-up cfh-criteria-fu-3 ports the gate back when the helpers move into the prelude.
 const CHECK_KINDS = ['command', 'test', 'inspection', 'ci']
 const ADVICE_VERDICTS = ['approve', 'revise', 'stop']
 const ADVICE_SCHEMA = {
@@ -1036,17 +1038,18 @@ function refError(ref, known, where) {
 }
 
 // A judge runs each criterion check, so a check must not fetch, write, or mutate.
-// This denylist is defense in depth; the judge agent definition is the other guard.
+// Three layers run in order: a structural pre-filter on the raw text, this denylist, and per-command rules.
+// The layers are defense in depth; the judge agent definition is the other guard.
+// The third field marks a rule that reads the text with quoted spans masked.
 const UNSAFE_CHECKS = [
   ['network access', /\b(?:curl|wget|nc|ssh|scp)\b/i],
   ['pipe into a shell', /\|\s*(?:sh|bash|zsh)\b/i],
   // Only fd duplication (>&1, 2>&1, >&-) and a redirect to the whole token /dev/null stay allowed.
-  ['output redirection to a file', />(?!>?\s*\/dev\/null(?![^\s;|&)])|&(?:\d+|-)(?![^\s;|&)]))/],
+  ['output redirection to a file', />(?!>?\s*\/dev\/null(?![^\s;|&)])|&(?:\d+|-)(?![^\s;|&)]))/, true],
   ['tree mutation', /(?:^|[;&|(]\s*|\b(?:sudo|xargs|env|command|time)\s+)(?:touch|mkdir|rmdir|cp|mv|chmod|chown|chgrp|ln|install|truncate|dd|patch)\s/i],
   ['tee to a file', /\btee\b/i],
   ['inline interpreter code', /\b(?:python3?|node|perl|ruby)\s+-[ce]\b/i],
   ['in-place edit', /\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i/i],
-  ['git mutation', /\bgit\b(?:\s+-{1,2}[\w-]+(?:[\s=]\S+)?)*\s+(?:push|add|commit|reset|checkout|switch|merge|rebase|stash|clean|tag|am|apply|restore|rm|mv|init|cherry-pick|revert|pull|worktree|update-ref|config|branch\s+-[dDmMfc])\b/i],
   ['file removal', /\brm\s|\s-delete\b|\bunlink\b|\btruncate\b/i],
   ['package publish or install', /\b(?:npm|pnpm|yarn|cargo|pip3?|uv)\s+(?:publish|install|add|ci)\b/i],
   ['GitHub mutation', /\bgh\s+(?:pr\s+(?:merge|close|comment|edit|ready|review|create|reopen)|issue|release|workflow\s+run|run\s+(?:rerun|cancel)|repo\s+(?:edit|delete|rename)|secret|variable|label)\b/i],
@@ -1054,16 +1057,164 @@ const UNSAFE_CHECKS = [
   ['GitHub API field write', /\bgh\s+api\b.*\s(?:-f|-F|--field|--raw-field|--input)[\s=]/i],
 ]
 
-// A negated search passes when its input is missing: grep and rg exit 2 on a missing file, git grep
-// exits 1 on an unmatched pathspec, and grep with no file reads empty input. So each path of a negated
-// search needs an existence test earlier in the same && chain. A negated pipeline also hides a failed
-// producer. This check is lexical; the verify judge also tests each path that a check reads.
+const hit = (name, text = '') => ({ name, text })
+
+// Replaces each quoted span and each backslash escape with Q, so an operator inside a quote is data.
+// Double quotes stay readable unless maskDouble is true, because $ and backticks expand inside them.
+function maskQuotes(check, maskDouble) {
+  let out = ''
+  for (let i = 0; i < check.length; i++) {
+    const c = check[i]
+    if (c === '\\') { out += 'Q'; i++ } else if (c === "'") {
+      const close = check.indexOf("'", i + 1)
+      if (close < 0) return out + check.slice(i)
+      out += 'Q'
+      i = close
+    } else if (c === '"') {
+      let j = i + 1
+      let inner = ''
+      for (; j < check.length && check[j] !== '"'; j++) inner += check[j] === '\\' ? (j++, 'Q') : check[j]
+      if (j >= check.length) return out + check.slice(i)
+      out += maskDouble ? 'Q' : `"${inner}"`
+      i = j
+    } else out += c
+  }
+  return out
+}
+
+// Shapes that hide a command from the lexical rules: raw newlines, here documents, and shell expansion.
+function structuralHit(check) {
+  if (/[\r\n]/.test(check)) return hit('raw newline or carriage return')
+  const heredoc = /<<-?/.exec(maskQuotes(check, true))
+  if (heredoc) return hit('here document', heredoc[0])
+  const readable = maskQuotes(check, false)
+  const expansion = /\$(?:[({A-Za-z_]|\d|[?!@*#$-])|`/.exec(readable)
+  if (expansion) return hit('shell expansion or substitution', readable.slice(expansion.index, expansion.index + 24).trim())
+  return null
+}
+
+const ASSIGN_RE = /^[A-Za-z_]\w*=/
+const WRAPPERS = new Set(['env', 'command', 'time', 'sudo', 'doas', 'xargs', 'nohup', 'nice', 'timeout', 'builtin', 'stdbuf', 'setsid', 'ionice'])
+const WRAPPER_VALUE_OPTS = { xargs: ['-I', '-L', '-n', '-P', '-s', '-E', '-d', '-a'], env: ['-u', '-C', '-S'], sudo: ['-u', '-g', '-C', '-h', '-p', '-r', '-t', '-U'], timeout: ['-s', '-k'], nice: ['-n'] }
+const SHELL_KEYWORDS = new Set(['{', '}', 'if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until', 'for', 'case', 'esac', 'function', 'select', 'coproc'])
+const MUTATION_COMMANDS = new Set(['touch', 'mkdir', 'rmdir', 'cp', 'mv', 'chmod', 'chown', 'chgrp', 'ln', 'install', 'truncate', 'dd', 'patch', 'rm', 'unlink', 'shred', 'mkfifo', 'mknod'])
+const NETWORK_COMMANDS = new Set(['curl', 'wget', 'nc', 'ncat', 'netcat', 'telnet', 'ftp', 'sftp', 'ssh', 'scp', 'rsync', 'socat'])
+const FETCH_RUNNERS = new Set(['npx', 'pnpx', 'bunx', 'uvx', 'pipx'])
+const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun', 'pip', 'pip3', 'cargo', 'uv', 'gem'])
+const INSTALL_SUBCOMMANDS = new Set(['install', 'i', 'ci', 'add', 'exec', 'x', 'dlx', 'create', 'init', 'update', 'upgrade', 'publish', 'remove', 'uninstall', 'link'])
+const SHELL_HEAD_RE = /^(?:sh|bash|zsh|dash|ksh|fish|csh|tcsh)$/
+const CODE_HEAD_RE = /^(?:python|ruby|perl|php|lua|node|nodejs|deno|bun|osascript)[\d.]*$/
+const AWK_HEAD_RE = /^[gmn]?awk$/
+const AWK_DANGER_RE = /\bsystem\s*\(|\bgetline\b|\bprintf?\b[^}]*[>|]|-i\s*inplace|@(?:include|load)|\|&/
+const SED_WRITE_RE = /(?:^|[;{}])\s*(?:\d+|\$|\/[^/]*\/)?\s*(?:w\s*\S|e\b)|s\/[^/]*\/[^/]*\/[a-zA-Z0-9]*[we]\b/
+const GIT_VALUE_OPTS = new Set(['-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--exec-path'])
+const GIT_MUTATIONS = new Set(['push', 'add', 'commit', 'reset', 'checkout', 'switch', 'merge', 'rebase', 'stash', 'clean', 'tag', 'am', 'apply', 'restore', 'rm', 'mv', 'init', 'cherry-pick', 'revert', 'pull', 'worktree', 'update-ref', 'config', 'fetch', 'clone', 'ls-remote', 'submodule', 'gc', 'prune', 'maintenance', 'notes', 'replace', 'filter-branch', 'bisect', 'sparse-checkout', 'format-patch', 'checkout-index', 'read-tree', 'write-tree', 'commit-tree', 'fast-import', 'unpack-objects', 'bundle', 'archive', 'send-email', 'difftool', 'mergetool'])
+
+// Skips wrapper commands and their options so the real command head shows.
+function unwrap(words) {
+  let i = 0
+  while (WRAPPERS.has(words[i])) {
+    const valued = WRAPPER_VALUE_OPTS[words[i++]] ?? []
+    while (i < words.length && (words[i].startsWith('-') || ASSIGN_RE.test(words[i]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[i]))) i += valued.includes(words[i]) ? 2 : 1
+  }
+  return words.slice(i)
+}
+
+// Reads the git subcommand from tokens, so the cost stays linear in the option count.
+function gitHit(args) {
+  let i = 0
+  for (; i < args.length && args[i].startsWith('-'); i++) {
+    const arg = args[i]
+    if ((arg.startsWith('-c') && !arg.startsWith('--')) || arg.startsWith('--config-env')) return hit('git config override', arg)
+    if (GIT_VALUE_OPTS.has(arg)) i++
+  }
+  const sub = (args[i] ?? '').toLowerCase()
+  const rest = args.slice(i + 1)
+  if (GIT_MUTATIONS.has(sub)) return hit('git mutation', `git ${sub}`)
+  if (sub === 'branch' && rest.some((a) => /^-[a-zA-Z]*[dDmMfcC]|^--(?:delete|move|copy|force|set-upstream|unset-upstream|edit-description)/.test(a))) return hit('git mutation', 'git branch')
+  const output = rest.find((a) => /^--output(?:=|$)/.test(a) || (sub === 'grep' && /^(?:-O|--open-files-in-pager)/.test(a)))
+  return output ? hit('git option that writes a file or runs a program', output) : null
+}
+
+function sedHit(args) {
+  const programs = []
+  let bare = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (/^-[a-zA-Z]*[if]|^--(?:in-place|file)/.test(arg)) return hit('in-place edit or script file', arg)
+    if (arg === '-e' || arg === '--expression') { programs.push(args[++i] ?? ''); bare = false } else if (arg.startsWith('--expression=')) { programs.push(arg.slice(13)); bare = false } else if (bare && !arg.startsWith('-')) { programs.push(arg); bare = false }
+  }
+  const bad = programs.find((p) => SED_WRITE_RE.test(p))
+  return bad === undefined ? null : hit('sed command that writes or runs', bad)
+}
+
+// Classifies one simple command. Returns a hit or null.
+function commandHit(raw) {
+  const words = unparen(raw)
+  while (words[0] === '!') words.shift()
+  if (!words.length) return null
+  if (ASSIGN_RE.test(words[0])) return hit('NAME=value prefix', words[0])
+  const [head, ...args] = unwrap(words)
+  if (head === undefined) return null
+  if (head.includes('/')) return hit('command path', head)
+  if (['eval', 'exec', 'source', '.'].includes(head)) return hit('eval, exec, or source', head)
+  if (SHELL_KEYWORDS.has(head)) return hit('shell keyword or group', head)
+  if (MUTATION_COMMANDS.has(head)) return hit('tree mutation', head)
+  if (NETWORK_COMMANDS.has(head)) return hit('network access', head)
+  if (FETCH_RUNNERS.has(head)) return hit('package fetch or execution', head)
+  if (PACKAGE_MANAGERS.has(head) && INSTALL_SUBCOMMANDS.has(args[0])) return hit('package install or execution', `${head} ${args[0]}`)
+  if (head === 'git') return gitHit(args)
+  if (head === 'find') {
+    const action = args.find((a) => /^-(?:exec|execdir|ok|okdir|delete|fprint0?|fprintf|fls)$/.test(a))
+    return action ? hit('find action that writes or runs a command', action) : null
+  }
+  if (head === 'sed') return sedHit(args)
+  if (AWK_HEAD_RE.test(head)) {
+    const bad = args.find((a) => AWK_DANGER_RE.test(a) || /^(?:-f|--file|-i|--include|-l|--load)/.test(a))
+    return bad === undefined ? null : hit('awk program that writes or runs a command', bad)
+  }
+  if (SHELL_HEAD_RE.test(head) && (!args.length || args.some((a) => a === '-' || /^-[a-zA-Z]*[cs]/.test(a)))) return hit('inline interpreter code', `${head} ${args[0] ?? ''}`.trim())
+  if (CODE_HEAD_RE.test(head)) {
+    const code = !args.length || args.some((a) => a === '-' || /^-[a-zA-Z]*[cepE]/.test(a) || /^--(?:eval|print|exec|command)\b/.test(a)) || (head === 'deno' && ['eval', 'repl'].includes(args[0]))
+    if (code) return hit('inline interpreter code', `${head} ${args[0] ?? ''}`.trim())
+  }
+  return null
+}
+
+// Returns { name, text } for the first unsafe shape in a check, or null.
+function unsafeCheck(check) {
+  const structural = structuralHit(check)
+  if (structural) return structural
+  const masked = maskQuotes(check, true)
+  for (const [name, re, useMask] of UNSAFE_CHECKS) {
+    const subject = useMask ? masked : check
+    const m = re.exec(subject)
+    if (m) return hit(name, subject.slice(m.index, m.index + 24).trim())
+  }
+  const words = shellWords(check)
+  if (!words) return null
+  let command = []
+  for (const w of [...words, ';']) {
+    if (COMMAND_OPS.includes(w) || w === '|') {
+      const found = commandHit(command)
+      if (found) return found
+      command = []
+    } else command.push(w)
+  }
+  return null
+}
+
+// A negated search passes when its input is missing. Grep and rg exit 2 on a missing file.
+// Git grep exits 1 on an unmatched pathspec. Grep with no file reads empty input.
+// So each path of a negated search needs an existence test earlier in the same && chain.
+// A negated pipeline also hides a failed producer. This check is lexical.
+// The verify judge also tests each path that a check reads.
 const SEARCH_TOOLS = ['grep', 'egrep', 'fgrep', 'rg']
 // Short options whose value is the next word when the option ends its cluster.
 const VALUE_LETTERS = { rg: 'efgtTmABCjMEr', grep: 'efmABCdD' }
 const LONG_VALUE_OPTS = ['regexp', 'file', 'max-count', 'after-context', 'before-context', 'context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth']
 
-// Splits a check into words and the operators && || ; |, with POSIX quotes removed. Returns null on an open quote.
+// Splits a check into words and the operators && || ; | &, with POSIX quotes removed. A newline counts as ;. Returns null on an open quote.
 function shellWords(check) {
   const words = []
   let word = null
@@ -1071,8 +1222,11 @@ function shellWords(check) {
   for (let i = 0; i < check.length; i++) {
     const c = check[i]
     const pair = check.slice(i, i + 2)
-    if (/\s/.test(c)) end()
+    if (c === '\n') { end(); words.push(';') }
+    else if (/\s/.test(c)) end()
     else if (pair === '&&' || pair === '||') { end(); words.push(pair); i++ }
+    else if (pair === '|&') { end(); words.push('|'); i++ }
+    else if (c === '&' && check[i - 1] !== '>' && check[i - 1] !== '<' && check[i + 1] !== '>') { end(); words.push('&') }
     else if (c === ';' || c === '|') { end(); words.push(c) }
     else if (c === "'") {
       const close = check.indexOf("'", i + 1)
@@ -1143,23 +1297,61 @@ function searchOf(words) {
   return { tool, paths, stdin: tool !== 'rg' && tool !== 'git grep' && !paths.length && !recursive }
 }
 
+const COMMAND_OPS = ['&&', '||', ';', '&']
+// A pipe sink reads its input, so it cannot fail on a failed producer.
+const PIPE_SINKS = new Set(['wc', 'head', 'tail', 'cat'])
+const unparen = (words) => words.map((w) => w.replace(/^\(+|\)+$/g, '')).filter(Boolean)
+
+function withoutRedirects(words) {
+  const kept = []
+  for (let i = 0; i < words.length; i++) {
+    if (!REDIRECT_RE.test(words[i])) kept.push(words[i])
+    else if (BARE_REDIRECT_RE.test(words[i])) i++
+  }
+  return kept
+}
+
+function pipelineStages(words) {
+  const stages = [[]]
+  for (const w of words) {
+    if (w === '|') stages.push([])
+    else stages[stages.length - 1].push(w)
+  }
+  return stages.filter((s) => s.length)
+}
+
+const exitsZero = (stage) => stage[0] === 'exit' && (stage.length === 1 || (stage.length === 2 && stage[1] === '0'))
+
+// True when a pipeline stage returns 0 whatever the earlier commands did.
+function cannotFail(stage, piped) {
+  const [head] = stage
+  if (['true', ':', 'echo', 'printf'].includes(head)) return true
+  return (piped && PIPE_SINKS.has(head)) || exitsZero(stage)
+}
+
 // Returns why a check can pass without testing anything, or '' when it can fail.
 function vacuousReason(check) {
   const words = shellWords(check)
   if (!words) return 'it has an unclosed quote'
   const commands = [{ op: '', words: [] }]
   for (const w of words) {
-    if (['&&', '||', ';'].includes(w)) commands.push({ op: w, words: [] })
+    if (COMMAND_OPS.includes(w)) commands.push({ op: w, words: [] })
     else commands[commands.length - 1].words.push(w)
   }
+  const shapes = commands.map(({ words: command }) => pipelineStages(withoutRedirects(unparen(command))))
+  if (shapes.every((stages) => stages.every((stage, i) => cannotFail(stage, i > 0)))) return 'every command in it always succeeds'
   let guarded = new Set()
   for (const [index, { op, words: command }] of commands.entries()) {
     const last = index === commands.length - 1
-    const exitZero = command[0] === 'exit' && (command.length === 1 || (command.length === 2 && command[1] === '0'))
-    const constant = command.length === 1 && (command[0] === 'true' || command[0] === ':')
-    if (op === '||' && (constant || exitZero)) return 'it ends in an always-true fallback, which hides every failure'
-    if (op !== '&&' && exitZero) return 'it exits 0 whatever the earlier commands return'
-    if (op !== '&&' && last && constant) return 'its last command always succeeds'
+    const shape = shapes[index]
+    const tail = shape[shape.length - 1]
+    if (tail) {
+      const quiet = cannotFail(tail, shape.length > 1)
+      if (shape.length === 1 && op !== '&&' && exitsZero(tail)) return 'it exits 0 whatever the earlier commands return'
+      if (op === '||' && quiet) return 'it ends in an always-true fallback, which hides every failure'
+      if (shape.length > 1 && quiet) return `its pipeline ends in ${tail[0]}, which hides a failed earlier stage`
+      if (op !== '&&' && last && quiet) return 'its last command always succeeds'
+    }
     if (op !== '&&' || command[0] === 'cd') guarded = new Set()
     const negated = command[0] === '!'
     const body = negated ? command.slice(1) : command
@@ -1196,7 +1388,7 @@ function checkVerdict(verdict, ac) {
   return errors
 }
 
-// Exact coverage: one criterion per spec AC id. Every check that CI does not own passes the same gates as move-my-cheese.
+// Exact coverage: one criterion per spec AC id. Every check that CI does not own passes the check gate, which is stricter than move-my-cheese.
 const checkCriteria = (specAcIds) => checkWith(CRITERIA_SCHEMA, (v) => {
   const errors = []
   const seen = new Set()
@@ -1209,8 +1401,8 @@ const checkCriteria = (specAcIds) => checkWith(CRITERIA_SCHEMA, (v) => {
     if (blank(c.statement)) errors.push(substance(`${where}.statement must not be blank`))
     if (blank(c.check)) errors.push(substance(`${where}.check must not be blank`))
     else if (c.check_kind !== 'ci') {
-      const unsafe = UNSAFE_CHECKS.find(([, re]) => re.test(c.check))
-      if (unsafe) errors.push(substance(`${where}.check is unsafe: ${unsafe[0]}`))
+      const unsafe = unsafeCheck(c.check)
+      if (unsafe) errors.push(substance(`${where}.check is unsafe: ${unsafe.name}${unsafe.text ? ` (near "${unsafe.text}")` : ''}`))
       else {
         const why = vacuousReason(c.check)
         if (why) errors.push(substance(`${where}.check can pass without testing anything: ${why}`))

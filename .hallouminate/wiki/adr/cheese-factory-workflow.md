@@ -137,7 +137,7 @@ _Source: `claude/workflows/cheese-factory.js`, `claude/workflows/age-fanout.js`,
 ## ADR-015: Extract one read-only check per spec AC at resolve [status: accepted]
 
 - **Context:** Spec ACs are EARS prose with no check command. move-my-cheese's planner emits criteria with checks, and code gates them with `UNSAFE_CHECKS` (`claude/workflows/move-my-cheese.js:189,269`).
-- **Decision:** After resolve, one read-only opus agent returns one criterion per spec AC id: a check_kind (command, test, inspection, or ci) and a check. Code requires exact AC-id coverage and gates each non-ci check with `UNSAFE_CHECKS` and the negated-search gate. A spec with no AC line skips verification.
+- **Decision:** After resolve, one read-only opus agent returns one criterion per spec AC id: a check_kind (command, test, inspection, or ci) and a check. Code requires exact AC-id coverage and gates each non-ci check with `UNSAFE_CHECKS` and the negated-search gate. A spec with no AC line skips verification. The gate is stricter than move-my-cheese: it adds a structural pre-filter (raw newlines, shell expansion, here documents), per-command rules (command paths, interpreters with code flags, `find`, `sed`, `awk`, `git` config and network subcommands, package runners), tree-mutation rules, and always-pass rules (a check that cannot exit non-zero). Follow-up `cfh-criteria-fu-3` ports the gate back to move-my-cheese.
 - **Alternatives:** judges read the prose and choose a check (less reproducible); the mold spec format carries checks (changes the easy-cheese mold skill and every older spec).
 - **Consequences:** Checks are reproducible and reviewable before cook. An extracted check can be weak; the plan advisor reviews it.
 
