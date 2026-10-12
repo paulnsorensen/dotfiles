@@ -1638,17 +1638,63 @@ test('AC-4: a valid press status other than ok fails the curd at press without a
   assert.equal(labelsOf(trace).includes('integrate'), false)
 })
 
-test('AC-4: an out-of-enum cook status fails the curd at cook', async () => {
+test('AC-4: an out-of-enum cook status goes to salvage, never to a redo that resets the curd ref, and resumes at the salvaged SHA', async () => {
   const workflow = await loadWorkflow(path)
-  const inner = respondCleanChain({ slug: 'parent' })
-  const { globals } = createRuntime({
-    respond: (call) => (call.opts.label.startsWith('cook:parent') ? cook('parent', { status: 'finished' }) : inner(call)),
+  const found = sha(0x6b)
+  const { globals, trace } = createRuntime({
+    respond: cookRespond(({ opts }) => {
+      if (opts.label === 'salvage:parent') return { found: true, checkpoint: found, completed: 'half', remaining: '' }
+      return opts.label === 'cook:parent' ? cook('parent', { status: 'finished' }) : cook('parent')
+    }),
   })
 
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+  const labels = labelsOf(trace)
 
+  assert.deepEqual(labels.slice(0, 4), ['resolve', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
+  assert.equal(labels.some((l) => /redo|repair/.test(l)), false)
+  assert.ok(trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1').prompt.includes(`git checkout --detach ${found}`))
+  assert.equal(result.curds[0].status, 'clean')
+})
+
+test('AC-4: an out-of-enum cook status with no curd ref fails at cook and names the status', async () => {
+  const { result, trace } = await runParent({ 'cook:parent': { status: 'finished' }, 'salvage:parent': { found: false } })
+
+  assert.equal(labelsOf(trace).some((l) => /redo|repair|cook:parent:c1/.test(l)), false)
   assert.equal(result.curds[0].status, 'failed')
-  assert.match(result.curds[0].excluded_reason, /^cook: \$\.status must be one of ok, partial, blocked/)
+  assert.match(result.curds[0].excluded_reason, /^cook: cook ended with status "finished" and curd\/parent has no ref to resume from/)
+})
+
+test('a taste pass over a revise lens counts as revise, so the corrective loop runs before Press', async () => {
+  const lenses = [{ lens: 'drift', verdict: 'pass', note: '' }, { lens: 'scope', verdict: ' Revise ', note: 'out of scope' }]
+  const { result, trace } = await runParent({
+    'taste:parent': { verdict: 'pass', lenses, issues: ['out of scope'], recommendation: 'pass' },
+    'correct:parent:r1': correction(),
+    'taste:parent:r1': taste('pass'),
+  })
+  const labels = labelsOf(trace)
+
+  assert.ok(labels.indexOf('correct:parent:r1') > labels.indexOf('taste:parent'))
+  assert.ok(labels.indexOf('press:parent') > labels.indexOf('taste:parent:r1'))
+  assert.equal(result.curds[0].status, 'clean')
+})
+
+test('a resolved spec without a curd_count is substance: the resolver redoes it, and the run stops after the bound', async () => {
+  const { spec_path, spec_text, base_sha } = resolveResolved()
+  const { result, trace } = await runParent({ resolve: { mode: 'resolved', base_sha, spec_path, spec_text } })
+
+  assert.deepEqual(labelsOf(trace), ['resolve', 'resolve:redo1', 'resolve:redo2'])
+  assert.match(result.error, /^Resolve failed: .*\$\.curd_count must carry the slug/)
+})
+
+test('a decomposition over LIMITS.maxCurds is substance, and the decomposer is told the cap', async () => {
+  const many = Array.from({ length: 13 }, (_, i) => ({ slug: `c${i}`, brief: `do ${i}`, files: [`c${i}.js`] }))
+  const { result, trace } = await runParent({ resolve: resolveResolved({ candidate_curds: 13 }), 'decompose:plan': decompose(many) })
+
+  assert.ok(callsOf(trace, 'decompose:plan')[0].prompt.includes('Return at most 12 curds.'))
+  assert.ok(labelsOf(trace).includes('decompose:plan:redo1'))
+  assert.equal(labelsOf(trace).some((l) => l.startsWith('cook:')), false)
+  assert.match(result.error, /^Decompose failed: .*\$\.curds has 13 curds; the limit is 12/)
 })
 
 test('AC-14: spec text, findings, and agent output sit in escaped data fences under the preamble', async () => {

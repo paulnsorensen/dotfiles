@@ -308,7 +308,8 @@ function findDuplicateSlugs(curds) {
 // 'form' errors are mechanical, so a cheap model repairs them. 'substance' errors need new facts,
 // so the producer redoes the same call. After LIMITS.fixRounds the value is null and callers fail
 // the curd (or barrier) with errorText(errors).
-const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000 }
+// maxCurds keeps a run under the runtime cap of 1000 agents. A curd chain can spend about 26 agents, so about 38 curds reach the cap.
+const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12 }
 // The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. Recorded paths are cleanup hints only.
 const SCRATCH_WORKTREE_RE = /^\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+$/
 const scratchWorktrees = new Set()
@@ -317,7 +318,6 @@ function noteWorktree(path) {
   if (SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')) scratchWorktrees.add(p)
 }
 const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
-const COOK_STATUSES = ['ok', 'partial', 'blocked']
 const SHA_RE = /^[0-9a-f]{40}$/
 // A SHA is checked in code, not by a schema pattern. A bad SHA is always substance: a formatter has no repo access and could only invent one.
 const shaErrors = (path, value) =>
@@ -359,6 +359,7 @@ function schemaErrors(value, schema, path) {
 // A closed set checked in code: the schema keeps the field a plain string.
 const enumErrors = (path, value, allowed, kind = form) => (allowed.includes(value) ? [] : [kind(`${path} must be one of ${allowed.join(', ')}`)])
 // A phase status is the producer's outcome. A formatter must not pick one, so an out-of-enum status makes the producer redo the call.
+// Cook is the exception; see checkCook.
 const statusErrors = (v, allowed) => enumErrors('$.status', v.status, allowed, substance)
 
 // Builds a check: the schema shape first, then the extra checks only when the shape holds.
@@ -370,16 +371,22 @@ const checkWith = (schema, ...extra) => (value) => {
 // An agent-returned spec path ends up in a /cook command line, so it passes the same check as the spec arg.
 const specPathErrors = (path, value) =>
   (typeof value === 'string' && SPEC_ARG_RE.test(value) && !value.includes('..') ? [] : [substance(`${path} must be a spec slug or path without '..' segments`)])
-const checkResolve = checkWith(RESOLVE_SCHEMA, (v) => (v.mode === 'resolved' ? [...specPathErrors('$.spec_path', v.spec_path), ...(typeof v.spec_text === 'string' && v.spec_text.length ? [] : [substance('$.spec_text must be a non-empty string')]), ...shaErrors('$.base_sha', v.base_sha)] : []))
-const checkDecompose = checkWith(DECOMPOSE_SCHEMA)
+// curd_count comes from mold.pyz curd-count. A formatter cannot invent it, so a missing count is substance.
+const curdCountErrors = (c) =>
+  (c && typeof c.slug === 'string' && c.slug.length && Number.isInteger(c.candidate_curds) && c.candidate_curds >= 1 ? [] : [substance('$.curd_count must carry the slug and a candidate_curds of 1 or more from mold.pyz curd-count')])
+const checkResolve = checkWith(RESOLVE_SCHEMA, (v) => (v.mode === 'resolved' ? [...specPathErrors('$.spec_path', v.spec_path), ...(typeof v.spec_text === 'string' && v.spec_text.length ? [] : [substance('$.spec_text must be a non-empty string')]), ...shaErrors('$.base_sha', v.base_sha), ...curdCountErrors(v.curd_count)] : []))
+const checkDecompose = checkWith(DECOMPOSE_SCHEMA, (v) => (v.curds.length > LIMITS.maxCurds ? [substance(`$.curds has ${v.curds.length} curds; the limit is ${LIMITS.maxCurds}`)] : []))
 const checkMiniSpecs = checkWith(MINISPEC_SCHEMA, (v) => v.curds.flatMap((c, i) => specPathErrors(`$.curds[${i}].spec_path`, c.spec_path)))
 // A coder at its guard ceiling answers status needs-context (coder.md). That is a final answer: code salvages the curd ref, and no repair or redo runs.
 const isNeedsContext = (v) => typeof v.status === 'string' && /^needs-context(?::.*)?$/i.test(v.status.trim())
-// A SHA defect in a cook answer is final. cookCurd checks the SHA, so typed never redoes or repairs a cook for it.
-const checkCookShape = checkWith(COOK_SCHEMA, (v) => statusErrors(v, COOK_STATUSES))
+// A cook status and a cook SHA defect are final, because a cook redo resets the curd ref to the base SHA (user decision B).
+// cookCurd checks both: it salvages every status other than ok, partial, and blocked, as it does for needs-context.
+const checkCookShape = checkWith(COOK_SCHEMA)
 const checkCook = (v) => (v !== null && typeof v === 'object' && isNeedsContext(v) ? [] : checkCookShape(v))
 const checkSalvage = checkWith(SALVAGE_SCHEMA, (v) => (v.found ? shaErrors('$.checkpoint', v.checkpoint) : []))
 const checkTaste = checkWith(TASTE_SCHEMA, (v) => enumErrors('$.verdict', v.verdict, ['pass', 'revise'], substance))
+// The overall verdict is revise when any lens is revise. Code applies that rule, so a pass over a revise lens never plates.
+const tasteOf = (t) => (t.lenses.some((l) => typeof l.verdict === 'string' && l.verdict.trim().toLowerCase() === 'revise') ? { ...t, verdict: 'revise' } : t)
 const checkCorrect = checkWith(CORRECT_SCHEMA, (v) => statusErrors(v, FIX_STATUSES), (v) => (v.committed ? shaErrors('$.head_sha', v.head_sha) : []))
 const checkPress = checkWith(PHASE_SCHEMA, (v) => statusErrors(v, PRESS_STATUSES), (v) => (v.status === 'ok' ? shaErrors('$.head_sha', v.head_sha) : []))
 // merged and conflicted must partition the input slugs, the head must be a full SHA, and every merged slug needs a file list.
@@ -505,7 +512,7 @@ Splitting rules:
 - If the spec declares a multi-site contract (one deliverable spanning N named sites), keep those sites in ONE curd — never split an indivisible contract.
 - If one curd would consume symbols, exports, or behavior another curd introduces, either fold them into one curd or declare the edge in "depends_on" — dependency-coupled curds are merged back into one curd rather than run in parallel.
 
-Return {"curds":[{"slug":"<kebab-slug>","brief":"<what this curd must do>","files":["<path>", ...],"depends_on":["<sibling-slug>", ...]}, ...]} ("depends_on" optional, omit or leave empty when independent). Each slug must match ${SLUG_RE} and be unique. List every file each curd is expected to touch so overlaps can be detected.`)
+Return {"curds":[{"slug":"<kebab-slug>","brief":"<what this curd must do>","files":["<path>", ...],"depends_on":["<sibling-slug>", ...]}, ...]} ("depends_on" optional, omit or leave empty when independent). Return at most ${LIMITS.maxCurds} curds. Each slug must match ${SLUG_RE} and be unique. List every file each curd is expected to touch so overlaps can be detected.`)
 }
 
 function miniSpecPrompt(parentSlug, curds) {
@@ -776,12 +783,12 @@ if (resolved.mode === 'candidates') {
 }
 
 const parentSpecPath = resolved.spec_path
-const parentSlug = resolved.curd_count && resolved.curd_count.slug ? resolved.curd_count.slug : 'spec'
+const parentSlug = resolved.curd_count.slug
 if (!SLUG_RE.test(parentSlug)) {
   log(`Invalid parent slug from resolver: ${parentSlug}`)
   return { error: `Invalid parent slug: ${parentSlug}` }
 }
-const candidateCurds = resolved.curd_count ? resolved.curd_count.candidate_curds : 0
+const candidateCurds = resolved.curd_count.candidate_curds
 
 // ---- Decompose (only when candidate_curds >= 2) ----
 let curds
@@ -853,15 +860,15 @@ async function cookCurd(curd, branch) {
     }
     if (cook && cook.status === 'blocked') return stop('cook did not reach status ok (last status: blocked)')
     if (round > LIMITS.continuations) return stop(`cook did not finish after ${LIMITS.continuations} continuations`)
-    // A missing answer, a throw, needs-context, and a partial answer with a bad checkpoint are salvaged from the ref.
+    // A missing answer, a throw, a status other than partial, and a partial answer with a bad checkpoint are salvaged from the ref.
     // Salvage only reads the ref. Any other malformed answer fails the curd with its error text.
     if (!cook && !call.errors.some((e) => e.msg === 'agent returned no output' || e.msg.startsWith('agent threw:'))) return stop(errorText(call.errors))
-    const needsContext = Boolean(cook) && isNeedsContext(cook)
-    const checkpointDefect = cook && !needsContext ? shaErrors('$.checkpoint', cook.checkpoint) : []
-    const resume = cook && !needsContext && !checkpointDefect.length
+    const partial = Boolean(cook) && cook.status === 'partial'
+    const checkpointDefect = partial ? shaErrors('$.checkpoint', cook.checkpoint) : []
+    const resume = partial && !checkpointDefect.length
       ? { completed: cook.completed || '', remaining: cook.remaining || '', checkpoint: cook.checkpoint.trim(), source_ranges: groundedRanges(cook.source_ranges) }
       : await salvage(curd)
-    if (!resume) return stop(`cook ${needsContext ? 'ended with status needs-context' : `returned no valid result (${errorText(checkpointDefect.length ? checkpointDefect : call.errors)})`} and ${branch} has no ref to resume from`)
+    if (!resume) return stop(`cook ${cook && !partial ? `ended with status ${isNeedsContext(cook) ? 'needs-context' : JSON.stringify(cook.status)}` : `returned no valid result (${errorText(checkpointDefect.length ? checkpointDefect : call.errors)})`} and ${branch} has no ref to resume from`)
     if (resume.checkpoint === lastCheckpoint) return stop(`cook stalled: no new commit since ${lastCheckpoint}`)
     lastCheckpoint = resume.checkpoint
     log(`${curd.slug}: resuming cook from ${lastCheckpoint} (continuation ${round})`)
@@ -889,7 +896,7 @@ const chainResults = await pipeline(
     let current = sha
     const tasted = await typed(tastePrompt(curd, current), { label: `taste:${curd.slug}`, phase: 'Taste', agentType: 'reviewer', model: 'opus', schema: TASTE_SCHEMA }, checkTaste)
     if (!tasted.value) return { curd, branch, cook, sha: current, taste: null, tasteRounds: 0, failure: { stage: 'taste', message: errorText(tasted.errors) } }
-    let taste = tasted.value
+    let taste = tasteOf(tasted.value)
     let round = 0
     while (taste.verdict === 'revise' && round < CORRECTIVE_ROUNDS) {
       const corrected = await typed(correctivePrompt(curd, current, taste), { label: `correct:${curd.slug}:r${round + 1}`, phase: 'Taste', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CORRECT_SCHEMA }, checkCorrect)
@@ -903,7 +910,7 @@ const chainResults = await pipeline(
       current = correction.head_sha.trim()
       const retasted = await typed(tastePrompt(curd, current), { label: `taste:${curd.slug}:r${round}`, phase: 'Taste', agentType: 'reviewer', model: 'opus', schema: TASTE_SCHEMA }, checkTaste)
       if (!retasted.value) return { curd, branch, cook, sha: current, taste, tasteRounds: round, failure: { stage: 'taste', message: errorText(retasted.errors) } }
-      taste = retasted.value
+      taste = tasteOf(retasted.value)
     }
     return { curd, branch, cook, sha: current, taste, tasteRounds: round, failure: null }
   },

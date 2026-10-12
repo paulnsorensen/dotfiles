@@ -14,8 +14,10 @@
 # Granting it injects the full skill listing into the spawn context — measured
 # at 11,355 tokens on 2.1.219, ~40% of a typical sub-agent's spawn weight, and
 # independent of the `skills:` preload list below. Withholding it by denylist
-# and omitting it from an allowlist save identically. Only reviewer keeps it
-# to invoke `age`; researcher preloads `briesearch` and denies the tool.
+# and omitting it from an allowlist save identically. Reviewer keeps it to
+# invoke `age`. Coder keeps it because workflow phases (cheese-factory cook,
+# press, and cure) tell it to run /cook, /press, and /cure through the Skill
+# tool. Researcher preloads `briesearch` and denies the tool.
 #
 # ToolSearch must be granted wherever an `mcp__` server is allowlisted: without
 # it Claude Code disables deferred MCP loading and every MCP schema loads
@@ -288,6 +290,7 @@ agents:
     - ToolSearch
     - mcp__tilth
     - mcp__tilth__tilth_write
+    - Skill
     color: green
     effort: medium
     # No frontmatter skills. Claude Code auto-invokes every listed skill at
@@ -295,7 +298,8 @@ agents:
     # agent reads its task — it is an auto-invoke list, not an availability
     # list. The old list (cook/press/cure/de-slop/tdd-assertions/commit) cost
     # 32,740 tokens, 52% of the then-130k context ceiling, every dispatch. Required
-    # role discipline is inlined in the coder body; Skill remains ungranted.
+    # role discipline is inlined in the coder body. The Skill TOOL is granted
+    # (see the header) so a workflow phase can run /cook, /press, or /cure.
     skills: []
     maxTurns: 100
     body_path: agents/agent_definitions/coder.md
