@@ -360,6 +360,9 @@ Return {"curds":[{"slug":"<kebab-slug>","brief":"<what this curd must do>","file
 function miniSpecPrompt(parentSlug, curds) {
   return `You are a coder agent for the /cheese-factory workflow. Use Bash and your write tool.
 
+Done means: a mini-spec file exists at its resolved path for every curd below, and you return one entry per curd.
+Scope fence: write only those mini-spec files. Do not edit source files. Do not commit, push, open a PR, or merge.
+
 For each curd below, resolve its mini-spec path with \`python3 ~/.claude/skills/mold/scripts/mold.pyz artifact-path specs ${parentSlug}--<slug>\` and write the mini-spec there using mold's agent-invoked mini-spec schema (see skills/mold/SKILL.md § Agent-invoked mini-spec mode), deriving the mini-spec content from the curd's brief and files:
 
 ${JSON.stringify(curds.map((c) => ({ slug: c.slug, brief: c.brief, files: c.files })))}
@@ -367,12 +370,18 @@ ${JSON.stringify(curds.map((c) => ({ slug: c.slug, brief: c.brief, files: c.file
 Return {"curds":[{"slug":"<slug>","spec_path":"<resolved path>"}, ...]} — one entry per curd, in the same order.`
 }
 
+function codeFields(branch) {
+  return `Done means: the repository gate exits 0 (\`just check\` when the justfile defines check), and your work is committed locally on ${branch}.
+Scope fence: work ONLY this curd's scope. Do NOT touch sibling curds' files. Do NOT push, open a PR, or merge — /cheese-factory's plate barrier handles publication after every curd chain finishes.`
+}
+
 function isoContract(branch) {
   return `
 ## Isolation contract
 - First command: \`git checkout -B ${branch} origin/main\` (or, if the worktree already exists on ${branch} from an earlier phase, just confirm you're on it — recreate with \`git worktree add <path> ${branch}\` if it was reaped).
-- Work ONLY this curd's scope. Do NOT touch sibling curds' files. Do NOT push, open a PR, or merge — /cheese-factory's plate barrier handles publication after every curd chain finishes.
 - Commit locally on ${branch} only, Conventional Commits, no flair/emojis.
+
+${codeFields(branch)}
 `
 }
 
@@ -420,8 +429,9 @@ function cookContinuationPrompt(curd, prevCook, round, checkpoint) {
 
 ## Isolation contract (continuation)
 - Do NOT run \`git reset\`, \`git checkout\`, \`git checkout -B ${branch} origin/main\`, \`git add -A\`, or any blanket WIP commit.
-- Work ONLY this curd's scope. Do NOT touch sibling curds' files. Do NOT push, open a PR, or merge.
 - Commit locally on ${branch} only, Conventional Commits, no flair/emojis.
+
+${codeFields(branch)}
 
 ${NO_CHAIN_DIRECTIVE}
 
@@ -429,7 +439,8 @@ Report the preserved worktree path and Cook handoff fields. Return {"status":"..
 }
 
 function tastePrompt(curd, branch) {
-  return `You are a read-only opus reviewer running the Taste phase (5-lens gate) for curd "${curd.slug}".
+  return `Review mode: taste-test
+You are a read-only opus reviewer running the Taste phase (5-lens gate) for curd "${curd.slug}".
 
 Diff under review: \`git diff origin/main...${branch}\` (read-only — do not check out or edit anything).
 
@@ -449,13 +460,19 @@ function correctivePrompt(curd, worktreePath, branch, taste) {
 Findings to fix:
 ${JSON.stringify({ issues: taste.issues, lenses: taste.lenses })}
 
-Address ONLY these findings — no scope expansion. Commit on ${branch} (no push). Return {"status":"fixed"|"partial"|"blocked","summary":"...","committed":true|false}.`
+Done means: the repository gate exits 0 (\`just check\` when the justfile defines check), and the fixes are committed locally on ${branch}.
+Scope fence: address ONLY these findings — no scope expansion. Do not push.
+
+Return {"status":"fixed"|"partial"|"blocked","summary":"...","committed":true|false}.`
 }
 
 function pressPrompt(curd, worktreePath) {
   return `You are the Press phase for curd "${curd.slug}". cd ${worktreePath} first.
 
 Run \`/press ${curd.slug} --auto\` via the Skill tool.
+
+Done means: the repository gate exits 0 (\`just check\` when the justfile defines check), and your work is committed locally on the curd branch.
+Scope fence: this curd's files only. Commit locally. Do not push, open a PR, or merge.
 
 ${NO_CHAIN_DIRECTIVE}
 
@@ -471,13 +488,15 @@ Surviving curd branches (slug-sorted): ${JSON.stringify(refs)}
 2. Merge each branch in the listed order: \`git merge --no-ff <branch>\` (the branches are local to this repo; fall back to \`origin/<branch>\` only if the local ref is missing). If a merge conflicts, run \`git merge --abort\`, record that entry's slug as conflicted, and continue with the remaining branches.
 3. Report stats for the integrated diff by parsing \`git diff --shortstat origin/main...HEAD\`: files_changed, and lines_changed = insertions + deletions.
 
-Do not push. Do not edit any file yourself. ${NO_CHAIN_DIRECTIVE}
+Done means: you attempted every listed branch and reported merged, conflicted, and the diff stats.
+Scope fence: do not push. Do not edit any file yourself. ${NO_CHAIN_DIRECTIVE}
 
 Return {"worktree_path":"<git rev-parse --show-toplevel>","merged":["<slug>", ...],"conflicted":["<slug>", ...],"files_changed":<n>,"lines_changed":<n>}.`
 }
 
 function ageBarrierPrompt(worktreePath, refs, label, priorFindings) {
-  return `You are a read-only opus reviewer running the ${label} barrier of the /cheese-factory workflow. cd ${worktreePath} first (the integration branch merging the surviving curd branches).
+  return `Review mode: severity-report
+You are a read-only opus reviewer running the ${label} barrier of the /cheese-factory workflow. cd ${worktreePath} first (the integration branch merging the surviving curd branches).
 
 ${label === 'Re-age'
     ? `A cure pass just ran and the integration branch was re-merged. Re-review \`git diff origin/main...HEAD\` SCOPED to these previously reported findings (HEAD now includes the cure commits) and judge each resolved or still present:
@@ -499,7 +518,8 @@ cd into the curd worktree for branch ${branch}: if the Cook phase's worktree sti
 Run \`/cure --auto --stake medium+\` via the Skill tool, giving it this routed finding list as its input (the /cure skill accepts a finding list directly):
 ${JSON.stringify(findings)}
 
-Commit locally on ${branch}. Do not push. ${NO_CHAIN_DIRECTIVE}
+Done means: the repository gate exits 0 (\`just check\` when the justfile defines check), and the fixes are committed locally on ${branch}.
+Scope fence: this curd's files only. Commit locally. Do not push. ${NO_CHAIN_DIRECTIVE}
 
 Return {"status":"ok|partial|blocked","committed":true|false,"artifact":"..."}.`
 }
@@ -525,7 +545,8 @@ ${singlePass
   ? 'Single-pass mode: run /plate for an ordinary single PR on the one branch above.'
   : 'Fan-out mode: run /plate to stack these branches into a stacked-PR chain in slug-sorted order, stating the order in the PR bodies.'}
 
-Push and open/update PRs. NEVER merge.
+Done means: you opened or updated a PR for each clean curd branch listed above, and for no other branch.
+Scope fence: push those branches and open or update their PRs. NEVER merge.
 
 Return {"results":[{"slug":"...","status":"...","pr_url":"..."}]}.`
 }
@@ -617,7 +638,7 @@ const chainResults = await pipeline(
           checkpointFailure = 'cook needs-context handoff requires bounded checkpoint observations'
           break
         }
-        const checkpoint = await agent(checkpointPrompt(curd, cook), { label: `cook:${curd.slug}:checkpoint`, phase: 'Cook', agentType: 'generalist', model: 'sonnet', workdir: cook.worktree_path, schema: CHECKPOINT_SCHEMA })
+        const checkpoint = await agent(checkpointPrompt(curd, cook), { label: `cook:${curd.slug}:checkpoint`, phase: 'Cook', agentType: 'generalist', model: 'sonnet', schema: CHECKPOINT_SCHEMA })
         if (!validCheckpointResult(checkpoint, cook.worktree_path)) {
           checkpointFailure = 'Cook checkpoint coordinator did not return a verified authoritative checkpoint for the existing worktree'
           break

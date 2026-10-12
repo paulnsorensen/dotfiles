@@ -966,7 +966,8 @@ test('a needs-context cook coordinates an authoritative checkpoint before one co
   assert.deepEqual(labels, ['resolve', 'cook:parent', 'cook:parent:checkpoint', 'cook:parent:c1', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate'])
   assert.equal(checkpoint.opts.agentType, 'generalist')
   assert.equal(checkpoint.opts.isolation, undefined)
-  assert.equal(checkpoint.opts.workdir, worktreePath)
+  assert.equal(Object.hasOwn(checkpoint.opts, 'workdir'), false)
+  assert.ok(checkpoint.prompt.includes(worktreePath))
   assert.match(checkpoint.prompt, /working directory/i)
   assert.match(checkpoint.prompt, /retry the same phase only/)
   assert.match(checkpoint.prompt, /do not use the legacy cook path/)
@@ -1340,4 +1341,85 @@ test('a depends_on edge merges two of three curds, leaving the third independent
   assert.equal(trace.agents.some(({ opts }) => opts.label === 'cook:a'), true)
   assert.equal(trace.agents.some(({ opts }) => opts.label === 'cook:c'), true)
   assert.match(trace.logs.join('\n'), /Merged coupled curd group\(s\): a\+b/)
+})
+
+// ---- agent dispatch contracts ----
+
+async function runEveryPhase() {
+  const workflow = await loadWorkflow(path)
+  const worktreePath = '/tmp/worktrees/a'
+  const observations = {
+    completed: 'implemented a',
+    remaining: 'run the focused gate',
+    grounded: 'src/a.js#1-5',
+    gates: 'none yet',
+    worktree_base: `${worktreePath} @ 39abaa4`,
+    source_ranges: ['src/a.js#1-5'],
+    locked_decisions: 'none',
+    known_false_leads: 'none',
+  }
+  const clean = (slug) => ({ slug, has_medium_plus_findings: false, findings: [] })
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'resolve') return resolveResolved({ candidate_curds: 2 })
+      if (opts.label === 'decompose:plan') {
+        return decompose([
+          { slug: 'a', brief: 'do a', files: ['a.js'] },
+          { slug: 'c', brief: 'do c', files: ['c.js'] },
+        ])
+      }
+      if (opts.label === 'decompose:write-minispecs') {
+        return miniSpecs([{ slug: 'a', spec_path: '/specs/parent--a.md' }, { slug: 'c', spec_path: '/specs/parent--c.md' }])
+      }
+      if (opts.label === 'cook:a') return { status: 'needs-context', worktree_path: worktreePath, checkpoint_observations: observations, orientation: 'partial' }
+      if (opts.label === 'cook:a:checkpoint') return { status: 'ok', checkpoint_ref: 'a-cook', working_context: ['src/a.js#1-5'], worktree_fingerprint: 'fp1' }
+      if (opts.label === 'cook:a:c1') return cook('a')
+      if (opts.label === 'cook:c') return cook('c')
+      if (opts.label === 'taste:a') return taste('revise')
+      if (opts.label === 'correct:a:r1') return correction(true)
+      if (opts.label === 'taste:a:r1' || opts.label === 'taste:c') return taste('pass')
+      if (opts.label === 'press:a') return phaseOk('a', 'press')
+      if (opts.label === 'press:c') return phaseOk('c', 'press')
+      if (opts.label === 'integrate' || opts.label === 're-merge') return integrateResult({ merged: ['a', 'c'] })
+      if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: true, perCurd: [{ slug: 'a', has_medium_plus_findings: true, findings: [] }, clean('c')] })
+      if (opts.label === 'cure:a') return cureResult({ committed: true })
+      if (opts.label === 'age:reage') return ageBarrierResult({ hasMediumPlus: false, perCurd: [clean('a'), clean('c')] })
+      if (opts.label === 'plate') return plate([{ slug: 'a', status: 'plated', pr_url: 'u/a' }, { slug: 'c', status: 'plated', pr_url: 'u/c' }])
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  await workflow.run({ ...globals, args: { spec: 'parent' } })
+  return trace.agents
+}
+
+test('every reviewer dispatch starts with a Review mode line the reviewer agent accepts', async () => {
+  const agents = await runEveryPhase()
+  const reviewers = agents.filter(({ opts }) => opts.agentType === 'reviewer')
+
+  assert.deepEqual(reviewers.map(({ opts }) => opts.label).sort(), ['age:barrier', 'age:reage', 'taste:a', 'taste:a:r1', 'taste:c'])
+  for (const { prompt, opts } of reviewers) {
+    const expected = opts.label.startsWith('taste:') ? 'taste-test' : 'severity-report'
+    assert.equal(prompt.split('\n')[0], `Review mode: ${expected}`, opts.label)
+  }
+})
+
+test('every coder dispatch carries labelled Done means and Scope fence fields', async () => {
+  const agents = await runEveryPhase()
+  const coders = agents.filter(({ opts }) => opts.agentType === 'coder')
+
+  assert.deepEqual(coders.map(({ opts }) => opts.label).sort(), [
+    'cook:a', 'cook:a:c1', 'cook:c', 'correct:a:r1', 'cure:a', 'decompose:write-minispecs', 'integrate', 'plate', 'press:a', 'press:c',
+  ])
+  for (const { prompt, opts } of coders) {
+    assert.match(prompt, /^Done means:/m, opts.label)
+    assert.match(prompt, /^Scope fence:/m, opts.label)
+  }
+})
+
+test('no agent dispatch passes the undocumented workdir option', async () => {
+  const agents = await runEveryPhase()
+
+  assert.ok(agents.some(({ opts }) => opts.label === 'cook:a:checkpoint'))
+  for (const { opts } of agents) assert.equal(Object.hasOwn(opts, 'workdir'), false, opts.label)
 })

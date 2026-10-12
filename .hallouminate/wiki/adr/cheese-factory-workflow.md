@@ -68,7 +68,7 @@ Decisions behind replacing `claude/workflows/curd-flock.js` with the spec-driven
 
 _Source: preamble and coder prompt consolidation · Updated: 2026-07-28 · Supersedes: preamble-owned fan-out and continuation attributions_
 
-## ADR-010: Phase-owned checkpoint before one targeted Cook retry [status: accepted]
+## ADR-010: Phase-owned checkpoint before one targeted Cook retry [status: superseded by ADR-011]
 
 This decision replaces ADR-009's recovery procedure, not its requirement to preserve partial work.
 The September 19, 2026 session shows that handwritten notes and broad continuation assignments still exhaust coders.[^recovery-20260919]
@@ -87,3 +87,26 @@ The parent must not implement the remainder automatically.
 The coordinator's verified response remains an agent trust boundary; deterministic workflow tests verify routing, not model execution.[^recovery-20260919]
 
 [^recovery-20260919]: `claude/workflows/cheese-factory.js` (`checkpointPrompt`, `validCheckpointResult`, Cook pipeline stage); `tests/workflows/cheese-factory.test.mjs`; [[operations/subagent-dispatch-analytics]]. Decision: September 19, 2026.
+
+## ADR-011: Commit-SHA continuation with source ranges as data [status: accepted]
+
+- **Context:** ADR-010's wheypoint coordinator must run in the cook's worktree to see its uncommitted state. ADR-012 gives every writer its own isolated worktree, so the coordinator cannot see that state. It also costs one sonnet agent per round. move-my-cheese (`buildTarget`, `claude/workflows/move-my-cheese.js:1097`) continues from a committed SHA instead.
+- **Decision:** A cook that runs low on context commits its work, advances `curd/<slug>`, and returns completed, remaining, a checkpoint SHA, and `source_ranges`. Code validates the ranges with `validGroundedRanges` and passes all four as fenced data to a fresh isolated continuation. A null result runs one `salvage()` that reads `refs/heads/curd/<slug>`. A repeated SHA stops the curd as stalled. The limit is 3.
+- **Alternatives:** pure move-my-cheese continuation without ranges (loses ADR-010's targeted first read); keep the coordinator and pin it at the SHA (unverified that a wheypoint checkpoint resolves across worktrees).
+- **Consequences:** No wheypoint dependency in the workflow. The continuation still reads the named ranges first. Uncommitted work at a hard death is lost; salvage resumes from the last commit.
+
+## ADR-012: Writers advance curd branches with update-ref from a detached HEAD [status: accepted]
+
+- **Context:** `claude/hooks/worktree-guard.js:25-41,60-71` allows writes only under the agent's own worktree root. cheese-factory writers `cd` into the cook's worktree, so the guard blocks their edits. move-my-cheese fixed the same failure in #1267 (wiki: architecture/move-my-cheese-workflow).
+- **Decision:** Cook, continuation, corrective, press, and cure each run with `isolation: 'worktree'`. Each checks out `--detach <sha>`, commits, and runs `git update-ref refs/heads/curd/<slug> HEAD`. Each returns `head_sha`, and code passes it to the next writer and to Plate. No worktree checks out `curd/<slug>`.
+- **Alternatives:** per-stage branches with `--ignore-other-worktrees` (more refs and cleanup); keep the shared worktree (blocked by the guard).
+- **Consequences:** State moves only through refs and SHAs. Plate can check out `curd/<slug>` because no worktree holds it.
+
+## ADR-013: age-fanout returns flat findings for code routing [status: accepted]
+
+- **Context:** ADR-006 routes findings to curds by file, but the age-fanout reconcile model did the routing with `git log --name-only` and reported cheap lows as one global boolean (`claude/workflows/age-fanout.js:128,214-219`). cheese-factory could not cure cheap lows per curd or check the routing.
+- **Decision:** When the caller passes `route_curds`, reconcile returns a flat `findings` list. Each item has a severity and `fix_cost_now` (contained, sprawling, or n/a). cheese-factory's integrate step returns `files_by_slug`, and code routes each finding to every curd that owns its file. A finding with no owner marks every integrated curd dirty. A call without `route_curds` is unchanged, so move-my-cheese is unaffected.
+- **Alternatives:** validate the model's `per_curd` in code (the model still routes); defer routing (cheap lows cure every curd).
+- **Consequences:** Routing is deterministic and testable. `fix_cost_now` stays a reviewer judgment.
+
+_Source: /mold spec `cheese-factory-hardening` (durable corpus) · Decided: 2026-10-12 · ADR-011 supersedes ADR-010_
