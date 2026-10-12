@@ -322,7 +322,8 @@ const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12 
 // The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. Recorded paths are cleanup hints. The same pattern also gates the integrate and re-merge worktree paths.
 // Only writer calls in an isolated worktree feed the cleanup set. A reviewer path goes to reportWorktrees instead.
 // Reviewer worktrees hold the gitignored age reports, so cleanup keeps them and the return value lists them.
-const SCRATCH_WORKTREE_RE = /^\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+$/
+const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
+const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
 const isScratchWorktree = (p) => SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')
 const scratchWorktrees = new Set()
 const reportWorktrees = new Set()
@@ -455,11 +456,11 @@ const checkCleanup = checkWith(CLEANUP_SCHEMA)
 const isMediumPlus = (f) => f.severity !== 'low'
 const needsCure = (f) => isMediumPlus(f) || f.fix_cost_now === 'contained'
 // A finding owned by two curds routes to the first owner in slug order. Each other owner lands in shared, keyed to the owners that cure it.
-// unrouted is true when a finding that needs cure has no owner,
+// unrouted is true when a finding that needs cure has no owner (an unowned low that needs no cure stays out),
 // or when the result claims medium+ findings or contained lows that its list does not carry.
 // A finding file may carry a leading ./ or a worktree prefix; both name the same repo path.
 // The prefix is the producer's own worktree_path, or any scratch worktree root.
-const SCRATCH_PREFIX_RE = /^\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+\//
+const SCRATCH_PREFIX_RE = new RegExp(`^${SCRATCH_PATH_SRC}\\/`)
 const normalizeFile = (file, worktreePath) => {
   let p = String(file).trim()
   const root = worktreePath ? String(worktreePath).replace(/\/+$/, '') + '/' : null
@@ -872,11 +873,12 @@ Return {"status":"ok|partial|blocked","committed":true|false,"head_sha":"<40 hex
 
 const remergePrompt = (base, refs) => mergePrompt('You are the re-merge step of the Re-age barrier for the /cheese-factory workflow. A cure pass added commits to some curd branches. Rebuild the integration from scratch.', base, refs)
 
-function cleanupPrompt(paths) {
+function cleanupPrompt(paths, shas) {
   return prompt(`You are the cleanup step of the /cheese-factory workflow. Every curd is clean and plated.
 
-Remove each worktree below with \`git worktree remove --force <path>\`, then run \`git worktree prune\`. Skip a path that no longer exists or that \`git worktree list --porcelain\` does not show. Never delete a branch: keep every curd/* branch.
+For each worktree below, run \`git -C <path> rev-parse HEAD\`. Remove the worktree with \`git worktree remove <path>\` only when that output equals one of the recorded SHAs. Never pass --force. Skip a path when the SHA differs, when the path no longer exists, or when \`git worktree list --porcelain\` does not show it. Then run \`git worktree prune\`. Never delete a branch: keep every curd/* branch.
 ${data('worktrees', paths)}
+${data('recorded_shas', shas)}
 
 Return {"removed":["<path>", ...]}.`)
 }
@@ -888,17 +890,19 @@ Clean curd branches (slug-sorted), each with the SHA its branch ref points at. N
 ${data('branches', cleanCurds.map((c) => ({ slug: c.slug, branch: branchFor(c.slug), sha: c.sha })))}
 
 First, before /plate starts any commit, restack, or push step, check each slug above. Run \`git rev-parse refs/heads/curd/<slug>\` for the slug. Confirm that it prints the SHA given for that slug. On a mismatch, exclude that slug from the /plate run and report status failed for it, with a reason.
-If no slug passes the check, do not run /plate. Return a failed row with a reason for each slug.
+If no slug passes the check, do not start /plate. Return a failed row with a reason for each slug.
+
+You run in the invoking checkout. Run \`git status --porcelain\` first. If it prints anything, stop and return status blocked for every slug, with a reason. Publish only the pinned SHAs above. Never stage, commit, or push any other edit.
 
 ${singlePass
-  ? 'Single-pass mode: then run /plate for an ordinary single PR on the branch above, only if its slug passed the check.'
-  : 'Fan-out mode: then run /plate to stack the verified branches into a stacked-PR chain in slug-sorted order, stating the order in the PR bodies.'}
-Let /plate commit, restack, and submit through its own provider flow.
+  ? `Single-pass mode: then ${skillStep('plate', 'the verified branch listed above')} Open an ordinary single PR on that branch, only if its slug passed the check.`
+  : `Fan-out mode: then ${skillStep('plate', 'the verified branches listed above')} Stack the verified branches into a stacked-PR chain in slug-sorted order, stating the order in the PR bodies.`}
+Let the plate skill commit, restack, and submit through its own provider flow.
 
 Done means: you opened or updated a PR for each verified clean curd branch listed above, and for no other branch.
-Scope fence: submit those branches and open or update their PRs only through /plate. NEVER merge.
+Scope fence: submit those branches and open or update their PRs only through the plate skill. NEVER merge.
 
-Return {"results":[{"slug":"...","status":"ok|failed|blocked","pr_url":"...","reason":"..."}]}. Report status ok only for a slug that /plate submitted and whose PR is open; pr_url is then required. Add reason to every row whose status is not ok.`)
+Return {"results":[{"slug":"...","status":"ok|failed|blocked","pr_url":"...","reason":"..."}]}. Report status ok only for a slug that the plate skill submitted and whose PR is open; pr_url is then required. Add reason to every row whose status is not ok.`)
 }
 
 // ---- Resolve ----
@@ -1198,17 +1202,29 @@ if ([...cureBySlug.values()].some((c) => c && c.committed)) {
 // ---- Status resolution ----
 const remergeConflicted = new Set((remerge && remerge.conflicted) || [])
 
+// A cured curd is clean when its cure committed, it did not conflict in re-merge, and the re-age reviewed it without a finding.
+// cureBlock returns the first failing reason, worded for the curd itself and for a co-owner that reads it, or null.
+const cureBlock = (slug) => {
+  const cure = cureBySlug.get(slug)
+  if (!cure || !cure.committed) return { self: 'cure did not commit a fix', owner: 'cure by the owning curd did not commit a fix' }
+  if (remergeConflicted.has(slug)) return { self: 're-merge conflicted after cure', owner: 'owning curd re-merge conflicted after cure' }
+  if (!reage) return { self: 're-age did not run after cure', owner: 're-age has no entry for the owning curd' }
+  if (!reage.reviewed_slugs.includes(slug)) return { self: 're-age has no entry for the cured curd', owner: 're-age has no entry for the owning curd' }
+  if (reageRouting.unrouted) return { self: 're-age reported a finding that needs cure and no curd owns its file', owner: 're-age still reports findings for the owning curd' }
+  if (ownsFinding(reageRouting, slug)) return { self: 're-age still reports findings that need cure', owner: 're-age still reports findings for the owning curd' }
+  return null
+}
+
 // A shared co-owner ends clean only when every owner of its shared findings ends clean.
-// An owner is clean when its cure committed, it did not conflict in re-merge, and the re-age reviewed it without a finding.
+// An owner ends clean when cureBlock passes and the owner's own shared owners end clean. Owners precede co-owners in slug order, so the recursion ends.
 const sharedOwnerBlock = (slug) => {
   const owners = routing.shared.get(slug)
   if (!owners) return null
   for (const o of [...owners].sort()) {
-    const cure = cureBySlug.get(o)
-    if (!cure || !cure.committed) return `cure by the owning curd did not commit a fix (owner ${o})`
-    if (remergeConflicted.has(o)) return `owning curd re-merge conflicted after cure (owner ${o})`
-    if (!reage || !reage.reviewed_slugs.includes(o)) return `re-age has no entry for the owning curd (owner ${o})`
-    if (reageRouting.unrouted || ownsFinding(reageRouting, o)) return `re-age still reports findings for the owning curd (owner ${o})`
+    const block = cureBlock(o)
+    if (block) return `${block.owner} (owner ${o})`
+    const upstream = sharedOwnerBlock(o)
+    if (upstream) return `owning curd depends on a dirty owner (owner ${o}): ${upstream}`
   }
   return null
 }
@@ -1235,14 +1251,9 @@ const withStatus = chainResults.map((r, i) => {
     if (reageRouting && ownsFinding(reageRouting, curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age reports findings that need cure' }
     return { curd, branch, sha, status: 'clean' }
   }
-  const cure = cureBySlug.get(curd.slug)
-  if (!cure || !cure.committed) return { curd, branch, status: 'dirty', excluded_reason: 'cure did not commit a fix' }
-  sha = cure.head_sha.trim()
-  if (remergeConflicted.has(curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-merge conflicted after cure' }
-  if (!reage) return { curd, branch, status: 'dirty', excluded_reason: 're-age did not run after cure' }
-  if (!reage.reviewed_slugs.includes(curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age has no entry for the cured curd' }
-  if (reageRouting.unrouted) return { curd, branch, status: 'dirty', excluded_reason: 're-age reported a finding that needs cure and no curd owns its file' }
-  if (ownsFinding(reageRouting, curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age still reports findings that need cure' }
+  const block = cureBlock(curd.slug)
+  if (block) return { curd, branch, status: 'dirty', excluded_reason: block.self }
+  sha = cureBySlug.get(curd.slug).head_sha.trim()
   const ownerBlocked = sharedOwnerBlock(curd.slug)
   if (ownerBlocked) return { curd, branch, status: 'dirty', excluded_reason: ownerBlocked }
   return { curd, branch, sha, status: 'clean' }
@@ -1288,6 +1299,7 @@ const plateReasonFor = (r) => {
 const curdsOut = withStatus.map((r) => {
   const plate = platedBySlug.get(r.curd.slug)
   const owned = [...((routing && routing.bySlug.get(r.curd.slug)) || []), ...((routing && routing.sharedFindings.get(r.curd.slug)) || [])]
+  const unrouted = Boolean(routing && routing.unrouted) || Boolean(reageRouting && reageRouting.unrouted)
   const plateReason = plateReasonFor(r)
   return {
     slug: r.curd.slug,
@@ -1295,7 +1307,7 @@ const curdsOut = withStatus.map((r) => {
     status: plateReason ? 'failed' : r.status,
     pr_url: plate ? plate.pr_url : undefined,
     excluded_reason: plateReason || r.excluded_reason,
-    age: ageMode ? { mode: ageMode, has_medium_plus_findings: owned.some(isMediumPlus) } : undefined,
+    age: ageMode ? { mode: ageMode, has_medium_plus_findings: owned.some(isMediumPlus) || unrouted } : undefined,
   }
 })
 
@@ -1307,7 +1319,8 @@ log(`Report: ${curdsOut.length} curd(s) — clean:${summary.clean} dirty:${summa
 // Worktrees that hold age reports stay, even when a writer also reported them.
 const removable = [...scratchWorktrees].filter((p) => !reportWorktrees.has(p)).sort()
 if (curdsOut.length && curdsOut.every((c) => c.status === 'clean' && platedBySlug.has(c.slug)) && removable.length) {
-  const cleaned = await typed(cleanupPrompt(removable), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, checkCleanup)
+  const recordedShas = [...new Set([integrate && integrate.head, remerge && remerge.head, ...chainResults.map((r) => r && r.sha), ...[...cureBySlug.values()].map((c) => c && c.head_sha), ...withStatus.map((r) => r && r.sha)].filter((s) => typeof s === 'string' && s.trim()).map((s) => s.trim()))].sort()
+  const cleaned = await typed(cleanupPrompt(removable, recordedShas), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, checkCleanup)
   if (!cleaned.value) log(`Worktree cleanup returned no valid result (${errorText(cleaned.errors)}).`)
 }
 

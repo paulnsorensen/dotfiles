@@ -105,7 +105,7 @@ The coordinator's verified response remains an agent trust boundary; determinist
 ## ADR-013: age-fanout returns flat findings for code routing [status: accepted]
 
 - **Context:** ADR-006 routes findings to curds by file, but the age-fanout reconcile model did the routing with `git log --name-only` and reported cheap lows as one global boolean (`claude/workflows/age-fanout.js:128,214-219`). cheese-factory could not cure cheap lows per curd or check the routing.
-- **Decision:** When the caller passes `route_curds`, reconcile returns a flat `findings` list. Each item has a severity and `fix_cost_now` (contained, sprawling, or n/a). cheese-factory's integrate step returns `files_by_slug`, and code routes each finding to every curd that owns its file. A finding with no owner marks every integrated curd dirty. A call without `route_curds` is unchanged, so move-my-cheese is unaffected.
+- **Decision:** When the caller passes `route_curds`, reconcile returns a flat `findings` list. Each item has a severity and `fix_cost_now` (contained, sprawling, or n/a). cheese-factory's integrate step returns `files_by_slug`, and code routes each finding to every curd that owns its file. A finding that needs cure with no owner marks every integrated curd dirty. An unowned low that needs no cure leaves the curds clean. A call without `route_curds` is unchanged, so move-my-cheese is unaffected.
 - **Alternatives:** validate the model's `per_curd` in code (the model still routes); defer routing (cheap lows cure every curd).
 - **Consequences:** Routing is deterministic and testable. `fix_cost_now` stays a reviewer judgment.
 

@@ -2874,7 +2874,7 @@ test('F10: integrate merges each curd by its validated SHA, re-merge uses the cu
   const platePrompt = callsOf(trace, 'plate')[0].prompt
   assert.ok(platePrompt.includes('git rev-parse refs/heads/curd/<slug>'))
   assert.match(platePrompt, /mismatch, exclude that slug from the \/plate run and report status failed/i)
-  assert.ok(platePrompt.indexOf('git rev-parse refs/heads/curd/<slug>') < platePrompt.indexOf('run /plate'))
+  assert.ok(platePrompt.indexOf('git rev-parse refs/heads/curd/<slug>') < platePrompt.indexOf('plate/SKILL.md'))
   assert.ok(!/before you push/i.test(platePrompt))
   assert.match(platePrompt, /before \/plate starts any commit, restack, or push step/)
 })
@@ -2884,8 +2884,8 @@ test('#23: the single-pass Plate prompt ties /plate to the verified branch and s
 
   const single = callsOf(trace, 'plate')[0].prompt
   assert.doesNotMatch(single, /on the one branch above/)
-  assert.match(single, /on the branch above, only if its slug passed the check/)
-  assert.match(single, /If no slug passes the check, do not run \/plate\. Return a failed row with a reason for each slug\./)
+  assert.match(single, /on that branch, only if its slug passed the check/)
+  assert.match(single, /If no slug passes the check, do not start \/plate\. Return a failed row with a reason for each slug\./)
 })
 
 for (const [name, row, reason] of [
