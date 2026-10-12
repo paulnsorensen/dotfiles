@@ -255,7 +255,7 @@ const PLATE_SCHEMA = {
   properties: {
     results: {
       type: 'array',
-      items: { type: 'object', required: ['slug', 'status'], properties: { slug: { type: 'string' }, status: { type: 'string' }, pr_url: { type: 'string' } } },
+      items: { type: 'object', required: ['slug', 'status'], properties: { slug: { type: 'string' }, status: { type: 'string' }, pr_url: { type: 'string' }, reason: { type: 'string' } } },
     },
   },
 }
@@ -311,11 +311,14 @@ function findDuplicateSlugs(curds) {
 // maxCurds keeps a run under the runtime cap of 1000 agents. A curd chain can spend about 26 agents, so about 38 curds reach the cap.
 const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12 }
 // The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. Recorded paths are cleanup hints only.
+// Only writer calls in an isolated worktree feed the cleanup set. A reviewer path goes to reportWorktrees instead.
+// Reviewer worktrees hold the gitignored age reports, so cleanup keeps them and the return value lists them.
 const SCRATCH_WORKTREE_RE = /^\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+$/
 const scratchWorktrees = new Set()
-function noteWorktree(path) {
+const reportWorktrees = new Set()
+function noteWorktree(path, into = scratchWorktrees) {
   const p = typeof path === 'string' ? path.trim() : ''
-  if (SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')) scratchWorktrees.add(p)
+  if (SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')) into.add(p)
 }
 const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
 const SHA_RE = /^[0-9a-f]{40}$/
@@ -412,7 +415,8 @@ const checkReage = checkWith(REAGE_SCHEMA,
   (v) => (v.mode === 'skipped-unchanged' ? [substance('re-age must review the cure commits; return mode incremental')] : []),
   findingErrors)
 const checkCure = checkWith(CURE_SCHEMA, (v) => statusErrors(v, CURE_STATUSES), (v) => (v.committed ? shaErrors('$.head_sha', v.head_sha) : []))
-const checkPlate = checkWith(PLATE_SCHEMA, (v) => v.results.flatMap((r, i) => enumErrors(`$.results[${i}].status`, r.status, PLATE_STATUSES, substance)))
+// A Plate row status outside the enum fails only its own curd (see plateReasonFor). A Plate redo would publish again.
+const checkPlate = checkWith(PLATE_SCHEMA)
 const checkCleanup = checkWith(CLEANUP_SCHEMA)
 
 // ---- routing: code assigns findings to curds by the files each curd changed ----
@@ -454,7 +458,7 @@ const repairPrompt = (value, errors) => prompt(
 // only its valid source_ranges and uses '' for a missing completed or remaining, because a redo resets the curd ref to the base SHA.
 // Every throw from agent() is final, because a writer throw must never be redone: the work ref may have moved.
 // Reviewers follow the same rule for simplicity.
-// Every non-null attempt records its worktree, so a rejected attempt that a redo replaces still gets cleaned up.
+// Every non-null isolated attempt records its worktree, so a rejected attempt that a redo replaces still gets cleaned up.
 async function attempt(text, opts) {
   try {
     return { value: await agent(text, opts), threw: null }
@@ -467,7 +471,7 @@ async function typed(text, opts, check, nullIsFinal = false) {
   let { value, threw } = await attempt(text, opts)
   for (let round = 1; ; round++) {
     if (threw != null) return { value: null, errors: [substance(`agent threw: ${threw}`)] }
-    if (value != null) noteWorktree(value.worktree_path)
+    if (value != null && opts.isolation === 'worktree') noteWorktree(value.worktree_path, opts.agentType === 'reviewer' ? reportWorktrees : scratchWorktrees)
     const errors = value == null ? [substance('agent returned no output')] : check(value)
     if (!errors.length) return { value, errors }
     if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors }
@@ -745,7 +749,7 @@ const remergePrompt = (base, refs) => mergePrompt('You are the re-merge step of 
 function cleanupPrompt(paths) {
   return prompt(`You are the cleanup step of the /cheese-factory workflow. Every curd is clean and plated.
 
-Remove each worktree below with \`git worktree remove --force <path>\`, then run \`git worktree prune\`. Skip a path that no longer exists. Never delete a branch: keep every curd/* branch.
+Remove each worktree below with \`git worktree remove --force <path>\`, then run \`git worktree prune\`. Skip a path that no longer exists or that \`git worktree list --porcelain\` does not show. Never delete a branch: keep every curd/* branch.
 ${data('worktrees', paths)}
 
 Return {"removed":["<path>", ...]}.`)
@@ -757,17 +761,18 @@ function platePrompt(cleanCurds, singlePass) {
 Clean curd branches (slug-sorted), each with the SHA its branch ref points at. No worktree holds these refs:
 ${data('branches', cleanCurds.map((c) => ({ slug: c.slug, branch: branchFor(c.slug), sha: c.sha })))}
 
-First, before /plate starts any commit, restack, or push step: for each slug above, run \`git rev-parse refs/heads/curd/<slug>\` and confirm it prints the SHA given for that slug. On a mismatch, exclude that slug from the /plate run and report status failed for it.
+First, before /plate starts any commit, restack, or push step, check each slug above. Run \`git rev-parse refs/heads/curd/<slug>\` for the slug. Confirm that it prints the SHA given for that slug. On a mismatch, exclude that slug from the /plate run and report status failed for it, with a reason.
+If no slug passes the check, do not run /plate. Return a failed row with a reason for each slug.
 
 ${singlePass
-  ? 'Single-pass mode: then run /plate for an ordinary single PR on the one branch above.'
+  ? 'Single-pass mode: then run /plate for an ordinary single PR on the branch above, only if its slug passed the check.'
   : 'Fan-out mode: then run /plate to stack the verified branches into a stacked-PR chain in slug-sorted order, stating the order in the PR bodies.'}
 Let /plate commit, restack, and submit through its own provider flow.
 
 Done means: you opened or updated a PR for each verified clean curd branch listed above, and for no other branch.
 Scope fence: submit those branches and open or update their PRs only through /plate. NEVER merge.
 
-Return {"results":[{"slug":"...","status":"ok|failed|blocked","pr_url":"..."}]}. Report status ok only for a slug that /plate submitted and whose PR is open; pr_url is then required.`)
+Return {"results":[{"slug":"...","status":"ok|failed|blocked","pr_url":"...","reason":"..."}]}. Report status ok only for a slug that /plate submitted and whose PR is open; pr_url is then required. Add reason to every row whose status is not ok.`)
 }
 
 // ---- Resolve ----
@@ -876,7 +881,10 @@ async function cookCurd(curd, branch) {
     const resume = partial && !checkpointDefect.length
       ? { completed: cook.completed || '', remaining: cook.remaining || '', checkpoint: cook.checkpoint.trim(), source_ranges: groundedRanges(cook.source_ranges) }
       : await salvage(curd)
-    if (!resume) return stop(`cook ${cook && !partial ? `ended with status ${isNeedsContext(cook) ? 'needs-context' : JSON.stringify(cook.status)}` : `returned no valid result (${errorText(checkpointDefect.length ? checkpointDefect : call.errors)})`} and ${branch} has no ref to resume from`)
+    if (!resume || resume.failed) {
+      const ended = cook && !partial ? `ended with status ${isNeedsContext(cook) ? 'needs-context' : JSON.stringify(cook.status)}` : `returned no valid result (${errorText(checkpointDefect.length ? checkpointDefect : call.errors)})`
+      return stop(resume ? `cook ${ended} and the salvage of ${branch} failed (${resume.failed})` : `cook ${ended} and ${branch} has no ref to resume from`)
+    }
     if (resume.checkpoint === lastCheckpoint) return stop(`cook stalled: no new commit since ${lastCheckpoint}`)
     lastCheckpoint = resume.checkpoint
     log(`${curd.slug}: resuming cook from ${lastCheckpoint} (continuation ${round})`)
@@ -884,10 +892,12 @@ async function cookCurd(curd, branch) {
   }
 }
 
+// Returns null when the ref is absent, and { failed } when the salvage call itself failed.
 async function salvage(curd) {
   const found = await typed(salvagePrompt(curd), { label: `salvage:${curd.slug}`, phase: 'Cook', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA }, checkSalvage)
   const state = found.value
-  return state && state.found
+  if (!state) return { failed: errorText(found.errors) }
+  return state.found
     ? { completed: state.completed || '', remaining: state.remaining || '', checkpoint: state.checkpoint.trim(), source_ranges: [] }
     : null
 }
@@ -981,6 +991,7 @@ if (integrate && integratedRefs.length) {
       if (fan.status !== 'ok') throw new Error(`age-fanout result is ${fan.status} after repair`)
       ageResult = fan
       ageMode = 'fanout'
+      noteWorktree(integrate.worktree_path, reportWorktrees)
     } catch (e) {
       log(`age-fanout unavailable (${e.message}) — falling back to a single-reviewer barrier age.`)
     }
@@ -1016,6 +1027,7 @@ if (routing && !routing.unrouted && routing.bySlug.size) {
   }))
   cureBySlug = new Map(cures.filter(Boolean).map((c) => [c.slug, c.cure]))
   cureErrorBySlug = new Map(cures.filter((c) => c && !c.cure).map((c) => [c.slug, errorText(c.errors)]))
+  for (const [slug, message] of cureErrorBySlug) log(`Cure for ${slug} returned no valid result (${message}) — the curd fails.`)
 }
 
 // ---- Re-age (once — only if a cure committed) ----
@@ -1103,6 +1115,7 @@ if (cleanEntries.length && floorReached()) {
     plateRan = true
   } else {
     plateFailure = errorText(plated.errors)
+    log(`Plate returned no valid result (${plateFailure}) — clean curds fail.`)
   }
 } else {
   log('No clean curds — skipping plate.')
@@ -1117,7 +1130,10 @@ const plateReasonFor = (r) => {
   if (plateFailure) return `plate: ${plateFailure}`
   if (!plateRan || platedBySlug.has(r.curd.slug)) return null
   const row = plateRows.find((p) => p.slug === r.curd.slug)
-  return `plate: ${row ? (row.status === 'ok' ? 'ok without pr_url' : row.status) : 'no result for this curd'}`
+  if (!row) return 'plate: no result for this curd'
+  const why = typeof row.reason === 'string' && sanitizeReason(row.reason) ? `: ${sanitizeReason(row.reason)}` : ''
+  if (row.status === 'ok') return `plate: ok without pr_url${why}`
+  return `plate: ${PLATE_STATUSES.includes(row.status) ? row.status : `unrecognized status ${JSON.stringify(sanitizeReason(row.status))}`}${why}`
 }
 const curdsOut = withStatus.map((r) => {
   const plate = platedBySlug.get(r.curd.slug)
@@ -1138,8 +1154,10 @@ for (const c of curdsOut) summary[c.status] = (summary[c.status] || 0) + 1
 log(`Report: ${curdsOut.length} curd(s) — clean:${summary.clean} dirty:${summary.dirty} failed:${summary.failed}`)
 
 // Cleanup runs only when every curd is clean and plated. Dirty or failed curds keep their worktrees for inspection.
-if (curdsOut.length && curdsOut.every((c) => c.status === 'clean' && platedBySlug.has(c.slug)) && scratchWorktrees.size) {
-  const cleaned = await typed(cleanupPrompt([...scratchWorktrees].sort()), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, checkCleanup)
+// Worktrees that hold age reports stay, even when a writer also reported them.
+const removable = [...scratchWorktrees].filter((p) => !reportWorktrees.has(p)).sort()
+if (curdsOut.length && curdsOut.every((c) => c.status === 'clean' && platedBySlug.has(c.slug)) && removable.length) {
+  const cleaned = await typed(cleanupPrompt(removable), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, checkCleanup)
   if (!cleaned.value) log(`Worktree cleanup returned no valid result (${errorText(cleaned.errors)}).`)
 }
 
@@ -1148,5 +1166,6 @@ return {
   reason: budgetReason || undefined,
   curds: curdsOut,
   summary,
-  integration: integrate ? { merged: integrate.merged, conflicted: integrate.conflicted } : null,
+  integration: integrate ? { merged: integrate.merged, conflicted: integrate.conflicted, head: integrate.head, base_sha: baseSha, remerge_head: remerge ? remerge.head : null } : null,
+  age_worktrees: [...reportWorktrees].sort(),
 }
