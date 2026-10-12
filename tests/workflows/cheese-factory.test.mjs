@@ -2130,7 +2130,7 @@ test('AC-11: the single-reviewer fallback returns flat findings, routed by files
   assert.match(age.prompt, /"fix_cost_now":"contained\|sprawling\|n\/a"/)
   assert.equal(age.prompt.includes('per_curd'), false)
   assert.equal(age.prompt.includes('--name-only'), false)
-  assert.equal(age.opts.schema.required.includes('findings'), true)
+  assert.equal(Object.hasOwn(age.opts.schema.properties, 'findings'), true)
   assert.equal(callsOf(trace, 'cure:parent').length, 1)
   assert.equal(result.curds[0].status, 'clean')
 })
