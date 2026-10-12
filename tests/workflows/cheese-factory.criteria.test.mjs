@@ -379,7 +379,7 @@ test('planAdvisor_reviseThenApproveSingle_rerunsOnlyCriteriaWithConcernsAsData',
 
   assert.deepEqual(beforeCook(trace), ['resolve', 'criteria', 'advise:plan', 'criteria:r1', 'advise:plan:r1'])
   const rerun = calls(trace, 'criteria:r1')[0]
-  assert.deepEqual(plain(dataOf(rerun.prompt, 'advisor_concerns')), ['check AC-1 is weak <script>'])
+  assert.deepEqual(plain(dataOf(rerun.prompt, 'advisor').concerns), ['check AC-1 is weak <script>'])
   assert.equal(rerun.prompt.includes('<script>'), false)
   assert.equal(rerun.opts.agentType, 'explorer')
   assert.equal(rerun.opts.model, 'opus')
@@ -474,15 +474,15 @@ test('planAdvisor_concernWithDataTerminator_cannotCloseTheDataBlock', async () =
   const rerun = calls(trace, 'criteria:r1')[0].prompt
 
   assert.equal((rerun.match(/<\/data>/g) || []).length, (rerun.match(/<data name=/g) || []).length)
-  assert.deepEqual(plain(dataOf(rerun, 'advisor_concerns')), [evil])
+  assert.deepEqual(plain(dataOf(rerun, 'advisor').concerns), [evil])
 })
 
-test('planAdvisor_noAcSpec_revisesWithoutAnyCriteriaAgent', async () => {
-  let n = 0
-  const { result, trace } = await run(single, { resolve: () => resolved({ spec_text: 'no acceptance lines here' }), 'advise:plan': () => (n++ === 0 ? advice('revise', ['x']) : advice('approve')) })
+test('planAdvisor_noAcSpecSinglePass_reviseBlocksAtOnceWithoutASecondAdvisor', async () => {
+  const { result, trace } = await run(single, { resolve: () => resolved({ spec_text: 'no acceptance lines here' }), 'advise:plan': () => advice('revise', ['x']) })
 
-  assert.deepEqual(beforeCook(trace), ['resolve', 'advise:plan', 'advise:plan:r1'])
-  assert.equal(result.status, 'ok')
+  assert.deepEqual(beforeCook(trace), ['resolve', 'advise:plan'])
+  assert.equal(result.status, 'blocked')
+  assert.deepEqual(plain(result.concerns), ['x'])
 })
 
 test('planAdvisor_noAcSpec_stillRunsBothAdvisorsAndSkipsVerify', async () => {
@@ -501,7 +501,7 @@ test('planAdvisor_reviseMultiCurd_redecomposesThenReextractsThenAdvisesAgain', a
   const { result, trace } = await run(multi, { 'advise:plan': () => (n++ === 0 ? advice('revise', ['merge a and c']) : advice('approve')) })
 
   assert.deepEqual(beforeCook(trace), ['resolve', 'criteria', 'decompose:plan', 'decompose:write-minispecs', 'advise:plan', 'decompose:plan:r1', 'decompose:write-minispecs:r1', 'criteria:r1', 'advise:plan:r1'])
-  assert.deepEqual(plain(dataOf(calls(trace, 'decompose:plan:r1')[0].prompt, 'advisor_concerns')), ['merge a and c'])
+  assert.deepEqual(plain(dataOf(calls(trace, 'decompose:plan:r1')[0].prompt, 'advisor').concerns), ['merge a and c'])
   assert.equal(result.status, 'ok')
   assert.equal(result.advice.plan.revisions, 1)
 })
@@ -605,10 +605,11 @@ test('verify_passesFalse_failsAndNamesTheCriterionInTheReason', async () => {
   assert.deepEqual(plain(result.verification.criteria.map((c) => c.verdict)), ['pass', 'fail'])
 })
 
-test('verify_treeCleanFalseWithPass_stillPasses', async () => {
+test('verify_treeCleanFalseWithPass_failsTheCriterion', async () => {
   const { result } = await run(single, { 'verify:AC-1': () => verdict('AC-1', { tree_clean: false }) })
 
-  assert.equal(result.verification.status, 'passed')
+  assert.equal(result.verification.status, 'failed')
+  assert.equal(result.verification.criteria[0].verdict, 'fail')
 })
 
 test('verify_wrongCriterionId_neverCountsAsAPass', async () => {
@@ -969,5 +970,5 @@ test('returnShape_failedVerification_listsEveryVerdictWithEvidence', async () =>
 test('returnShape_planBlockedReturn_isNotAFullReport', async () => {
   const { result } = await run(single, { 'advise:plan': () => advice('stop', ['no']) })
 
-  assert.deepEqual(Object.keys(plain(result)).sort(), ['concerns', 'reason', 'status'])
+  assert.deepEqual(Object.keys(plain(result)).sort(), ['advice', 'concerns', 'reason', 'status'])
 })

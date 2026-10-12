@@ -153,6 +153,6 @@ _Source: `claude/workflows/cheese-factory.js`, `claude/workflows/age-fanout.js`,
 - **Context:** move-my-cheese advises on its plan (approve, one revise, or stop) and on done (`claude/workflows/move-my-cheese.js:1103-1108,1599-1621`). cheese-factory starts cook on an unreviewed decomposition.
 - **Decision:** A judge in advise mode reviews the curds and criteria before any cook: approve, one revise, or stop. A second advise call after verification gates Plate: only approve proceeds. Both advisors always run, including for a spec with no AC line. The done advisor does not run after a verification failure, because Plate is already blocked.
 - **Alternatives:** a done gate only (a bad plan surfaces late); no advisor.
-- **Consequences:** Two or three opus calls per run. A stopped plan spends no cook agents.
+- **Consequences:** Two or three opus calls per run. A stopped plan spends no cook agents. A plan that the advisor does not approve returns `status: 'blocked'` with the last valid concerns and an `advice.plan` record (verdict, concerns, guidance, revisions). A revise that no step can rerun (one candidate curd and no AC line) blocks at once. Both advisor payloads carry the spec text. A verify judge that reports `tree_clean: false` fails its criterion, because an earlier check may have changed the shared worktree.
 
 _Source: /mold specs `cfh-shared-prelude` and `cfh-criteria-gate` (durable corpus) · Decided: 2026-10-12 · ADR-015..017 accepted when `cfh-criteria-gate` landed_
