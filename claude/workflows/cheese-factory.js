@@ -312,10 +312,11 @@ function findDuplicateSlugs(curds) {
 const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12 }
 // The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. Recorded paths are cleanup hints only.
 const SCRATCH_WORKTREE_RE = /^\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+$/
+const isScratchWorktree = (p) => SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')
 const scratchWorktrees = new Set()
 function noteWorktree(path) {
   const p = typeof path === 'string' ? path.trim() : ''
-  if (SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')) scratchWorktrees.add(p)
+  if (isScratchWorktree(p)) scratchWorktrees.add(p)
 }
 const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
 const SHA_RE = /^[0-9a-f]{40}$/
@@ -528,8 +529,10 @@ ${data('curds', curds.map((c) => ({ slug: c.slug, brief: c.brief, files: c.files
 Return {"curds":[{"slug":"<slug>","spec_path":"<resolved path>"}, ...]} — one entry per curd, in the same order.`)
 }
 
+const doneMeans = (branch, work = 'your work') => `Done means: the repository gate exits 0 (\`just check\` when the justfile defines check), and ${work} is committed locally on ${branch}.`
+
 function codeFields(branch) {
-  return `Done means: the repository gate exits 0 (\`just check\` when the justfile defines check), and your work is committed locally on ${branch}.
+  return `${doneMeans(branch)}
 Scope fence: work ONLY this curd's scope. Do NOT touch sibling curds' files. Do NOT push, open a PR, or merge — /cheese-factory's plate barrier handles publication after every curd chain finishes.`
 }
 
@@ -549,6 +552,18 @@ const writerStep = (slug, start) => [
   'Return head_sha: the output of git rev-parse HEAD after your last commit (40 hex characters).',
 ].join(' ')
 
+// Cook answers are untrusted text. Code clips each field before it enters a continuation prompt.
+const FIELD_MAX = 2000
+const clipField = (s) => (typeof s === 'string' ? s.slice(0, FIELD_MAX) : '')
+
+const COOK_RETURN = 'Return {"status":"ok|partial|blocked","head_sha":"<40 hex>","artifact":"<your cook handoff report, as .cheese/cook/<slug>.md relative to your worktree root>","worktree_path":"<git rev-parse --show-toplevel>","completed":"...","remaining":"...","checkpoint":"<40 hex>","source_ranges":["path#start-end"],"orientation":"..."}. Add completed, remaining, checkpoint, and source_ranges only for partial.'
+
+const cookLowContext = (branch) => [
+  `When the soft guard warning arrives, commit your work at once. Then run git update-ref refs/heads/${branch} HEAD. Code can resume from that commit.`,
+  `If your context runs low, commit your work and advance ${branch} with git update-ref. Then return status partial.`,
+  'Include completed, remaining, checkpoint (the commit SHA, 40 hex), and source_ranges (path#start-end ranges to read first).',
+].join(' ')
+
 function cookPrompt(curd, start) {
   const branch = branchFor(curd.slug)
   return prompt(`You are the Cook phase of the /cheese-factory pipeline for curd "${curd.slug}".
@@ -562,7 +577,7 @@ ${skillStep('cook', `${curd.spec_path} --auto`)}
 
 ${NO_CHAIN_DIRECTIVE}
 
-The status is exactly one of ok, partial, or blocked; put any reason in orientation. When the soft guard warning arrives, commit your work at once and run git update-ref refs/heads/${branch} HEAD, so code can resume from that commit if you run out of context. If your context runs low, commit your work, advance ${branch} with git update-ref, and return status partial with completed, remaining, checkpoint (the commit SHA, 40 hex), and source_ranges (path#start-end ranges to read first). Return {"status":"ok|partial|blocked","head_sha":"<40 hex>","artifact":"...","worktree_path":"<git rev-parse --show-toplevel>","completed":"...","remaining":"...","checkpoint":"<40 hex>","source_ranges":["path#start-end"],"orientation":"..."}. Add completed, remaining, checkpoint, and source_ranges only for partial.`)
+The status is exactly one of ok, partial, or blocked. Put any reason in orientation. ${cookLowContext(branch)} ${COOK_RETURN}`)
 }
 
 function cookContinuationPrompt(curd, resume) {
@@ -583,14 +598,20 @@ ${codeFields(branch)}
 
 ${NO_CHAIN_DIRECTIVE}
 
-If your context runs low again, commit your work and run git update-ref refs/heads/${branch} HEAD when the soft guard warning arrives, then return status partial as in the first cook. Return {"status":"ok|partial|blocked","head_sha":"<40 hex>","artifact":"...","worktree_path":"<git rev-parse --show-toplevel>","completed":"...","remaining":"...","checkpoint":"<40 hex>","source_ranges":["path#start-end"],"orientation":"..."}.`)
+${cookLowContext(branch)} ${COOK_RETURN}`)
 }
 
-const salvagePrompt = (curd) => prompt(
-  `Cook for curd "${curd.slug}" ended without a result. Recover its durable state. Do not continue the work or change anything.`,
-  `Run git rev-parse --verify refs/heads/${branchFor(curd.slug)}. Return found=false when that ref does not exist. Otherwise set checkpoint to its SHA.`,
-  'Fill completed from git log of the ref. Leave remaining empty when you cannot tell. Return {"found":true|false,"checkpoint":"<40 hex>","completed":"...","remaining":"..."}.',
-)
+const salvagePrompt = (curd, baseSha) => {
+  const ref = `refs/heads/${branchFor(curd.slug)}`
+  return prompt(
+    `Cook for curd "${curd.slug}" ended without a result. Recover its durable state. Do not continue the work or change anything.`,
+    `Run git rev-parse --verify ${ref}. Return found=false when that ref does not exist.`,
+    `Run git merge-base --is-ancestor ${baseSha} ${ref}. Return found=false when that command fails.`,
+    'Otherwise set checkpoint to the SHA of the ref.',
+    `Fill completed from git log ${baseSha}..${ref}. Leave remaining empty when you cannot tell.`,
+    'Return {"found":true|false,"checkpoint":"<40 hex>","completed":"...","remaining":"..."}.',
+  )
+}
 
 // The reviewer reads the diff by SHA, so it needs no worktree of its own.
 function tastePrompt(curd, sha) {
@@ -617,7 +638,7 @@ ${writerStep(curd.slug, start)}
 Findings to fix:
 ${data('findings', { issues: taste.issues, lenses: taste.lenses })}
 
-Done means: the repository gate exits 0 (\`just check\` when the justfile defines check), and the fixes are committed locally on ${branch}.
+${doneMeans(branch, 'the fixes are')}
 Scope fence: address ONLY these findings — no scope expansion. Do not push.
 
 Return {"status":"fixed"|"partial"|"blocked","summary":"...","committed":true|false,"head_sha":"<40 hex>","worktree_path":"<git rev-parse --show-toplevel>"}. Set head_sha to your final HEAD.`)
@@ -625,29 +646,31 @@ Return {"status":"fixed"|"partial"|"blocked","summary":"...","committed":true|fa
 
 // .cheese/ is gitignored, so Press, in a fresh worktree, cannot see the Cook handoff. Code builds its absolute path
 // from two agent-supplied strings, and returns null unless both pass the checks.
-const COOK_ARTIFACT_RE = /^\.cheese\/cook\/[A-Za-z0-9._@+-]+(?:\/[A-Za-z0-9._@+-]+)*$/
-function cookHandoffPath(cook) {
+const COOK_ARTIFACT_RE = /^\.cheese\/cook\/[A-Za-z0-9._@+-]+$/
+// Returns the absolute path, the Cook worktree root, and the slug the Cook handoff uses. A mini-spec curd can differ from curd.slug.
+function cookHandoff(cook, fallbackSlug) {
   const worktree = cook && typeof cook.worktree_path === 'string' ? cook.worktree_path.trim() : ''
   const artifact = cook && typeof cook.artifact === 'string' ? cook.artifact.trim() : ''
-  const worktreeOk = SCRATCH_WORKTREE_RE.test(worktree) && !worktree.split('/').includes('..')
   const artifactOk = COOK_ARTIFACT_RE.test(artifact) && !artifact.split('/').includes('..')
-  return worktreeOk && artifactOk ? `${worktree}/${artifact}` : null
+  if (!isScratchWorktree(worktree) || !artifactOk) return null
+  const stem = artifact.slice('.cheese/cook/'.length).replace(/\.md$/, '')
+  return { path: `${worktree}/${artifact}`, root: worktree, slug: SLUG_RE.test(stem) ? stem : fallbackSlug }
 }
 
-function pressPrompt(curd, start, handoffPath) {
+function pressPrompt(curd, start, handoff) {
   const branch = branchFor(curd.slug)
-  const handoff = handoffPath
-    ? `The Cook handoff, with the contract and baseline for this curd, is not in your worktree, because .cheese/ is gitignored. Read it by this absolute path and take the contract and baseline from it:\n${data('cook_handoff', handoffPath)}`
+  const handoffText = handoff
+    ? `The Cook handoff is not in your worktree, because .cheese/ is gitignored. Read it by this absolute path:\n${data('cook_handoff', handoff.path)}\nTake the contract and baseline for this curd from it. Relative .cheese/ paths inside the handoff, such as baseline:, resolve under this Cook worktree root:\n${data('cook_root', handoff.root)}`
     : 'No Cook handoff exists for this curd. Take the contract from the curd spec and the baseline from the repository gate.'
   return prompt(`You are the Press phase for curd "${curd.slug}".
 
 ${writerStep(curd.slug, start)}
 
-${handoff}
+${handoffText}
 
-${skillStep('press', `${curd.slug} --auto`)}
+${skillStep('press', `${handoff ? handoff.slug : curd.slug} --auto`)}
 
-Done means: the repository gate exits 0 (\`just check\` when the justfile defines check), and your work is committed locally on ${branch}.
+${doneMeans(branch)}
 Scope fence: this curd's files only. Commit locally. Do not push, open a PR, or merge.
 
 ${NO_CHAIN_DIRECTIVE}
@@ -734,7 +757,7 @@ ${data('findings', findings)}
 
 Never ask which findings to cure and never render a selection gate. Apply sprawling and structural findings too. Defer a finding only when it rests on a false premise or conflicts with another finding, and record why in the cure report.
 
-Done means: the repository gate exits 0 (\`just check\` when the justfile defines check), and the fixes are committed locally on ${branch}.
+${doneMeans(branch, 'the fixes are')}
 Scope fence: this curd's files only. Commit locally. Do not push. ${NO_CHAIN_DIRECTIVE}
 
 Return {"status":"ok|partial|blocked","committed":true|false,"head_sha":"<40 hex>","worktree_path":"<git rev-parse --show-toplevel>","artifact":"..."}. Set head_sha to your final HEAD.`)
@@ -874,7 +897,7 @@ async function cookCurd(curd, branch) {
     const partial = Boolean(cook) && cook.status === 'partial'
     const checkpointDefect = partial ? shaErrors('$.checkpoint', cook.checkpoint) : []
     const resume = partial && !checkpointDefect.length
-      ? { completed: cook.completed || '', remaining: cook.remaining || '', checkpoint: cook.checkpoint.trim(), source_ranges: groundedRanges(cook.source_ranges) }
+      ? { completed: clipField(cook.completed), remaining: clipField(cook.remaining), checkpoint: cook.checkpoint.trim(), source_ranges: groundedRanges(cook.source_ranges) }
       : await salvage(curd)
     if (!resume) return stop(`cook ${cook && !partial ? `ended with status ${isNeedsContext(cook) ? 'needs-context' : JSON.stringify(cook.status)}` : `returned no valid result (${errorText(checkpointDefect.length ? checkpointDefect : call.errors)})`} and ${branch} has no ref to resume from`)
     if (resume.checkpoint === lastCheckpoint) return stop(`cook stalled: no new commit since ${lastCheckpoint}`)
@@ -885,10 +908,10 @@ async function cookCurd(curd, branch) {
 }
 
 async function salvage(curd) {
-  const found = await typed(salvagePrompt(curd), { label: `salvage:${curd.slug}`, phase: 'Cook', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA }, checkSalvage)
+  const found = await typed(salvagePrompt(curd, baseSha), { label: `salvage:${curd.slug}`, phase: 'Cook', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA }, checkSalvage)
   const state = found.value
   return state && state.found
-    ? { completed: state.completed || '', remaining: state.remaining || '', checkpoint: state.checkpoint.trim(), source_ranges: [] }
+    ? { completed: clipField(state.completed), remaining: clipField(state.remaining), checkpoint: state.checkpoint.trim(), source_ranges: [] }
     : null
 }
 
@@ -925,7 +948,7 @@ const chainResults = await pipeline(
 
   async ({ curd, branch, cook, sha, taste, tasteRounds, failure }) => {
     if (failure || !taste || taste.verdict === 'revise') return { curd, branch, cook, sha, taste, tasteRounds, press: null, failure: failure || { stage: 'taste', message: 'taste did not reach pass within correctiveRounds' } }
-    const pressed = await typed(pressPrompt(curd, sha, cookHandoffPath(cook)), { label: `press:${curd.slug}`, phase: 'Press', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: PHASE_SCHEMA }, checkPress)
+    const pressed = await typed(pressPrompt(curd, sha, cookHandoff(cook, curd.slug)), { label: `press:${curd.slug}`, phase: 'Press', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: PHASE_SCHEMA }, checkPress)
     if (!pressed.value) return { curd, branch, cook, sha, taste, tasteRounds, press: null, failure: { stage: 'press', message: errorText(pressed.errors) } }
     const press = pressed.value
     if (press.status !== 'ok') return { curd, branch, cook, sha, taste, tasteRounds, press, failure: { stage: 'press', message: `press returned status ${press.status}` } }

@@ -1,5 +1,5 @@
 // Press-phase adversarial tests for cheese-factory-hardening (AC-1..AC-16).
-// A test marked todo documents a confirmed contract violation in production.
+// Each test pins one behavior and fails when that behavior regresses.
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import test from 'node:test'
@@ -215,13 +215,14 @@ test('resolve_uppercaseBaseSha_failsResolveAndDispatchesNoWriter', async () => {
 
 test('resolve_resolvedWithoutSpecText_failsLoudWithoutThrowing', async () => {
   const workflow = await loadWorkflow(path)
-  const { globals } = createRuntime({
+  const { globals, trace } = createRuntime({
     respond: responder({ resolve: () => (({ spec_text, ...rest }) => rest)(resolveResolved({ candidate_curds: 3 })) }, {}),
   })
 
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
 
-  assert.ok(result && result.error, 'expected a structured error, not a rejected run')
+  assert.match(result.error, /^Resolve failed:.*spec_text/)
+  assert.equal(labelsOf(trace).some((l) => l.startsWith('cook:')), false)
 })
 
 // ---- fences (AC-14) ----
