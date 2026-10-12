@@ -17,8 +17,8 @@ export const meta = {
   ],
 }
 
-// BEGIN shared prelude: generated from claude/workflow-prelude/prelude.js. Edit the source, then run node claude/workflow-prelude/sync.mjs.
-// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. This pattern source is also reused inside larger regexes.
+// BEGIN shared prelude: sync.mjs copies this block from claude/workflow-prelude/prelude.js. Edit that file. Then run node claude/workflow-prelude/sync.mjs.
+// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
 const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
 // The anchored form of SCRATCH_PATH_SRC matches a whole path.
 const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
@@ -551,7 +551,7 @@ function routeFindings(result, filesBySlug, slugs, worktreePath) {
   return { bySlug, shared, sharedFindings, unrouted, unownedMedium }
 }
 
-// Provenance: attempt and typed are copied from move-my-cheese.js. This copy differs as listed below.
+// Provenance: this file copies attempt and typed from move-my-cheese.js. This copy differs as listed below.
 // typed takes the nullIsFinal parameter. typed calls noteWorktree on every non-null isolated answer.
 // typed also retries read-only throws, normalizes status and verdict values, and expands short SHAs.
 // typed records the head_sha and checkpoint of every non-null isolated writer answer in chainHeads, for cleanup.
@@ -572,7 +572,7 @@ async function attempt(text, opts) {
 // A writer throw is final, because the work ref may have moved. A read-only throw retries within LIMITS.fixRounds.
 const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'worktree' && opts.agentType !== 'reviewer')
 
-// A status or verdict that differs only by case or spaces is the same answer. A field in TRIM_FIELDS loses its surrounding spaces. Callers read the normalized value.
+// A status or verdict that differs only by case or spaces is the same answer. A field in TRIM_FIELDS loses its surrounding spaces and its case. Callers read the normalized value.
 const normalizeEnums = (v) => {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return v
   const norm = (s) => s.trim().toLowerCase()
@@ -585,7 +585,7 @@ const normalizeEnums = (v) => {
   if (typeof out.status === 'string') out.status = normStatus(out.status)
   if (typeof out.verdict === 'string') out.verdict = norm(out.verdict)
   if (Array.isArray(out.results)) out.results = out.results.map((r) => (r && typeof r.status === 'string' ? { ...r, status: norm(r.status) } : r))
-  for (const field of TRIM_FIELDS) if (typeof out[field] === 'string') out[field] = out[field].trim()
+  for (const field of TRIM_FIELDS) if (typeof out[field] === 'string') out[field] = out[field].trim().toLowerCase()
   return out
 }
 
@@ -593,7 +593,7 @@ const normalizeEnums = (v) => {
 const SHA_FIELDS = ['head_sha', 'head', 'checkpoint']
 // TRIM_FIELDS only loses surrounding spaces. base_sha is a resolver fact that never needs expansion.
 const TRIM_FIELDS = [...SHA_FIELDS, 'base_sha']
-const SHORT_SHA_RE = /^[0-9a-f]{7,16}$/
+const SHORT_SHA_RE = /^[0-9a-f]{7,16}$/i
 const SHA_EXPAND_SCHEMA = { type: 'object', required: ['sha'], properties: { sha: { type: 'string' } } }
 async function expandShortShas(value, opts) {
   if (value === null || typeof value !== 'object') return null

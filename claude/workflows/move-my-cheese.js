@@ -17,8 +17,8 @@ export const meta = {
   ],
 }
 
-// BEGIN shared prelude: generated from claude/workflow-prelude/prelude.js. Edit the source, then run node claude/workflow-prelude/sync.mjs.
-// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. This pattern source is also reused inside larger regexes.
+// BEGIN shared prelude: sync.mjs copies this block from claude/workflow-prelude/prelude.js. Edit that file. Then run node claude/workflow-prelude/sync.mjs.
+// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
 const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
 // The anchored form of SCRATCH_PATH_SRC matches a whole path.
 const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
@@ -1095,7 +1095,6 @@ const cleanupPrompt = (paths) => prompt(
   'Return the removed paths. Put each skipped path and its reason in note.',
   data('worktrees', paths),
 )
-
 
 // ---- Typed call: validate, then repair (form) or redo (substance), bounded ----
 async function typed(text, opts, check) {

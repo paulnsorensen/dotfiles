@@ -1,4 +1,4 @@
-// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. This pattern source is also reused inside larger regexes.
+// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
 const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
 // The anchored form of SCRATCH_PATH_SRC matches a whole path.
 const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)

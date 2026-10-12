@@ -1118,7 +1118,7 @@ test('AC-2: a non-40-hex head_sha fails the curd at its stage and no later write
   }
 })
 
-test('AC-7: an uppercase 40-hex head_sha is accepted and reaches the next writer', async () => {
+test('cfh-shared-prelude AC-7: an uppercase 40-hex head_sha is accepted and reaches the next writer in lowercase', async () => {
   const workflow = await loadWorkflow(path)
   const upper = sha(0xc0).toUpperCase()
   const inner = respondCleanChain({ slug: 'parent' })
@@ -1129,7 +1129,9 @@ test('AC-7: an uppercase 40-hex head_sha is accepted and reaches the next writer
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
 
   assert.notEqual(result.curds[0].status, 'failed')
-  assert.ok(trace.agents.find(({ opts }) => opts.label === 'taste:parent').prompt.includes(upper))
+  const prompt = trace.agents.find(({ opts }) => opts.label === 'taste:parent').prompt
+  assert.ok(prompt.includes(upper.toLowerCase()))
+  assert.equal(prompt.includes(upper), false)
 })
 
 const cookRespond = (fn) => {
@@ -1325,6 +1327,21 @@ test('AC-12: a repeated checkpoint SHA stops the curd as stalled', async () => {
   assert.deepEqual(labels, ['resolve', 'cook:parent', 'cook:parent:c1'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, new RegExp(`^cook: cook stalled: no new commit since ${same}`))
+})
+
+test('cfh-shared-prelude AC-12: a checkpoint that differs only by case stops the curd as stalled', async () => {
+  const workflow = await loadWorkflow(path)
+  const lower = sha(0xab)
+  let n = 0
+  const { globals, trace } = createRuntime({
+    respond: cookRespond(() => partialCook('parent', { checkpoint: n++ % 2 ? lower : lower.toUpperCase() })),
+  })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+
+  assert.deepEqual(labelsOf(trace), ['resolve', 'cook:parent', 'cook:parent:c1'])
+  assert.equal(result.curds[0].status, 'failed')
+  assert.match(result.curds[0].excluded_reason, /cook stalled: no new commit since/)
 })
 
 test('AC-12: a cook that dies twice at the same salvaged SHA stops as stalled', async () => {

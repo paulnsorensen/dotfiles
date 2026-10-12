@@ -34,12 +34,14 @@ for (let i = 0; i < args.length; i++) {
 }
 const targets = files.length ? files : DEFAULT_FILES.map((f) => resolve(repo, f))
 
+// A marker line is exact. Only a trailing carriage return is ignored, so an indented marker is not a marker.
 // A begin line is the marker alone, or the marker followed by a colon and a note.
+const bare = (line) => line.replace(/\r$/, '')
 const isBegin = (line) => {
-  const t = line.trim()
+  const t = bare(line)
   return t === BEGIN || t.startsWith(`${BEGIN}:`)
 }
-const isEnd = (line) => line.trim() === END
+const isEnd = (line) => bare(line) === END
 
 // Returns { head, tail } where head ends after the begin line and tail starts at the end marker, or null.
 const split = (text) => {
