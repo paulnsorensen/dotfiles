@@ -470,6 +470,7 @@ const ownsFinding = (routing, slug) => routing.bySlug.has(slug) || routing.share
 function routeFindings(result, filesBySlug, slugs, worktreePath) {
   const bySlug = new Map()
   const shared = new Map()
+  const sharedFindings = new Map()
   let unrouted = (Boolean(result.has_medium_plus_findings) && !result.findings.some(isMediumPlus)) ||
     (Boolean(result.has_cheap_lows) && !result.findings.some((f) => f.severity === 'low' && f.fix_cost_now === 'contained'))
   for (const f of result.findings.filter(needsCure)) {
@@ -481,9 +482,12 @@ function routeFindings(result, filesBySlug, slugs, worktreePath) {
     }
     const [first, ...others] = owners
     bySlug.set(first, [...(bySlug.get(first) || []), { ...f, file }])
-    for (const s of others) shared.set(s, new Set([...(shared.get(s) || []), first]))
+    for (const s of others) {
+      shared.set(s, new Set([...(shared.get(s) || []), first]))
+      sharedFindings.set(s, [...(sharedFindings.get(s) || []), { ...f, file }])
+    }
   }
-  return { bySlug, shared, unrouted }
+  return { bySlug, shared, sharedFindings, unrouted }
 }
 
 const redoPrompt = (original, errors) => `${original}\n\nYour previous answer failed these checks. Fix each one.\n${data('errors', errors.map((e) => e.msg))}`
@@ -1182,6 +1186,21 @@ if ([...cureBySlug.values()].some((c) => c && c.committed)) {
 // ---- Status resolution ----
 const remergeConflicted = new Set((remerge && remerge.conflicted) || [])
 
+// A shared co-owner ends clean only when every owner of its shared findings ends clean.
+// An owner is clean when its cure committed, it did not conflict in re-merge, and the re-age reviewed it without a finding.
+const sharedOwnerBlock = (slug) => {
+  const owners = routing.shared.get(slug)
+  if (!owners) return null
+  for (const o of [...owners].sort()) {
+    const cure = cureBySlug.get(o)
+    if (!cure || !cure.committed) return `cure by the owning curd did not commit a fix (owner ${o})`
+    if (remergeConflicted.has(o)) return `owning curd re-merge conflicted after cure (owner ${o})`
+    if (!reage || !reage.reviewed_slugs.includes(o)) return `re-age has no entry for the owning curd (owner ${o})`
+    if (reageRouting.unrouted || ownsFinding(reageRouting, o)) return `re-age still reports findings for the owning curd (owner ${o})`
+  }
+  return null
+}
+
 const withStatus = chainResults.map((r, i) => {
   if (!r) return { curd: curds[i], branch: branchFor(curds[i].slug), status: 'failed', excluded_reason: 'chain: a stage returned no result' }
   const { curd, branch, failure } = r
@@ -1197,9 +1216,9 @@ const withStatus = chainResults.map((r, i) => {
   if (!routing.bySlug.has(curd.slug)) {
     // A curd with no cure still sits in the re-merged tree that the re-age reviewed, so the re-merge and re-age results apply to it too.
     if (remergeConflicted.has(curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-merge conflicted after cure' }
-    // A shared finding is cured on its first owner's branch only, so this curd stays dirty unless that cure committed.
-    const owners = routing.shared.get(curd.slug)
-    if (owners && [...owners].some((o) => !(cureBySlug.get(o) && cureBySlug.get(o).committed))) return { curd, branch, status: 'dirty', excluded_reason: 'cure by the owning curd did not commit a fix' }
+    // A shared finding is cured on its first owner's branch only, so this curd stays dirty unless every owner ends clean.
+    const blocked = sharedOwnerBlock(curd.slug)
+    if (blocked) return { curd, branch, status: 'dirty', excluded_reason: blocked }
     if (reageRouting && reageRouting.unrouted) return { curd, branch, status: 'dirty', excluded_reason: 're-age reported a finding that needs cure and no curd owns its file' }
     if (reageRouting && ownsFinding(reageRouting, curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age reports findings that need cure' }
     return { curd, branch, sha, status: 'clean' }
@@ -1212,6 +1231,8 @@ const withStatus = chainResults.map((r, i) => {
   if (!reage.reviewed_slugs.includes(curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age has no entry for the cured curd' }
   if (reageRouting.unrouted) return { curd, branch, status: 'dirty', excluded_reason: 're-age reported a finding that needs cure and no curd owns its file' }
   if (ownsFinding(reageRouting, curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age still reports findings that need cure' }
+  const ownerBlocked = sharedOwnerBlock(curd.slug)
+  if (ownerBlocked) return { curd, branch, status: 'dirty', excluded_reason: ownerBlocked }
   return { curd, branch, sha, status: 'clean' }
 })
 
@@ -1254,7 +1275,7 @@ const plateReasonFor = (r) => {
 }
 const curdsOut = withStatus.map((r) => {
   const plate = platedBySlug.get(r.curd.slug)
-  const owned = routing && routing.bySlug.get(r.curd.slug)
+  const owned = [...((routing && routing.bySlug.get(r.curd.slug)) || []), ...((routing && routing.sharedFindings.get(r.curd.slug)) || [])]
   const plateReason = plateReasonFor(r)
   return {
     slug: r.curd.slug,
@@ -1262,7 +1283,7 @@ const curdsOut = withStatus.map((r) => {
     status: plateReason ? 'failed' : r.status,
     pr_url: plate ? plate.pr_url : undefined,
     excluded_reason: plateReason || r.excluded_reason,
-    age: ageMode ? { mode: ageMode, has_medium_plus_findings: Boolean(owned && owned.some(isMediumPlus)) } : undefined,
+    age: ageMode ? { mode: ageMode, has_medium_plus_findings: owned.some(isMediumPlus) } : undefined,
   }
 })
 
