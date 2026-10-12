@@ -1,7 +1,7 @@
 export const meta = {
   name: 'cheese-factory',
   description:
-    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs.',
+    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial.',
   phases: [
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
     { title: 'Criteria', detail: 'one read-only explorer maps each spec AC line to one check; code rejects unsafe or vacuous checks' },
@@ -17,7 +17,7 @@ export const meta = {
     { title: 'Verify', detail: 'one judge per criterion runs its check serially at the integration head; ci criteria are deferred' },
     { title: 'Done', detail: 'a judge advisor signs off on the verified work before Plate; no sign-off blocks Plate' },
     { title: 'Plate', detail: 'one opus barrier stacks clean curd branches into (stacked) PRs; never merges' },
-    { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, and excluded-curd reasons' },
+    { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, excluded-curd reasons, the verification record, and the plan and done advice; a plan-blocked run returns status blocked with its concerns and advice' },
   ],
 }
 
@@ -378,8 +378,8 @@ function findDuplicateSlugs(curds) {
 // Cook: (continuations + 1) rounds x 3 attempts = 12, plus 2 SHA expansions per round = 8, plus continuations x (3 salvage attempts + 1 expansion) = 12.
 // Taste: 3 attempts, plus correctiveRounds (2) x (3 correct attempts + 1 expansion + 3 retaste attempts) = 17.
 // Press and cure: 3 attempts + 1 expansion each.
-// So 17 curds reach the cap before the shared barrier agents. Recount before a reader raises maxCurds.
-// With maxCriteria: 24 and advisorRevisions: 1, ADR-015..017 add at most 93 agents: criteria 3, plan advice 3, multi-curd revise 9, second plan advice 3, 24 verify x 3 = 72, done advice 3. 684 + 93 = 777, under 1000.
+// The fixed per-run overhead is about 146 agents: about 53 barrier agents, plus at most 93 for ADR-015..017 (criteria 3, plan advice 3, multi-curd revise 9, second plan advice 3, 24 verify x 3 = 72, done advice 3).
+// So 14 curds reach the cap, and 12 curds spend about 830 agents at worst (12 x 57 + 146). Recount before a reader raises maxCurds.
 const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12, maxCriteria: 24, advisorRevisions: 1 }
 // Only writer calls in an isolated worktree feed the cleanup set. A reviewer path goes to reportWorktrees instead.
 // Reviewer worktrees hold the gitignored age reports, so cleanup keeps them and the return value lists them.
@@ -417,10 +417,20 @@ const statusErrors = (v, allowed) => enumErrors('$.status', v.status, allowed, s
 // A finding field is a review fact. A formatter cannot know it, so an error under $.findings[i] is substance and the reviewer redoes.
 // A missing or mistyped findings list stays form: the formatter only restores the key.
 const FINDINGS_PATH_RE = /^\$\.findings\[/
-const shapeError = (msg) => (FINDINGS_PATH_RE.test(msg) ? substance(msg) : form(msg))
+// A decision field is the producer's judgment: a verdict, a pass flag, or a check. A formatter must not choose it, so a shape error there also makes the producer redo.
+// Only the three criteria-gate schemas have decision paths. Every other schema keeps its classification.
+const decisionPathRe = (schema) =>
+  schema === VERDICT_SCHEMA ? /^\$\.(passes|tree_clean|missing_paths)\b/
+    : schema === ADVICE_SCHEMA ? /^\$\.verdict\b/
+      : schema === CRITERIA_SCHEMA ? /^\$\.criteria\[\d+\]\.(check_kind|check)\b/
+        : null
+const shapeError = (msg, schema) => {
+  const decision = decisionPathRe(schema)
+  return FINDINGS_PATH_RE.test(msg) || (decision && decision.test(msg)) ? substance(msg) : form(msg)
+}
 // Builds a check: the schema shape first, then the extra checks only when the shape holds.
 const checkWith = (schema, ...extra) => (value) => {
-  const shape = schemaErrors(value, schema, '$').map(shapeError)
+  const shape = schemaErrors(value, schema, '$').map((msg) => shapeError(msg, schema))
   return shape.length ? shape : extra.flatMap((fn) => fn(value))
 }
 
@@ -680,7 +690,7 @@ ${SPEC_ARG
 Return only the structured JSON described above.`)
 }
 
-function decomposePrompt(specText, concerns) {
+function decomposePrompt(specText, feedback) {
   return prompt(`You are an opus decomposer for the /cheese-factory workflow. Read the spec below and split it into file-disjoint, independently implementable curds.
 
 Spec:
@@ -691,7 +701,7 @@ Splitting rules:
 - If the spec declares a multi-site contract (one deliverable spanning N named sites), keep those sites in ONE curd — never split an indivisible contract.
 - If one curd would consume symbols, exports, or behavior another curd introduces, either fold them into one curd or declare the edge in "depends_on" — dependency-coupled curds are merged back into one curd rather than run in parallel.
 
-Return {"curds":[{"slug":"<kebab-slug>","brief":"<what this curd must do>","files":["<path>", ...],"depends_on":["<sibling-slug>", ...]}, ...]} ("depends_on" optional, omit or leave empty when independent). Return at most ${LIMITS.maxCurds} curds. Each slug must match ${SLUG_RE} and be unique. List every file each curd is expected to touch so overlaps can be detected.`, concerns && data('advisor_concerns', concerns))
+Return {"curds":[{"slug":"<kebab-slug>","brief":"<what this curd must do>","files":["<path>", ...],"depends_on":["<sibling-slug>", ...]}, ...]} ("depends_on" optional, omit or leave empty when independent). Return at most ${LIMITS.maxCurds} curds. Each slug must match ${SLUG_RE} and be unique. List every file each curd is expected to touch so overlaps can be detected.`, feedback && data('advisor', feedback))
 }
 
 function miniSpecPrompt(parentSlug, curds) {
@@ -1249,10 +1259,19 @@ const verifyPrompt = (ac, integration) => {
   )
 }
 
-// One advisor call. Returns { advice } or { advice: null, reason } when no valid advice survives the typed bound.
+// One advisor call. Returns { advice, approved, reason, concerns, guidance }. Without valid advice, advice is null and approved is false.
 async function advise(stage, label, payload) {
   const call = await typed(advisorPrompt(stage, payload), { label, phase: stage === 'plan' ? 'Advise' : 'Done', agentType: 'judge', model: 'opus', schema: ADVICE_SCHEMA }, checkWith(ADVICE_SCHEMA, checkAdvice))
-  return call.value ? { advice: call.value } : { advice: null, reason: `no valid advice: ${errorText(call.errors)}` }
+  const advice = call.value
+  if (!advice) return { advice: null, approved: false, reason: `no valid advice: ${errorText(call.errors)}`, concerns: [`${stage} advisor returned no valid advice`], guidance: '' }
+  const approved = advice.verdict === 'approve'
+  return { advice, approved, reason: approved ? null : `${stage} advisor did not approve: ${advice.verdict}`, concerns: advice.concerns, guidance: advice.guidance }
+}
+
+const countStatuses = (rows) => {
+  const counts = { clean: 0, dirty: 0, failed: 0 }
+  for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1
+  return counts
 }
 
 // ---- Resolve ----
@@ -1306,7 +1325,7 @@ if (specAcIds.length > LIMITS.maxCriteria) {
   return { error: `Spec has ${specAcIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}` }
 }
 
-const criteriaPrompt = (concerns) => prompt(
+const criteriaPrompt = (feedback) => prompt(
   'You are a read-only criteria extractor for the /cheese-factory workflow. Write no file and change no state.',
   'Return one criterion per acceptance id listed below, and no other. Copy the statement from the spec line. Pick the check_kind: command, test, inspection, or ci.',
   'Each check that is not ci is one read-only shell command that exits 0 only when the criterion holds. A judge runs it with bash -c in the integrated worktree.',
@@ -1314,13 +1333,16 @@ const criteriaPrompt = (concerns) => prompt(
   'Use check_kind ci when only a CI run can verify the criterion. Its check text then describes the CI evidence.',
   data('spec', resolved.spec_text),
   data('acceptance_ids', specAcIds),
-  concerns && data('advisor_concerns', concerns),
+  feedback && data('advisor', feedback),
 )
 
-async function extractCriteria(concerns, round = 0) {
+async function extractCriteria(feedback, round = 0) {
   const label = round ? `criteria:r${round}` : 'criteria'
-  const call = await typed(criteriaPrompt(concerns), { label, phase: 'Criteria', agentType: 'explorer', model: 'opus', schema: CRITERIA_SCHEMA }, checkCriteria(specAcIds))
-  if (!call.value) return { error: `Criteria failed: ${errorText(call.errors)}` }
+  const call = await typed(criteriaPrompt(feedback), { label, phase: 'Criteria', agentType: 'explorer', model: 'opus', schema: CRITERIA_SCHEMA }, checkCriteria(specAcIds))
+  if (!call.value) {
+    log(`Criteria failed: ${errorText(call.errors)}`)
+    return { error: `Criteria failed: ${errorText(call.errors)}` }
+  }
   return { criteria: specAcIds.map((id) => call.value.criteria.find((c) => c.id === id)) }
 }
 
@@ -1328,20 +1350,18 @@ let criteriaList = []
 if (specAcIds.length) {
   phase('Criteria')
   const extracted = await extractCriteria(null)
-  if (extracted.error) {
-    log(extracted.error)
-    return { error: extracted.error }
-  }
+  if (extracted.error) return { error: extracted.error }
   criteriaList = extracted.criteria
 }
 
 // ---- Decompose (only when candidate_curds >= 2) ----
-// Returns { error } or { curds, singlePass }. A plan revision reruns it with the advisor concerns.
-async function decomposeCurds(concerns, round = 0) {
+// Returns { error } or { curds, singlePass }. A plan revision reruns it with the advisor record.
+async function decomposeCurds(feedback, round = 0) {
   const suffix = round ? `:r${round}` : ''
   const single = { curds: [{ slug: parentSlug, spec_path: parentSpecPath, brief: null, files: [] }], singlePass: true }
   if (candidateCurds < 2) return single
-  const decomposeCall = await typed(decomposePrompt(resolved.spec_text, concerns), { label: `decompose:plan${suffix}`, phase: 'Decompose', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
+  phase('Decompose')
+  const decomposeCall = await typed(decomposePrompt(resolved.spec_text, feedback), { label: `decompose:plan${suffix}`, phase: 'Decompose', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
   if (!decomposeCall.value) {
     log(`Decompose failed: ${errorText(decomposeCall.errors)}`)
     return { error: `Decompose failed: ${errorText(decomposeCall.errors)}` }
@@ -1379,41 +1399,49 @@ async function decomposeCurds(concerns, round = 0) {
   return { curds: merged.map((c) => ({ ...c, spec_path: pathBySlug.get(c.slug) })), singlePass: false }
 }
 
-let curds
-let singlePass = false
-if (candidateCurds >= 2) phase('Decompose')
 const decomposed = await decomposeCurds(null)
 if (decomposed.error) return { error: decomposed.error }
-;({ curds, singlePass } = decomposed)
+let { curds, singlePass } = decomposed
 
 // ---- Advise (ADR-017: the plan advisor always runs, even for a spec with no AC line) ----
 phase('Advise')
-const planPayload = () => ({ curds: curds.map((c) => ({ slug: c.slug, brief: c.brief, files: c.files })), criteria: criteriaList, single_pass: singlePass })
+// The advisors judge the plan against the spec, so every advisor payload carries the spec text.
+const planOnly = () => ({ curds: curds.map((c) => ({ slug: c.slug, brief: c.brief, files: c.files })), criteria: criteriaList, single_pass: singlePass })
+const planPayload = () => ({ spec: resolved.spec_text, ...planOnly() })
 let planAdvice = await advise('plan', 'advise:plan', planPayload())
+let lastAdvice = planAdvice.advice
 let planRevisions = 0
+let unrevisable = false
 while (planAdvice.advice && planAdvice.advice.verdict === 'revise' && planRevisions < LIMITS.advisorRevisions) {
+  const { concerns, guidance } = planAdvice.advice
+  // A revision reruns the decomposer when two or more curds are candidates, and the extractor when the spec has an AC line.
+  // With neither, the second advisor would see the same plan, so the run blocks at once.
+  const redecompose = candidateCurds >= 2
+  if (!redecompose && !specAcIds.length) {
+    unrevisable = true
+    break
+  }
   planRevisions++
-  const concerns = planAdvice.advice.concerns
   log(`Plan advisor asked for a revision: ${concerns.join('; ')}`)
-  if (!singlePass) {
-    const redone = await decomposeCurds(concerns, planRevisions)
+  const feedback = { concerns, guidance, previous: planOnly() }
+  if (redecompose) {
+    const redone = await decomposeCurds(feedback, planRevisions)
     if (redone.error) return { error: redone.error }
     ;({ curds, singlePass } = redone)
   }
   if (specAcIds.length) {
-    const reextracted = await extractCriteria(concerns, planRevisions)
-    if (reextracted.error) {
-      log(reextracted.error)
-      return { error: reextracted.error }
-    }
+    const reextracted = await extractCriteria(feedback, planRevisions)
+    if (reextracted.error) return { error: reextracted.error }
     criteriaList = reextracted.criteria
   }
-  planAdvice = await advise('plan', `advise:plan:r${planRevisions}`, planPayload())
+  planAdvice = await advise('plan', `advise:plan:r${planRevisions}`, { ...planPayload(), prior_concerns: concerns, guidance })
+  if (planAdvice.advice) lastAdvice = planAdvice.advice
 }
-if (!planAdvice.advice || planAdvice.advice.verdict !== 'approve') {
-  const reason = planAdvice.advice ? `plan advisor did not approve: ${planAdvice.advice.verdict}` : planAdvice.reason
+if (!planAdvice.approved) {
+  const reason = unrevisable ? 'plan advisor asked for a revision, and no step can rerun' : planAdvice.reason
   log(`${reason} — no cook runs.`)
-  return { status: 'blocked', reason, concerns: planAdvice.advice ? planAdvice.advice.concerns : [] }
+  const kept = lastAdvice ? { verdict: lastAdvice.verdict, concerns: lastAdvice.concerns, guidance: lastAdvice.guidance, revisions: planRevisions } : null
+  return { status: 'blocked', reason, concerns: lastAdvice ? lastAdvice.concerns : [], advice: { plan: kept } }
 }
 
 // ---- Per-curd chain (pipelined) ----
@@ -1711,7 +1739,7 @@ const withStatus = chainResults.map((r, i) => {
 
 const cleanEntries = withStatus.filter((r) => r && r.status === 'clean')
 
-// ---- Verify and Done (ADR-015, ADR-017): judges check each criterion at the final head, then the done advisor signs off before Plate ----
+// ---- Verify and Done (ADR-016, ADR-017): judges check each criterion at the final head, then the done advisor signs off before Plate ----
 const floorMessage = () => `budget floor reached before Plate: ${budget.remaining()} remaining, below ${LIMITS.minBudget}`
 let budgetReason = null
 let blockReason = null
@@ -1721,6 +1749,7 @@ let doneConcerns = null
 let verification = { status: 'not-run', head: null, criteria: [] }
 if (cleanEntries.length && floorReached()) {
   budgetReason = floorMessage()
+  blockedText = budgetReason
   log(`${budgetReason} — skipping verify and plate.`)
 } else if (cleanEntries.length) {
   phase('Verify')
@@ -1737,7 +1766,7 @@ if (cleanEntries.length && floorReached()) {
     if (v && !v.tree_clean) log(`verify:${ac.id}: the integration worktree had changes before the check`)
     const dirtyNote = v && !v.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
     const evidence = !v ? `not verified: ${errorText(judged.errors)}` : (missing.length ? `${v.evidence} (missing paths: ${missing.join(', ')})` : v.evidence) + dirtyNote
-    rows.push({ id: ac.id, check_kind: ac.check_kind, verdict: v && v.passes === true && !missing.length ? 'pass' : 'fail', evidence })
+    rows.push({ id: ac.id, check_kind: ac.check_kind, verdict: v && v.passes === true && v.tree_clean === true && !missing.length ? 'pass' : 'fail', evidence })
   }
   const failed = rows.filter((r) => r.verdict === 'fail')
   verification = { status: !criteriaList.length ? 'skipped-no-criteria' : failed.length ? 'failed' : 'passed', head: criteriaList.length ? tree.head : null, criteria: rows }
@@ -1747,17 +1776,16 @@ if (cleanEntries.length && floorReached()) {
     log(`${blockReason} — skipping the done advisor and plate.`)
   } else {
     phase('Done')
-    const summaryNow = { clean: 0, dirty: 0, failed: 0 }
-    for (const r of withStatus) summaryNow[r.status] = (summaryNow[r.status] || 0) + 1
-    const done = await advise('done', 'advise:done', { summary: summaryNow, curds: withStatus.map((r) => ({ slug: r.curd.slug, status: r.status, excluded_reason: r.excluded_reason })), criteria: rows })
+    const done = await advise('done', 'advise:done', { spec: resolved.spec_text, summary: countStatuses(withStatus), curds: withStatus.map((r) => ({ slug: r.curd.slug, status: r.status, excluded_reason: r.excluded_reason })), criteria: rows })
     doneAdvice = done.advice
-    if (!doneAdvice || doneAdvice.verdict !== 'approve') {
-      doneConcerns = doneAdvice ? doneAdvice.concerns : ['done advisor returned no valid advice']
-      blockReason = doneAdvice ? `done advisor did not approve: ${doneAdvice.verdict}` : done.reason
+    if (!done.approved) {
+      doneConcerns = done.concerns
+      blockReason = done.reason
       blockedText = 'plate blocked: done advisor did not approve'
       log(`${blockReason} — skipping plate.`)
     } else if (floorReached()) {
       budgetReason = floorMessage()
+      blockedText = budgetReason
       log(`${budgetReason} — skipping plate.`)
     }
   }
@@ -1809,8 +1837,7 @@ const curdsOut = withStatus.map((r) => {
   }
 })
 
-const summary = { clean: 0, dirty: 0, failed: 0 }
-for (const c of curdsOut) summary[c.status] = (summary[c.status] || 0) + 1
+const summary = countStatuses(curdsOut)
 log(`Report: ${curdsOut.length} curd(s) — clean:${summary.clean} dirty:${summary.dirty} failed:${summary.failed}`)
 
 // Cleanup runs only when every curd is clean and plated. Dirty or failed curds keep their worktrees for inspection.
