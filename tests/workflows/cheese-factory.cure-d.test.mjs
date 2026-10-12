@@ -177,3 +177,37 @@ test('pass2 #9: an unowned medium finding reports medium+ only on curds in the i
   assert.equal(bySlug.b.status, 'failed')
   assert.equal(bySlug.b.age.has_medium_plus_findings, false)
 })
+
+// A finding field is a review fact. A formatter cannot know it, so a bad field makes the reviewer answer again.
+// The runtime schema rejects a missing required key and the workflow retries. A code check catches the enum errors and the workflow redoes.
+const without = (f, key) => Object.fromEntries(Object.entries(f).filter(([k]) => k !== key))
+const badFindings = {
+  'a finding without file': [[without(finding('src/parent.js'), 'file')], 'retry1'],
+  'a finding without severity': [[without(finding('src/parent.js'), 'severity')], 'retry1'],
+  'a finding with an out-of-enum severity': [[finding('src/parent.js', { severity: 'critical' })], 'redo1'],
+  'a finding with an out-of-enum fix_cost_now': [[finding('src/parent.js', { fix_cost_now: 'huge' })], 'redo1'],
+}
+const smallIntegrate = { ...integrateResult({ merged: ['parent'], files_by_slug: { parent: ['src/parent.js'] } }), files_changed: 1, lines_changed: 10 }
+const cleanAge = ageResult({ reviewed: ['parent'] })
+
+for (const [name, [findings, again]] of Object.entries(badFindings)) {
+  test(`finding facts: ${name} makes the single reviewer answer again and no formatter runs`, async () => {
+    const { trace, bySlug } = await run(['parent'], {
+      integrate: smallIntegrate,
+      'age:barrier': (call) => (call.opts.label === 'age:barrier' ? { ...cleanAge, has_medium_plus_findings: true, findings } : cleanAge),
+    })
+    assert.equal(callsOf(trace, `age:barrier:${again}`).length, 1)
+    assert.equal(callsOf(trace, 'age:barrier:repair1').length, 0)
+    assert.equal(bySlug.parent.status, 'clean')
+  })
+
+  test(`finding facts: ${name} from the fan-out falls back to the single reviewer`, async () => {
+    const { trace } = await run(['parent'], {
+      integrate: integrateResult({ merged: ['parent'], files_by_slug: { parent: ['src/parent.js'] } }),
+      'age:barrier': cleanAge,
+    }, { ...cleanAge, has_medium_plus_findings: true, findings })
+    assert.equal(callsOf(trace, 'age:barrier').length, 1)
+    assert.ok(trace.logs.some((l) => l.includes('age-fanout unavailable')))
+    assert.equal(trace.agents.filter(({ opts }) => /:repair\d+$/.test(opts.label)).length, 0)
+  })
+}

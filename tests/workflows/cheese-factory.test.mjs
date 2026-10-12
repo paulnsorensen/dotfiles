@@ -2307,24 +2307,25 @@ test('AC-11: the single-reviewer fallback returns flat findings, routed by files
   assert.equal(result.curds[0].status, 'clean')
 })
 
-test('AC-11: a fallback finding with a fix_cost_now outside the enum is repaired by haiku before routing', async () => {
+test('AC-11: a fallback finding with a fix_cost_now outside the enum makes the reviewer redo, and no formatter runs', async () => {
   const bad = ageBarrierResult({ hasMediumPlus: true, findings: [finding('parent', { fix_cost_now: 'maybe' })] })
   const { trace } = await runParent({
     'age:barrier': () => bad,
-    'age:barrier:repair1': () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('parent', { fix_cost_now: 'contained' })] }),
+    'age:barrier:redo1': () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('parent', { fix_cost_now: 'contained' })] }),
     ...cureLoop,
     'age:reage': () => ageBarrierResult({ perCurd: [{ slug: 'parent', has_medium_plus_findings: false }] }),
   })
 
-  assert.equal(callsOf(trace, 'age:barrier:repair1')[0].opts.model, 'haiku')
+  assert.equal(callsOf(trace, 'age:barrier:redo1')[0].opts.model, 'opus')
+  assert.equal(callsOf(trace, 'age:barrier:repair1').length, 0)
   assert.equal(callsOf(trace, 'cure:parent').length, 1)
 })
 
 test('AC-11: a fallback severity outside the enum never reaches routing after the bound', async () => {
   const { result, trace } = await runParent({
     'age:barrier': () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('parent', { severity: 'critical' })] }),
-    'age:barrier:repair1': () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('parent', { severity: 'critical' })] }),
-    'age:barrier:repair2': () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('parent', { severity: 'critical' })] }),
+    'age:barrier:redo1': () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('parent', { severity: 'critical' })] }),
+    'age:barrier:redo2': () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('parent', { severity: 'critical' })] }),
   })
 
   assert.equal(result.curds[0].status, 'failed')

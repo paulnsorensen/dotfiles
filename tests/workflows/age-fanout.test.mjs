@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime, loadWorkflow } from './harness.mjs'
+import { createRuntime, loadWorkflow, validate } from './harness.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/age-fanout.js')
 
@@ -377,6 +377,19 @@ test('route_curds given: finding items require severity, fix_cost_now, and file;
   await workflow.run({ ...plain.globals, args: BASE_ARGS })
   const plainItems = plain.trace.agents.find((c) => c.opts.label === 'reconcile').opts.schema.properties.findings.items
   assert.equal(plainItems.required, undefined)
+})
+
+test('route mode: a reconcile finding without claim or fix_direction fails the schema; non-route items stay unconstrained', async () => {
+  const workflow = await loadWorkflow(path)
+  const route = createRuntime({ respond: respondHappy() })
+  await workflow.run({ ...route.globals, args: { ...BASE_ARGS, route_curds: [{ slug: 'alpha', branch: 'curd/alpha' }] } })
+  const schema = route.trace.agents.find((c) => c.opts.label === 'reconcile').opts.schema
+  const full = { severity: 'medium', fix_cost_now: 'contained', file: 'src/a.ts', claim: 'c', fix_direction: 'd' }
+  validate({ status: 'ok', has_medium_plus_findings: true, has_cheap_lows: false, artifact: 'a', findings: [full] }, schema)
+  for (const key of ['claim', 'fix_direction']) {
+    const partial = Object.fromEntries(Object.entries(full).filter(([k]) => k !== key))
+    assert.throws(() => validate({ status: 'ok', has_medium_plus_findings: true, has_cheap_lows: false, artifact: 'a', findings: [partial] }, schema), { name: 'SchemaError' }, key)
+  }
 })
 
 test('route mode asks for repo-relative finding paths in review and reconcile prompts; non-route review keeps the plain file hint', async () => {

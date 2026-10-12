@@ -386,9 +386,13 @@ const enumErrors = (path, value, allowed, kind = form) => (allowed.includes(valu
 // Cook is the exception; see checkCook.
 const statusErrors = (v, allowed) => enumErrors('$.status', v.status, allowed, substance)
 
+// A finding field is a review fact. A formatter cannot know it, so an error under $.findings[i] is substance and the reviewer redoes.
+// A missing or mistyped findings list stays form: the formatter only restores the key.
+const FINDINGS_PATH_RE = /^\$\.findings\[/
+const shapeError = (msg) => (FINDINGS_PATH_RE.test(msg) ? substance(msg) : form(msg))
 // Builds a check: the schema shape first, then the extra checks only when the shape holds.
 const checkWith = (schema, ...extra) => (value) => {
-  const shape = schemaErrors(value, schema, '$').map(form)
+  const shape = schemaErrors(value, schema, '$').map(shapeError)
   return shape.length ? shape : extra.flatMap((fn) => fn(value))
 }
 
@@ -455,8 +459,8 @@ const checkIntegrate = (slugs) => checkWith(INTEGRATE_SCHEMA,
   worktreeErrors,
   fileListErrors)
 const findingErrors = (v) => v.findings.flatMap((f, i) => [
-  ...enumErrors(`$.findings[${i}].severity`, f.severity, FINDING_SEVERITIES),
-  ...enumErrors(`$.findings[${i}].fix_cost_now`, f.fix_cost_now, FIX_COSTS),
+  ...enumErrors(`$.findings[${i}].severity`, f.severity, FINDING_SEVERITIES, substance),
+  ...enumErrors(`$.findings[${i}].fix_cost_now`, f.fix_cost_now, FIX_COSTS, substance),
 ])
 // A reviewer may answer status "blocked: <reason>" as one string (reviewer.md). Code splits it into status and reason.
 // A halt is a blocked review too. Every caller still treats a status other than ok as no review.

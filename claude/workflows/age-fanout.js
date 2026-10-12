@@ -137,7 +137,7 @@ const RECONCILE_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        ...(ROUTE_CURDS ? { required: ['severity', 'fix_cost_now', 'file'] } : {}),
+        ...(ROUTE_CURDS ? { required: ['severity', 'fix_cost_now', 'file', 'claim', 'fix_direction'] } : {}),
         properties: {
           dimension: { type: 'string' },
           severity: { type: 'string', enum: ['blocker', 'high', 'medium', 'low'] },
