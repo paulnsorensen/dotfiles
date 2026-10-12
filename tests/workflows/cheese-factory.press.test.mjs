@@ -27,7 +27,7 @@ const partialCook = (checkpoint) =>
   ({ status: 'partial', head_sha: checkpoint, checkpoint, completed: 'part', remaining: 'rest', source_ranges: ['src/a.js#1-5'], orientation: 'low' })
 const taste = (verdict) => ({ verdict, lenses: [{ lens: 'drift', verdict, note: '' }], issues: [], recommendation: verdict })
 const phaseOk = (slug, head_sha = sha(2)) => ({ status: 'ok', head_sha, artifact: `.cheese/press/${slug}.md`, orientation: 'ok' })
-const integrateResult = ({ worktree_path = '/tmp/worktrees/integration', merged = [], conflicted = [], head = HEAD, files_by_slug, files_changed = 5, lines_changed = 50 } = {}) =>
+const integrateResult = ({ worktree_path = '/repo/.claude/worktrees/integration', merged = [], conflicted = [], head = HEAD, files_by_slug, files_changed = 5, lines_changed = 50 } = {}) =>
   ({ worktree_path, merged, conflicted, head, files_by_slug: files_by_slug || Object.fromEntries(merged.map((s) => [s, [`src/${s}.js`]])), files_changed, lines_changed })
 const finding = (slug, { severity = 'medium', fix_cost_now = 'n/a', file = `src/${slug}.js`, claim = 'a claim' } = {}) =>
   ({ dimension: 'correctness', severity, fix_cost_now, file, line: 1, claim, why_it_matters: 'm', fix_direction: 'f' })
@@ -157,6 +157,23 @@ for (const [name, head] of [['uppercaseHex', 'A'.repeat(40)], ['39chars', HEAD.s
   })
 }
 
+for (const [name, worktree_path] of [['relative', 'work/integ'], ['dotDotSegment', `${SCRATCH('integ')}/../escape`], ['outsideScratchRoot', '/tmp/elsewhere']]) {
+  test(`checkIntegrate_worktreePath_${name}_failsCurdAtIntegrateAndDispatchesNoAge`, async () => {
+    const { result, trace } = await runParent({ integrate: () => integrateResult({ merged: ['parent'], worktree_path }) })
+
+    assert.equal(result.curds[0].status, 'failed')
+    assert.match(result.curds[0].excluded_reason, /^integrate:.*worktree_path/)
+    assert.equal(callsOf(trace, 'age:barrier').length, 0)
+  })
+}
+
+test('mergePrompt_stepOne_splitsDetachAndConfirmIntoSeparateSentences', async () => {
+  const { trace } = await runParent({})
+
+  const prompt = callsOf(trace, 'integrate')[0].prompt
+  assert.match(prompt, /1\. Run `git checkout --detach [0-9a-f]+`\. Confirm that `git rev-parse HEAD` prints/)
+})
+
 test('agePrompt_whitespacePaddedIntegrateHead_namesCleanRangeAndPin', async () => {
   const { trace } = await runParent({ integrate: () => integrateResult({ worktree_path: SCRATCH('integ'), merged: ['parent'], head: ` ${HEAD}\n` }) })
 
@@ -260,13 +277,13 @@ test('noteWorktree_duplicatePaddedAndForgedPaths_recordsEachCleanPathOnce', asyn
   const { trace } = await runParent({
     'cook:parent': () => cook('parent', { worktree_path: ` ${SCRATCH('shared')}\n` }),
     'press:parent': () => ({ ...phaseOk('parent'), worktree_path: SCRATCH('shared') }),
-    integrate: () => integrateResult({ worktree_path: `${SCRATCH('forged')}\n; rm -rf /`, merged: ['parent'] }),
+    integrate: () => integrateResult({ worktree_path: SCRATCH('integ'), merged: ['parent'] }),
     'age:barrier': () => ({ ...ageResult({ reviewed: ['parent'] }), worktree_path: `${SCRATCH('a')}/../../b` }),
   })
 
   const cleanup = callsOf(trace, 'cleanup')
   assert.equal(cleanup.length, 1)
-  assert.deepEqual(JSON.parse(fence(cleanup[0].prompt, 'worktrees')), [SCRATCH('shared')])
+  assert.deepEqual(JSON.parse(fence(cleanup[0].prompt, 'worktrees')), [SCRATCH('integ'), SCRATCH('shared')])
 })
 
 // ---- re-age (AC-5, AC-7) ----

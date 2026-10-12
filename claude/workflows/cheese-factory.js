@@ -20,7 +20,7 @@ export const meta = {
 // Tracked source: claude/workflows/cheese-factory.js in the dotfiles repo.
 // Replaces claude/workflows/curd-flock.js (deleted, no alias). Spec:
 // specs/cheese-factory-workflow.md (durable corpus). See
-// .hallouminate/wiki/adr/cheese-factory-workflow.md for ADR-001..009.
+// .hallouminate/wiki/adr/cheese-factory-workflow.md for ADR-001..013.
 //
 // Review moved from per-curd to a barrier whole-diff age before plate
 // (ADR-006): reviewing each curd's diff in isolation left cross-curd
@@ -397,9 +397,13 @@ const partitionErrors = (v, slugs) => {
 }
 const fileListErrors = (v) => v.merged.flatMap((s) =>
   (Array.isArray(v.files_by_slug[s]) && v.files_by_slug[s].every((f) => typeof f === 'string') ? [] : [substance(`$.files_by_slug.${s} must be a list of file paths`)]))
+// The agent reports the worktree path, so code accepts only an absolute scratch path without a `..` segment.
+const worktreeErrors = (v) => (typeof v.worktree_path === 'string' && SCRATCH_WORKTREE_RE.test(v.worktree_path) && !v.worktree_path.split('/').includes('..')
+  ? [] : [substance('$.worktree_path must be an absolute scratch worktree path with no .. segment')])
 const checkIntegrate = (slugs) => checkWith(INTEGRATE_SCHEMA,
   (v) => partitionErrors(v, slugs),
   (v) => shaErrors('$.head', v.head),
+  worktreeErrors,
   fileListErrors)
 const findingErrors = (v) => v.findings.flatMap((f, i) => [
   ...enumErrors(`$.findings[${i}].severity`, f.severity, FINDING_SEVERITIES),
@@ -655,8 +659,6 @@ ${NO_CHAIN_DIRECTIVE}
 Return {"status":"ok|partial|blocked","head_sha":"<40 hex>","artifact":"...","worktree_path":"<git rev-parse --show-toplevel>","orientation":"..."}.`)
 }
 
-const INTEGRATE_RETURN = 'Return {"worktree_path":"<git rev-parse --show-toplevel>","merged":["<slug>", ...],"conflicted":["<slug>", ...],"head":"<git rev-parse HEAD, 40 hex>","files_by_slug":{"<merged slug>":["<repo-relative file>", ...]},"files_changed":<n>,"lines_changed":<n>}. Every listed slug appears in exactly one of merged or conflicted.'
-
 // Integrate and re-merge share one prompt. Both build on a detached HEAD at the run's base SHA, so no branch is held by two worktrees and both heads share one base.
 function mergePrompt(intro, base, refs) {
   return prompt(`${intro} You are in an isolated worktree of the project repo (worktrees share the repo's branches).
@@ -664,7 +666,7 @@ function mergePrompt(intro, base, refs) {
 Surviving curd branches (slug-sorted):
 ${data('branches', refs)}
 
-1. \`git checkout --detach ${base}\` and confirm \`git rev-parse HEAD\` prints ${base}. Do not create or check out any branch.
+1. Run \`git checkout --detach ${base}\`. Confirm that \`git rev-parse HEAD\` prints ${base}. Do not create or check out any branch.
 2. Merge each entry's \`sha\` in the listed order: \`git merge --no-ff <sha>\`. Merge the SHA, never a branch name, and never \`origin/<branch>\`. If a merge conflicts, run \`git merge --abort\`, record that entry's slug as conflicted, and continue with the remaining entries.
 3. Report stats for the merged diff by parsing \`git diff --shortstat ${base}...HEAD\`: files_changed, and lines_changed = insertions + deletions.
 4. For each merged slug, list the files that curd changed with \`git diff --name-only ${base}...<sha>\` and report them under files_by_slug.
@@ -673,7 +675,7 @@ ${data('branches', refs)}
 Done means: you attempted every listed branch and reported merged, conflicted, head, files_by_slug, and the diff stats.
 Scope fence: do not push. Do not edit any file yourself. ${NO_CHAIN_DIRECTIVE}
 
-${INTEGRATE_RETURN}`)
+Return {"worktree_path":"<git rev-parse --show-toplevel>","merged":["<slug>", ...],"conflicted":["<slug>", ...],"head":"<git rev-parse HEAD, 40 hex>","files_by_slug":{"<merged slug>":["<repo-relative file>", ...]},"files_changed":<n>,"lines_changed":<n>}. Every listed slug appears in exactly one of merged or conflicted.`)
 }
 
 const integratePrompt = (base, refs) => mergePrompt('You are the Integrate barrier for the /cheese-factory workflow.', base, refs)
@@ -892,6 +894,10 @@ async function salvage(curd) {
     : null
 }
 
+// Each stage after cook returns the previous record with its own fields overridden, so no reader sees a missing key.
+const stageRecord = (prev, over, failure = null) => ({ curd: prev.curd, branch: prev.branch, cook: prev.cook, sha: prev.sha, taste: prev.taste ?? null, press: null, ...over, failure })
+const stageFailure = (stage, message) => ({ stage, message })
+
 const chainResults = await pipeline(
   curds,
 
@@ -899,16 +905,17 @@ const chainResults = await pipeline(
     return cookCurd(curd, branchFor(curd.slug))
   },
 
-  async ({ curd, branch, cook, sha, failure }) => {
-    if (failure) return { curd, branch, cook, sha, taste: null, tasteRounds: 0, failure }
-    let current = sha
+  async (prev) => {
+    const { curd } = prev
+    if (prev.failure) return stageRecord(prev, {}, prev.failure)
+    let current = prev.sha
     const tasted = await typed(tastePrompt(curd, current), { label: `taste:${curd.slug}`, phase: 'Taste', agentType: 'reviewer', model: 'opus', schema: TASTE_SCHEMA }, checkTaste)
-    if (!tasted.value) return { curd, branch, cook, sha: current, taste: null, tasteRounds: 0, failure: { stage: 'taste', message: errorText(tasted.errors) } }
+    if (!tasted.value) return stageRecord(prev, {}, stageFailure('taste', errorText(tasted.errors)))
     let taste = tasteOf(tasted.value)
     let round = 0
     while (taste.verdict === 'revise' && round < CORRECTIVE_ROUNDS) {
       const corrected = await typed(correctivePrompt(curd, current, taste), { label: `correct:${curd.slug}:r${round + 1}`, phase: 'Taste', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CORRECT_SCHEMA }, checkCorrect)
-      if (!corrected.value) return { curd, branch, cook, sha: current, taste, tasteRounds: round, failure: { stage: 'taste-correct', message: errorText(corrected.errors) } }
+      if (!corrected.value) return stageRecord(prev, { sha: current, taste }, stageFailure('taste-correct', errorText(corrected.errors)))
       const correction = corrected.value
       round++
       if (!correction.committed) {
@@ -917,19 +924,20 @@ const chainResults = await pipeline(
       }
       current = correction.head_sha.trim()
       const retasted = await typed(tastePrompt(curd, current), { label: `taste:${curd.slug}:r${round}`, phase: 'Taste', agentType: 'reviewer', model: 'opus', schema: TASTE_SCHEMA }, checkTaste)
-      if (!retasted.value) return { curd, branch, cook, sha: current, taste, tasteRounds: round, failure: { stage: 'taste', message: errorText(retasted.errors) } }
+      if (!retasted.value) return stageRecord(prev, { sha: current, taste }, stageFailure('taste', errorText(retasted.errors)))
       taste = tasteOf(retasted.value)
     }
-    return { curd, branch, cook, sha: current, taste, tasteRounds: round, failure: null }
+    return stageRecord(prev, { sha: current, taste })
   },
 
-  async ({ curd, branch, cook, sha, taste, tasteRounds, failure }) => {
-    if (failure || !taste || taste.verdict === 'revise') return { curd, branch, cook, sha, taste, tasteRounds, press: null, failure: failure || { stage: 'taste', message: 'taste did not reach pass within correctiveRounds' } }
+  async (prev) => {
+    const { curd, sha, taste, cook } = prev
+    if (prev.failure || !taste || taste.verdict === 'revise') return stageRecord(prev, {}, prev.failure || stageFailure('taste', 'taste did not reach pass within correctiveRounds'))
     const pressed = await typed(pressPrompt(curd, sha, cookHandoffPath(cook)), { label: `press:${curd.slug}`, phase: 'Press', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: PHASE_SCHEMA }, checkPress)
-    if (!pressed.value) return { curd, branch, cook, sha, taste, tasteRounds, press: null, failure: { stage: 'press', message: errorText(pressed.errors) } }
+    if (!pressed.value) return stageRecord(prev, {}, stageFailure('press', errorText(pressed.errors)))
     const press = pressed.value
-    if (press.status !== 'ok') return { curd, branch, cook, sha, taste, tasteRounds, press, failure: { stage: 'press', message: `press returned status ${press.status}` } }
-    return { curd, branch, cook, sha: press.head_sha.trim(), taste, tasteRounds, press, failure: null }
+    if (press.status !== 'ok') return stageRecord(prev, { press }, stageFailure('press', `press returned status ${press.status}`))
+    return stageRecord(prev, { sha: press.head_sha.trim(), press })
   },
 )
 
