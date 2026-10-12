@@ -125,6 +125,12 @@ const INDEX_SCHEMA = obj({
   open_prs: list(obj({ number: int, title: str, branch: str, base: str, author: str, is_draft: bool, is_cross_repository: bool })),
 })
 
+// Every PR this run pushes to, opens, or drafts carries <!-- move-my-cheese:landing digest=<d> -->.
+// At the end of a run, each open target's marker also records the head the run last saw (head=<sha>).
+// A later run of the same approval accepts a moved head only when it equals that recorded head.
+const LANDING_PREFIX = 'move-my-cheese:landing'
+const DIGEST_RE = /^[0-9a-f]{16}$/
+const landingMarker = (d, head = '') => `<!-- ${LANDING_PREFIX} digest=${d}${head ? ` head=${head}` : ''} -->`
 const DETAIL_SCHEMA = obj({
   prs: list(obj({
     number: int,
@@ -145,6 +151,8 @@ const DETAIL_SCHEMA = obj({
     aged_sha: str,
     aged_patch: str,
     aged_dirty: bool,
+    landing_digest: text('digest= from the last move-my-cheese:landing comment by the viewer, or empty'),
+    landing_head: text('head= from that same comment, or empty'),
     url: str,
   })),
 })
@@ -631,18 +639,34 @@ function digestOf(landing) {
   return `${fnv1a(canonical, 2166136261)}${fnv1a(canonical, 3735928559)}`
 }
 
-// A keep-only plan survives a moved default branch; a reshaping plan does not.
-function staleReasons(landing, prs, baseSha) {
+// This approval recorded the PR's current head at the end of an earlier run.
+const stampedBy = (p, d) => p.landing_digest === d && p.landing_head === p.head_sha
+
+// A moved head is stale unless this approval's own stamp names it. A keep-only plan survives a moved
+// default branch, and so does a plan this approval already started.
+function staleReasons(landing, prs, baseSha, digest) {
   const reasons = []
   const current = prs.map((p) => p.number).sort(ascending)
   if (stable(current) !== stable([...landing.inputs].sort(ascending))) reasons.push(`the landable PR set is now ${current.join(', ') || 'empty'}`)
   for (const p of prs) {
     const planned = landing.recon.heads[String(p.number)]
-    if (planned !== p.head_sha) reasons.push(`#${p.number} head moved from ${planned || 'unknown'} to ${p.head_sha}`)
+    if (planned !== p.head_sha && !stampedBy(p, digest)) reasons.push(`#${p.number} head moved from ${planned || 'unknown'} to ${p.head_sha}`)
   }
   const reshapes = landing.plan.dispositions.some((d) => d.action !== 'keep') || landing.plan.targets.some((t) => t.kind === 'new')
-  if (reshapes && landing.recon.base_sha !== baseSha) reasons.push(`the default branch moved from ${landing.recon.base_sha} to ${baseSha}`)
+  const started = prs.some((p) => p.landing_digest === digest)
+  if (reshapes && !started && landing.recon.base_sha !== baseSha) reasons.push(`the default branch moved from ${landing.recon.base_sha} to ${baseSha}`)
   return reasons
+}
+
+// Only well-formed markers count; anything else reads as no marker.
+function markersOf(pr) {
+  const aged = FULL_SHA_RE.test(pr.aged_sha.trim()) && FULL_SHA_RE.test(pr.aged_patch.trim())
+  const landing = DIGEST_RE.test(pr.landing_digest.trim())
+  return {
+    aged_sha: aged ? pr.aged_sha.trim() : '', aged_patch: aged ? pr.aged_patch.trim() : '', aged_dirty: aged && pr.aged_dirty,
+    landing_digest: landing ? pr.landing_digest.trim() : '',
+    landing_head: landing && FULL_SHA_RE.test(pr.landing_head.trim()) ? pr.landing_head.trim() : '',
+  }
 }
 
 // ---- Stack and overlap facts, computed in code ----
@@ -716,9 +740,10 @@ function agentsMax(plan) {
   const build = 1 + LIMITS.continuations * 2 // first round, then a salvage and a continuation per round
   const age = 1 + AGE_FANOUT_MAX_AGENTS + 1 // fan-out prep and child, then the one-reviewer fallback
   const review = age + 3 + LIMITS.pollRounds * 2 // cure, re-age, finalize, then status and /affinage pairs
-  const land = LAND ? 1 + LIMITS.pollRounds * 2 + 1 + LIMITS.mergePolls : 0 // restack, polls, merge, merge polls
   const verify = 2 * (1 + plan.criteria.filter((c) => c.check_kind !== 'ci').length) // pre and final rounds
-  return plan.targets.length * (build + review + land) + verify + 5 // publish, mark, close, advise:done, cleanup
+  // restack, polls, re-age and verify of a moved head, merge, merge polls, close of its superseded PRs
+  const land = LAND ? 1 + LIMITS.pollRounds * 2 + 1 + verify / 2 + 1 + LIMITS.mergePolls + 1 : 0
+  return plan.targets.length * (build + review + land) + verify + 6 // publish, mark, close, advise:done, stamp, cleanup
 }
 
 // ---- Readiness: a mechanical predicate over gh fields ----
@@ -792,6 +817,7 @@ const detailPrompt = (numbers, viewer) => prompt(
     `2. Set ci to the output of ${checksCmd('<n>')}. Use none when it prints nothing.`,
     `3. Aged marker: read only comments by ${viewer}: gh api repos/{owner}/{repo}/issues/<n>/comments --jq '.[] | select(.user.login == "${viewer}") | .body'. Find the last one that contains ${MARKER_PREFIX}. Parse its sha=, patch=, and dirty= fields. Use empty strings and false when there is no marker.`,
     `4. Set unresolved_threads to the output of ${threadsCmd('<n>')}. Use 0 when it fails.`,
+    `5. Landing marker: in the same comments by ${viewer} (never the PR body), find the last one that contains ${LANDING_PREFIX}. Parse its digest= and head= fields into landing_digest and landing_head. Use empty strings when there is no such comment.`,
   ].join('\n'),
 )
 
@@ -924,8 +950,8 @@ const verifyPrompt = (ac, integration) => {
 const publishPrompt = (jobs) => prompt(
   'Publish the landing targets. Use Bash. Never merge anything.',
   'Work through the targets in the listed order from the current directory. Worktrees share refs, so each local_branch is visible here. Each target was built on its local_branch, which stands in for branch; never check out branch itself.',
-  'Existing target: run git push --force-with-lease=<branch>:<expected_remote_sha> origin <local_branch>:refs/heads/<branch>. When base_branch differs from the current PR base, run gh pr edit <pr> --base <base_branch>. Never open a second PR for an existing target.',
-  `New target: when gh pr list --head <branch> --state open shows a PR, report it and push nothing. Otherwise run git push origin <local_branch>:refs/heads/<branch>, then gh pr create --head <branch> --base <base_branch> --title <title> --body-file - fed by a quoted heredoc (<<'EOF'). Name each superseded PR in the body as Supersedes #<n>.`,
+  `Existing target: run git push --force-with-lease=<branch>:<expected_remote_sha> origin <local_branch>:refs/heads/<branch>. When base_branch differs from the current PR base, run gh pr edit <pr> --base <base_branch>. Then upsert your comment that contains ${LANDING_PREFIX}: PATCH it through gh api when it exists, else post it with gh pr comment <pr> --body-file - fed by a quoted heredoc (<<'EOF'). Its whole body is ${landingMarker(digest)}. Never open a second PR for an existing target.`,
+  `New target: when gh pr list --head <branch> --state open shows a PR, report it and push nothing. Otherwise run git push origin <local_branch>:refs/heads/<branch>, then gh pr create --head <branch> --base <base_branch> --title <title> --body-file - fed by a quoted heredoc (<<'EOF'). Name each superseded PR in the body as Supersedes #<n>. Then post one comment whose whole body is ${landingMarker(digest)}, the same way.`,
   'Push only the listed branches. Never use --force without a lease, --admin, or --no-verify.',
   'Report each target: pr_number, url, head_sha from git rev-parse origin/<branch>, and changed_files and lines_changed (additions plus deletions) from gh pr view.',
   NO_CHAIN,
@@ -943,8 +969,12 @@ function agePrompt(m) {
       : [
           `1. Compute the full-diff patch-id: git diff origin/${m.base}...HEAD | git patch-id --stable | cut -d' ' -f1.`,
           '2. When it equals the marker patch, the content is unchanged. Do not invoke /age. Return mode skipped-unchanged with has_medium_plus_findings and has_cheap_lows false.',
-          '3. Else, when the marker sha is not empty and git merge-base --is-ancestor <marker sha> HEAD succeeds, run /age <marker sha>..HEAD --auto through the Skill tool. Mode incremental.',
-          `4. Else run ${full} through the Skill tool. Mode full.`,
+          ...(m.rebuilt
+            ? [`3. Else run ${full} through the Skill tool. Mode full. This run rebuilt the branch, so a <marker sha>..HEAD range can hold base-branch changes; do not scope incrementally.`]
+            : [
+                '3. Else, when the marker sha is not empty and git merge-base --is-ancestor <marker sha> HEAD succeeds, run /age <marker sha>..HEAD --auto through the Skill tool. Mode incremental.',
+                `4. Else run ${full} through the Skill tool. Mode full.`,
+              ]),
         ].join('\n'),
     `${NO_CHAIN} Do not invoke /cure, even when /age --auto documents that chain.`,
     'Read the report. Set has_medium_plus_findings to true when any finding is medium or above. Set has_cheap_lows to true when any low finding has fix-cost-now: contained. Set artifact to the report path and worktree_path to the output of git rev-parse --show-toplevel.',
@@ -1118,7 +1148,7 @@ async function buildTarget(job) {
 }
 
 // ---- Integrate and verify: criteria, not tasks; a code gate before each judge ----
-async function integrateAndVerify(round, refs) {
+async function integrateAndVerify(round, refs, criteria = plan.criteria) {
   const ids = refs.map((r) => r.id)
   const integrated = await typed(integratePrompt(refs, idx.default_branch, round),
     { label: `integrate:${round}`, phase: 'Verify', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA },
@@ -1130,7 +1160,7 @@ async function integrateAndVerify(round, refs) {
   if (integration.conflicted.length) return { ok: false, reason: `targets conflict when combined: ${integration.conflicted.join(', ')}`, verdicts: [] }
   // Judges run one after another in the integration worktree. A judge may not check out, so it reads the tree that integrate pinned.
   const verdicts = []
-  for (const ac of plan.criteria) {
+  for (const ac of criteria) {
     if (ac.check_kind === 'ci') {
       verdicts.push({ criterion: ac.id, result: 'deferred', evidence: 'covered by CI readiness in Review' })
       continue
@@ -1152,7 +1182,7 @@ async function integrateAndVerify(round, refs) {
 }
 
 // ---- Poll: status, then /affinage when work remains; bounded, with a stall guard ----
-async function pollUntilReady(number, branch, prefix, phaseName) {
+async function pollUntilReady(number, branch, prefix, phaseName, onStatus) {
   let before = null
   let last = null
   for (let round = 1; round <= LIMITS.pollRounds; round++) {
@@ -1160,6 +1190,7 @@ async function pollUntilReady(number, branch, prefix, phaseName) {
     const status = checked.value
     if (!status) return { verdict: 'failed', reason: `status failed: ${errorText(checked.errors)}`, status: last }
     last = status
+    onStatus(status)
     const verdict = classify(status)
     if (verdict === 'waiting') continue
     if (verdict !== 'needs-work') return { verdict, reason: verdict === 'awaiting-review' ? 'branch protection waits for a human review' : '', status }
@@ -1177,12 +1208,17 @@ async function pollUntilReady(number, branch, prefix, phaseName) {
   return { verdict: 'exhausted', reason: `not ready after ${LIMITS.pollRounds} poll rounds`, status: last }
 }
 
+// Each poll round records its head, so a throw mid-poll keeps the head this run last saw.
+async function pollTarget(id, number, branch, prefix, phaseName) {
+  return pollUntilReady(number, branch, prefix, phaseName, (status) => lastHead.set(id, status.head_sha.trim()))
+}
+
 // ---- Review stages: one pipeline item per target, no barrier between PRs ----
 function markerFor(t) {
-  const pr = t.kind === 'existing' ? byNumber.get(t.pr) : null
+  const pr = t.kind === 'existing' ? byNumber.get(t.pr) : adopted.get(t.id) || null
   const pub = published.get(t.id)
   return {
-    number: pub.pr_number, branch: t.branch, base: baseBranchOf(t), head_sha: pub.head_sha,
+    number: pub.pr_number, branch: t.branch, base: baseBranchOf(t), head_sha: pub.head_sha, rebuilt: rebuilt(t.id),
     aged_sha: pr ? pr.aged_sha : '', aged_patch: pr ? pr.aged_patch : '', aged_dirty: pr ? pr.aged_dirty : false,
     changed_files: pub.changed_files, lines_changed: pub.lines_changed,
   }
@@ -1260,52 +1296,126 @@ async function finalizeStage(r) {
 async function pollStage(r) {
   if (r.failure) return { ...r, verdict: 'failed', reason: r.failure }
   if (isDirtyChain(r)) return { ...r, verdict: 'dirty', reason: 'medium+ findings remain after cure' }
-  return { ...r, ...(await pollUntilReady(r.m.number, r.t.branch, `review:${r.m.number}`, 'Review')) }
+  return { ...r, ...(await pollTarget(r.t.id, r.m.number, r.t.branch, `review:${r.m.number}`, 'Review')) }
 }
 
-async function markPrs(items, close) {
-  const result = await agent(markPrompt(items, close), { label: close ? 'close' : 'mark', phase: close ? 'Land' : 'Review', model: 'haiku', effort: 'low', schema: MARK_SCHEMA })
+// A PR that this approval already drafted gets no second comment.
+const draftedByThisApproval = (n) => Boolean(openByNumber.get(n)?.is_draft && byNumber.get(n)?.landing_digest === digest)
+
+async function markPrs(items, close, label, phaseName) {
+  const marked = items.map((item) => ({ ...item, comment: `${landingMarker(digest)}\n${item.comment}` }))
+  const result = await agent(markPrompt(marked, close), { label, phase: phaseName, model: 'haiku', effort: 'low', schema: MARK_SCHEMA })
   return items.map((item) => (result && result.results.find((r) => r.pr === item.pr)) || { pr: item.pr, action: 'skipped', note: result ? 'no result reported' : 'agent returned no output' })
 }
 
-// ---- Land: bottom-up, fresh readiness in code before each merge ----
-async function landAll() {
-  const stop = (id, reason) => { landed.set(id, { status: 'failed', reason }); return `landing stopped at ${id}: ${reason}` }
-  for (const id of order) {
-    const t = targetsById.get(id)
-    const n = published.get(id).pr_number
-    if (floorReached()) return stop(id, 'budget floor reached before this merge')
-    if (verdictOf(id) === 'merged') {
-      landed.set(id, { status: 'merged', reason: 'merged before this run reached it' })
-      continue
-    }
-    if (t.base !== idx.default_branch) {
-      const moved = await agent(restackPrompt(n, t.branch, targetsById.get(t.base).branch, idx.default_branch), { label: `restack:${n}`, phase: 'Land', model: 'sonnet', schema: FIX_SCHEMA, isolation: 'worktree' })
-      if (moved) noteWorktree(moved.worktree_path)
-      if (!moved || moved.status !== 'ok') return stop(id, `restack failed: ${moved ? moved.note : 'no output'}`)
-    }
-    const poll = await pollUntilReady(n, t.branch, `land:${n}`, 'Land')
-    if (poll.verdict !== 'ready') return stop(id, `not ready before merge: ${poll.verdict}${poll.reason ? ` (${poll.reason})` : ''}`)
-    const sha = poll.status.head_sha.trim()
-    if (!FULL_SHA_RE.test(sha)) return stop(id, 'status returned no full head SHA')
-    const merge = await agent(mergePrompt(n, sha), { label: `merge:${n}`, phase: 'Land', model: 'haiku', effort: 'low', schema: MERGE_SCHEMA })
-    if (!merge || merge.result === 'refused') return stop(id, `merge refused: ${merge ? merge.note : 'no output'}`)
-    let state = ''
-    for (let round = 1; round <= LIMITS.mergePolls && state !== 'MERGED' && state !== 'CLOSED'; round++) {
-      const seen = await typed(mergedPrompt(n), { label: `merged:${n}:${round}`, phase: 'Land', model: 'haiku', effort: 'low', schema: STATE_SCHEMA }, noCheck)
-      state = seen.value ? seen.value.state : ''
-    }
-    if (state !== 'MERGED') return stop(id, `PR did not reach MERGED (last state ${state || 'unknown'})`)
-    landed.set(id, { status: 'merged', reason: '' })
+const STAMP_SCHEMA = obj({ results: list(obj({ pr: int, stamped: bool, note: str })) })
+const stampPrompt = (items) => prompt(
+  'Record the head each PR had when this run ended. Use Bash. Change nothing else.',
+  `For each PR: read gh pr view <pr> --json headRefOid. When it differs from head, skip that PR with stamped false. Otherwise upsert your comment that contains ${LANDING_PREFIX}: PATCH its body to marker through gh api when it exists, else post marker with gh pr comment <pr> --body-file - fed by a quoted heredoc (<<'EOF').`,
+  'Return one result per PR.',
+  data('prs', items),
+)
+
+// Stamp each open target with the head this run last saw, so the same approval can resume.
+async function stampHeads(ids) {
+  const items = ids
+    .map((id) => ({ pr: published.get(id)?.pr_number, head: lastHead.get(id) || '' }))
+    .filter((item) => item.pr && FULL_SHA_RE.test(item.head))
+    .map((item) => ({ ...item, marker: landingMarker(digest, item.head) }))
+  if (!items.length) return
+  const result = (await typed(stampPrompt(items), { label: 'stamp', phase: 'Report', model: 'haiku', effort: 'low', schema: STAMP_SCHEMA }, noCheck)).value
+  if (!result) log('stamp agent returned no output; a later run of this approval will ask to plan again')
+}
+
+// agent() throws once the budget is spent, so a failed stamp only logs.
+async function stampOpen(ids) {
+  try {
+    await stampHeads(ids)
+  } catch (e) {
+    log(`stamp failed: ${e.message}; a later run of this approval will ask to plan again`)
   }
-  const items = plan.dispositions.filter((d) => d.action === 'supersede' || d.action === 'close').map((d) => ({
-    pr: d.pr,
-    comment: d.action === 'supersede'
-      ? `Superseded by #${published.get(d.target).pr_number}, which has merged. Closed by move-my-cheese.`
-      : `Dropped from the landing plan: ${d.reason} Closed by move-my-cheese.`,
-  }))
-  if (items.length) marks.push(...(await markPrs(items, true)))
+}
+
+// ---- Land: bottom-up; a head that moved after review is checked again before it merges ----
+// A criterion is checkable once every target that satisfies it is merged or is the target itself.
+const landableCriteria = (t) => plan.criteria.filter((c) => plan.targets
+  .filter((x) => x.satisfies.includes(c.id))
+  .every((x) => x.id === t.id || landed.get(x.id)?.status === 'merged'))
+
+async function recheck(id, t, n, sha) {
+  // Every earlier target has merged, so the base is now the default branch. A restack or an /affinage
+  // merge can pull base changes into a reviewedHead..HEAD range, so a moved head gets a full review.
+  const m = { ...markerFor(t), base: idx.default_branch, head_sha: sha, aged_sha: '', aged_patch: '', aged_dirty: false, rebuilt: true }
+  const checked = await typed(agePrompt(m), { label: `recheck-age:${n}`, phase: 'Land', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA, isolation: 'worktree' },
+    (a) => { noteWorktree(a.worktree_path); return checkAge(a) })
+  const age = checked.value
+  if (!age) return `the re-age failed: ${errorText(checked.errors)}`
+  if (age.mode !== 'skipped-unchanged' && age.has_medium_plus_findings) return `new medium+ findings after review (${age.artifact})`
+  if (!needVerify) return ''
+  const check = await integrateAndVerify(`land-${id}`, [{ id, ref: `origin/${t.branch}` }], landableCriteria(t))
+  return check.ok ? '' : `verification failed on the moved head: ${check.reason}`
+}
+
+const stopAt = (id, reason) => { landed.set(id, { status: 'failed', reason }); return `landing stopped at ${id}: ${reason}` }
+
+async function landOne(id, t, n) {
+  const stop = (reason) => stopAt(id, reason)
+  if (t.base !== idx.default_branch) {
+    const moved = await agent(restackPrompt(n, t.branch, targetsById.get(t.base).branch, idx.default_branch), { label: `restack:${n}`, phase: 'Land', model: 'sonnet', schema: FIX_SCHEMA, isolation: 'worktree' })
+    if (moved) noteWorktree(moved.worktree_path)
+    if (!moved || moved.status !== 'ok') return stop(`restack failed: ${moved ? moved.note : 'no output'}`)
+  }
+  const poll = await pollTarget(id, n, t.branch, `land:${n}`, 'Land')
+  if (poll.verdict !== 'ready') return stop(`not ready before merge: ${poll.verdict}${poll.reason ? ` (${poll.reason})` : ''}`)
+  const sha = poll.status.head_sha.trim()
+  if (!FULL_SHA_RE.test(sha)) return stop('status returned no full head SHA')
+  const reviewedHead = (reviewById.get(id).status?.head_sha || '').trim()
+  const moved = sha !== reviewedHead
+  if (moved) {
+    log(`${id}: head moved from ${reviewedHead || 'unknown'} to ${sha} after review; checking it again.`)
+    const problem = await recheck(id, t, n, sha)
+    if (problem) return stop(`changed-after-verify: ${problem}`)
+  }
+  const merge = await agent(mergePrompt(n, sha), { label: `merge:${n}`, phase: 'Land', model: 'haiku', effort: 'low', schema: MERGE_SCHEMA })
+  if (!merge || merge.result === 'refused') return stop(`merge refused: ${merge ? merge.note : 'no output'}`)
+  let state = ''
+  for (let round = 1; round <= LIMITS.mergePolls && state !== 'MERGED' && state !== 'CLOSED'; round++) {
+    const seen = await typed(mergedPrompt(n), { label: `merged:${n}:${round}`, phase: 'Land', model: 'haiku', effort: 'low', schema: STATE_SCHEMA }, noCheck)
+    state = seen.value ? seen.value.state : ''
+  }
+  if (state !== 'MERGED') return stop(`PR did not reach MERGED (last state ${state || 'unknown'})`)
+  landed.set(id, { status: 'merged', reason: moved ? 'merged after a re-check of the moved head' : '' })
   return ''
+}
+
+// Close each superseded PR as soon as its own replacement merges.
+async function closeSuperseded(id) {
+  const items = plan.dispositions.filter((d) => d.action === 'supersede' && d.target === id)
+    .map((d) => ({ pr: d.pr, comment: `Superseded by #${published.get(id).pr_number}, which has merged. Closed by move-my-cheese.` }))
+  if (items.length) marks.push(...(await markPrs(items, true, `close:${id}`, 'Land')))
+}
+
+async function landAll() {
+  let stopped = ''
+  for (const id of order) {
+    if (floorReached()) stopped = stopAt(id, 'budget floor reached before this merge')
+    else if (verdictOf(id) === 'merged') landed.set(id, { status: 'merged', reason: 'merged before this run reached it' })
+    else stopped = await landOne(id, targetsById.get(id), published.get(id).pr_number)
+    if (stopped) break
+    await closeSuperseded(id)
+  }
+  // After a full landing, close the dropped PRs. After a stop, draft every PR whose replacement has not merged.
+  const rest = plan.dispositions.filter((d) => (d.action === 'close' || (d.action === 'supersede' && landed.get(d.target)?.status !== 'merged'))
+    && !(stopped && draftedByThisApproval(d.pr)))
+  if (!rest.length) return stopped
+  const items = rest.map((d) => ({
+    pr: d.pr,
+    comment: d.action === 'close'
+      ? `Dropped from the landing plan: ${d.reason} ${stopped ? 'Converted to draft' : 'Closed'} by move-my-cheese.`
+      : `Superseded by #${published.get(d.target).pr_number}, which has not merged because landing stopped. Converted to draft by move-my-cheese; it closes when the replacement merges.`,
+  }))
+  marks.push(...(await markPrs(items, !stopped, stopped ? 'mark' : 'close', 'Land')))
+  return stopped
 }
 
 function report(status, note) {
@@ -1332,6 +1442,8 @@ function report(status, note) {
   return { status, note: note || '', digest, plan_source: planSource, plan_summary: plan.summary, inputs, targets, tensions: landing.tensions, verification, skipped, advice: adviceLog }
 }
 
+// The action an approved plan gives a PR, or '' on a planning run.
+const approvedAction = (n) => (APPROVED ? (APPROVED.plan.dispositions.find((d) => d.pr === n) || {}).action || '' : '')
 // ---- Args: parse and validate before the first agent() call ----
 const parsed = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch { return args } })() : args
 const input = parsed == null ? {} : (typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : { prs: parsed }
@@ -1362,6 +1474,7 @@ if (APPROVED !== null) {
   const shapeErrors = checkLanding(APPROVED)
   if (shapeErrors.length) return { status: 'blocked', error: `args.plan is not a landing object from a needs-approval or needs-input result: ${shapeErrors.slice(0, 5).join('; ')}` }
   if (!APPROVE) return { status: 'blocked', error: 'args.plan needs args.approve set to the digest that the same result returned' }
+  if (digestOf(APPROVED) !== APPROVE) return { status: 'blocked', error: 'approve does not match the digest of args.plan; the plan changed after approval' }
   if (requested.length && stable(requested) !== stable([...APPROVED.inputs].sort(ascending))) return { status: 'blocked', error: 'args.prs differs from the inputs of the approved plan' }
 }
 const ANSWERS = input.answers === undefined ? null : input.answers
@@ -1406,11 +1519,15 @@ const expanded = EXPAND_STACKS ? expandStacks(seed, idx.open_prs) : seed
 const added = expanded.filter((n) => !seed.includes(n))
 if (added.length) log(`Stack expansion added PR(s): ${added.join(', ')}`)
 for (const n of expanded) if (!openByNumber.has(n)) skip(n, 'not an open PR in this repository')
-const wanted = expanded.filter((n) => openByNumber.has(n))
+// On an approved run, an open PR on a new target's branch may be this approval's own earlier publication.
+const adoptable = APPROVED
+  ? idx.open_prs.filter((p) => APPROVED.plan.targets.some((t) => t.kind === 'new' && t.branch === p.branch)).map((p) => p.number)
+  : []
+const wanted = expanded.filter((n) => openByNumber.has(n) && !adoptable.includes(n))
 if (wanted.length > LIMITS.maxPrs) return { status: 'blocked', error: `${wanted.length} PRs exceed the cap of ${LIMITS.maxPrs}. Pass fewer PRs or set expandStacks:false.`, skipped }
 if (!wanted.length) return { status: 'blocked', error: 'no open PR to land', skipped }
 
-const detailed = await typed(detailPrompt(wanted, idx.viewer), { label: 'recon:detail', phase: 'Recon', model: 'haiku', schema: DETAIL_SCHEMA }, checkDetail)
+const detailed = await typed(detailPrompt([...wanted, ...adoptable].sort(ascending), idx.viewer), { label: 'recon:detail', phase: 'Recon', model: 'haiku', schema: DETAIL_SCHEMA }, checkDetail)
 if (!detailed.value) return { status: 'blocked', error: `recon detail failed: ${errorText(detailed.errors)}`, skipped }
 // The prompt asks jq for 1500 characters; code enforces the cap.
 const details = new Map(detailed.value.prs.map((p) => [p.number, { ...p, body: p.body.slice(0, 1500) }]))
@@ -1423,13 +1540,10 @@ for (const n of wanted) {
   else if (open.is_cross_repository) skip(n, 'fork PR: this workflow does not push to other repositories')
   else if (!isSafeRef(pr.branch) || !isSafeRef(pr.base)) skip(n, `unsafe branch or base name: ${JSON.stringify({ branch: pr.branch, base: pr.base })}`)
   else if (pr.state !== 'OPEN') skip(n, `state is ${pr.state}`)
-  else if (open.is_draft && !INCLUDE_DRAFTS) skip(n, 'draft (pass includeDrafts:true to include it)')
+  // A PR that an approved plan supersedes or closes may be a draft this approval made.
+  else if (open.is_draft && !INCLUDE_DRAFTS && !['supersede', 'close'].includes(approvedAction(n))) skip(n, 'draft (pass includeDrafts:true to include it)')
   else if (!FULL_SHA_RE.test(pr.head_sha.trim())) skip(n, 'recon returned no full head SHA')
-  else {
-    // Only a well-formed marker by the viewer counts; anything else reads as no marker.
-    const marked = FULL_SHA_RE.test(pr.aged_sha.trim()) && FULL_SHA_RE.test(pr.aged_patch.trim())
-    active.push({ ...pr, author: open.author, head_sha: pr.head_sha.trim(), aged_sha: marked ? pr.aged_sha.trim() : '', aged_patch: marked ? pr.aged_patch.trim() : '', aged_dirty: marked && pr.aged_dirty })
-  }
+  else active.push({ ...pr, author: open.author, head_sha: pr.head_sha.trim(), ...markersOf(pr) })
 }
 // A PR lands only when its base is the default branch or another PR in this run.
 for (let changed = true; changed;) {
@@ -1443,7 +1557,23 @@ if (!active.length) return { status: 'blocked', error: 'no landable PR remains',
 active.sort((a, b) => a.number - b.number)
 const byNumber = new Map(active.map((p) => [p.number, p]))
 const prNumbers = active.map((p) => p.number)
-const planCtx = (tensionIds) => ({ prs: active, defaultBranch: idx.default_branch, tensionIds, takenBranches: idx.open_prs.map((p) => p.branch) })
+
+// Adopt an open PR on a new target's branch only when the viewer opened it in this repository and
+// this approval stamped its current head. Any other PR on that branch blocks the run.
+const adopted = new Map()
+for (const n of adoptable) {
+  const pr = details.get(n)
+  const open = openByNumber.get(n)
+  if (!pr) return { status: 'blocked', error: `recon returned no detail for #${n}, an open PR on a new target's branch`, skipped }
+  const target = APPROVED.plan.targets.find((t) => t.kind === 'new' && t.branch === pr.branch)
+  const found = { ...pr, ...markersOf(pr), head_sha: pr.head_sha.trim() }
+  const ours = target && open.author === idx.viewer && !open.is_cross_repository && pr.state === 'OPEN' && FULL_SHA_RE.test(found.head_sha) && stampedBy(found, APPROVE)
+  if (!ours) return { status: 'blocked', error: `branch ${pr.branch} already has open PR #${n}, which this approval did not open or which moved after its last run`, skipped }
+  adopted.set(target.id, found)
+  log(`${target.id}: resuming with #${n}, which an earlier run of this approval opened.`)
+}
+const adoptedNumbers = [...adopted.values()].map((p) => p.number)
+const planCtx = (tensionIds) => ({ prs: active, defaultBranch: idx.default_branch, tensionIds, takenBranches: idx.open_prs.filter((p) => !adoptedNumbers.includes(p.number)).map((p) => p.branch) })
 
 // ---- Plan: or accept an approved plan from a previous run ----
 let landing
@@ -1491,13 +1621,16 @@ async function advisePlans(pool, context, ctx, labelPrefix, user) {
 }
 
 if (APPROVED) {
-  digest = digestOf(APPROVED)
-  if (digest !== APPROVE) return { status: 'blocked', error: 'approve does not match the digest of args.plan; the plan changed after approval', skipped }
-  const stale = staleReasons(APPROVED, active, idx.base_sha.trim())
+  digest = APPROVE
+  // An adopted PR means this approval already started, so a moved default branch is expected.
+  const stale = staleReasons(APPROVED, active, adopted.size ? APPROVED.recon.base_sha : idx.base_sha.trim(), APPROVE)
   if (stale.length) return { status: 'needs-replan', reasons: stale, skipped, usage: 'Re-run with { prs } to plan against the current state.' }
   const ctx = planCtx(APPROVED.tensions.map((t) => t.id))
   const flaws = checkPlan(APPROVED.plan, ctx)
   const folding = answered.length > 0 || Boolean(REVISION)
+  // A fold mints a new digest, but the stamps and adoption of a started approval name this one.
+  const started = adopted.size > 0 || active.some((p) => p.landing_digest === APPROVE)
+  if (folding && started) return { status: 'blocked', error: 'this approval already started; resume without revise or answers, or plan again with { prs }', skipped }
   // A fold never executes and its result passes checkPlan, so it may repair a plan that a newer check rejects.
   if (flaws.length && !folding) return { status: 'blocked', error: `the approved plan no longer validates: ${errorText(flaws)}. Re-run with revise: "<change>" to repair it, or with { prs } to plan again.`, skipped }
   landing = APPROVED
@@ -1624,6 +1757,7 @@ const reviewById = new Map()
 const landed = new Map()
 const marks = []
 let verification = { ok: true, reason: 'not run', verdicts: [] }
+const lastHead = new Map()
 const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
 const rebuilt = (id) => outcomes.get(id)?.local === true
 const worstCase = agentsMax(plan)
@@ -1631,10 +1765,19 @@ if (worstCase > LIMITS.agentCap * 0.8) log(`worst case ${worstCase} agents befor
 
 // ---- Assemble: one barrier per dependency wave ----
 phase('Assemble')
+// An earlier run of this approval applied the brief and stamped the head that holds it.
+const appliedBefore = (t) => t.kind === 'existing' && dispositionOf.get(t.pr).action === 'modify' && stampedBy(byNumber.get(t.pr), digest)
+// An adopted PR cannot be rebuilt: publish has no lease for a new target's branch.
+function adoptedBlocker(t) {
+  const pr = adopted.get(t.id)
+  if (pr.base !== baseBranchOf(t)) return `adopted #${pr.number} now targets ${pr.base}, not ${baseBranchOf(t)}; plan again`
+  if (t.base !== idx.default_branch && rebuilt(t.base)) return `adopted #${pr.number} sits on a parent this run rebuilt; plan again`
+  return ''
+}
 function needsBuild(t) {
   if (t.kind === 'new') return true
   const pr = byNumber.get(t.pr)
-  return dispositionOf.get(t.pr).action === 'modify'
+  return (dispositionOf.get(t.pr).action === 'modify' && !appliedBefore(t))
     || ['DIRTY', 'BEHIND'].includes(pr.merge_state.toUpperCase())
     || pr.base !== baseBranchOf(t)
     || (t.base !== idx.default_branch && rebuilt(t.base))
@@ -1644,23 +1787,29 @@ function baseRefOf(t) {
   const parent = targetsById.get(t.base)
   return rebuilt(parent.id) ? localOf(parent.branch) : `origin/${parent.branch}`
 }
-const jobOf = (t) => ({
-  target: t,
-  baseRef: baseRefOf(t),
-  sources: t.sources.filter((n) => n !== t.pr).map((n) => {
-    const p = byNumber.get(n)
-    return { number: n, title: p.title, branch: p.branch, base: p.base }
-  }),
-  tensions: landing.tensions.filter((x) => t.resolves.includes(x.id)),
-  criteria: plan.criteria.filter((c) => t.satisfies.includes(c.id)),
-})
+// A modified PR whose brief is already applied only needs a rebase onto its base.
+const jobOf = (t) => (appliedBefore(t)
+  ? { target: { ...t, sources: [], brief: 'The brief is already applied on this branch. Only rebase it onto the base.' }, baseRef: baseRefOf(t), sources: [], tensions: [], criteria: plan.criteria.filter((c) => t.satisfies.includes(c.id)) }
+  : {
+      target: t,
+      baseRef: baseRefOf(t),
+      sources: t.sources.filter((n) => n !== t.pr).map((n) => {
+        const p = byNumber.get(n)
+        return { number: n, title: p.title, branch: p.branch, base: p.base }
+      }),
+      tensions: landing.tensions.filter((x) => t.resolves.includes(x.id)),
+      criteria: plan.criteria.filter((c) => t.satisfies.includes(c.id)),
+    })
 for (const wave of waveOrder) {
   const runnable = []
   for (const id of wave) {
     const t = targetsById.get(id)
     const blockers = t.depends_on.filter((dep) => outcomes.get(dep)?.status !== 'done')
     if (blockers.length) outcomes.set(id, { id, status: 'skipped', reason: `dependencies not done: ${blockers.join(', ')}` })
-    else if (!needsBuild(t)) outcomes.set(id, { id, status: 'done', local: false, head_sha: byNumber.get(t.pr).head_sha })
+    else if (adopted.has(id)) {
+      const blocker = adoptedBlocker(t)
+      outcomes.set(id, blocker ? { id, status: 'blocked', reason: blocker } : { id, status: 'done', local: false, head_sha: adopted.get(id).head_sha })
+    } else if (!needsBuild(t)) outcomes.set(id, { id, status: 'done', local: false, head_sha: byNumber.get(t.pr).head_sha })
     else if (floorReached()) outcomes.set(id, { id, status: 'skipped', reason: 'budget floor reached' })
     else runnable.push(t)
   }
@@ -1688,7 +1837,7 @@ if (needVerify) {
 
 // ---- Publish: push rebuilt targets; kept, untouched PRs stay as they are ----
 for (const id of order.filter((x) => !rebuilt(x))) {
-  const pr = byNumber.get(targetsById.get(id).pr)
+  const pr = adopted.get(id) || byNumber.get(targetsById.get(id).pr)
   published.set(id, { target: id, pr_number: pr.number, url: pr.url, head_sha: pr.head_sha, changed_files: pr.changed_files, lines_changed: pr.additions + pr.deletions })
 }
 const pushJobs = order.filter(rebuilt).map((id) => {
@@ -1714,9 +1863,14 @@ if (pushJobs.length) {
   if (errors.length) return report('fail', `publish reported invalid results; check the remote branches and PRs before a rerun: ${errorText(errors)}`)
   for (const r of pub.results) published.set(r.target, { ...r, head_sha: r.head_sha.trim() })
 }
+// A stop before the first poll still stamps the head that publish left.
+for (const [id, p] of published) lastHead.set(id, p.head_sha)
 
 // ---- Review: pipelined per PR ----
-if (floorReached()) return report('partial', 'budget floor reached before review')
+if (floorReached()) {
+  await stampOpen(order)
+  return report('partial', 'budget floor reached before review')
+}
 phase('Review')
 const reviewed = await pipeline(order.map((id) => targetsById.get(id)), ageStage, cureStage, finalizeStage, pollStage)
 order.forEach((id, i) => reviewById.set(id, reviewed[i] || { verdict: 'failed', reason: 'review chain threw' }))
@@ -1737,6 +1891,8 @@ if (!LAND) {
   const settled = (id) => ['ready', 'awaiting-review', 'merged'].includes(verdictOf(id))
   const items = []
   for (const d of plan.dispositions) {
+    // A PR this approval already drafted gets no second comment.
+    if (draftedByThisApproval(d.pr)) continue
     if (d.action === 'supersede' && settled(d.target)) {
       const by = published.get(d.target)
       items.push({ pr: d.pr, comment: `Superseded by #${by.pr_number} (${by.url}). Converted to draft by move-my-cheese; it closes when the replacement merges.` })
@@ -1754,7 +1910,7 @@ if (!LAND) {
     if (advice) adviceLog.push(advice)
     if (advice && advice.verdict === 'approve') {
       doneApproved = true
-      if (items.length) marks.push(...(await markPrs(items, false)))
+      if (items.length) marks.push(...(await markPrs(items, false, 'mark', 'Review')))
     } else doneNote = `drafts and the ready verdict wait: the advisor did not approve${advice ? `: ${advice.concerns.join('; ')}` : ''}`
   }
 }
@@ -1789,6 +1945,7 @@ phase('Report')
 const finalStatus = LAND
   ? (order.every((id) => landed.get(id)?.status === 'merged') ? 'landed' : 'partial')
   : (allReady && doneApproved ? 'ready' : 'partial')
+await stampOpen(order.filter((id) => landed.get(id)?.status !== 'merged' && verdictOf(id) !== 'merged'))
 // The runtime removes only unchanged isolated worktrees. A successful run removes the rest and its run refs;
 // a failed run keeps them for inspection and salvage.
 if (['landed', 'ready'].includes(finalStatus) && (scratchWorktrees.size || order.some(rebuilt))) {
