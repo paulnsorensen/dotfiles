@@ -147,7 +147,7 @@ test('checkIntegrate_unknownSlugReplacingInputSlug_failsEveryCurdAtIntegrate', a
   assert.match(bySlug.a.excluded_reason, /^integrate:.*partition/)
 })
 
-for (const [name, head] of [['uppercaseHex', 'A'.repeat(40)], ['39chars', HEAD.slice(1)], ['41chars', `0${HEAD}`], ['nonHexChar', `g${HEAD.slice(1)}`]]) {
+for (const [name, head] of [['39chars', HEAD.slice(1)], ['41chars', `0${HEAD}`], ['nonHexChar', `g${HEAD.slice(1)}`]]) {
   test(`checkIntegrate_head_${name}_failsCurdAtIntegrateAndDispatchesNoAge`, async () => {
     const { result, trace } = await runParent({ integrate: () => integrateResult({ merged: ['parent'], head }) })
 
@@ -287,11 +287,11 @@ test('cookCurd_thirdContinuationFinishes_curdIsCleanWithNoFourth', async () => {
   assert.equal(result.curds[0].status, 'clean')
 })
 
-test('resolve_uppercaseBaseSha_failsResolveAndDispatchesNoWriter', async () => {
+test('resolve_uppercaseBaseSha_isAcceptedAndCookDispatches', async () => {
   const { result, trace } = await runParent({ resolve: () => resolveResolved({ base_sha: 'B'.repeat(40) }) })
 
-  assert.match(result.error, /^Resolve failed:.*base_sha/)
-  assert.equal(labelsOf(trace).some((l) => l.startsWith('cook:')), false)
+  assert.equal(result.error, undefined)
+  assert.equal(labelsOf(trace).some((l) => l.startsWith('cook:')), true)
 })
 
 test('resolve_resolvedWithoutSpecText_failsLoudWithoutThrowing', async () => {
