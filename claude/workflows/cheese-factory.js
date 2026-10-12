@@ -165,10 +165,14 @@ const validGroundedRange = (range) => {
 // Keeps the valid ranges and drops the rest. An empty list is allowed.
 const groundedRanges = (ranges) => (Array.isArray(ranges) ? ranges.filter(validGroundedRange).slice(0, 16) : [])
 
+// The runtime schema keeps the review keys optional, so a blocked answer is not rejected before code reads its status.
+// TASTE_SHAPE restores the required keys in code for every answer that is not blocked.
 const TASTE_SCHEMA = {
   type: 'object',
-  required: ['verdict', 'lenses', 'issues'],
+  required: [],
   properties: {
+    status: { type: 'string' },
+    reason: { type: 'string' },
     verdict: { type: 'string' },
     lenses: { type: 'array', items: { type: 'object', required: ['lens', 'verdict'], properties: { lens: { type: 'string' }, verdict: { type: 'string' }, note: { type: 'string' } } } },
     issues: { type: 'array', items: { type: 'string' } },
@@ -202,9 +206,11 @@ const INTEGRATE_SCHEMA = {
   },
 }
 
+// Only status is required at runtime, so a blocked answer with just status and reason passes. AGE_REVIEW_KEYS restores the rest in code.
+const AGE_REVIEW_KEYS = ['status', 'has_medium_plus_findings', 'findings']
 const AGE_BARRIER_SCHEMA = {
   type: 'object',
-  required: ['status', 'has_medium_plus_findings', 'findings'],
+  required: ['status'],
   properties: {
     status: { type: 'string' },
     reason: { type: 'string' },
@@ -235,7 +241,10 @@ const AGE_BARRIER_SCHEMA = {
 }
 
 // The re-age answer also lists the curds it covered, so code can tell a clean curd from a missing one.
-const REAGE_SCHEMA = { ...AGE_BARRIER_SCHEMA, required: [...AGE_BARRIER_SCHEMA.required, 'reviewed_slugs'] }
+const REAGE_SCHEMA = AGE_BARRIER_SCHEMA
+const TASTE_SHAPE = { ...TASTE_SCHEMA, required: ['verdict', 'lenses', 'issues'] }
+const AGE_BARRIER_SHAPE = { ...AGE_BARRIER_SCHEMA, required: AGE_REVIEW_KEYS }
+const REAGE_SHAPE = { ...AGE_BARRIER_SCHEMA, required: [...AGE_REVIEW_KEYS, 'reviewed_slugs'] }
 
 const CURE_SCHEMA = {
   type: 'object',
@@ -384,7 +393,9 @@ const isNeedsContext = (v) => typeof v.status === 'string' && /^needs-context(?:
 const checkCookShape = checkWith(COOK_SCHEMA)
 const checkCook = (v) => (v !== null && typeof v === 'object' && isNeedsContext(v) ? [] : checkCookShape(v))
 const checkSalvage = checkWith(SALVAGE_SCHEMA, (v) => (v.found ? shaErrors('$.checkpoint', v.checkpoint) : []))
-const checkTaste = checkWith(TASTE_SCHEMA, (v) => enumErrors('$.verdict', v.verdict, ['pass', 'revise'], substance))
+const checkTasteShape = checkWith(TASTE_SHAPE, (v) => enumErrors('$.verdict', v.verdict, ['pass', 'revise'], substance))
+// A blocked taste answer has no verdict. A formatter must not invent one, so it fails as substance with the reason kept.
+const checkTaste = (v) => (splitBlocked(v).status === 'blocked' ? [substance(`taste reviewer is blocked: ${sanitizeReason(v.reason || 'no reason given')}`)] : checkTasteShape(v))
 // The overall verdict is revise when any lens is revise. Code applies that rule, so a pass over a revise lens never plates.
 const tasteOf = (t) => (t.lenses.some((l) => typeof l.verdict === 'string' && l.verdict.trim().toLowerCase() === 'revise') ? { ...t, verdict: 'revise' } : t)
 const checkCorrect = checkWith(CORRECT_SCHEMA, (v) => statusErrors(v, FIX_STATUSES), (v) => (v.committed ? shaErrors('$.head_sha', v.head_sha) : []))
@@ -405,9 +416,25 @@ const findingErrors = (v) => v.findings.flatMap((f, i) => [
   ...enumErrors(`$.findings[${i}].severity`, f.severity, FINDING_SEVERITIES),
   ...enumErrors(`$.findings[${i}].fix_cost_now`, f.fix_cost_now, FIX_COSTS),
 ])
-const checkAge = checkWith(AGE_BARRIER_SCHEMA, (v) => statusErrors(v, AGE_STATUSES), findingErrors)
+// A reviewer may answer status "blocked: <reason>" as one string (reviewer.md). Code splits it into status and reason.
+// A halt is a blocked review too. Every caller still treats a status other than ok as no review.
+const BLOCKED_STATUS_RE = /^(blocked|halt)\s*:\s*(.+)$/i
+const splitBlocked = (v) => {
+  const m = v !== null && typeof v === 'object' && typeof v.status === 'string' ? BLOCKED_STATUS_RE.exec(v.status.trim()) : null
+  if (m) {
+    v.status = 'blocked'
+    v.reason = typeof v.reason === 'string' && v.reason.trim() ? v.reason : m[2]
+  }
+  return v
+}
+// A blocked answer carries no findings, so it skips the review shape. It stays blocked, so no caller reads it as a review.
+const reviewCheck = (...checks) => {
+  const full = checkWith(...checks)
+  return (v) => (splitBlocked(v).status === 'blocked' ? [] : full(v))
+}
+const checkAge = reviewCheck(AGE_BARRIER_SHAPE, (v) => statusErrors(v, AGE_STATUSES), findingErrors)
 // An incremental re-age that skipped its range reviewed nothing, so the answer fails the check.
-const checkReage = checkWith(REAGE_SCHEMA,
+const checkReage = reviewCheck(REAGE_SHAPE,
   (v) => statusErrors(v, AGE_STATUSES),
   (v) => (v.mode === 'skipped-unchanged' ? [substance('re-age must review the cure commits; return mode incremental')] : []),
   findingErrors)
@@ -683,20 +710,21 @@ const pinHeadStep = (head) => `First run \`git checkout --detach ${head}\` and c
 
 const FINDINGS_RETURN = '"findings":[{"dimension":"...","severity":"blocker|high|medium|low","fix_cost_now":"contained|sprawling|n/a","file":"<repo-relative path>","line":<n>,"claim":"...","why_it_matters":"...","fix_direction":"..."}]'
 
-function ageBarrierPrompt(head, refs) {
+// One rule for both barriers. A blocked answer keeps the required keys, so no formatter repair runs.
+const BLOCKED_RULE = 'Set status to ok, or to exactly blocked when the review cannot run. A blocked answer puts the cause in reason and still returns has_medium_plus_findings: false and findings: [].'
+
+function ageBarrierPrompt(head) {
   return reviewerPrompt('severity-report', `You are a read-only opus reviewer running the Age barrier of the /cheese-factory workflow over the integration head that merges the surviving curd branches.
 
 ${pinHeadStep(head)}
 
 Run \`/age origin/main...${head} --auto\` via the Skill tool over the whole integrated diff.
 
-Curd branches in this integration:
-${data('branches', refs)}
 Report every finding in one flat list with its repo-relative file. Do not attribute findings to curds; code does that. Set fix_cost_now to contained, sprawling, or n/a for each finding.
 
 ${NO_CHAIN_DIRECTIVE} In particular: do NOT invoke /cure yourself even if /age --auto documents that chain.
 
-Set status to ok, or to blocked when the review cannot run; a blocked answer puts the cause in reason.
+${BLOCKED_RULE}
 
 Return {"status":"ok","artifact":"<.cheese/age/... report path>","worktree_path":"<git rev-parse --show-toplevel>","has_medium_plus_findings":true|false,"has_cheap_lows":true|false,${FINDINGS_RETURN}}.`)
 }
@@ -717,7 +745,7 @@ Report every finding in one flat list with its repo-relative file. Do not attrib
 
 ${NO_CHAIN_DIRECTIVE} In particular: do NOT invoke /cure yourself even if /age --auto documents that chain.
 
-Set status to ok, or to blocked when the review cannot run; a blocked answer puts the cause in reason.
+${BLOCKED_RULE}
 
 Return {"status":"ok","mode":"incremental","artifact":"<.cheese/age/... report path>","worktree_path":"<git rev-parse --show-toplevel>","has_medium_plus_findings":true|false,"has_cheap_lows":true|false,"reviewed_slugs":["<slug>", ...],${FINDINGS_RETURN}}.`)
 }
@@ -968,7 +996,8 @@ if (integrate && integratedRefs.length) {
   if (useFanout) {
     try {
       let fan = await workflow('age-fanout', { worktree_path: integrate.worktree_path, range: `origin/main...${integrate.head}`, slug: parentSlug, route_curds: integratedRefs.map(({ slug, branch }) => ({ slug, branch })) })
-      if (!fan || fan.status !== 'ok') throw new Error((fan && fan.error) || 'age-fanout returned non-ok')
+      splitBlocked(fan)
+      if (!fan || fan.status !== 'ok') throw new Error((fan && (fan.error || fan.reason)) || 'age-fanout returned non-ok')
       let fanErrors = checkAge(fan)
       if (fanErrors.length && fanErrors.every((e) => e.kind === 'form')) {
         const fixed = await attempt(repairPrompt(fan, fanErrors), { label: 'age:fanout:repair1', phase: 'Age', schema: AGE_BARRIER_SCHEMA, model: 'haiku', effort: 'low' })
@@ -986,7 +1015,7 @@ if (integrate && integratedRefs.length) {
     }
   }
   if (!ageResult) {
-    const aged = await typed(ageBarrierPrompt(integrate.head, integratedRefs), { label: 'age:barrier', phase: 'Age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: AGE_BARRIER_SCHEMA }, checkAge)
+    const aged = await typed(ageBarrierPrompt(integrate.head), { label: 'age:barrier', phase: 'Age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: AGE_BARRIER_SCHEMA }, checkAge)
     if (!aged.value) log(`Barrier age returned no valid result (${errorText(aged.errors)}) — integrated curds cannot be verified; excluding them from plate.`)
     else if (aged.value.status !== 'ok') {
       ageBlocked = sanitizeReason(aged.value.reason || aged.value.status)

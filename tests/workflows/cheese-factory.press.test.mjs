@@ -165,6 +165,70 @@ test('agePrompt_whitespacePaddedIntegrateHead_namesCleanRangeAndPin', async () =
   assert.ok(prompt.includes(`git checkout --detach ${HEAD}\``), 'pin must name the bare SHA')
 })
 
+test('ageBarrierPrompt_blockedRule_requiresEmptyFindingsKeysAndOmitsBranchList', async () => {
+  const { trace } = await runParent()
+
+  const prompt = callsOf(trace, 'age:barrier')[0].prompt
+  assert.ok(prompt.includes('still returns has_medium_plus_findings: false and findings: []'))
+  assert.equal(prompt.includes('<data name="branches">'), false, 'the barrier does not use the branch list')
+})
+
+test('reagePrompt_blockedRule_requiresEmptyFindingsKeysAndKeepsBranchList', async () => {
+  const { trace } = await runParent({ ...withMedium, ...cureLoop, 'age:reage': () => ageResult({ reviewed: ['parent'], extra: { mode: 'incremental' } }) })
+
+  const prompt = callsOf(trace, 'age:reage')[0].prompt
+  assert.ok(prompt.includes('still returns has_medium_plus_findings: false and findings: []'))
+  assert.ok(prompt.includes('<data name="branches">'), 'reviewed_slugs needs the branch list')
+})
+
+for (const [name, status, reason] of [['blocked', 'blocked: cannot read the diff', 'cannot read the diff'], ['halt', 'halt: repo missing', 'repo missing'], ['upperCaseSpaced', 'BLOCKED : cannot read the diff', 'cannot read the diff']]) {
+  test(`checkAge_${name}CombinedStatus_keepsReasonAndRunsNoRedoOrRepair`, async () => {
+    const { result, trace } = await runParent({ 'age:barrier': () => ({ status }) })
+
+    assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('age:barrier')), ['age:barrier'])
+    assert.equal(result.curds[0].excluded_reason, `age: barrier age blocked: ${reason}`)
+    assert.equal(callsOf(trace, 'plate').length, 0)
+  })
+}
+
+test('checkAge_blockedAnswerWithOnlyStatusAndReason_isBlockedWithoutRepair', async () => {
+  const { result, trace } = await runParent({ 'age:barrier': () => ({ status: 'blocked', reason: 'skill failed' }) })
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('age:barrier')), ['age:barrier'])
+  assert.equal(result.curds[0].excluded_reason, 'age: barrier age blocked: skill failed')
+  assert.equal(callsOf(trace, 'plate').length, 0)
+})
+
+test('checkAge_okStatusWithoutRequiredKeys_stillFailsTheShapeCheck', async () => {
+  const { trace } = await runParent({ 'age:barrier': () => ({ status: 'ok' }) })
+
+  assert.ok(labelsOf(trace).includes('age:barrier:repair1'), 'an ok answer must still carry the review keys')
+})
+
+test('checkReage_blockedCombinedStatus_keepsReasonAndRunsNoRedoOrRepair', async () => {
+  const { result, trace } = await runParent({ ...withMedium, ...cureLoop, 'age:reage': () => ({ status: 'blocked: skill unavailable' }) })
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('age:reage')), ['age:reage'])
+  assert.equal(result.curds[0].status, 'dirty')
+  assert.equal(result.curds[0].excluded_reason, 're-age blocked: skill unavailable')
+})
+
+test('ageFanout_blockedCombinedStatus_fallsBackToBarrierAndLogsTheReason', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({ respond: responder(twoDefaults, {}) })
+  await workflow.run({ ...globals, args: { spec: 'parent' }, workflow: async () => ({ status: 'blocked: packet failed' }) })
+
+  assert.ok(trace.logs.some((l) => l.includes('age-fanout unavailable (packet failed)')))
+})
+
+test('checkTaste_blockedCombinedStatus_failsAsSubstanceWithReasonAndNoFormatterRepair', async () => {
+  const { result, trace } = await runParent({ 'taste:parent': () => ({ status: 'blocked: cannot read the diff' }) })
+
+  assert.equal(labelsOf(trace).some((l) => l.startsWith('taste:parent:repair')), false)
+  assert.equal(result.curds[0].status, 'failed')
+  assert.match(result.curds[0].excluded_reason, /taste reviewer is blocked: cannot read the diff/)
+})
+
 // ---- head_sha trimming and checkpoint (AC-2, AC-12, AC-13) ----
 
 test('writerHandoff_whitespacePaddedHeadSha_nextPromptsCarryBareSha', async () => {
