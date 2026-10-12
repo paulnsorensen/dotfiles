@@ -16,6 +16,8 @@
 ## Gotchas
 
 - **mise shims for cargo binaries are not duplicates.** mise's `rust` entry is a symlink to `~/.cargo/bin`, so mise makes a shim for every `cargo install` binary. `bd_check_shadows` counts a shim only when a non-cargo mise bin dir holds that command.
+- **A shim stands for the file it forwards to.** npm globals live in mise's node bin dir, which is also on PATH. Before 2026-10-12, `bd_check_shadows` reported each such shim as `mise` beside the `npm` copy, which gave 9 false findings. It now classifies a shim by the first mise bin dir file that holds the command, so the shim and the npm copy collapse into one.
+- **`brew uninstall` autoremoves orphans.** Removing brew `node` on 2026-10-12 also removed `usage`, which `brew leaves` listed but brew had recorded as a dependency. Check `brew leaves` after any uninstall.
 - **Deleting rustup's proxies from `~/.cargo/bin` is safe only with brew rustup on PATH.** The mise `rust` pin sets `RUSTUP_TOOLCHAIN`; any rustup proxy then selects the pinned toolchain.
 - **`cargo uninstall` refuses a crate whose binary is already gone** ("corrupt metadata"). Remove its entries from `~/.cargo/.crates.toml` and `~/.cargo/.crates2.json`.
 - **Check both PATHs.** Interactive zsh (`mise activate`) and non-interactive shells (mise shims from `zshenv`) resolve differently; agents and timers use the non-interactive one.

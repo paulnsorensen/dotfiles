@@ -89,10 +89,11 @@ bd_mise_bin_dirs() {
 
 # bd_check_shadows [allow-file] — one `shadow` finding per command that two
 # or more managers provide. System copies (/usr/bin and friends) and dotfiles
-# wrappers are expected and never count. A mise shim counts as mise only when
-# a real mise bin dir holds that command; otherwise it only forwards to
-# another manager's copy. The detail lists each manager's first copy as
-# manager=path, in PATH order, so the winner comes first.
+# wrappers are expected and never count. A mise shim stands for the file it
+# forwards to: the command in the first real mise bin dir that holds it. A
+# shim with no such file only forwards to another manager's copy and is
+# skipped. The detail lists each manager's first copy as manager=path, in
+# PATH order, so the winner comes first.
 bd_check_shadows() {
     local allow="${1:-}" dir entry name path manager managers copies current
     local mise_dirs hits
@@ -107,7 +108,7 @@ bd_check_shadows() {
                 [[ -f "$entry" && -x "$entry" ]] || continue
                 name="${entry##*/}"
                 if [[ "$dir" == */mise/shims ]]; then
-                    bd__in_dirs "$name" "$mise_dirs" || continue
+                    entry="$(bd__find_in_dirs "$name" "$mise_dirs")" || continue
                 fi
                 printf '%s\t%s\n' "$name" "$entry"
             done
@@ -138,12 +139,12 @@ bd_check_shadows() {
     }
 }
 
-# bd__in_dirs <name> <newline-separated dirs> — succeed when a dir holds an
-# executable <name>.
-bd__in_dirs() {
+# bd__find_in_dirs <name> <newline-separated dirs> — print <dir>/<name> for
+# the first dir that holds an executable <name>; fail when none does.
+bd__find_in_dirs() {
     local name="$1" dir
     while IFS= read -r dir; do
-        [[ -n "$dir" && -x "$dir/$name" ]] && return 0
+        [[ -n "$dir" && -x "$dir/$name" ]] && { printf '%s\n' "$dir/$name"; return 0; }
     done <<< "$2"
     return 1
 }
