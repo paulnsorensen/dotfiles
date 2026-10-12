@@ -122,7 +122,7 @@ The `cheese-factory-hardening` run implements ADR-011, ADR-012, and ADR-013. Rev
 - **Fail-closed reviews.** A barrier, fan-out, or re-age result whose status is not `ok` is not a review. A blocked barrier fails every integrated curd. A blocked re-age after a cure marks every integrated curd dirty.
 - **Plate pin.** Plate checks `refs/heads/curd/<slug>` against the reviewed SHA once, before /plate starts any commit, restack, or push step. A check at push time conflicts with the stacked restack, which rewrites upper-layer SHAs.
 - **Typed calls.** A status or SHA error is a substance error, so the producer redoes the call. No formatter repairs it. Every `agent()` throw is final. Cook is the exception: its status and SHA defects stay final, as above.
-- **Coder Skill grant (user decision, 2026-10-12).** The cook, press, and cure prompts run their skill through the Skill tool, so the `coder` type grants Skill. The grant adds the skill listing to every coder spawn.
+- **Writers read skill files (user decision, 2026-10-12).** The `coder` type has no Skill tool, because the Skill tool adds the full skill listing (about 11k tokens) to every coder spawn. The cook, press, and cure prompts tell the writer to read `~/.claude/skills/<name>/SKILL.md` and follow it, as age-fanout does for the reviewer.
 - **Code-owned checks.** A taste pass over a `revise` lens counts as `revise`. A resolved spec must carry `curd_count`. A decomposition above `LIMITS.maxCurds` (12) is a substance error, which keeps a run under the 1000-agent cap.
 
 _Source: `claude/workflows/cheese-factory.js`, `claude/workflows/age-fanout.js`, `tests/workflows/cheese-factory*.test.mjs` · Age reports `.cheese/age/pass{1,2}-cheese-factory-hardening.md` · Updated: 2026-10-12_

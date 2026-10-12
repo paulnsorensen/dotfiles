@@ -288,6 +288,13 @@ test('cure runs and a clean re-age keeps the curd in plate', async () => {
   assert.ok(labels.includes('age:reage'))
   assert.equal(result.curds[0].status, 'clean')
   assert.equal(result.curds[0].pr_url, 'https://example.test/pr/parent')
+  // The coder agent type has no Skill tool, so each writer reads its skill file.
+  for (const [label, skill] of [['cook:parent', 'cook'], ['press:parent', 'press'], ['cure:parent', 'cure']]) {
+    const writer = trace.agents.find(({ opts }) => opts.label === label)
+    assert.equal(writer.opts.agentType, 'coder', label)
+    assert.ok(writer.prompt.includes(`Read ~/.claude/skills/${skill}/SKILL.md and follow it.`), label)
+    assert.equal(/via the Skill tool/.test(writer.prompt), false, label)
+  }
 })
 
 test('re-age still medium+ marks the curd dirty and excludes it from plate', async () => {

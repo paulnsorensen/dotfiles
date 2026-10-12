@@ -533,6 +533,14 @@ function codeFields(branch) {
 Scope fence: work ONLY this curd's scope. Do NOT touch sibling curds' files. Do NOT push, open a PR, or merge — /cheese-factory's plate barrier handles publication after every curd chain finishes.`
 }
 
+// The coder agent type has no Skill tool, because the skill listing costs every coder spawn about 11k tokens.
+// A writer therefore reads the skill file and follows it.
+const skillStep = (name, args) => [
+  `Run /${name} with the arguments \`${args}\`.`,
+  `The Skill tool is not available to you. Read ~/.claude/skills/${name}/SKILL.md and follow it.`,
+  `Resolve a skills/${name}/ path in that file under ~/.claude/. Resolve a references/ path in it under ~/.claude/skills/${name}/.`,
+].join(' ')
+
 // Every writer runs in its own isolated worktree on a detached HEAD. The curd branch moves by ref, so no worktree holds it.
 const writerStep = (slug, start) => [
   'You are in a fresh isolated worktree. Edit only inside it.',
@@ -550,7 +558,7 @@ Immediately after the checkout and before any work, run git update-ref refs/head
 
 ${codeFields(branch)}
 
-Run \`/cook ${curd.spec_path} --auto\` via the Skill tool.
+${skillStep('cook', `${curd.spec_path} --auto`)}
 
 ${NO_CHAIN_DIRECTIVE}
 
@@ -569,7 +577,7 @@ ${data('remaining', resume.remaining)}
 ${data('checkpoint', resume.checkpoint)}
 ${data('source_ranges', resume.source_ranges)}
 
-Read the source ranges first. Then resume \`/cook ${curd.spec_path} --auto\` via the Skill tool and complete ONLY the remaining acceptance criteria. Do not redo completed work. Do not run a blanket WIP commit.
+Read the source ranges first. Then resume the cook. ${skillStep('cook', `${curd.spec_path} --auto`)} Complete ONLY the remaining acceptance criteria. Do not redo completed work. Do not run a blanket WIP commit.
 
 ${codeFields(branch)}
 
@@ -637,7 +645,7 @@ ${writerStep(curd.slug, start)}
 
 ${handoff}
 
-Run \`/press ${curd.slug} --auto\` via the Skill tool.
+${skillStep('press', `${curd.slug} --auto`)}
 
 Done means: the repository gate exits 0 (\`just check\` when the justfile defines check), and your work is committed locally on ${branch}.
 Scope fence: this curd's files only. Commit locally. Do not push, open a PR, or merge.
@@ -721,7 +729,7 @@ function curePrompt(curd, start, findings, reviewedHead) {
 ${writerStep(curd.slug, start)}
 
 The findings below come from a review of integration head ${reviewedHead}.
-Run \`/cure --auto --stake medium+\` via the Skill tool, giving it this routed finding list as its input (the /cure skill accepts a finding list directly). The floor selects every blocker, high, and medium finding, plus every low with fix_cost_now: contained:
+${skillStep('cure', '--auto --stake medium+')} Give /cure this routed finding list as its input. The /cure skill accepts a finding list directly. The floor selects every blocker, high, and medium finding, plus every low with fix_cost_now: contained:
 ${data('findings', findings)}
 
 Never ask which findings to cure and never render a selection gate. Apply sprawling and structural findings too. Defer a finding only when it rests on a false premise or conflicts with another finding, and record why in the cure report.

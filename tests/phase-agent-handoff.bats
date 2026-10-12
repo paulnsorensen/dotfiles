@@ -358,15 +358,14 @@ block_sha() {
     # message before the agent reads its task — it is an auto-invoke list, not
     # an availability list. Measured at 32,740 tokens for the old six-skill
     # list: 52% of the then-130k context ceiling burned before the first tool call.
-    # Required role discipline is inlined in the body. The Skill TOOL is a
-    # separate grant; see the Skill-grant test below.
+    # Required role discipline is inlined in the body; Skill stays ungranted.
     run yq '.agents.coder.skills | join(" ")' "$registry"
     assert_success
     [[ -z "$output" ]] || { echo "coder must carry no frontmatter skills (auto-invoked at spawn, costs context): $output" >&2; return 1; }
 }
 
 
-@test "only coder and reviewer retain Skill; no subagent retains Agent" {
+@test "only reviewer retains Skill; no subagent retains Agent" {
     local registry="$AGENTS_DIR/registry.yaml"
     local skill_grants agent_grants
     skill_grants=$(yq -oj '.agents' "$registry" | jq -r '
@@ -378,8 +377,8 @@ block_sha() {
                 (((.value.disallowedTools // []) | index("Skill")) == null)
             end
         )
-        | .key' | sort | paste -sd' ')
-    [[ "$skill_grants" == "coder reviewer" ]] || {
+        | .key')
+    [[ "$skill_grants" == "reviewer" ]] || {
         echo "unexpected Skill grants: $skill_grants" >&2
         return 1
     }
