@@ -102,6 +102,39 @@ test('#14: cleanup drops --force, checks HEAD against recorded SHAs, and keeps b
   assert.ok(prompt.slice(prompt.indexOf('<data name="recorded_shas">')).includes(sha(2)))
 })
 
+test('#14: cleanup records the cook head and each corrective head', async () => {
+  const CORRECTIVE_SHA = sha(0xc0a)
+  let tastes = 0
+  const { trace } = await run(['parent'], {
+    integrate: integrateResult({ merged: ['parent'], files_by_slug: { parent: ['src/parent.js'] } }),
+    'taste:parent': () => ({ verdict: 'revise', lenses: [{ lens: 'readability', verdict: 'revise', note: 'tidy' }], issues: ['tidy'], recommendation: 'revise' }),
+    'correct:parent:r1': { status: 'fixed', committed: true, head_sha: CORRECTIVE_SHA, worktree_path: SCRATCH('correct-parent'), summary: 'tidied' },
+    'taste:parent:r1': () => { tastes++; return taste() },
+  }, ageResult({ reviewed: ['parent'] }))
+  assert.equal(tastes, 1)
+  const prompt = callsOf(trace, 'cleanup')[0].prompt
+  const recorded = prompt.slice(prompt.indexOf('<data name="recorded_shas">'))
+  assert.ok(recorded.includes(sha(1)), 'cook head recorded')
+  assert.ok(recorded.includes(CORRECTIVE_SHA), 'corrective head recorded')
+  assert.ok(recorded.includes(sha(2)), 'press head recorded')
+})
+
+test('#14: the taste prompt names the curd contract under a Contract heading', async () => {
+  const { trace } = await single()
+  const prompt = callsOf(trace, 'taste:parent')[0].prompt
+  const section = prompt.slice(prompt.indexOf('## Contract'), prompt.indexOf('Diff under review'))
+  assert.ok(prompt.includes('## Contract'))
+  assert.match(section, /<data name="spec_path">\s*"\/specs\/parent\.md"/)
+})
+
+test('#14: the taste prompt for a fan-out curd names its mini-spec and brief', async () => {
+  const slugs = ['a', 'b']
+  const files = { a: ['src/a.js'], b: ['src/b.js'] }
+  const { trace } = await run(slugs, { integrate: integrateResult({ merged: slugs, files_by_slug: files }) }, ageResult({ reviewed: slugs }))
+  const prompt = callsOf(trace, 'taste:a')[0].prompt
+  assert.match(prompt, /## Contract[\s\S]*"\/specs\/parent--a\.md"[\s\S]*"do a"[\s\S]*Diff under review/)
+})
+
 test('#14: cleanup does not run when a curd is dirty', async () => {
   const { trace, bySlug } = await single([finding('src/elsewhere.js')])
   assert.equal(bySlug.parent.status, 'dirty')

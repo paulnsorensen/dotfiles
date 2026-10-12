@@ -761,6 +761,11 @@ const salvagePrompt = (curd, baseSha) => {
 function tastePrompt(curd, sha) {
   return reviewerPrompt('taste-test', `You are a read-only taste-tester running the Taste phase (5-lens gate) for curd "${curd.slug}".
 
+## Contract
+The curd's contract is its spec. Read the spec file and judge the diff against its Done means and locked decisions.
+${data('spec_path', curd.spec_path)}
+${curd.brief ? data('brief', curd.brief) : ''}
+
 Diff under review: \`git diff origin/main...${sha}\` (read-only — do not check out or edit anything).
 
 ## Lenses (judge each pass | revise | halt)
@@ -1094,6 +1099,10 @@ async function tasteAt(curd, sha, label) {
   return taste.verdict === 'halt' ? { failure: `taste halted: ${tasteHaltNote(taste)}` } : { taste }
 }
 
+// Cook and corrective heads are overwritten in the chain records, so this set keeps them for cleanup.
+const chainHeads = new Set()
+const noteHead = (s) => { if (typeof s === 'string') chainHeads.add(s) }
+
 const chainResults = await pipeline(
   curds,
 
@@ -1105,6 +1114,7 @@ const chainResults = await pipeline(
     const { curd } = prev
     if (prev.failure) return stageRecord(prev, {}, prev.failure)
     let current = prev.sha
+    noteHead(current)
     const tasted = await tasteAt(curd, current, `taste:${curd.slug}`)
     if (tasted.failure) return stageRecord(prev, {}, stageFailure('taste', tasted.failure))
     let taste = tasted.taste
@@ -1120,6 +1130,7 @@ const chainResults = await pipeline(
         break
       }
       current = correction.head_sha
+      noteHead(current)
       const retasted = await tasteAt(curd, current, `taste:${curd.slug}:r${round}`)
       if (retasted.failure) return stageRecord(prev, { sha: current, taste }, stageFailure('taste', retasted.failure))
       taste = retasted.taste
@@ -1374,7 +1385,7 @@ log(`Report: ${curdsOut.length} curd(s) — clean:${summary.clean} dirty:${summa
 // Worktrees that hold age reports stay, even when a writer also reported them.
 const removable = [...scratchWorktrees].filter((p) => !reportWorktrees.has(p)).sort()
 if (curdsOut.length && curdsOut.every((c) => c.status === 'clean' && platedBySlug.has(c.slug)) && removable.length) {
-  const recordedShas = [...new Set([integrate && integrate.head, remerge && remerge.head, ...chainResults.map((r) => r && r.sha), ...[...cureBySlug.values()].map((c) => c && c.head_sha), ...withStatus.map((r) => r && r.sha)].filter((s) => typeof s === 'string' && s.trim()).map((s) => s.trim()))].sort()
+  const recordedShas = [...new Set([integrate && integrate.head, remerge && remerge.head, ...chainResults.map((r) => r && r.sha), ...[...cureBySlug.values()].map((c) => c && c.head_sha), ...withStatus.map((r) => r && r.sha), ...chainHeads].filter((s) => typeof s === 'string' && s))].sort()
   const cleaned = await typed(cleanupPrompt(removable, recordedShas), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, checkCleanup)
   if (!cleaned.value) log(`Worktree cleanup returned no valid result (${errorText(cleaned.errors)}).`)
 }
