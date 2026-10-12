@@ -182,9 +182,10 @@ const TASTE_SCHEMA = {
 
 const CORRECT_SCHEMA = {
   type: 'object',
-  required: ['status', 'committed'],
+  required: ['status'],
   properties: { status: { type: 'string' }, summary: { type: 'string' }, committed: { type: 'boolean' }, head_sha: { type: 'string' }, worktree_path: { type: 'string' } },
 }
+const CORRECT_SHAPE = { ...CORRECT_SCHEMA, required: ['status', 'committed'] }
 
 const PHASE_SCHEMA = {
   type: 'object',
@@ -240,17 +241,18 @@ const AGE_BARRIER_SCHEMA = {
   },
 }
 
-// The re-age answer also lists the curds it covered, so code can tell a clean curd from a missing one.
-const REAGE_SCHEMA = AGE_BARRIER_SCHEMA
 const TASTE_SHAPE = { ...TASTE_SCHEMA, required: ['verdict', 'lenses', 'issues'] }
 const AGE_BARRIER_SHAPE = { ...AGE_BARRIER_SCHEMA, required: AGE_REVIEW_KEYS }
+// The re-age answer also lists the curds it covered, so code can tell a clean curd from a missing one.
 const REAGE_SHAPE = { ...AGE_BARRIER_SCHEMA, required: [...AGE_REVIEW_KEYS, 'reviewed_slugs'] }
 
 const CURE_SCHEMA = {
   type: 'object',
-  required: ['status', 'committed'],
-  properties: { status: { type: 'string' }, committed: { type: 'boolean' }, head_sha: { type: 'string' }, worktree_path: { type: 'string' }, artifact: { type: 'string' } },
+  required: ['status'],
+  properties: { status: { type: 'string' }, committed: { type: 'boolean' }, head_sha: { type: 'string' }, worktree_path: { type: 'string' }, artifact: { type: 'string' }, orientation: { type: 'string' } },
 }
+// A stopped writer (blocked or needs-context) may omit committed, so code restores the required key for every other answer.
+const CURE_SHAPE = { ...CURE_SCHEMA, required: ['status', 'committed'] }
 
 const CLEANUP_SCHEMA = {
   type: 'object',
@@ -342,6 +344,7 @@ const SHA_RE = /^[0-9a-f]{40}$/
 // typed() trims every SHA field before a check runs, so a padded SHA never reaches this test.
 const shaErrors = (path, value) =>
   (typeof value === 'string' && SHA_RE.test(value) ? [] : [substance(`${path} must be a 40-hex commit SHA`)])
+const TASTE_VERDICTS = ['pass', 'revise', 'halt']
 const FIX_STATUSES = ['fixed', 'partial', 'blocked']
 const PRESS_STATUSES = ['ok', 'partial', 'blocked']
 const AGE_STATUSES = ['ok', 'blocked']
@@ -404,13 +407,34 @@ const isNeedsContext = (v) => typeof v.status === 'string' && /^needs-context(?:
 const checkCookShape = checkWith(COOK_SCHEMA)
 const checkCook = (v) => (v !== null && typeof v === 'object' && isNeedsContext(v) ? [] : checkCookShape(v))
 const checkSalvage = checkWith(SALVAGE_SCHEMA, (v) => (v.found ? shaErrors('$.checkpoint', v.checkpoint) : []))
-const checkTasteShape = checkWith(TASTE_SHAPE, (v) => enumErrors('$.verdict', v.verdict, ['pass', 'revise'], substance))
-// A blocked taste answer has no verdict. A formatter must not invent one, so it fails as substance with the reason kept.
-const checkTaste = (v) => (splitBlocked(v).status === 'blocked' ? [substance(`taste reviewer is blocked: ${sanitizeReason(v.reason || 'no reason given')}`)] : checkTasteShape(v))
-// The overall verdict is revise when any lens is revise. Code applies that rule, so a pass over a revise lens never plates.
-const tasteOf = (t) => (t.lenses.some((l) => typeof l.verdict === 'string' && l.verdict.trim().toLowerCase() === 'revise') ? { ...t, verdict: 'revise' } : t)
-const checkCorrect = checkWith(CORRECT_SCHEMA, (v) => statusErrors(v, FIX_STATUSES), (v) => (v.committed ? shaErrors('$.head_sha', v.head_sha) : []))
-const checkPress = checkWith(PHASE_SCHEMA, (v) => statusErrors(v, PRESS_STATUSES), (v) => (v.status === 'ok' ? shaErrors('$.head_sha', v.head_sha) : []))
+const checkTasteShape = checkWith(TASTE_SHAPE, (v) => enumErrors('$.verdict', v.verdict, TASTE_VERDICTS, substance))
+// A blocked taste answer is final, as in the barrier reviews. It has no verdict and no redo runs; tasteAt fails the curd with the reason.
+const checkTaste = (v) => (splitBlocked(v).status === 'blocked' ? [] : checkTasteShape(v))
+const lensVerdict = (l) => (typeof l.verdict === 'string' ? l.verdict.trim().toLowerCase() : '')
+// Any halt lens or halt verdict makes the overall verdict halt. Otherwise any revise lens makes it revise.
+// Code applies both rules, so a pass over a revise or halt lens never reaches Press.
+const tasteOf = (t) => {
+  const lenses = t.lenses.map(lensVerdict)
+  if (t.verdict === 'halt' || lenses.includes('halt')) return { ...t, verdict: 'halt' }
+  return lenses.includes('revise') ? { ...t, verdict: 'revise' } : t
+}
+const tasteHaltNote = (t) => {
+  const notes = t.lenses.filter((l) => lensVerdict(l) === 'halt').map((l) => `${l.lens}: ${l.note || 'no note'}`)
+  return sanitizeReason(notes.length ? notes.join('; ') : t.issues.join('; ') || 'no note')
+}
+// A writer that stops answers blocked (also as "blocked: <reason>") or needs-context. That is a final answer: no redo runs.
+// The caller fails the stage and keeps the reason. Any other out-of-enum status still redoes.
+const writerStopped = (v) => v !== null && typeof v === 'object' && (splitBlocked(v).status === 'blocked' || isNeedsContext(v))
+const writerCheck = (shape, ...extra) => {
+  const full = checkWith(shape, ...extra)
+  return (v) => (writerStopped(v) ? [] : full(v))
+}
+const stopText = (v) => {
+  const why = v.reason || v.orientation || v.summary
+  return sanitizeReason(`${v.status}${why ? `: ${why}` : ''}`)
+}
+const checkCorrect = writerCheck(CORRECT_SHAPE, (v) => statusErrors(v, FIX_STATUSES), (v) => (v.committed ? shaErrors('$.head_sha', v.head_sha) : []))
+const checkPress = writerCheck(PHASE_SCHEMA, (v) => statusErrors(v, PRESS_STATUSES), (v) => (v.status === 'ok' ? shaErrors('$.head_sha', v.head_sha) : []))
 // merged and conflicted must partition the input slugs, the head must be a full SHA, and every merged slug needs a file list.
 const partitionErrors = (v, slugs) => {
   const seen = [...v.merged, ...v.conflicted]
@@ -453,7 +477,7 @@ const checkReage = reviewCheck(REAGE_SHAPE,
   (v) => statusErrors(v, AGE_STATUSES),
   (v) => (v.mode === 'skipped-unchanged' ? [substance('re-age must review the cure commits; return mode incremental')] : []),
   findingErrors)
-const checkCure = checkWith(CURE_SCHEMA, (v) => statusErrors(v, CURE_STATUSES), (v) => (v.committed ? shaErrors('$.head_sha', v.head_sha) : []))
+const checkCure = writerCheck(CURE_SHAPE, (v) => statusErrors(v, CURE_STATUSES), (v) => (v.committed ? shaErrors('$.head_sha', v.head_sha) : []))
 // A Plate row status outside the enum fails only its own curd (see plateReasonFor). A Plate redo would publish again.
 const checkPlate = checkWith(PLATE_SCHEMA)
 const checkCleanup = checkWith(CLEANUP_SCHEMA)
@@ -735,18 +759,20 @@ const salvagePrompt = (curd, baseSha) => {
 
 // The reviewer reads the diff by SHA, so it needs no worktree of its own.
 function tastePrompt(curd, sha) {
-  return reviewerPrompt('taste-test', `You are a read-only opus reviewer running the Taste phase (5-lens gate) for curd "${curd.slug}".
+  return reviewerPrompt('taste-test', `You are a read-only taste-tester running the Taste phase (5-lens gate) for curd "${curd.slug}".
 
 Diff under review: \`git diff origin/main...${sha}\` (read-only — do not check out or edit anything).
 
-## Lenses (judge each pass | revise)
+## Lenses (judge each pass | revise | halt)
 - drift: the diff implements the curd's intent, not an adjacent or weaker thing.
 - readability: minimal, clean, matches surrounding style.
 - scope: only files traceable to the curd changed.
 - production-path: reachable on the real code path, not just asserted in prose/tests.
 - wired-callers: any changed signature/export has its callers updated.
 
-Return {"verdict":"pass"|"revise","lenses":[{"lens":"...","verdict":"...","note":"..."}],"issues":["..."],"recommendation":"..."}. Overall verdict is revise if any lens is revise.`)
+Use halt only when the diff violates a locked decision of the curd. The exact verdict set, for each lens and for the overall verdict, is pass, revise, or halt.
+
+Return {"verdict":"pass"|"revise"|"halt","lenses":[{"lens":"...","verdict":"...","note":"..."}],"issues":["..."],"recommendation":"..."}. Overall verdict is halt if any lens is halt. Otherwise it is revise if any lens is revise.`)
 }
 
 function correctivePrompt(curd, start, taste) {
@@ -760,6 +786,8 @@ ${data('findings', { issues: taste.issues, lenses: taste.lenses })}
 
 ${doneMeans(branch, 'the fixes are')}
 Scope fence: address ONLY these findings — no scope expansion. Do not push.
+
+The status is exactly one of fixed, partial, or blocked. Put any reason in summary.
 
 Return {"status":"fixed"|"partial"|"blocked","summary":"...","committed":true|false,"head_sha":"<40 hex>","worktree_path":"<git rev-parse --show-toplevel>"}. Set head_sha to your final HEAD.`)
 }
@@ -794,6 +822,8 @@ ${doneMeans(branch)}
 Scope fence: this curd's files only. Commit locally. Do not push, open a PR, or merge.
 
 ${NO_CHAIN_DIRECTIVE}
+
+The status is exactly one of ok, partial, or blocked. Put any reason in orientation.
 
 Return {"status":"ok|partial|blocked","head_sha":"<40 hex>","artifact":"...","worktree_path":"<git rev-parse --show-toplevel>","orientation":"..."}.`)
 }
@@ -879,7 +909,9 @@ Never ask which findings to cure and never render a selection gate. Apply sprawl
 ${doneMeans(branch, 'the fixes are')}
 Scope fence: this curd's files only. Commit locally. Do not push. ${NO_CHAIN_DIRECTIVE}
 
-Return {"status":"ok|partial|blocked","committed":true|false,"head_sha":"<40 hex>","worktree_path":"<git rev-parse --show-toplevel>","artifact":"..."}. Set head_sha to your final HEAD.`)
+The status is exactly one of ok, partial, or blocked. Put any reason in orientation.
+
+Return {"status":"ok|partial|blocked","committed":true|false,"head_sha":"<40 hex>","worktree_path":"<git rev-parse --show-toplevel>","artifact":"...","orientation":"..."}. Set head_sha to your final HEAD.`)
 }
 
 const remergePrompt = (base, refs) => mergePrompt('You are the re-merge step of the Re-age barrier for the /cheese-factory workflow. A cure pass added commits to some curd branches. Rebuild the integration from scratch.', base, refs)
@@ -1053,6 +1085,15 @@ async function salvage(curd) {
 const stageRecord = (prev, over, failure = null) => ({ curd: prev.curd, branch: prev.branch, cook: prev.cook, sha: prev.sha, taste: prev.taste ?? null, press: null, ...over, failure })
 const stageFailure = (stage, message) => ({ stage, message })
 
+// One taste call. Returns { taste } or { failure }. A blocked answer and a halt are final: no redo and no corrective round follows.
+async function tasteAt(curd, sha, label) {
+  const tasted = await typed(tastePrompt(curd, sha), { label, phase: 'Taste', agentType: 'taste-tester', schema: TASTE_SCHEMA }, checkTaste)
+  if (!tasted.value) return { failure: errorText(tasted.errors) }
+  if (tasted.value.status === 'blocked') return { failure: `taste reviewer is blocked: ${sanitizeReason(tasted.value.reason || 'no reason given')}` }
+  const taste = tasteOf(tasted.value)
+  return taste.verdict === 'halt' ? { failure: `taste halted: ${tasteHaltNote(taste)}` } : { taste }
+}
+
 const chainResults = await pipeline(
   curds,
 
@@ -1064,23 +1105,24 @@ const chainResults = await pipeline(
     const { curd } = prev
     if (prev.failure) return stageRecord(prev, {}, prev.failure)
     let current = prev.sha
-    const tasted = await typed(tastePrompt(curd, current), { label: `taste:${curd.slug}`, phase: 'Taste', agentType: 'reviewer', model: 'opus', schema: TASTE_SCHEMA }, checkTaste)
-    if (!tasted.value) return stageRecord(prev, {}, stageFailure('taste', errorText(tasted.errors)))
-    let taste = tasteOf(tasted.value)
+    const tasted = await tasteAt(curd, current, `taste:${curd.slug}`)
+    if (tasted.failure) return stageRecord(prev, {}, stageFailure('taste', tasted.failure))
+    let taste = tasted.taste
     let round = 0
     while (taste.verdict === 'revise' && round < CORRECTIVE_ROUNDS) {
       const corrected = await typed(correctivePrompt(curd, current, taste), { label: `correct:${curd.slug}:r${round + 1}`, phase: 'Taste', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CORRECT_SCHEMA }, checkCorrect)
       if (!corrected.value) return stageRecord(prev, { sha: current, taste }, stageFailure('taste-correct', errorText(corrected.errors)))
       const correction = corrected.value
+      if (writerStopped(correction)) return stageRecord(prev, { sha: current, taste }, stageFailure('taste-correct', `corrective pass stopped: ${stopText(correction)}`))
       round++
       if (!correction.committed) {
         log(`${curd.slug}: corrective round ${round} produced an uncommitted correction — stopping the taste loop.`)
         break
       }
       current = correction.head_sha
-      const retasted = await typed(tastePrompt(curd, current), { label: `taste:${curd.slug}:r${round}`, phase: 'Taste', agentType: 'reviewer', model: 'opus', schema: TASTE_SCHEMA }, checkTaste)
-      if (!retasted.value) return stageRecord(prev, { sha: current, taste }, stageFailure('taste', errorText(retasted.errors)))
-      taste = tasteOf(retasted.value)
+      const retasted = await tasteAt(curd, current, `taste:${curd.slug}:r${round}`)
+      if (retasted.failure) return stageRecord(prev, { sha: current, taste }, stageFailure('taste', retasted.failure))
+      taste = retasted.taste
     }
     return stageRecord(prev, { sha: current, taste })
   },
@@ -1091,6 +1133,7 @@ const chainResults = await pipeline(
     const pressed = await typed(pressPrompt(curd, sha, cookHandoff(cook, curd.slug)), { label: `press:${curd.slug}`, phase: 'Press', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: PHASE_SCHEMA }, checkPress)
     if (!pressed.value) return stageRecord(prev, {}, stageFailure('press', errorText(pressed.errors)))
     const press = pressed.value
+    if (writerStopped(press)) return stageRecord(prev, { press }, stageFailure('press', `press stopped: ${stopText(press)}`))
     if (press.status !== 'ok') return stageRecord(prev, { press }, stageFailure('press', `press returned status ${press.status}`))
     return stageRecord(prev, { sha: press.head_sha, press })
   },
@@ -1169,7 +1212,7 @@ if (routing && !routing.unrouted && routing.bySlug.size) {
   const cures = await parallel(toCure.map((slug) => () => {
     const entry = surviving.find((r) => r.curd.slug === slug)
     return typed(curePrompt(entry.curd, entry.sha, routing.bySlug.get(slug), integrate.head), { label: `cure:${slug}`, phase: 'Cure', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CURE_SCHEMA }, checkCure)
-      .then(({ value, errors }) => ({ slug, cure: value, errors }))
+      .then(({ value, errors }) => (value && writerStopped(value) ? { slug, cure: null, errors: [substance(`cure stopped: ${stopText(value)}`)] } : { slug, cure: value, errors }))
   }))
   cureBySlug = new Map(cures.filter(Boolean).map((c) => [c.slug, c.cure]))
   cureErrorBySlug = new Map(cures.filter((c) => c && !c.cure).map((c) => [c.slug, errorText(c.errors)]))
@@ -1197,7 +1240,7 @@ if ([...cureBySlug.values()].some((c) => c && c.committed)) {
   }
   if (remerge) {
     const prior = toCure.flatMap((slug) => routing.bySlug.get(slug))
-    const reaged = await typed(reagePrompt(integrate.head, remerge.head, integratedRefs, prior), { label: 'age:reage', phase: 'Re-age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: REAGE_SCHEMA }, checkReage)
+    const reaged = await typed(reagePrompt(integrate.head, remerge.head, integratedRefs, prior), { label: 'age:reage', phase: 'Re-age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: AGE_BARRIER_SCHEMA }, checkReage)
     if (!reaged.value) {
       reageBlocked = sanitizeReason(`no valid result (${errorText(reaged.errors)})`)
       log(`Re-age returned no valid result (${errorText(reaged.errors)}) — the re-merged head has no ok review; integrated curds stay dirty.`)
