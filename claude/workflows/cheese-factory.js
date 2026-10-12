@@ -493,12 +493,12 @@ const repairPrompt = (value, errors) => prompt(
   data('object', value),
 )
 
-// Returns { value, errors }. value is null when the bound is spent without a valid answer.
+// Provenance: attempt, typed, and repairPrompt are copied from move-my-cheese.js. This copy differs in three ways.
+// typed takes the nullIsFinal parameter. typed calls noteWorktree on every non-null isolated answer.
+// typed also retries read-only throws, normalizes status and verdict values, and expands short SHAs.
+// Returns { value, errors, lost }. value is null when the bound is spent without a valid answer.
+// lost is 'missing' when the final outcome is no output, 'threw' when it is a throw, and null otherwise.
 // With nullIsFinal, a missing answer returns at once, because a redo of a writer can overwrite the work ref.
-// Exception: a partial cook with a valid checkpoint SHA is never redone. checkCook accepts it, and cookCurd keeps
-// only its valid source_ranges and uses '' for a missing completed or remaining, because a redo resets the curd ref to the base SHA.
-// Every throw from agent() is final, because a writer throw must never be redone: the work ref may have moved.
-// Reviewers follow the same rule for simplicity.
 // Every non-null isolated attempt records its worktree, so a rejected attempt that a redo replaces still gets cleaned up.
 async function attempt(text, opts) {
   try {
@@ -508,17 +508,70 @@ async function attempt(text, opts) {
   }
 }
 
+// A writer is a coder call, or an isolated worktree call that is not a reviewer. All other calls are read-only.
+// A writer throw is final, because the work ref may have moved. A read-only throw retries within LIMITS.fixRounds.
+const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'worktree' && opts.agentType !== 'reviewer')
+
+// A status or verdict that differs only by case or spaces is the same answer. Callers read the normalized value.
+const normalizeEnums = (v) => {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return v
+  const norm = (s) => s.trim().toLowerCase()
+  const out = { ...v }
+  for (const key of ['status', 'verdict']) if (typeof out[key] === 'string') out[key] = norm(out[key])
+  if (Array.isArray(out.results)) out.results = out.results.map((r) => (r && typeof r.status === 'string' ? { ...r, status: norm(r.status) } : r))
+  return out
+}
+
+// A writer that commits but returns a short SHA needs no redo. A read-only haiku call expands the SHA, and code checks the result.
+const SHA_FIELDS = ['head_sha', 'head', 'checkpoint']
+const SHORT_SHA_RE = /^[0-9a-f]{7,16}$/
+const SHA_EXPAND_SCHEMA = { type: 'object', required: ['sha'], properties: { sha: { type: 'string' } } }
+async function expandShortShas(value, opts) {
+  if (value === null || typeof value !== 'object') return null
+  const out = { ...value }
+  let changed = false
+  for (const field of SHA_FIELDS) {
+    const short = typeof value[field] === 'string' ? value[field].trim() : ''
+    if (!SHORT_SHA_RE.test(short)) continue
+    const { value: reply } = await attempt(prompt(
+      'Expand a short commit SHA. Run git rev-parse --verify "<short>^{commit}" in the repo at worktree_path. Use the current directory when worktree_path is empty. Return {"sha":"<40 hex>"}.',
+      data('request', { short, worktree_path: typeof value.worktree_path === 'string' ? value.worktree_path : '' }),
+    ), { label: `${opts.label}:sha`, phase: opts.phase, schema: SHA_EXPAND_SCHEMA, model: 'haiku', effort: 'low' })
+    const full = reply && typeof reply.sha === 'string' ? reply.sha.trim() : ''
+    if (!SHA_RE.test(full) || !full.startsWith(short)) return null
+    out[field] = full
+    changed = true
+  }
+  return changed ? out : null
+}
+
 async function typed(text, opts, check, nullIsFinal = false) {
-  let { value, threw } = await attempt(text, opts)
+  let sent = { text, opts }
+  let { value, threw } = await attempt(sent.text, sent.opts)
+  let expanded = false
   for (let round = 1; ; round++) {
-    if (threw != null) return { value: null, errors: [substance(`agent threw: ${threw}`)] }
-    if (value != null && opts.isolation === 'worktree') noteWorktree(value.worktree_path, opts.agentType === 'reviewer' ? reportWorktrees : scratchWorktrees)
+    if (threw != null) {
+      if (isWriter(opts) || round > LIMITS.fixRounds) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw' }
+      sent = { text: sent.text, opts: { ...sent.opts, label: `${opts.label}:retry${round}` } }
+      ;({ value, threw } = await attempt(sent.text, sent.opts))
+      continue
+    }
+    if (value != null) {
+      value = normalizeEnums(value)
+      if (opts.isolation === 'worktree') noteWorktree(value.worktree_path, opts.agentType === 'reviewer' ? reportWorktrees : scratchWorktrees)
+    }
     const errors = value == null ? [substance('agent returned no output')] : check(value)
-    if (!errors.length) return { value, errors }
-    if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors }
-    ;({ value, threw } = errors.every((e) => e.kind === 'form')
-      ? await attempt(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' })
-      : await attempt(redoPrompt(text, errors), { ...opts, label: `${opts.label}:redo${round}` }))
+    if (!errors.length) return { value, errors, lost: null }
+    if (!expanded && !nullIsFinal && value != null) {
+      expanded = true
+      const full = await expandShortShas(value, opts)
+      if (full && !check(full).length) return { value: full, errors: [], lost: null }
+    }
+    if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null }
+    sent = errors.every((e) => e.kind === 'form')
+      ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' } }
+      : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
+    ;({ value, threw } = await attempt(sent.text, sent.opts))
   }
 }
 
@@ -937,7 +990,7 @@ async function cookCurd(curd, branch) {
     if (round > LIMITS.continuations) return stop(`cook did not finish after ${LIMITS.continuations} continuations`)
     // A missing answer, a throw, a status other than partial, and a partial answer with a bad checkpoint are salvaged from the ref.
     // Salvage only reads the ref. Any other malformed answer fails the curd with its error text.
-    if (!cook && !call.errors.some((e) => e.msg === 'agent returned no output' || e.msg.startsWith('agent threw:'))) return stop(errorText(call.errors))
+    if (!cook && !call.lost) return stop(errorText(call.errors))
     const partial = Boolean(cook) && cook.status === 'partial'
     const checkpointDefect = partial ? shaErrors('$.checkpoint', cook.checkpoint) : []
     const resume = partial && !checkpointDefect.length

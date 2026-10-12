@@ -232,7 +232,7 @@ test('checkReage_blockedCombinedStatus_keepsReasonAndRunsNoRedoOrRepair', async 
 
 test('ageFanout_blockedCombinedStatus_fallsBackToBarrierAndLogsTheReason', async () => {
   const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({ respond: responder(twoDefaults, {}) })
+  const { globals, trace } = createRuntime({ respond: responder(twoDefaults, { 'age:barrier': () => ageResult({ reviewed: ['a', 'b'] }), cleanup: () => ({ removed: [] }) }) })
   await workflow.run({ ...globals, args: { spec: 'parent' }, workflow: async () => ({ status: 'blocked: packet failed' }) })
 
   assert.ok(trace.logs.some((l) => l.includes('age-fanout unavailable (packet failed)')))

@@ -85,6 +85,7 @@ function respondCleanChain({ slug = 'parent' } = {}) {
     if (opts.label === 'integrate') return integrateResult({ merged: [slug] })
     if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug, has_medium_plus_findings: false, findings: [] }] })
     if (opts.label === 'plate') return plate([{ slug, status: 'ok', pr_url: `https://example.test/pr/${slug}` }])
+    if (opts.label === 'cleanup') return { removed: [] }
     throw new Error(`unexpected agent ${opts.label}`)
   }
 }
@@ -94,6 +95,7 @@ test('no spec arg returns candidates and dispatches no phase agent', async () =>
   const { globals, trace } = createRuntime({
     respond: ({ opts }) => {
       if (opts.label === 'resolve') return resolveCandidates(['alpha', 'beta'])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -110,6 +112,7 @@ test('missing spec file fails loud with a usage message', async () => {
   const { globals, trace } = createRuntime({
     respond: ({ opts }) => {
       if (opts.label === 'resolve') return resolveMissing('Usage: /cheese-factory { spec: <slug-or-path> } — spec not found at /nowhere.md')
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -169,6 +172,7 @@ test('decompose merges file-overlapping curds, writes mini-specs, and fans out o
         })
       }
       if (opts.label === 'plate') return plate([{ slug: 'a', status: 'ok', pr_url: 'https://example.test/pr/a' }, { slug: 'c', status: 'ok', pr_url: 'https://example.test/pr/c' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -207,6 +211,7 @@ test('mini-spec agent dropping a curd slug fails loud before any cook agent spaw
           { slug: 'a', spec_path: '/specs/parent--a.md' },
         ])
       }
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -276,6 +281,7 @@ test('cure runs and a clean re-age keeps the curd in plate', async () => {
       if (opts.label === 're-merge') return integrateResult({ merged: ['parent'] })
       if (opts.label === 'age:reage') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
       if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'ok', pr_url: 'https://example.test/pr/parent' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -310,6 +316,7 @@ test('re-age still medium+ marks the curd dirty and excludes it from plate', asy
       if (opts.label === 'cure:parent') return cureResult({ committed: true })
       if (opts.label === 're-merge') return integrateResult({ merged: ['parent'] })
       if (opts.label === 'age:reage') return ageBarrierResult({ hasMediumPlus: true, perCurd: [{ slug: 'parent', has_medium_plus_findings: true, findings: [] }] })
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -330,6 +337,7 @@ test('bounded corrective taste loop caps at correctiveRounds and excludes the cu
       if (opts.label === 'cook:parent') return cook('parent')
       if (opts.label.startsWith('taste:parent')) return taste('revise')
       if (opts.label.startsWith('correct:parent')) return correction(true)
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -353,6 +361,7 @@ test('correctiveRounds above the max of 3 clamps to 3', async () => {
       if (opts.label === 'cook:parent') return cook('parent')
       if (opts.label.startsWith('taste:parent')) return taste('revise')
       if (opts.label.startsWith('correct:parent')) return correction(true)
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -390,6 +399,7 @@ test('plate runs exactly once, after all chains, with only clean curds', async (
       if (opts.label === 'integrate') return integrateResult({ merged: ['good'] })
       if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'good', has_medium_plus_findings: false, findings: [] }] })
       if (opts.label === 'plate') return plate([{ slug: 'good', status: 'ok', pr_url: 'https://example.test/pr/good' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -450,6 +460,7 @@ test('invalid decomposed curd slug is rejected before any phase agent spawns', a
           { slug: 'fine', brief: 'ok', files: ['b.js'] },
         ])
       }
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -472,6 +483,7 @@ test('duplicate decomposed curd slugs are rejected before any phase agent spawns
           { slug: 'dup', brief: 'two', files: ['b.js'] },
         ])
       }
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -501,6 +513,7 @@ test('curds that all overlap transitively merge to one and fall back to single-p
       if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
       if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
       if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'ok', pr_url: 'https://example.test/pr/parent' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -521,6 +534,7 @@ test('correctiveRounds 0 fails a revise verdict immediately with no corrective p
       if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
       if (opts.label === 'cook:parent') return cook('parent')
       if (opts.label === 'taste:parent') return taste('revise')
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -540,6 +554,7 @@ test('an uncommitted correction stops the taste loop and the curd fails', async 
       if (opts.label === 'cook:parent') return cook('parent')
       if (opts.label === 'taste:parent') return taste('revise')
       if (opts.label === 'correct:parent:r1') return correction(false)
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -560,6 +575,7 @@ test('a mid-chain agent error becomes a structured stage failure, not a lost cur
       if (opts.label === 'cook:parent') return cook('parent')
       if (opts.label === 'taste:parent') return taste('pass')
       if (opts.label === 'press:parent') throw new Error('press agent died')
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -577,6 +593,7 @@ test('candidates mode tolerates a missing candidates array', async () => {
   const { globals, trace } = createRuntime({
     respond: ({ opts }) => {
       if (opts.label === 'resolve') return { mode: 'candidates' }
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -592,6 +609,7 @@ test('an invalid parent slug from the resolver fails loud before any phase agent
   const { globals, trace } = createRuntime({
     respond: ({ opts }) => {
       if (opts.label === 'resolve') return resolveResolved({ slug: 'bad slug; rm -rf /' })
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -607,6 +625,7 @@ test('an invalid spec arg fails loud before any phase agent spawns', async () =>
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({
     respond: ({ opts }) => {
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -652,6 +671,7 @@ test('integrate receives slug-sorted curds and small diffs skip the age-fanout w
         })
       }
       if (opts.label === 'plate') return plate([{ slug: 'a', status: 'ok', pr_url: 'https://example.test/pr/a' }, { slug: 'b', status: 'ok', pr_url: 'https://example.test/pr/b' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -683,6 +703,7 @@ test('a large integrated diff dispatches age-fanout with exact workflow args', a
       if (opts.label === 'press:a') return phaseOk('a', 'press')
       if (opts.label === 'integrate') return integrateResult({ merged: ['a'], files_changed: 20, lines_changed: 900 })
       if (opts.label === 'plate') return plate([{ slug: 'a', status: 'ok', pr_url: 'https://example.test/pr/a' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -735,6 +756,7 @@ test('fanout per-curd findings drive cure only for the flagged curd', async () =
       if (opts.label === 're-merge') return integrateResult({ merged: ['a', 'b'] })
       if (opts.label === 'age:reage') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'a', has_medium_plus_findings: false, findings: [] }] })
       if (opts.label === 'plate') return plate([{ slug: 'a', status: 'ok', pr_url: 'https://example.test/pr/a' }, { slug: 'b', status: 'ok', pr_url: 'https://example.test/pr/b' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -830,6 +852,7 @@ test('workflow() throwing falls back to age:barrier', async () => {
       if (opts.label === 'integrate') return integrateResult({ merged: ['parent'], files_changed: 20, lines_changed: 900 })
       if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
       if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'ok', pr_url: 'https://example.test/pr/parent' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -855,6 +878,7 @@ test('cure that does not commit marks the curd dirty and skips re-merge, re-age,
       if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
       if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: true, perCurd: [{ slug: 'parent', has_medium_plus_findings: true, findings: [] }] })
       if (opts.label === 'cure:parent') return cureResult({ committed: false })
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -914,6 +938,7 @@ test('mixed cure outcome: one curd clears re-age, the other stays dirty', async 
         })
       }
       if (opts.label === 'plate') return plate([{ slug: 'x', status: 'ok', pr_url: 'https://example.test/pr/x' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -957,6 +982,7 @@ test('an integrate conflict fails the conflicting curd and keeps the merged one 
       if (opts.label === 'integrate') return integrateResult({ merged: ['ok'], conflicted: ['clash'] })
       if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'ok', has_medium_plus_findings: false, findings: [] }] })
       if (opts.label === 'plate') return plate([{ slug: 'ok', status: 'ok', pr_url: 'https://example.test/pr/ok' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -981,6 +1007,7 @@ test('an integrate failure fails the whole chain before age:barrier', async () =
       if (opts.label === 'taste:parent') return taste('pass')
       if (opts.label === 'press:parent') return phaseOk('parent', 'press')
       if (opts.label === 'integrate') throw new Error('integrate agent died')
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1000,6 +1027,7 @@ test('a generic blocked or halt cook does not get a continuation', async () => {
     respond: ({ opts }) => {
       if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
       if (opts.label === 'cook:parent') return cook('parent', { status: 'blocked' })
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1049,6 +1077,7 @@ test('AC-2: each writer starts at the previous writer head_sha and Plate names t
       if (opts.label === 'cure:parent') return cureResult({ committed: true, head_sha: S.cure })
       if (opts.label === 'age:reage') { aged++; return ageBarrierResult({ perCurd: [clean] }) }
       if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'ok', pr_url: 'u/parent' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1194,14 +1223,24 @@ test('F-7: an out-of-enum taste verdict is a substance error: the reviewer redoe
   const workflow = await loadWorkflow(path)
   const inner = respondCleanChain({ slug: 'parent' })
   const { globals, trace } = createRuntime({
-    respond: (call) => (call.opts.label === 'taste:parent' ? { verdict: 'maybe', lenses: [], issues: [] } : inner(call)),
+    respond: (call) => {
+      if (call.opts.label === 'taste:parent') return { verdict: 'maybe', lenses: [], issues: [] }
+      if (call.opts.label === 'taste:parent:redo1') return taste('pass')
+      return inner(call)
+    },
   })
 
-  await workflow.run({ ...globals, args: { spec: 'parent' } })
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const labels = labelsOf(trace)
+  const first = trace.agents.find(({ opts }) => opts.label === 'taste:parent')
+  const redo = trace.agents.find(({ opts }) => opts.label === 'taste:parent:redo1')
 
-  assert.ok(labels.includes('taste:parent:redo1'))
+  assert.ok(redo.prompt.startsWith(first.prompt))
+  assert.match(redo.prompt, /\$\.verdict must be one of pass, revise/)
+  assert.equal(redo.opts.agentType, 'reviewer')
   assert.equal(labels.some((l) => l.startsWith('taste:parent') && /:repair\d+$/.test(l)), false)
+  assert.ok(labels.indexOf('press:parent') > labels.indexOf('taste:parent:redo1'))
+  assert.equal(result.curds[0].status, 'clean')
 })
 
 test('AC-12: a null cook result runs one haiku salvage from the curd ref and resumes at its SHA', async () => {
@@ -1244,15 +1283,17 @@ test('AC-12: salvage that finds no ref fails the curd without a continuation', a
 
 test('telemetry: a failed salvage call says the salvage failed, not that the ref is absent', async () => {
   const workflow = await loadWorkflow(path)
-  const { globals } = createRuntime({
+  const { globals, trace } = createRuntime({
     respond: cookRespond(({ opts }) => {
-      if (opts.label === 'salvage:parent') throw new Error('salvage exploded')
+      if (opts.label.startsWith('salvage:parent')) throw new Error('salvage exploded')
       return null
     }),
   })
 
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
 
+  // Salvage is read-only, so a throw retries within the bound before it is final.
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('salvage')), ['salvage:parent', 'salvage:parent:retry1', 'salvage:parent:retry2'])
   assert.match(result.curds[0].excluded_reason, /the salvage of curd\/parent failed \(agent threw: salvage exploded\)/)
   assert.doesNotMatch(result.curds[0].excluded_reason, /no ref to resume/)
 })
@@ -1314,6 +1355,7 @@ test('age:barrier reporting medium+ findings that no curd owns marks the curd di
       if (opts.label === 'press:parent') return phaseOk('parent', 'press')
       if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
       if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: true, perCurd: [] })
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1331,6 +1373,7 @@ test('a bare non-JSON string spec arg runs resolve in spec mode with the arg quo
   const { globals, trace } = createRuntime({
     respond: ({ opts }) => {
       if (opts.label === 'resolve') return resolveMissing('Usage: /cheese-factory { spec: <slug-or-path> } — spec not found at /specs/parent.md')
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1385,6 +1428,7 @@ test('two curds coupled purely by depends_on merge into one and fall back to sin
       if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
       if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
       if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'ok', pr_url: 'https://example.test/pr/parent' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1433,6 +1477,7 @@ test('a depends_on edge merges two of three curds, leaving the third independent
         })
       }
       if (opts.label === 'plate') return plate([{ slug: 'a', status: 'ok', pr_url: 'https://example.test/pr/a' }, { slug: 'c', status: 'ok', pr_url: 'https://example.test/pr/c' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1475,6 +1520,7 @@ async function runEveryPhase() {
       if (opts.label === 'cure:a') return cureResult({ committed: true })
       if (opts.label === 'age:reage') return ageBarrierResult({ hasMediumPlus: false, perCurd: [clean('a'), clean('c')] })
       if (opts.label === 'plate') return plate([{ slug: 'a', status: 'ok', pr_url: 'u/a' }, { slug: 'c', status: 'ok', pr_url: 'u/c' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1525,6 +1571,7 @@ test('AC-3: a null cook result is salvaged once and never redone, then the curd 
       if (opts.label === 'resolve') return resolveResolved({ slug: 'parent' })
       if (opts.label.startsWith('cook:parent')) return null
       if (opts.label === 'salvage:parent') return { found: false }
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1569,6 +1616,7 @@ test('AC-3: a null cure result after the bound fails the curd instead of leaving
       if (opts.label === 'integrate') return integrateResult({ merged: ['parent'] })
       if (opts.label === 'age:barrier') return ageBarrierResult({ hasMediumPlus: true, perCurd: [{ slug: 'parent', has_medium_plus_findings: true, findings: [{ claim: 'c' }] }] })
       if (opts.label.startsWith('cure:parent')) return null
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1671,6 +1719,9 @@ test('AC-4: an out-of-enum cook status goes to salvage, never to a redo that res
   assert.deepEqual(labels.slice(0, 4), ['resolve', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
   assert.equal(labels.some((l) => /redo|repair/.test(l)), false)
   assert.ok(trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1').prompt.includes(`git checkout --detach ${found}`))
+  assert.equal(labels.filter((l) => l.startsWith('cook:parent')).length, 2)
+  assert.equal(labels.filter((l) => l === 'salvage:parent').length, 1)
+  assert.equal(trace.agents.filter(({ prompt }) => prompt.includes(`git update-ref refs/heads/curd/parent ${BASE_SHA}`)).length, 1)
   assert.equal(result.curds[0].status, 'clean')
 })
 
@@ -1678,6 +1729,8 @@ test('AC-4: an out-of-enum cook status with no curd ref fails at cook and names 
   const { result, trace } = await runParent({ 'cook:parent': { status: 'finished' }, 'salvage:parent': { found: false } })
 
   assert.equal(labelsOf(trace).some((l) => /redo|repair|cook:parent:c1/.test(l)), false)
+  assert.deepEqual(labelsOf(trace).filter((l) => /^(cook|salvage)/.test(l)), ['cook:parent', 'salvage:parent'])
+  assert.equal(labelsOf(trace).some((l) => /^(taste|press|integrate|plate)/.test(l)), false)
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /^cook: cook ended with status "finished" and curd\/parent has no ref to resume from/)
 })
@@ -1737,6 +1790,7 @@ test('AC-14: spec text, findings, and agent output sit in escaped data fences un
       if (opts.label === 're-merge') return integrateResult({ merged: ['a', 'b'] })
       if (opts.label === 'age:reage') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'a', has_medium_plus_findings: false, findings: [] }] })
       if (opts.label === 'plate') return plate([{ slug: 'a', status: 'ok', pr_url: 'u' }, { slug: 'b', status: 'ok', pr_url: 'u' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1776,6 +1830,7 @@ test('AC-14: every reviewer dispatch starts with its Review mode line', async ()
       if (opts.label === 're-merge') return integrateResult({ merged: ['parent'] })
       if (opts.label === 'age:reage') return ageBarrierResult({ hasMediumPlus: false, perCurd: [{ slug: 'parent', has_medium_plus_findings: false, findings: [] }] })
       if (opts.label === 'plate') return plate([{ slug: 'parent', status: 'ok', pr_url: 'u' }])
+      if (opts.label === 'cleanup') return { removed: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -1790,9 +1845,9 @@ test('AC-14: every reviewer dispatch starts with its Review mode line', async ()
 
 // ---- pass D: integrate gate, head pinning, flat-finding routing, review chain, budget floor, cleanup ----
 
-// A redo or repair call answers like its base label unless the test names it.
+// A redo, repair, or retry call answers like its base label unless the test names it.
 function pick(over, defaults, label) {
-  const base = label.replace(/:(?:redo|repair)\d+$/, '')
+  const base = label.replace(/:(?:redo|repair|retry)\d+$/, '')
   for (const key of [label, base]) {
     if (Object.hasOwn(over, key)) return over[key]
     if (Object.hasOwn(defaults, key)) return defaults[key]
@@ -1852,6 +1907,7 @@ function respondTwoCurds(over = {}) {
     'press:b': () => phaseOk('b', 'press'),
     integrate: () => integrateResult({ merged: ['a', 'b'], files_changed: 20, lines_changed: 900 }),
     plate: () => plate([{ slug: 'a', status: 'ok', pr_url: 'u' }, { slug: 'b', status: 'ok', pr_url: 'u' }]),
+    cleanup: () => ({ removed: [] }),
   }
   return (call) => {
     const entry = pick(over, defaults, call.opts.label)
@@ -2374,6 +2430,7 @@ test('G-3: an age-fanout result without a findings list falls back to the single
     'age:barrier': () => ageBarrierResult({ perCurd: [{ slug: 'a' }, { slug: 'b' }] }),
   }, fanout)
 
+  assert.equal(labelsOf(trace).some((l) => l.startsWith('age:fanout')), false)
   assert.equal(callsOf(trace, 'age:barrier').length, 1)
   assert.match(trace.logs.join('\n'), /age-fanout unavailable/)
   assert.equal(bySlug.a.status, 'clean')
@@ -2418,15 +2475,92 @@ test('F-9: a throwing cure reports failed with cure: and the error text, and the
 })
 
 test('F-9: a throw in any stage keeps its stage name and every curd stays in the result', async () => {
-  for (const [stage, label] of [['cook', 'cook:parent'], ['taste', 'taste:parent'], ['press', 'press:parent'], ['integrate', 'integrate']]) {
-    const { result, trace } = await runParent({ [label]: () => { throw new Error('boom') } })
+  const boom = () => { throw new Error('boom') }
+  const cured = { ...withMedium, ...cureLoop }
+  // A writer throw is final: one call. A read-only throw retries within the fix rounds: three calls.
+  const cases = [
+    { stage: 'cook', label: 'cook:parent', over: { 'salvage:parent': { found: false } }, status: 'failed', reason: /^cook: .*agent threw: boom/ },
+    { stage: 'taste', label: 'taste:parent', readOnly: true, status: 'failed', reason: /^taste: agent threw: boom/ },
+    { stage: 'taste-correct', label: 'correct:parent:r1', over: { 'taste:parent': taste('revise') }, status: 'failed', reason: /^taste-correct: agent threw: boom/ },
+    { stage: 'press', label: 'press:parent', status: 'failed', reason: /^press: agent threw: boom/ },
+    { stage: 'integrate', label: 'integrate', status: 'failed', reason: /^integrate: .*agent threw: boom/ },
+    { stage: 'age barrier', label: 'age:barrier', readOnly: true, status: 'failed', reason: /^age: barrier age failed/ },
+    { stage: 're-merge', label: 're-merge', over: cured, status: 'failed', reason: /^integrate: re-merge returned no valid result \(agent threw: boom\)/ },
+    { stage: 're-age', label: 'age:reage', over: cured, readOnly: true, status: 'dirty', reason: /^re-age blocked: no valid result \(agent threw: boom\)/ },
+    { stage: 'cleanup', label: 'cleanup', readOnly: true, status: 'clean', log: /Worktree cleanup returned no valid result \(agent threw: boom\)/ },
+  ]
+  for (const c of cases) {
+    const { result, trace } = await runParent({ ...c.over, [c.label]: boom })
 
-    assert.equal(result.curds.length, 1, stage)
-    assert.equal(result.curds[0].status, 'failed', stage)
-    assert.match(result.curds[0].excluded_reason, new RegExp(`^${stage}: .*agent threw: boom`), stage)
-    assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith(label)), [label], stage)
-    if (stage === 'cook') assert.ok(labelsOf(trace).includes('salvage:parent'), stage)
+    assert.equal(result.curds.length, 1, c.stage)
+    assert.equal(result.curds[0].status, c.status, c.stage)
+    if (c.reason) assert.match(result.curds[0].excluded_reason, c.reason, c.stage)
+    if (c.log) assert.match(trace.logs.join('\n'), c.log, c.stage)
+    const expected = c.readOnly ? [c.label, `${c.label}:retry1`, `${c.label}:retry2`] : [c.label]
+    assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith(c.label)), expected, c.stage)
+    if (c.stage === 'cook') assert.ok(labelsOf(trace).includes('salvage:parent'), c.stage)
   }
+})
+
+test('F-9: a read-only throw retries and a later answer is used; the retry is not a redo', async () => {
+  let calls = 0
+  const { result, trace } = await runParent({
+    'taste:parent': () => { calls++; throw new Error('flaky') },
+    'taste:parent:retry1': () => taste('pass'),
+  })
+  const labels = labelsOf(trace)
+
+  assert.equal(calls, 1)
+  assert.deepEqual(labels.filter((l) => l.startsWith('taste:parent')), ['taste:parent', 'taste:parent:retry1'])
+  assert.equal(result.curds[0].status, 'clean')
+  assert.equal(callsOf(trace, 'taste:parent:retry1')[0].prompt, callsOf(trace, 'taste:parent')[0].prompt)
+})
+
+test('F-9: a writer that throws is never retried', async () => {
+  const { trace } = await runParent({ 'press:parent': () => { throw new Error('flaky') }, 'press:parent:retry1': () => phaseOk('parent', 'press') })
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('press')), ['press:parent'])
+})
+
+test('a writer that returns a short head_sha gets a haiku expansion, never a writer redo', async () => {
+  const full = `abc1234${'0'.repeat(33)}`
+  const { result, trace } = await runParent({
+    'press:parent': () => phaseOk('parent', 'press', { head_sha: full.slice(0, 7) }),
+    'press:parent:sha': () => ({ sha: full }),
+  })
+  const expand = callsOf(trace, 'press:parent:sha')[0]
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('press')), ['press:parent', 'press:parent:sha'])
+  assert.equal(expand.opts.model, 'haiku')
+  assert.equal(expand.opts.agentType, undefined)
+  assert.equal(expand.opts.isolation, undefined)
+  assert.ok(callsOf(trace, 'integrate')[0].prompt.includes(full))
+  assert.equal(result.curds[0].status, 'clean')
+})
+
+test('a short head_sha stays strict: an expansion that does not extend the short SHA is dropped and the writer redoes', async () => {
+  const short = 'abc1234'
+  const { result, trace } = await runParent({
+    'press:parent': () => phaseOk('parent', 'press', { head_sha: short }),
+    'press:parent:sha': () => ({ sha: `def5678${'0'.repeat(33)}` }),
+  })
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('press')), ['press:parent', 'press:parent:sha', 'press:parent:redo1', 'press:parent:redo2'])
+  assert.equal(result.curds[0].status, 'failed')
+  assert.equal(labelsOf(trace).includes('integrate'), false)
+})
+
+test('a status or verdict that differs only by case or spaces is accepted without a repair or redo', async () => {
+  const { result, trace } = await runParent({
+    'cook:parent': () => cook('parent', { status: ' OK ', worktree_path: SCRATCH('cook') }),
+    'taste:parent': () => ({ ...taste('pass'), verdict: 'Pass ' }),
+    'press:parent': () => ({ ...phaseOk('parent', 'press'), status: ' Ok' }),
+    plate: () => plate([{ slug: 'parent', status: ' OK', pr_url: 'https://example.test/pr/parent' }]),
+  })
+
+  assert.equal(labelsOf(trace).some((l) => /redo|repair|salvage/.test(l)), false)
+  assert.equal(result.curds[0].status, 'clean')
+  assert.equal(result.curds[0].pr_url, 'https://example.test/pr/parent')
 })
 
 test('F-9: a rejected attempt that a redo replaces still records its worktree for cleanup', async () => {
@@ -2454,7 +2588,8 @@ test('F-6: an ok cook with a bad head_sha is final: it fails at stage cook at on
 
   assert.deepEqual(labels.filter((l) => l.startsWith('cook:parent')), ['cook:parent'])
   assert.equal(labels.some((l) => /redo|repair|salvage/.test(l)), false)
-  assert.equal(labels.some((l) => /^(taste|press)/.test(l)), false)
+  assert.equal(labels.some((l) => /^(taste|press|integrate|plate)/.test(l)), false)
+  assert.deepEqual(trace.agents.filter(({ opts }) => opts.agentType === 'coder').map(({ opts }) => opts.label), ['cook:parent'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /^cook: \$\.head_sha must be a 40-hex commit SHA/)
 })
@@ -2480,6 +2615,8 @@ test('F-6: a bad writer SHA is a substance error: a repair that offers another v
     assert.deepEqual(labels.filter((l) => l.startsWith(label)), [label, `${label}:redo1`, `${label}:redo2`], stage)
     assert.equal(result.curds[0].status, 'failed', stage)
     assert.equal(trace.agents.some(({ prompt }) => prompt.includes(invented)), false, stage)
+    assert.deepEqual(trace.agents.filter(({ opts }) => opts.agentType === 'coder').map(({ opts }) => opts.label), ['cook:parent', label, `${label}:redo1`, `${label}:redo2`], stage)
+    assert.equal(labels.some((l) => l === 'integrate' || l === 'plate'), false, stage)
   }
 })
 
