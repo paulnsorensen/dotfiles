@@ -1,10 +1,12 @@
 export const meta = {
   name: 'cheese-factory',
   description:
-    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs.',
+    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial.',
   phases: [
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
+    { title: 'Criteria', detail: 'one read-only explorer maps each spec AC line to one check; code rejects unsafe or vacuous checks' },
     { title: 'Decompose', detail: 'opus decomposer produces curds with depends_on edges; JS merges file-overlapping or dependency-coupled curds; mini-specs written per curd' },
+    { title: 'Advise', detail: 'a judge advisor reviews the curds and criteria before any cook; one revision at most, then it blocks the run' },
     { title: 'Cook', detail: 'sonnet coder implements one curd in an isolated worktree via /cook --auto; a cook that runs low on context returns partial and gets up to three fresh isolated continuations from its commit SHA' },
     { title: 'Taste', detail: 'taste-tester over the cook diff, run through its own seven lenses; revise triggers a bounded corrective pass' },
     { title: 'Press', detail: 'sonnet coder hardens tests via /press --auto' },
@@ -12,8 +14,10 @@ export const meta = {
     { title: 'Age', detail: 'barrier review of the whole integrated diff; large diffs fan out via the age-fanout child workflow, else one opus reviewer runs /age --auto, and code routes the flat findings to curds by files_by_slug' },
     { title: 'Cure', detail: 'parallel sonnet coders fix only curds that own a medium+ finding or a contained low, via /cure --auto --stake medium+, and never ask which findings to fix' },
     { title: 'Re-age', detail: 'once, only if a cure committed: re-merge the branches, then run an incremental /age over the range from the reviewed head to the new head; a cured curd missing from reviewed_slugs is dirty' },
+    { title: 'Verify', detail: 'one judge per criterion runs its check serially at the integration head; ci criteria are deferred' },
+    { title: 'Done', detail: 'a judge advisor signs off on the verified work before Plate; no sign-off blocks Plate' },
     { title: 'Plate', detail: 'one opus barrier stacks clean curd branches into (stacked) PRs; never merges' },
-    { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, and excluded-curd reasons' },
+    { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, excluded-curd reasons, the verification record, and the plan and done advice; a plan-blocked run returns status blocked with its concerns and advice' },
   ],
 }
 
@@ -70,6 +74,9 @@ const repairPrompt = (value, errors) => prompt(
 // Replaces claude/workflows/curd-flock.js (deleted, no alias). Spec:
 // specs/cheese-factory-workflow.md (durable corpus). See
 // .hallouminate/wiki/adr/cheese-factory-workflow.md for ADR-001..013.
+//
+// ADR-015..017 add criteria, plan advice, serial verify judges, and a done advisor
+// that gate Cook and Plate. Every failure closes the gate (fail closed).
 //
 // Review moved from per-curd to a barrier whole-diff age before plate
 // (ADR-006): reviewing each curd's diff in isolation left cross-curd
@@ -371,8 +378,9 @@ function findDuplicateSlugs(curds) {
 // Cook: (continuations + 1) rounds x 3 attempts = 12, plus 2 SHA expansions per round = 8, plus continuations x (3 salvage attempts + 1 expansion) = 12.
 // Taste: 3 attempts, plus correctiveRounds (2) x (3 correct attempts + 1 expansion + 3 retaste attempts) = 17.
 // Press and cure: 3 attempts + 1 expansion each.
-// So 17 curds reach the cap before the shared barrier agents. Recount before a reader raises maxCurds.
-const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12 }
+// The fixed per-run overhead is about 146 agents: about 53 barrier agents, plus at most 93 for ADR-015..017 (criteria 3, plan advice 3, multi-curd revise 9, second plan advice 3, 24 verify x 3 = 72, done advice 3).
+// So 14 curds reach the cap, and 12 curds spend about 830 agents at worst (12 x 57 + 146). Recount before a reader raises maxCurds.
+const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12, maxCriteria: 24, advisorRevisions: 1 }
 // Only writer calls in an isolated worktree feed the cleanup set. A reviewer path goes to reportWorktrees instead.
 // Reviewer worktrees hold the gitignored age reports, so cleanup keeps them and the return value lists them.
 const isScratchWorktree = (p) => SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')
@@ -409,10 +417,20 @@ const statusErrors = (v, allowed) => enumErrors('$.status', v.status, allowed, s
 // A finding field is a review fact. A formatter cannot know it, so an error under $.findings[i] is substance and the reviewer redoes.
 // A missing or mistyped findings list stays form: the formatter only restores the key.
 const FINDINGS_PATH_RE = /^\$\.findings\[/
-const shapeError = (msg) => (FINDINGS_PATH_RE.test(msg) ? substance(msg) : form(msg))
+// A decision field is the producer's judgment: a verdict, a pass flag, or a check. A formatter must not choose it, so a shape error there also makes the producer redo.
+// Only the three criteria-gate schemas have decision paths. Every other schema keeps its classification.
+const decisionPathRe = (schema) =>
+  schema === VERDICT_SCHEMA ? /^\$\.(passes|tree_clean|missing_paths)\b/
+    : schema === ADVICE_SCHEMA ? /^\$\.verdict\b/
+      : schema === CRITERIA_SCHEMA ? /^\$\.criteria\[\d+\]\.(check_kind|check)\b/
+        : null
+const shapeError = (msg, schema) => {
+  const decision = decisionPathRe(schema)
+  return FINDINGS_PATH_RE.test(msg) || (decision && decision.test(msg)) ? substance(msg) : form(msg)
+}
 // Builds a check: the schema shape first, then the extra checks only when the shape holds.
 const checkWith = (schema, ...extra) => (value) => {
-  const shape = schemaErrors(value, schema, '$').map(shapeError)
+  const shape = schemaErrors(value, schema, '$').map((msg) => shapeError(msg, schema))
   return shape.length ? shape : extra.flatMap((fn) => fn(value))
 }
 
@@ -672,7 +690,7 @@ ${SPEC_ARG
 Return only the structured JSON described above.`)
 }
 
-function decomposePrompt(specText) {
+function decomposePrompt(specText, feedback) {
   return prompt(`You are an opus decomposer for the /cheese-factory workflow. Read the spec below and split it into file-disjoint, independently implementable curds.
 
 Spec:
@@ -683,7 +701,7 @@ Splitting rules:
 - If the spec declares a multi-site contract (one deliverable spanning N named sites), keep those sites in ONE curd — never split an indivisible contract.
 - If one curd would consume symbols, exports, or behavior another curd introduces, either fold them into one curd or declare the edge in "depends_on" — dependency-coupled curds are merged back into one curd rather than run in parallel.
 
-Return {"curds":[{"slug":"<kebab-slug>","brief":"<what this curd must do>","files":["<path>", ...],"depends_on":["<sibling-slug>", ...]}, ...]} ("depends_on" optional, omit or leave empty when independent). Return at most ${LIMITS.maxCurds} curds. Each slug must match ${SLUG_RE} and be unique. List every file each curd is expected to touch so overlaps can be detected.`)
+Return {"curds":[{"slug":"<kebab-slug>","brief":"<what this curd must do>","files":["<path>", ...],"depends_on":["<sibling-slug>", ...]}, ...]} ("depends_on" optional, omit or leave empty when independent). Return at most ${LIMITS.maxCurds} curds. Each slug must match ${SLUG_RE} and be unique. List every file each curd is expected to touch so overlaps can be detected.`, feedback && data('advisor', feedback))
 }
 
 function miniSpecPrompt(parentSlug, curds) {
@@ -975,6 +993,479 @@ Scope fence: submit those branches and open or update their PRs only through the
 Return {"results":[{"slug":"...","status":"ok|failed|blocked","pr_url":"...","reason":"..."}]}. Report status ok only for a slug that the plate skill submitted and whose PR is open; pr_url is then required. Add reason to every row whose status is not ok.`)
 }
 
+// Provenance: this section copies the judge helpers from claude/workflows/move-my-cheese.js (norm, blank, refError, the negated-search gate, checkAdvice, checkVerdict, judgePrompt, shq, advisorPrompt, verifyPrompt).
+// The check gate (UNSAFE_CHECKS, unsafeCheck, vacuousReason) is stricter than move-my-cheese: it adds a structural pre-filter, per-command rules, tree-mutation rules, and always-pass rules.
+// Follow-up cfh-criteria-fu-3 ports the gate back when the helpers move into the prelude.
+const CHECK_KINDS = ['command', 'test', 'inspection', 'ci']
+const ADVICE_VERDICTS = ['approve', 'revise', 'stop']
+const ADVICE_SCHEMA = {
+  type: 'object',
+  required: ['verdict', 'concerns', 'guidance'],
+  properties: {
+    verdict: { type: 'string', enum: ADVICE_VERDICTS },
+    concerns: { type: 'array', items: { type: 'string' } },
+    guidance: { type: 'string', description: 'Under 80 words' },
+  },
+}
+const VERDICT_SCHEMA = {
+  type: 'object',
+  required: ['criterion', 'passes', 'evidence', 'tree_clean', 'missing_paths'],
+  properties: {
+    criterion: { type: 'string' },
+    passes: { type: 'boolean' },
+    evidence: { type: 'string', description: 'Command run and its observed result' },
+    tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' },
+    missing_paths: { type: 'array', items: { type: 'string' }, description: 'Paths that the check reads and that do not exist in the worktree' },
+  },
+}
+const CRITERIA_SCHEMA = {
+  type: 'object',
+  required: ['criteria'],
+  properties: {
+    criteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'statement', 'check_kind', 'check'],
+        properties: {
+          id: { type: 'string', pattern: '^AC-[0-9]+$' },
+          statement: { type: 'string' },
+          check_kind: { type: 'string', enum: CHECK_KINDS },
+          check: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+
+const norm = (id) => String(id).trim().toUpperCase()
+const blank = (value) => typeof value !== 'string' || !value.trim()
+
+function refError(ref, known, where) {
+  if (known.includes(ref)) return null
+  const fix = norm(ref)
+  return known.includes(fix) ? form(`${where}: '${ref}' should be '${fix}'`) : substance(`${where}: unknown id '${ref}'`)
+}
+
+// A judge runs each criterion check, so a check must not fetch, write, or mutate.
+// Three layers run in order: a structural pre-filter on the raw text, this denylist, and per-command rules.
+// The layers are defense in depth; the judge agent definition is the other guard.
+// The third field marks a rule that reads the text with quoted spans masked.
+const UNSAFE_CHECKS = [
+  ['network access', /\b(?:curl|wget|nc|ssh|scp)\b/i],
+  ['pipe into a shell', /\|\s*(?:sh|bash|zsh)\b/i],
+  // Only fd duplication (>&1, 2>&1, >&-) and a redirect to the whole token /dev/null stay allowed.
+  ['output redirection to a file', />(?!>?\s*\/dev\/null(?![^\s;|&)])|&(?:\d+|-)(?![^\s;|&)]))/, true],
+  ['tree mutation', /(?:^|[;&|(]\s*|\b(?:sudo|xargs|env|command|time)\s+)(?:touch|mkdir|rmdir|cp|mv|chmod|chown|chgrp|ln|install|truncate|dd|patch)\s/i],
+  ['tee to a file', /\btee\b/i],
+  ['inline interpreter code', /\b(?:python3?|node|perl|ruby)\s+-[ce]\b/i],
+  ['in-place edit', /\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i/i],
+  ['file removal', /\brm\s|\s-delete\b|\bunlink\b|\btruncate\b/i],
+  ['package publish or install', /\b(?:npm|pnpm|yarn|cargo|pip3?|uv)\s+(?:publish|install|add|ci)\b/i],
+  ['GitHub mutation', /\bgh\s+(?:pr\s+(?:merge|close|comment|edit|ready|review|create|reopen)|issue|release|workflow\s+run|run\s+(?:rerun|cancel)|repo\s+(?:edit|delete|rename)|secret|variable|label)\b/i],
+  ['GitHub API write', /\bgh\s+api\b.*(?:-X|--method)[\s=]*(?:POST|PATCH|PUT|DELETE)\b/i],
+  ['GitHub API field write', /\bgh\s+api\b.*\s(?:-f|-F|--field|--raw-field|--input)[\s=]/i],
+]
+
+const hit = (name, text = '') => ({ name, text })
+
+// Replaces each quoted span and each backslash escape with Q, so an operator inside a quote is data.
+// Double quotes stay readable unless maskDouble is true, because $ and backticks expand inside them.
+function maskQuotes(check, maskDouble) {
+  let out = ''
+  for (let i = 0; i < check.length; i++) {
+    const c = check[i]
+    if (c === '\\') { out += 'Q'; i++ } else if (c === "'") {
+      const close = check.indexOf("'", i + 1)
+      if (close < 0) return out + check.slice(i)
+      out += 'Q'
+      i = close
+    } else if (c === '"') {
+      let j = i + 1
+      let inner = ''
+      for (; j < check.length && check[j] !== '"'; j++) inner += check[j] === '\\' ? (j++, 'Q') : check[j]
+      if (j >= check.length) return out + check.slice(i)
+      out += maskDouble ? 'Q' : `"${inner}"`
+      i = j
+    } else out += c
+  }
+  return out
+}
+
+// Shapes that hide a command from the lexical rules: raw newlines, here documents, and shell expansion.
+function structuralHit(check) {
+  if (/[\r\n]/.test(check)) return hit('raw newline or carriage return')
+  const heredoc = /<<-?/.exec(maskQuotes(check, true))
+  if (heredoc) return hit('here document', heredoc[0])
+  const readable = maskQuotes(check, false)
+  const expansion = /\$(?:[({A-Za-z_]|\d|[?!@*#$-])|`/.exec(readable)
+  if (expansion) return hit('shell expansion or substitution', readable.slice(expansion.index, expansion.index + 24).trim())
+  return null
+}
+
+const ASSIGN_RE = /^[A-Za-z_]\w*=/
+const WRAPPERS = new Set(['env', 'command', 'time', 'sudo', 'doas', 'xargs', 'nohup', 'nice', 'timeout', 'builtin', 'stdbuf', 'setsid', 'ionice'])
+const WRAPPER_VALUE_OPTS = { xargs: ['-I', '-L', '-n', '-P', '-s', '-E', '-d', '-a'], env: ['-u', '-C', '-S'], sudo: ['-u', '-g', '-C', '-h', '-p', '-r', '-t', '-U'], timeout: ['-s', '-k'], nice: ['-n'] }
+const SHELL_KEYWORDS = new Set(['{', '}', 'if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until', 'for', 'case', 'esac', 'function', 'select', 'coproc'])
+const MUTATION_COMMANDS = new Set(['touch', 'mkdir', 'rmdir', 'cp', 'mv', 'chmod', 'chown', 'chgrp', 'ln', 'install', 'truncate', 'dd', 'patch', 'rm', 'unlink', 'shred', 'mkfifo', 'mknod'])
+const NETWORK_COMMANDS = new Set(['curl', 'wget', 'nc', 'ncat', 'netcat', 'telnet', 'ftp', 'sftp', 'ssh', 'scp', 'rsync', 'socat'])
+const FETCH_RUNNERS = new Set(['npx', 'pnpx', 'bunx', 'uvx', 'pipx'])
+const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun', 'pip', 'pip3', 'cargo', 'uv', 'gem'])
+const INSTALL_SUBCOMMANDS = new Set(['install', 'i', 'ci', 'add', 'exec', 'x', 'dlx', 'create', 'init', 'update', 'upgrade', 'publish', 'remove', 'uninstall', 'link'])
+const SHELL_HEAD_RE = /^(?:sh|bash|zsh|dash|ksh|fish|csh|tcsh)$/
+const CODE_HEAD_RE = /^(?:python|ruby|perl|php|lua|node|nodejs|deno|bun|osascript)[\d.]*$/
+const AWK_HEAD_RE = /^[gmn]?awk$/
+const AWK_DANGER_RE = /\bsystem\s*\(|\bgetline\b|\bprintf?\b[^}]*[>|]|-i\s*inplace|@(?:include|load)|\|&/
+const SED_WRITE_RE = /(?:^|[;{}])\s*(?:\d+|\$|\/[^/]*\/)?\s*(?:w\s*\S|e\b)|s\/[^/]*\/[^/]*\/[a-zA-Z0-9]*[we]\b/
+const GIT_VALUE_OPTS = new Set(['-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--exec-path'])
+const GIT_MUTATIONS = new Set(['push', 'add', 'commit', 'reset', 'checkout', 'switch', 'merge', 'rebase', 'stash', 'clean', 'tag', 'am', 'apply', 'restore', 'rm', 'mv', 'init', 'cherry-pick', 'revert', 'pull', 'worktree', 'update-ref', 'config', 'fetch', 'clone', 'ls-remote', 'submodule', 'gc', 'prune', 'maintenance', 'notes', 'replace', 'filter-branch', 'bisect', 'sparse-checkout', 'format-patch', 'checkout-index', 'read-tree', 'write-tree', 'commit-tree', 'fast-import', 'unpack-objects', 'bundle', 'archive', 'send-email', 'difftool', 'mergetool'])
+
+// Skips wrapper commands and their options so the real command head shows.
+function unwrap(words) {
+  let i = 0
+  while (WRAPPERS.has(words[i])) {
+    const valued = WRAPPER_VALUE_OPTS[words[i++]] ?? []
+    while (i < words.length && (words[i].startsWith('-') || ASSIGN_RE.test(words[i]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[i]))) i += valued.includes(words[i]) ? 2 : 1
+  }
+  return words.slice(i)
+}
+
+// Reads the git subcommand from tokens, so the cost stays linear in the option count.
+function gitHit(args) {
+  let i = 0
+  for (; i < args.length && args[i].startsWith('-'); i++) {
+    const arg = args[i]
+    if ((arg.startsWith('-c') && !arg.startsWith('--')) || arg.startsWith('--config-env')) return hit('git config override', arg)
+    if (GIT_VALUE_OPTS.has(arg)) i++
+  }
+  const sub = (args[i] ?? '').toLowerCase()
+  const rest = args.slice(i + 1)
+  if (GIT_MUTATIONS.has(sub)) return hit('git mutation', `git ${sub}`)
+  if (sub === 'branch' && rest.some((a) => /^-[a-zA-Z]*[dDmMfcC]|^--(?:delete|move|copy|force|set-upstream|unset-upstream|edit-description)/.test(a))) return hit('git mutation', 'git branch')
+  const output = rest.find((a) => /^--output(?:=|$)/.test(a) || (sub === 'grep' && /^(?:-O|--open-files-in-pager)/.test(a)))
+  return output ? hit('git option that writes a file or runs a program', output) : null
+}
+
+function sedHit(args) {
+  const programs = []
+  let bare = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (/^-[a-zA-Z]*[if]|^--(?:in-place|file)/.test(arg)) return hit('in-place edit or script file', arg)
+    if (arg === '-e' || arg === '--expression') { programs.push(args[++i] ?? ''); bare = false } else if (arg.startsWith('--expression=')) { programs.push(arg.slice(13)); bare = false } else if (bare && !arg.startsWith('-')) { programs.push(arg); bare = false }
+  }
+  const bad = programs.find((p) => SED_WRITE_RE.test(p))
+  return bad === undefined ? null : hit('sed command that writes or runs', bad)
+}
+
+// Classifies one simple command. Returns a hit or null.
+function commandHit(raw) {
+  const words = unparen(raw)
+  while (words[0] === '!') words.shift()
+  if (!words.length) return null
+  if (ASSIGN_RE.test(words[0])) return hit('NAME=value prefix', words[0])
+  const [head, ...args] = unwrap(words)
+  if (head === undefined) return null
+  if (head.includes('/')) return hit('command path', head)
+  if (['eval', 'exec', 'source', '.'].includes(head)) return hit('eval, exec, or source', head)
+  if (SHELL_KEYWORDS.has(head)) return hit('shell keyword or group', head)
+  if (MUTATION_COMMANDS.has(head)) return hit('tree mutation', head)
+  if (NETWORK_COMMANDS.has(head)) return hit('network access', head)
+  if (FETCH_RUNNERS.has(head)) return hit('package fetch or execution', head)
+  if (PACKAGE_MANAGERS.has(head) && INSTALL_SUBCOMMANDS.has(args[0])) return hit('package install or execution', `${head} ${args[0]}`)
+  if (head === 'git') return gitHit(args)
+  if (head === 'find') {
+    const action = args.find((a) => /^-(?:exec|execdir|ok|okdir|delete|fprint0?|fprintf|fls)$/.test(a))
+    return action ? hit('find action that writes or runs a command', action) : null
+  }
+  if (head === 'sed') return sedHit(args)
+  if (AWK_HEAD_RE.test(head)) {
+    const bad = args.find((a) => AWK_DANGER_RE.test(a) || /^(?:-f|--file|-i|--include|-l|--load)/.test(a))
+    return bad === undefined ? null : hit('awk program that writes or runs a command', bad)
+  }
+  if (SHELL_HEAD_RE.test(head) && (!args.length || args.some((a) => a === '-' || /^-[a-zA-Z]*[cs]/.test(a)))) return hit('inline interpreter code', `${head} ${args[0] ?? ''}`.trim())
+  if (CODE_HEAD_RE.test(head)) {
+    const code = !args.length || args.some((a) => a === '-' || /^-[a-zA-Z]*[cepE]/.test(a) || /^--(?:eval|print|exec|command)\b/.test(a)) || (head === 'deno' && ['eval', 'repl'].includes(args[0]))
+    if (code) return hit('inline interpreter code', `${head} ${args[0] ?? ''}`.trim())
+  }
+  return null
+}
+
+// Returns { name, text } for the first unsafe shape in a check, or null.
+function unsafeCheck(check) {
+  const structural = structuralHit(check)
+  if (structural) return structural
+  const masked = maskQuotes(check, true)
+  for (const [name, re, useMask] of UNSAFE_CHECKS) {
+    const subject = useMask ? masked : check
+    const m = re.exec(subject)
+    if (m) return hit(name, subject.slice(m.index, m.index + 24).trim())
+  }
+  const words = shellWords(check)
+  if (!words) return null
+  let command = []
+  for (const w of [...words, ';']) {
+    if (COMMAND_OPS.includes(w) || w === '|') {
+      const found = commandHit(command)
+      if (found) return found
+      command = []
+    } else command.push(w)
+  }
+  return null
+}
+
+// A negated search passes when its input is missing. Grep and rg exit 2 on a missing file.
+// Git grep exits 1 on an unmatched pathspec. Grep with no file reads empty input.
+// So each path of a negated search needs an existence test earlier in the same && chain.
+// A negated pipeline also hides a failed producer. This check is lexical.
+// The verify judge also tests each path that a check reads.
+const SEARCH_TOOLS = ['grep', 'egrep', 'fgrep', 'rg']
+// Short options whose value is the next word when the option ends its cluster.
+const VALUE_LETTERS = { rg: 'efgtTmABCjMEr', grep: 'efmABCdD' }
+const LONG_VALUE_OPTS = ['regexp', 'file', 'max-count', 'after-context', 'before-context', 'context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth']
+
+// Splits a check into words and the operators && || ; | &, with POSIX quotes removed. A newline counts as ;. Returns null on an open quote.
+function shellWords(check) {
+  const words = []
+  let word = null
+  const end = () => { if (word !== null) words.push(word); word = null }
+  for (let i = 0; i < check.length; i++) {
+    const c = check[i]
+    const pair = check.slice(i, i + 2)
+    if (c === '\n') { end(); words.push(';') }
+    else if (/\s/.test(c)) end()
+    else if (pair === '&&' || pair === '||') { end(); words.push(pair); i++ }
+    else if (pair === '|&') { end(); words.push('|'); i++ }
+    else if (c === '&' && check[i - 1] !== '>' && check[i - 1] !== '<' && check[i + 1] !== '>') { end(); words.push('&') }
+    else if (c === ';' || c === '|') { end(); words.push(c) }
+    else if (c === "'") {
+      const close = check.indexOf("'", i + 1)
+      if (close < 0) return null
+      word = (word ?? '') + check.slice(i + 1, close)
+      i = close
+    } else if (c === '"') {
+      let j = i + 1
+      let text = ''
+      for (; j < check.length && check[j] !== '"'; j++) text += check[j] === '\\' && j + 1 < check.length ? check[++j] : check[j]
+      if (j >= check.length) return null
+      word = (word ?? '') + text
+      i = j
+    } else if (c === '\\' && i + 1 < check.length) word = (word ?? '') + check[++i]
+    else word = (word ?? '') + c
+  }
+  end()
+  return words
+}
+
+// A redirect such as 2>/dev/null, >&2, or &> is not an operand; a bare operator such as > takes the next word.
+const REDIRECT_RE = /^(?:\d*|&)[<>]/
+const BARE_REDIRECT_RE = /^(?:\d*|&)(?:[<>]|>>)&?$/
+// ./a and a name the same path.
+const samePath = (path) => path.replace(/^(?:\.\/)+/, '')
+
+// test -e P, [ -e P ], or [[ -e P ]] with -e, -f, -d, -s, or -r; returns P or ''.
+function guardedPath(words) {
+  const flag = /^-[efdsr]$/
+  if (words.length === 3 && words[0] === 'test' && flag.test(words[1])) return samePath(words[2])
+  if (words.length === 4 && flag.test(words[1]) && ((words[0] === '[' && words[3] === ']') || (words[0] === '[[' && words[3] === ']]'))) return samePath(words[2])
+  return ''
+}
+
+// Returns { tool, paths, stdin } for a grep, rg, or git grep command, or null for any other command.
+function searchOf(words) {
+  const git = words[0] === 'git' && words[1] === 'grep'
+  if (!git && !SEARCH_TOOLS.includes(words[0])) return null
+  const tool = git ? 'git grep' : words[0]
+  const args = words.slice(git ? 2 : 1)
+  const valueLetters = tool === 'rg' ? VALUE_LETTERS.rg : VALUE_LETTERS.grep
+  const positional = []
+  let patternGiven = false
+  let recursive = false
+  let options = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (REDIRECT_RE.test(arg)) {
+      if (BARE_REDIRECT_RE.test(arg)) i++
+    } else if (options && arg === '--') options = false
+    else if (options && arg.startsWith('--')) {
+      const [name, value] = arg.slice(2).split('=')
+      if (name === 'regexp' || name === 'file') patternGiven = true
+      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
+      if (value === undefined && LONG_VALUE_OPTS.includes(name)) i++
+    } else if (options && arg.length > 1 && arg.startsWith('-')) {
+      const letters = arg.slice(1)
+      for (let k = 0; k < letters.length; k++) {
+        if (tool !== 'rg' && 'rR'.includes(letters[k])) recursive = true
+        if (!valueLetters.includes(letters[k])) continue
+        if ('ef'.includes(letters[k])) patternGiven = true
+        if (k === letters.length - 1) i++
+        break
+      }
+    } else positional.push(arg)
+  }
+  const paths = (patternGiven ? positional : positional.slice(1)).map(samePath)
+  return { tool, paths, stdin: tool !== 'rg' && tool !== 'git grep' && !paths.length && !recursive }
+}
+
+const COMMAND_OPS = ['&&', '||', ';', '&']
+// A pipe sink reads its input, so it cannot fail on a failed producer.
+const PIPE_SINKS = new Set(['wc', 'head', 'tail', 'cat'])
+const unparen = (words) => words.map((w) => w.replace(/^\(+|\)+$/g, '')).filter(Boolean)
+
+function withoutRedirects(words) {
+  const kept = []
+  for (let i = 0; i < words.length; i++) {
+    if (!REDIRECT_RE.test(words[i])) kept.push(words[i])
+    else if (BARE_REDIRECT_RE.test(words[i])) i++
+  }
+  return kept
+}
+
+function pipelineStages(words) {
+  const stages = [[]]
+  for (const w of words) {
+    if (w === '|') stages.push([])
+    else stages[stages.length - 1].push(w)
+  }
+  return stages.filter((s) => s.length)
+}
+
+const exitsZero = (stage) => stage[0] === 'exit' && (stage.length === 1 || (stage.length === 2 && stage[1] === '0'))
+
+// True when a pipeline stage returns 0 whatever the earlier commands did.
+function cannotFail(stage, piped) {
+  const [head] = stage
+  if (['true', ':', 'echo', 'printf'].includes(head)) return true
+  return (piped && PIPE_SINKS.has(head)) || exitsZero(stage)
+}
+
+// Returns why a check can pass without testing anything, or '' when it can fail.
+function vacuousReason(check) {
+  const words = shellWords(check)
+  if (!words) return 'it has an unclosed quote'
+  const commands = [{ op: '', words: [] }]
+  for (const w of words) {
+    if (COMMAND_OPS.includes(w)) commands.push({ op: w, words: [] })
+    else commands[commands.length - 1].words.push(w)
+  }
+  const shapes = commands.map(({ words: command }) => pipelineStages(withoutRedirects(unparen(command))))
+  if (shapes.every((stages) => stages.every((stage, i) => cannotFail(stage, i > 0)))) return 'every command in it always succeeds'
+  let guarded = new Set()
+  for (const [index, { op, words: command }] of commands.entries()) {
+    const last = index === commands.length - 1
+    const shape = shapes[index]
+    const tail = shape[shape.length - 1]
+    if (tail) {
+      const quiet = cannotFail(tail, shape.length > 1)
+      if (shape.length === 1 && op !== '&&' && exitsZero(tail)) return 'it exits 0 whatever the earlier commands return'
+      if (op === '||' && quiet) return 'it ends in an always-true fallback, which hides every failure'
+      if (shape.length > 1 && quiet) return `its pipeline ends in ${tail[0]}, which hides a failed earlier stage`
+      if (op !== '&&' && last && quiet) return 'its last command always succeeds'
+    }
+    if (op !== '&&' || command[0] === 'cd') guarded = new Set()
+    const negated = command[0] === '!'
+    const body = negated ? command.slice(1) : command
+    const stages = [[]]
+    for (const w of body) {
+      if (w === '|') stages.push([])
+      else stages[stages.length - 1].push(w)
+    }
+    if (!negated) {
+      const path = guardedPath(body)
+      if (path) guarded.add(path)
+      continue
+    }
+    const search = searchOf(stages[stages.length - 1])
+    if (!search) continue
+    if (stages.length > 1) return `it negates a pipeline into ${search.tool}, which passes when the producer fails`
+    if (search.stdin) return `it negates ${search.tool} with no file, which reads empty input`
+    const open = search.paths.filter((p) => !guarded.has(p))
+    if (open.length) return `it negates ${search.tool} over ${open.join(', ')} with no existence test of that path earlier in the same && chain`
+  }
+  return ''
+}
+
+function checkAdvice(advice) {
+  return advice.verdict !== 'approve' && !advice.concerns.length
+    ? [substance(`verdict ${advice.verdict} needs at least one concern`)]
+    : []
+}
+
+function checkVerdict(verdict, ac) {
+  const idError = refError(verdict.criterion, [ac.id], 'criterion')
+  const errors = idError ? [idError] : []
+  if (blank(verdict.evidence)) errors.push(substance('evidence must name the check run and its result'))
+  return errors
+}
+
+// Exact coverage: one criterion per spec AC id. Every check that CI does not own passes the check gate, which is stricter than move-my-cheese.
+const checkCriteria = (specAcIds) => checkWith(CRITERIA_SCHEMA, (v) => {
+  const errors = []
+  const seen = new Set()
+  v.criteria.forEach((c, i) => {
+    const where = `$.criteria[${i}]`
+    const idError = refError(c.id, specAcIds, `${where}.id`)
+    if (idError) errors.push(idError)
+    else if (seen.has(c.id)) errors.push(substance(`${where}.id: duplicate id '${c.id}'`))
+    seen.add(c.id)
+    if (blank(c.statement)) errors.push(substance(`${where}.statement must not be blank`))
+    if (blank(c.check)) errors.push(substance(`${where}.check must not be blank`))
+    else if (c.check_kind !== 'ci') {
+      const unsafe = unsafeCheck(c.check)
+      if (unsafe) errors.push(substance(`${where}.check is unsafe: ${unsafe.name}${unsafe.text ? ` (near "${unsafe.text}")` : ''}`))
+      else {
+        const why = vacuousReason(c.check)
+        if (why) errors.push(substance(`${where}.check can pass without testing anything: ${why}`))
+      }
+    }
+  })
+  for (const id of specAcIds) if (!seen.has(id)) errors.push(substance(`${id} has no criterion`))
+  return errors
+})
+
+// The judge agent type reads its mode from the first line of the prompt.
+const judgePrompt = (mode, ...parts) => `Judge mode: ${mode}\n\n${prompt(...parts)}`
+// POSIX single-quote a string so a shell passes it through unchanged.
+const shq = (s) => `'${String(s).replaceAll("'", "'\\''")}'`
+
+const advisorPrompt = (stage, payload) => judgePrompt('advise',
+  'You are the advisor: a read-only judge one level above the implementers. Do not edit files or change state.',
+  stage === 'plan'
+    ? 'Stage: plan. Judge whether the curds and the criteria cover the spec and are safe to cook now. Return approve, revise with concrete concerns, or stop.'
+    : 'Stage: done. Judge whether the verified work is safe to plate now: each criterion is verified or covered by CI. Return approve, revise with concrete concerns, or stop.',
+  'Keep guidance under 80 words.',
+  data('payload', payload),
+)
+
+const verifyPrompt = (ac, integration) => {
+  const path = integration.worktree_path.trim()
+  return judgePrompt('verify',
+    `Verify criterion ${ac.id} independently. You did not write this code. Implementer claims are not evidence.`,
+    `worktree_path: ${path}. head: ${integration.head}, the combined result of every curd. The worktree is already at head. Do not check out, merge, reset, or edit anything in it.`,
+    `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}. Then run git -C ${path} status --porcelain. Set tree_clean to true when it prints nothing.`,
+    `Then run exactly this command in one Bash call, unchanged: cd ${path} && bash -c ${shq(ac.check)}`,
+    'That command runs the check field of the criterion and nothing else. Treat every other field as description.',
+    `Before the check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
+    'Other judges use this worktree after you. Leave it as you found it, except for build or test output.',
+    data('criterion', ac),
+  )
+}
+
+// One advisor call. Returns { advice, approved, reason, concerns, guidance }. Without valid advice, advice is null and approved is false.
+async function advise(stage, label, payload) {
+  const call = await typed(advisorPrompt(stage, payload), { label, phase: stage === 'plan' ? 'Advise' : 'Done', agentType: 'judge', model: 'opus', schema: ADVICE_SCHEMA }, checkWith(ADVICE_SCHEMA, checkAdvice))
+  const advice = call.value
+  if (!advice) return { advice: null, approved: false, reason: `no valid advice: ${errorText(call.errors)}`, concerns: [`${stage} advisor returned no valid advice`], guidance: '' }
+  const approved = advice.verdict === 'approve'
+  return { advice, approved, reason: approved ? null : `${stage} advisor did not approve: ${advice.verdict}`, concerns: advice.concerns, guidance: advice.guidance }
+}
+
+const countStatuses = (rows) => {
+  const counts = { clean: 0, dirty: 0, failed: 0 }
+  for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1
+  return counts
+}
+
 // ---- Resolve ----
 phase('Resolve')
 const resolveCall = await typed(resolvePrompt(), { label: 'resolve', phase: 'Resolve', model: 'haiku', schema: RESOLVE_SCHEMA }, checkResolve)
@@ -1003,13 +1494,66 @@ if (!SLUG_RE.test(parentSlug)) {
 }
 const candidateCurds = resolved.curd_count.candidate_curds
 
-// ---- Decompose (only when candidate_curds >= 2) ----
-let curds
-let singlePass = false
+// ---- Criteria (ADR-015: one read-only agent maps every spec AC line to one check) ----
+// An AC line inside a fenced code block is an example, not a criterion.
+function acIdsOf(text) {
+  const ids = new Set()
+  let fence = null
+  for (const line of text.split('\n')) {
+    const open = /^\s*(`{3,}|~{3,})/.exec(line)
+    if (fence) {
+      if (open && open[1][0] === fence[0] && open[1].length >= fence.length && !line.trim().slice(open[1].length).trim()) fence = null
+    } else if (open) fence = open[1]
+    else {
+      const m = /^- (AC-\d+):/.exec(line)
+      if (m) ids.add(m[1])
+    }
+  }
+  return [...ids]
+}
+const specAcIds = acIdsOf(resolved.spec_text)
+if (specAcIds.length > LIMITS.maxCriteria) {
+  log(`Spec has ${specAcIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}`)
+  return { error: `Spec has ${specAcIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}` }
+}
 
-if (candidateCurds >= 2) {
+const criteriaPrompt = (feedback) => prompt(
+  'You are a read-only criteria extractor for the /cheese-factory workflow. Write no file and change no state.',
+  'Return one criterion per acceptance id listed below, and no other. Copy the statement from the spec line. Pick the check_kind: command, test, inspection, or ci.',
+  'Each check that is not ci is one read-only shell command that exits 0 only when the criterion holds. A judge runs it with bash -c in the integrated worktree.',
+  'A check must not use the network, write a file, redirect output, or change git state. A negated search needs a test -e of each searched path earlier in the same && chain.',
+  'Use check_kind ci when only a CI run can verify the criterion. Its check text then describes the CI evidence.',
+  data('spec', resolved.spec_text),
+  data('acceptance_ids', specAcIds),
+  feedback && data('advisor', feedback),
+)
+
+async function extractCriteria(feedback, round = 0) {
+  const label = round ? `criteria:r${round}` : 'criteria'
+  const call = await typed(criteriaPrompt(feedback), { label, phase: 'Criteria', agentType: 'explorer', model: 'opus', schema: CRITERIA_SCHEMA }, checkCriteria(specAcIds))
+  if (!call.value) {
+    log(`Criteria failed: ${errorText(call.errors)}`)
+    return { error: `Criteria failed: ${errorText(call.errors)}` }
+  }
+  return { criteria: specAcIds.map((id) => call.value.criteria.find((c) => c.id === id)) }
+}
+
+let criteriaList = []
+if (specAcIds.length) {
+  phase('Criteria')
+  const extracted = await extractCriteria(null)
+  if (extracted.error) return { error: extracted.error }
+  criteriaList = extracted.criteria
+}
+
+// ---- Decompose (only when candidate_curds >= 2) ----
+// Returns { error } or { curds, singlePass }. A plan revision reruns it with the advisor record.
+async function decomposeCurds(feedback, round = 0) {
+  const suffix = round ? `:r${round}` : ''
+  const single = { curds: [{ slug: parentSlug, spec_path: parentSpecPath, brief: null, files: [] }], singlePass: true }
+  if (candidateCurds < 2) return single
   phase('Decompose')
-  const decomposeCall = await typed(decomposePrompt(resolved.spec_text), { label: 'decompose:plan', phase: 'Decompose', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
+  const decomposeCall = await typed(decomposePrompt(resolved.spec_text, feedback), { label: `decompose:plan${suffix}`, phase: 'Decompose', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
   if (!decomposeCall.value) {
     log(`Decompose failed: ${errorText(decomposeCall.errors)}`)
     return { error: `Decompose failed: ${errorText(decomposeCall.errors)}` }
@@ -1020,36 +1564,76 @@ if (candidateCurds >= 2) {
 
   if (merged.length < 2) {
     log(`Decomposition merged down to ${merged.length} curd(s) — running single-pass against the parent spec.`)
-    singlePass = true
-    curds = [{ slug: parentSlug, spec_path: parentSpecPath, brief: null, files: [] }]
-  } else {
-    const invalidSlugs = findInvalidSlugs(merged)
-    if (invalidSlugs.length) {
-      log(`Invalid curd slug(s) from decomposer: ${invalidSlugs.join(', ')}`)
-      return { error: `Invalid curd slug(s): ${invalidSlugs.join(', ')}` }
-    }
-    const duplicateSlugs = findDuplicateSlugs(merged)
-    if (duplicateSlugs.length) {
-      log(`Duplicate curd slug(s) from decomposer: ${duplicateSlugs.join(', ')}`)
-      return { error: `Duplicate curd slug(s): ${duplicateSlugs.join(', ')}` }
-    }
-
-    const miniSpecCall = await typed(miniSpecPrompt(parentSlug, merged), { label: 'decompose:write-minispecs', phase: 'Decompose', agentType: 'coder', model: 'opus', schema: MINISPEC_SCHEMA }, checkMiniSpecs)
-    if (!miniSpecCall.value) {
-      log(`Mini-spec writing failed: ${errorText(miniSpecCall.errors)}`)
-      return { error: `Mini-spec writing failed: ${errorText(miniSpecCall.errors)}` }
-    }
-    const pathBySlug = new Map(miniSpecCall.value.curds.map((c) => [c.slug, c.spec_path]))
-    const unresolvedSlugs = merged.filter((c) => !pathBySlug.get(c.slug)).map((c) => c.slug)
-    if (unresolvedSlugs.length) {
-      log(`Mini-spec agent did not resolve a spec_path for curd slug(s): ${unresolvedSlugs.join(', ')}`)
-      return { error: `Unresolved mini-spec path(s) for curd slug(s): ${unresolvedSlugs.join(', ')}` }
-    }
-    curds = merged.map((c) => ({ ...c, spec_path: pathBySlug.get(c.slug) }))
+    return single
   }
-} else {
-  singlePass = true
-  curds = [{ slug: parentSlug, spec_path: parentSpecPath, brief: null, files: [] }]
+  const invalidSlugs = findInvalidSlugs(merged)
+  if (invalidSlugs.length) {
+    log(`Invalid curd slug(s) from decomposer: ${invalidSlugs.join(', ')}`)
+    return { error: `Invalid curd slug(s): ${invalidSlugs.join(', ')}` }
+  }
+  const duplicateSlugs = findDuplicateSlugs(merged)
+  if (duplicateSlugs.length) {
+    log(`Duplicate curd slug(s) from decomposer: ${duplicateSlugs.join(', ')}`)
+    return { error: `Duplicate curd slug(s): ${duplicateSlugs.join(', ')}` }
+  }
+
+  const miniSpecCall = await typed(miniSpecPrompt(parentSlug, merged), { label: `decompose:write-minispecs${suffix}`, phase: 'Decompose', agentType: 'coder', model: 'opus', schema: MINISPEC_SCHEMA }, checkMiniSpecs)
+  if (!miniSpecCall.value) {
+    log(`Mini-spec writing failed: ${errorText(miniSpecCall.errors)}`)
+    return { error: `Mini-spec writing failed: ${errorText(miniSpecCall.errors)}` }
+  }
+  const pathBySlug = new Map(miniSpecCall.value.curds.map((c) => [c.slug, c.spec_path]))
+  const unresolvedSlugs = merged.filter((c) => !pathBySlug.get(c.slug)).map((c) => c.slug)
+  if (unresolvedSlugs.length) {
+    log(`Mini-spec agent did not resolve a spec_path for curd slug(s): ${unresolvedSlugs.join(', ')}`)
+    return { error: `Unresolved mini-spec path(s) for curd slug(s): ${unresolvedSlugs.join(', ')}` }
+  }
+  return { curds: merged.map((c) => ({ ...c, spec_path: pathBySlug.get(c.slug) })), singlePass: false }
+}
+
+const decomposed = await decomposeCurds(null)
+if (decomposed.error) return { error: decomposed.error }
+let { curds, singlePass } = decomposed
+
+// ---- Advise (ADR-017: the plan advisor always runs, even for a spec with no AC line) ----
+phase('Advise')
+// The advisors judge the plan against the spec, so every advisor payload carries the spec text.
+const planOnly = () => ({ curds: curds.map((c) => ({ slug: c.slug, brief: c.brief, files: c.files })), criteria: criteriaList, single_pass: singlePass })
+const planPayload = () => ({ spec: resolved.spec_text, ...planOnly() })
+let planAdvice = await advise('plan', 'advise:plan', planPayload())
+let lastAdvice = planAdvice.advice
+let planRevisions = 0
+let unrevisable = false
+while (planAdvice.advice && planAdvice.advice.verdict === 'revise' && planRevisions < LIMITS.advisorRevisions) {
+  const { concerns, guidance } = planAdvice.advice
+  // A revision reruns the decomposer when two or more curds are candidates, and the extractor when the spec has an AC line.
+  // With neither, the second advisor would see the same plan, so the run blocks at once.
+  const redecompose = candidateCurds >= 2
+  if (!redecompose && !specAcIds.length) {
+    unrevisable = true
+    break
+  }
+  planRevisions++
+  log(`Plan advisor asked for a revision: ${concerns.join('; ')}`)
+  const feedback = { concerns, guidance, previous: planOnly() }
+  if (redecompose) {
+    const redone = await decomposeCurds(feedback, planRevisions)
+    if (redone.error) return { error: redone.error }
+    ;({ curds, singlePass } = redone)
+  }
+  if (specAcIds.length) {
+    const reextracted = await extractCriteria(feedback, planRevisions)
+    if (reextracted.error) return { error: reextracted.error }
+    criteriaList = reextracted.criteria
+  }
+  planAdvice = await advise('plan', `advise:plan:r${planRevisions}`, { ...planPayload(), prior_concerns: concerns, guidance })
+  if (planAdvice.advice) lastAdvice = planAdvice.advice
+}
+if (!planAdvice.approved) {
+  const reason = unrevisable ? 'plan advisor asked for a revision, and no step can rerun' : planAdvice.reason
+  log(`${reason} — no cook runs.`)
+  const kept = lastAdvice ? { verdict: lastAdvice.verdict, concerns: lastAdvice.concerns, guidance: lastAdvice.guidance, revisions: planRevisions } : null
+  return { status: 'blocked', reason, concerns: lastAdvice ? lastAdvice.concerns : [], advice: { plan: kept } }
 }
 
 // ---- Per-curd chain (pipelined) ----
@@ -1347,15 +1931,63 @@ const withStatus = chainResults.map((r, i) => {
 
 const cleanEntries = withStatus.filter((r) => r && r.status === 'clean')
 
+// ---- Verify and Done (ADR-016, ADR-017): judges check each criterion at the final head, then the done advisor signs off before Plate ----
+const floorMessage = () => `budget floor reached before Plate: ${budget.remaining()} remaining, below ${LIMITS.minBudget}`
+let budgetReason = null
+let blockReason = null
+let blockedText
+let doneAdvice = null
+let doneConcerns = null
+let verification = { status: 'not-run', head: null, criteria: [] }
+if (cleanEntries.length && floorReached()) {
+  budgetReason = floorMessage()
+  blockedText = budgetReason
+  log(`${budgetReason} — skipping verify and plate.`)
+} else if (cleanEntries.length) {
+  phase('Verify')
+  const tree = remerge || integrate
+  const rows = []
+  for (const ac of criteriaList) {
+    if (ac.check_kind === 'ci') {
+      rows.push({ id: ac.id, check_kind: 'ci', verdict: 'deferred', evidence: 'covered by CI' })
+      continue
+    }
+    const judged = await typed(verifyPrompt(ac, { worktree_path: tree.worktree_path, head: tree.head }), { label: `verify:${ac.id}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERDICT_SCHEMA }, checkWith(VERDICT_SCHEMA, (v) => checkVerdict(v, ac)))
+    const v = judged.value
+    const missing = v ? v.missing_paths.filter((p) => !blank(p)) : []
+    if (v && !v.tree_clean) log(`verify:${ac.id}: the integration worktree had changes before the check`)
+    const dirtyNote = v && !v.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
+    const evidence = !v ? `not verified: ${errorText(judged.errors)}` : (missing.length ? `${v.evidence} (missing paths: ${missing.join(', ')})` : v.evidence) + dirtyNote
+    rows.push({ id: ac.id, check_kind: ac.check_kind, verdict: v && v.passes === true && v.tree_clean === true && !missing.length ? 'pass' : 'fail', evidence })
+  }
+  const failed = rows.filter((r) => r.verdict === 'fail')
+  verification = { status: !criteriaList.length ? 'skipped-no-criteria' : failed.length ? 'failed' : 'passed', head: criteriaList.length ? tree.head : null, criteria: rows }
+  if (failed.length) {
+    blockReason = `criteria verification failed: ${failed.map((r) => r.id).join(', ')}`
+    blockedText = 'plate blocked: criteria verification failed'
+    log(`${blockReason} — skipping the done advisor and plate.`)
+  } else {
+    phase('Done')
+    const done = await advise('done', 'advise:done', { spec: resolved.spec_text, summary: countStatuses(withStatus), curds: withStatus.map((r) => ({ slug: r.curd.slug, status: r.status, excluded_reason: r.excluded_reason })), criteria: rows })
+    doneAdvice = done.advice
+    if (!done.approved) {
+      doneConcerns = done.concerns
+      blockReason = done.reason
+      blockedText = 'plate blocked: done advisor did not approve'
+      log(`${blockReason} — skipping plate.`)
+    } else if (floorReached()) {
+      budgetReason = floorMessage()
+      blockedText = budgetReason
+      log(`${budgetReason} — skipping plate.`)
+    }
+  }
+}
+
 phase('Plate')
 let plateRows = []
 let plateRan = false
 let plateFailure = null
-let budgetReason = null
-if (cleanEntries.length && floorReached()) {
-  budgetReason = `budget floor reached before Plate: ${budget.remaining()} remaining, below ${LIMITS.minBudget}`
-  log(`${budgetReason} — skipping plate.`)
-} else if (cleanEntries.length) {
+if (cleanEntries.length && !budgetReason && !blockReason) {
   const plated = await typed(platePrompt(cleanEntries.map((r) => ({ slug: r.curd.slug, sha: r.sha })), singlePass), { label: 'plate', phase: 'Plate', agentType: 'coder', model: 'opus', schema: PLATE_SCHEMA }, checkPlate, true)
   if (plated.value) {
     plateRows = plated.value.results
@@ -1364,7 +1996,7 @@ if (cleanEntries.length && floorReached()) {
     plateFailure = errorText(plated.errors)
     log(`Plate returned no valid result (${plateFailure}) — clean curds fail.`)
   }
-} else {
+} else if (!cleanEntries.length) {
   log('No clean curds — skipping plate.')
 }
 
@@ -1392,13 +2024,12 @@ const curdsOut = withStatus.map((r) => {
     branch: r.branch,
     status: plateReason ? 'failed' : r.status,
     pr_url: plate ? plate.pr_url : undefined,
-    excluded_reason: plateReason || r.excluded_reason,
+    excluded_reason: plateReason || r.excluded_reason || (r.status === 'clean' ? blockedText : undefined),
     age: ageMode ? { mode: ageMode, has_medium_plus_findings: owned.some(isMediumPlus) || unownedMedium } : undefined,
   }
 })
 
-const summary = { clean: 0, dirty: 0, failed: 0 }
-for (const c of curdsOut) summary[c.status] = (summary[c.status] || 0) + 1
+const summary = countStatuses(curdsOut)
 log(`Report: ${curdsOut.length} curd(s) — clean:${summary.clean} dirty:${summary.dirty} failed:${summary.failed}`)
 
 // Cleanup runs only when every curd is clean and plated. Dirty or failed curds keep their worktrees for inspection.
@@ -1411,10 +2042,13 @@ if (curdsOut.length && curdsOut.every((c) => c.status === 'clean' && platedBySlu
 }
 
 return {
-  status: budgetReason ? 'partial' : 'ok',
-  reason: budgetReason || undefined,
+  status: budgetReason || blockReason ? 'partial' : 'ok',
+  reason: budgetReason || blockReason || undefined,
+  concerns: doneConcerns || undefined,
   curds: curdsOut,
   summary,
+  verification,
+  advice: { plan: { verdict: planAdvice.advice.verdict, concerns: planAdvice.advice.concerns, revisions: planRevisions }, done: doneAdvice ? { verdict: doneAdvice.verdict, concerns: doneAdvice.concerns } : null },
   integration: integrate ? { merged: integrate.merged, conflicted: integrate.conflicted, head: integrate.head, base_sha: baseSha, remerge_head: remerge ? remerge.head : null } : null,
   age_worktrees: [...reportWorktrees].sort(),
 }

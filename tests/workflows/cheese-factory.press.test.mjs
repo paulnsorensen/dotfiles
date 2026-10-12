@@ -4,7 +4,8 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime, loadWorkflow } from './harness.mjs'
+import { createRuntime } from './cheese-factory.fixtures.mjs'
+import { loadWorkflow } from './harness.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 const fanoutPath = resolve(import.meta.dirname, '../../claude/workflows/age-fanout.js')
@@ -269,7 +270,7 @@ test('cookCurd_salvageReturnsLastCheckpoint_stopsAsStalled', async () => {
     'salvage:parent': () => ({ found: true, checkpoint: cp, completed: 'x', remaining: '' }),
   })
 
-  assert.deepEqual(labelsOf(trace), ['resolve', 'cook:parent', 'cook:parent:c1', 'salvage:parent'])
+  assert.deepEqual(labelsOf(trace), ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1', 'salvage:parent'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /stalled/)
 })
