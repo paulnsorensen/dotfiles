@@ -105,8 +105,54 @@ The coordinator's verified response remains an agent trust boundary; determinist
 ## ADR-013: age-fanout returns flat findings for code routing [status: accepted]
 
 - **Context:** ADR-006 routes findings to curds by file, but the age-fanout reconcile model did the routing with `git log --name-only` and reported cheap lows as one global boolean (`claude/workflows/age-fanout.js:128,214-219`). cheese-factory could not cure cheap lows per curd or check the routing.
-- **Decision:** When the caller passes `route_curds`, reconcile returns a flat `findings` list. Each item has a severity and `fix_cost_now` (contained, sprawling, or n/a). cheese-factory's integrate step returns `files_by_slug`, and code routes each finding to every curd that owns its file. A finding with no owner marks every integrated curd dirty. A call without `route_curds` is unchanged, so move-my-cheese is unaffected.
+- **Decision:** When the caller passes `route_curds`, reconcile returns a flat `findings` list. Each item has a severity and `fix_cost_now` (contained, sprawling, or n/a). cheese-factory's integrate step returns `files_by_slug`, and code routes each finding to every curd that owns its file. A finding that needs cure with no owner marks every integrated curd dirty. An unowned low that needs no cure leaves the curds clean. A call without `route_curds` is unchanged, so move-my-cheese is unaffected.
 - **Alternatives:** validate the model's `per_curd` in code (the model still routes); defer routing (cheap lows cure every curd).
 - **Consequences:** Routing is deterministic and testable. `fix_cost_now` stays a reviewer judgment.
 
 _Source: /mold spec `cheese-factory-hardening` (durable corpus) · Decided: 2026-10-12 · ADR-011 supersedes ADR-010_
+
+## Implementation notes for ADR-011..013 (2026-10-12)
+
+The `cheese-factory-hardening` run implements ADR-011, ADR-012, and ADR-013. Review and user decisions refine them as follows.
+
+- **Cook answers that stay final (user decision B).** A partial cook or continuation with a bad checkpoint SHA goes to `salvage()`. An `ok` cook with a bad `head_sha` fails the curd at stage cook at once. A `needs-context` status, a null result, and a throw also go to `salvage()`. No cook SHA defect re-dispatches `cookPrompt`, because that prompt resets `curd/<slug>` to the base SHA.
+- **Cook status outside the enum (user decision, 2026-10-12).** A cook status other than `ok`, `partial`, `blocked`, or `needs-context` also goes to `salvage()`. A redo would reset the curd ref, as for a SHA defect.
+- **Ranges.** `groundedRanges` keeps the valid `source_ranges` and drops the rest. A one-line `#n-n` range is valid. This replaces the reject-all check that ADR-011 names.
+- **Integration (amends ADR-006).** Integrate and re-merge build on a detached HEAD at the resolved base SHA through one shared merge prompt. They merge each curd by its code-known SHA. No `integration/<parent>` branch exists, because a second worktree cannot check out a branch that another worktree holds.
+- **Fail-closed reviews.** A barrier, fan-out, or re-age result whose status is not `ok` is not a review. A blocked barrier fails every integrated curd. A blocked re-age after a cure marks every integrated curd dirty.
+- **Plate pin.** Plate checks `refs/heads/curd/<slug>` against the reviewed SHA once, before /plate starts any commit, restack, or push step. A check at push time conflicts with the stacked restack, which rewrites upper-layer SHAs.
+- **Typed calls.** A status or SHA error is a substance error, so the producer redoes the call. No formatter repairs it. A writer throw is final; a read-only throw (taste, salvage, reviewers, formatter repairs) retries within `LIMITS.fixRounds`. A short SHA gets a read-only expansion instead of a writer redo. Cook is the exception: its status and SHA defects stay final, as above.
+- **Writers read skill files (user decision, 2026-10-12).** The `coder` type has no Skill tool, because the Skill tool adds the full skill listing (about 11k tokens) to every coder spawn. The cook, press, and cure prompts tell the writer to read `~/.claude/skills/<name>/SKILL.md` and follow it, as age-fanout does for the reviewer.
+- **Code-owned checks.** A taste pass over a `revise` lens counts as `revise`. A resolved spec must carry `curd_count`. A decomposition above `LIMITS.maxCurds` (12) is a substance error, which keeps a run under the 1000-agent cap.
+
+_Source: `claude/workflows/cheese-factory.js`, `claude/workflows/age-fanout.js`, `tests/workflows/cheese-factory*.test.mjs` · Age reports `.cheese/age/pass{1,2}-cheese-factory-hardening.md` · Updated: 2026-10-12_
+
+## ADR-014: Shared helper prelude as a vendored block with a drift test [status: proposed]
+
+- **Context:** Workflow scripts cannot import. cheese-factory and move-my-cheese hold ten byte-identical helpers and a diverged `typed()`. `dots sync` copies `claude/workflows/` with `cp -L` and has no build step (`.sync-lib.sh:406,670`).
+- **Decision:** `claude/workflow-prelude/prelude.js` holds the shared helpers. `node claude/workflow-prelude/sync.mjs` pastes it between markers in both workflows. A test fails when a block drifts from the source. move-my-cheese adopts cheese-factory's `typed()`.
+- **Alternatives:** concat at deploy (repo file differs from deployed file; ADR-007 rejected template machinery); a drift test only (fixes still need manual ports).
+- **Consequences:** The deployed file equals the repo file, and the harness and deploy stay unchanged. An edit inside a block fails the test until it moves to the source.
+
+## ADR-015: Extract one read-only check per spec AC at resolve [status: proposed]
+
+- **Context:** Spec ACs are EARS prose with no check command. move-my-cheese's planner emits criteria with checks, and code gates them with `UNSAFE_CHECKS` (`claude/workflows/move-my-cheese.js:189,269`).
+- **Decision:** After resolve, one read-only opus agent returns one criterion per spec AC id: a check_kind (command, test, inspection, or ci) and a check. Code requires exact AC-id coverage and gates each command or test with `UNSAFE_CHECKS`. A spec with no AC line skips verification.
+- **Alternatives:** judges read the prose and choose a check (less reproducible); the mold spec format carries checks (changes the easy-cheese mold skill and every older spec).
+- **Consequences:** Checks are reproducible and reviewable before cook. An extracted check can be weak; the plan advisor reviews it.
+
+## ADR-016: A failed spec criterion blocks Plate [status: proposed]
+
+- **Context:** Today a curd plates when its review is clean, without a check against the spec's ACs.
+- **Decision:** Before Plate, one judge per non-ci criterion verifies it at the final integration head. A fail, a missing path, or no valid verdict blocks Plate, and the run returns status partial with the verdicts. CI criteria are deferred.
+- **Alternatives:** one corrective round before blocking (ACs do not map to curds); advisory only (no guarantee).
+- **Consequences:** Fail closed, as in move-my-cheese. A run can finish clean on review but still not plate.
+
+## ADR-017: Advisor gates on the plan and on done [status: proposed]
+
+- **Context:** move-my-cheese advises on its plan (approve, one revise, or stop) and on done (`claude/workflows/move-my-cheese.js:1103-1108,1599-1621`). cheese-factory starts cook on an unreviewed decomposition.
+- **Decision:** A judge in advise mode reviews the curds and criteria before any cook: approve, one revise, or stop. A second advise call after verification gates Plate: only approve proceeds.
+- **Alternatives:** a done gate only (a bad plan surfaces late); no advisor.
+- **Consequences:** Two or three opus calls per run. A stopped plan spends no cook agents.
+
+_Source: /mold specs `cfh-shared-prelude` and `cfh-criteria-gate` (durable corpus) · Decided: 2026-10-12 · Status proposed until the specs land_

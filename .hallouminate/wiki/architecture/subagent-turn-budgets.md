@@ -129,12 +129,11 @@ Non-obvious facts a future agent would re-derive (learned in PRs #407, #484):
   picks full or outline by size; `mode: full` is only for a question a section cannot answer. The parent also re-dispatches
   fresh coders until the phase is done. It stops when a coder completes no new
   edit. This replaces the old "one fresh retry" cap, which stranded long work.
-  `/cheese-factory` implements the stop with a `worktree_fingerprint` from the
-  checkpoint coordinator. One exact `git hash-object --stdin` command hashes HEAD,
-  status, the tracked diff, and untracked file contents, and excludes `.cheese/`.
-  A prescribed command matters: fresh coordinators must encode the same tree the same
-  way, and an edit inside an untracked file must count. An unchanged fingerprint halts
-  with "no progress"; `COOK_CONTINUATION_LIMIT = 8` is only a runaway guard.
+  `/cheese-factory` implements the stop with a commit-SHA stall guard (ADR-011 in
+  [[adr/cheese-factory-workflow]]). A cook that runs low commits, advances
+  `curd/<slug>`, and returns its checkpoint SHA. A repeated SHA stops the curd as
+  stalled, and `LIMITS.continuations = 3` bounds the rounds. The checkpoint
+  coordinator and its `worktree_fingerprint` no longer exist.
 
 - **Context is real tokens; each hard ceiling reserves one checkpoint write (#552).**
   The signal remains the last assistant `message.usage` sum (`input +
