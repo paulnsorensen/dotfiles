@@ -220,7 +220,7 @@ ${ROUTE_CURDS ? `Return a flat "findings" array: every deduped finding, each wit
 
 ` : ''}Set has_cheap_lows to true when any low finding has fix-cost-now: contained.
 
-${BLOCKED_DIRECTIVE} Return status ok only after the report file exists.
+${BLOCKED_DIRECTIVE} Return status ok only after the report file exists. A blocked answer must still carry every required key with neutral values: {"status":"blocked","blocked_reason":"<why>","has_medium_plus_findings":false,"has_cheap_lows":false,"artifact":""${ROUTE_CURDS ? ',"findings":[]' : ''}}.
 
 Return {"status":"ok","has_medium_plus_findings":true|false,"has_cheap_lows":true|false,"artifact":".cheese/age/${slug}.md"${ROUTE_CURDS ? ',"findings":[{"dimension":"...","severity":"blocker|high|medium|low","fix_cost_now":"contained|moderate|sprawling|n/a","file":"' + REPO_RELATIVE_PATH + '","line":<int>,"claim":"...","why_it_matters":"...","fix_direction":"..."}]' : ''}}.`
 }
