@@ -766,48 +766,47 @@ const twoCurdCureLoop = {
   'age:reage': () => ageBarrierResult({ perCurd: [{ slug: 'a', has_medium_plus_findings: false }] }),
 }
 
-test('fan-out result with a form-only defect is repaired once by haiku, with no age:barrier call', async () => {
-  const workflow = await loadWorkflow(path)
-  const broken = { ...ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { claim: 'REPAIRED-CLAIM' })] }), has_medium_plus_findings: 'yes' }
-  const repaired = ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { claim: 'REPAIRED-CLAIM' })] })
-  const respond = respondTwoCurds({ ...twoCurdCureLoop, 'age:fanout:repair1': () => repaired })
-  const { globals, trace } = createRuntime({ respond })
-
-  await workflow.run({ ...globals, args: { spec: 'parent' }, ...fanOverrideAbc(broken) })
-
-  const repairs = callsOf(trace, 'age:fanout:repair1')
-  assert.equal(repairs.length, 1)
-  assert.equal(repairs[0].opts.model, 'haiku')
-  assert.equal(repairs[0].opts.phase, 'Age')
-  assert.equal(callsOf(trace, 'age:barrier').length, 0)
-  const cureA = callsOf(trace, 'cure:a')
-  assert.equal(cureA.length, 1)
-  assert.match(cureA[0].prompt, /REPAIRED-CLAIM/)
-  assert.equal(callsOf(trace, 'cure:b').length, 0)
-})
-
-test('fan-out repair that stays invalid falls back to age:barrier', async () => {
-  const workflow = await loadWorkflow(path)
-  const broken = { ...ageBarrierResult({ hasMediumPlus: true, findings: [finding('a')] }), has_medium_plus_findings: 'yes' }
-  const respond = respondTwoCurds({
-    'age:fanout:repair1': () => broken,
-    'age:barrier': () => ageBarrierResult({ perCurd: [{ slug: 'a', has_medium_plus_findings: false }] }),
-  })
-  const { globals, trace } = createRuntime({ respond })
-
-  await workflow.run({ ...globals, args: { spec: 'parent' }, ...fanOverrideAbc(broken) })
-
-  assert.equal(callsOf(trace, 'age:fanout:repair1').length, 1)
-  assert.equal(callsOf(trace, 'age:barrier').length, 1)
-  assert.match(trace.logs.join('\n'), /age-fanout unavailable/)
-})
-
-test('a finding file with a leading ./ or the integration worktree prefix routes to the owning curd', async () => {
+test('a fan-out finding file with a leading ./ or the integration worktree prefix routes to the owning curd', async () => {
   const workflow = await loadWorkflow(path)
   const findings = [
     finding('a', { file: './src/a.js', claim: 'DOT-SLASH-CLAIM' }),
     finding('a', { file: '/tmp/worktrees/integration/src/a.js', claim: 'ABSOLUTE-CLAIM' }),
   ]
+  const respond = respondTwoCurds(twoCurdCureLoop)
+  const { globals, trace } = createRuntime({ respond })
+
+  await workflow.run({ ...globals, args: { spec: 'parent' }, ...fanOverrideAbc(ageBarrierResult({ hasMediumPlus: true, findings, perCurd: [{ slug: 'a' }, { slug: 'b' }] })) })
+
+  const cureA = callsOf(trace, 'cure:a')
+  assert.equal(cureA.length, 1)
+  assert.match(cureA[0].prompt, /DOT-SLASH-CLAIM/)
+  assert.match(cureA[0].prompt, /ABSOLUTE-CLAIM/)
+  assert.equal(callsOf(trace, 'cure:b').length, 0)
+})
+
+test('a single-reviewer finding file with the reviewer own worktree prefix routes to the owning curd and the cure prompt carries the repo path', async () => {
+  const workflow = await loadWorkflow(path)
+  const findings = [finding('a', { file: '/tmp/worktrees/reviewer/src/a.js', claim: 'OWN-WORKTREE-CLAIM' })]
+  const respond = respondTwoCurds({
+    ...twoCurdCureLoop,
+    integrate: () => integrateResult({ merged: ['a', 'b'] }),
+    'age:barrier': () => ageBarrierResult({ hasMediumPlus: true, findings, perCurd: [{ slug: 'a' }, { slug: 'b' }], extra: { worktree_path: '/tmp/worktrees/reviewer' } }),
+  })
+  const { globals, trace } = createRuntime({ respond })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+
+  const cureA = callsOf(trace, 'cure:a')
+  assert.equal(cureA.length, 1)
+  assert.match(cureA[0].prompt, /OWN-WORKTREE-CLAIM/)
+  assert.doesNotMatch(cureA[0].prompt, /\/tmp\/worktrees\/reviewer/)
+  assert.match(cureA[0].prompt, /"file": "src\/a\.js"/)
+  assert.notEqual(result.curds.find((c) => c.slug === 'b').status, 'dirty')
+})
+
+test('a finding file under another scratch worktree root routes to the owning curd', async () => {
+  const workflow = await loadWorkflow(path)
+  const findings = [finding('a', { file: '/repo/.claude/worktrees/elsewhere/src/a.js', claim: 'SCRATCH-ROOT-CLAIM' })]
   const respond = respondTwoCurds({
     ...twoCurdCureLoop,
     integrate: () => integrateResult({ merged: ['a', 'b'] }),
@@ -817,11 +816,7 @@ test('a finding file with a leading ./ or the integration worktree prefix routes
 
   await workflow.run({ ...globals, args: { spec: 'parent' } })
 
-  const cureA = callsOf(trace, 'cure:a')
-  assert.equal(cureA.length, 1)
-  assert.match(cureA[0].prompt, /DOT-SLASH-CLAIM/)
-  assert.match(cureA[0].prompt, /ABSOLUTE-CLAIM/)
-  assert.equal(callsOf(trace, 'cure:b').length, 0)
+  assert.match(callsOf(trace, 'cure:a')[0].prompt, /SCRATCH-ROOT-CLAIM/)
 })
 
 test('workflow() throwing falls back to age:barrier', async () => {
@@ -2057,6 +2052,16 @@ test('AC-6: a sprawling low alone does not trigger cure', async () => {
   assert.equal(result.curds[0].status, 'clean')
 })
 
+test('a low finding with fix_cost_now moderate is valid, is not contained, and triggers no cure', async () => {
+  const { result, trace } = await runParent({
+    'age:barrier': () => ageBarrierResult({ findings: [finding('parent', { severity: 'low', fix_cost_now: 'moderate' })] }),
+  })
+
+  assert.equal(callsOf(trace, 'age:barrier:repair1').length, 0)
+  assert.equal(callsOf(trace, 'cure:parent').length, 0)
+  assert.equal(result.curds[0].status, 'clean')
+})
+
 test('AC-6: a medium finding with fix_cost_now sprawling still needs cure', async () => {
   const { trace } = await runParent({
     'age:barrier': () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('parent', { severity: 'medium', fix_cost_now: 'sprawling' })] }),
@@ -2081,18 +2086,62 @@ test('AC-10: code routes a finding to the curd whose files_by_slug holds its fil
   assert.equal(bySlug.b.status, 'clean')
 })
 
-test('AC-10: a finding on a file two curds changed routes to both', async () => {
+test('AC-10: a finding on a file two curds changed routes to the first owner only, and the re-age prior lists it once', async () => {
   const fanout = async () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { file: 'src/shared.js', claim: 'shared defect' })] })
-  const { trace } = await runTwoCurds({
+  const { trace, bySlug } = await runTwoCurds({
     integrate: () => integrateResult({ merged: ['a', 'b'], files_by_slug: { a: ['src/shared.js'], b: ['src/shared.js', 'src/b.js'] }, files_changed: 20, lines_changed: 900 }),
     'cure:a': () => cureResult({ committed: true, head_sha: CURE_SHA }),
-    'cure:b': () => cureResult({ committed: true, head_sha: sha(0xc0df) }),
     're-merge': () => integrateResult({ merged: ['a', 'b'], head: NEW_HEAD }),
     'age:reage': () => ageBarrierResult({ perCurd: [{ slug: 'a' }, { slug: 'b' }] }),
   }, fanout)
 
   assert.match(callsOf(trace, 'cure:a')[0].prompt, /shared defect/)
-  assert.match(callsOf(trace, 'cure:b')[0].prompt, /shared defect/)
+  assert.equal(callsOf(trace, 'cure:b').length, 0)
+  const reagePrompt = callsOf(trace, 'age:reage')[0].prompt
+  assert.equal(reagePrompt.split('shared defect').length - 1, 1)
+  assert.match(reagePrompt, /only if it is still present/)
+  assert.equal(bySlug.a.status, 'clean')
+  assert.equal(bySlug.b.status, 'clean')
+})
+
+test('AC-10: the other owner of a shared finding is dirty when the first owner cure commits nothing', async () => {
+  const fanout = async () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { file: 'src/shared.js' })] })
+  const { trace, bySlug } = await runTwoCurds({
+    integrate: () => integrateResult({ merged: ['a', 'b'], files_by_slug: { a: ['src/shared.js'], b: ['src/shared.js', 'src/b.js'] }, files_changed: 20, lines_changed: 900 }),
+    'cure:a': () => cureResult({ committed: false }),
+  }, fanout)
+
+  assert.equal(callsOf(trace, 'cure:b').length, 0)
+  assert.equal(bySlug.a.status, 'dirty')
+  assert.equal(bySlug.b.status, 'dirty')
+  assert.match(bySlug.b.excluded_reason, /owning curd did not commit/)
+})
+
+test('a re-age finding on a file two curds changed marks both owners dirty', async () => {
+  const fanout = async () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { file: 'src/a.js' })] })
+  const shared = { a: ['src/a.js', 'src/shared.js'], b: ['src/shared.js'] }
+  const { bySlug } = await runTwoCurds({
+    integrate: () => integrateResult({ merged: ['a', 'b'], files_by_slug: shared, files_changed: 20, lines_changed: 900 }),
+    'cure:a': () => cureResult({ committed: true, head_sha: CURE_SHA }),
+    're-merge': () => integrateResult({ merged: ['a', 'b'], files_by_slug: shared, head: NEW_HEAD }),
+    'age:reage': () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { file: 'src/shared.js' })], perCurd: [{ slug: 'a' }, { slug: 'b' }] }),
+  }, fanout)
+
+  assert.equal(bySlug.a.status, 'dirty')
+  assert.equal(bySlug.b.status, 'dirty')
+})
+
+test('a re-merge-conflicted cured curd keeps its files in the re-age slug set, so its finding does not mark the other curd dirty', async () => {
+  const fanout = async () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { claim: 'in a' })] })
+  const { bySlug } = await runTwoCurds({
+    'cure:a': () => cureResult({ committed: true, head_sha: CURE_SHA }),
+    're-merge': () => integrateResult({ merged: ['b'], conflicted: ['a'], head: NEW_HEAD }),
+    'age:reage': () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { claim: 'still in a' })], perCurd: [{ slug: 'b' }] }),
+  }, fanout)
+
+  assert.equal(bySlug.a.status, 'dirty')
+  assert.match(bySlug.a.excluded_reason, /re-merge conflicted/)
+  assert.equal(bySlug.b.status, 'clean')
 })
 
 test('AC-10: a finding whose file no curd changed marks every integrated curd dirty and dispatches no cure or plate', async () => {
@@ -2127,7 +2176,7 @@ test('AC-11: the single-reviewer fallback returns flat findings, routed by files
 
   const age = callsOf(trace, 'age:barrier')[0]
   assert.match(age.prompt, /"findings":\[\{"dimension"/)
-  assert.match(age.prompt, /"fix_cost_now":"contained\|sprawling\|n\/a"/)
+  assert.match(age.prompt, /"fix_cost_now":"contained\|moderate\|sprawling\|n\/a"/)
   assert.equal(age.prompt.includes('per_curd'), false)
   assert.equal(age.prompt.includes('--name-only'), false)
   assert.equal(age.opts.schema.required.includes('findings'), true)
@@ -2625,23 +2674,6 @@ test('AGE-1: a blocked single barrier plates no curd and fails each integrated c
   assert.equal(callsOf(trace, 'plate').length, 0)
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /^age: barrier age blocked: skill unavailable$/)
-})
-
-test('AGE-1: a fan-out result that the form repair turns blocked is not accepted as ok', async () => {
-  const workflow = await loadWorkflow(path)
-  const broken = { ...ageBarrierResult({ hasMediumPlus: true, findings: [finding('a')] }), has_medium_plus_findings: 'yes' }
-  const blockedFix = { ...ageBarrierResult(), status: 'blocked' }
-  const respond = respondTwoCurds({
-    'age:fanout:repair1': () => blockedFix,
-    'age:barrier': () => ageBarrierResult({ perCurd: [{ slug: 'a', has_medium_plus_findings: false }] }),
-  })
-  const { globals, trace } = createRuntime({ respond })
-
-  await workflow.run({ ...globals, args: { spec: 'parent' }, ...fanOverrideAbc(broken) })
-
-  assert.equal(callsOf(trace, 'age:fanout:repair1').length, 1)
-  assert.equal(callsOf(trace, 'age:barrier').length, 1)
-  assert.match(trace.logs.join('\n'), /age-fanout unavailable .*blocked after repair/)
 })
 
 test('AGE-1: a blocked re-age leaves the cured curd dirty and plates nothing', async () => {

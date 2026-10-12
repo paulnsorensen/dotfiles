@@ -11,7 +11,7 @@ export const meta = {
     { title: 'Integrate', detail: 'one coder merges each surviving curd SHA on a detached HEAD at the base SHA, slug-sorted, --no-ff; conflicts exclude that curd downstream' },
     { title: 'Age', detail: 'barrier review of the whole integrated diff; large diffs fan out via the age-fanout child workflow, else one opus reviewer runs /age --auto, and code routes the flat findings to curds by files_by_slug' },
     { title: 'Cure', detail: 'parallel sonnet coders fix only curds that own a medium+ finding or a contained low, via /cure --auto --stake medium+, and never ask which findings to fix' },
-    { title: 'Re-age', detail: 'once, only if a cure committed: re-merge the branches, then run an incremental /age over the range from the reviewed head to the new head; a curd missing from reviewed_slugs is dirty' },
+    { title: 'Re-age', detail: 'once, only if a cure committed: re-merge the branches, then run an incremental /age over the range from the reviewed head to the new head; a cured curd missing from reviewed_slugs is dirty' },
     { title: 'Plate', detail: 'one opus barrier stacks clean curd branches into (stacked) PRs; never merges' },
     { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, and excluded-curd reasons' },
   ],
@@ -328,7 +328,7 @@ const AGE_STATUSES = ['ok', 'blocked']
 const CURE_STATUSES = ['ok', 'partial', 'blocked']
 const PLATE_STATUSES = ['ok', 'failed', 'blocked']
 const FINDING_SEVERITIES = ['blocker', 'high', 'medium', 'low']
-const FIX_COSTS = ['contained', 'sprawling', 'n/a']
+const FIX_COSTS = ['contained', 'moderate', 'sprawling', 'n/a']
 
 const form = (msg) => ({ kind: 'form', msg })
 const substance = (msg) => ({ kind: 'substance', msg })
@@ -418,27 +418,36 @@ const checkCleanup = checkWith(CLEANUP_SCHEMA)
 // ---- routing: code assigns findings to curds by the files each curd changed ----
 const isMediumPlus = (f) => f.severity !== 'low'
 const needsCure = (f) => isMediumPlus(f) || f.fix_cost_now === 'contained'
-// A finding owned by two curds routes to both. unrouted is true when a finding that needs cure has no owner,
+// A finding owned by two curds routes to the first owner in slug order. Each other owner lands in shared, keyed to the owners that cure it.
+// unrouted is true when a finding that needs cure has no owner,
 // or when the result claims medium+ findings or contained lows that its list does not carry.
-// A finding file may carry a leading ./ or the integration worktree prefix; both name the same repo path.
+// A finding file may carry a leading ./ or a worktree prefix; both name the same repo path.
+// The prefix is the producer's own worktree_path, or any scratch worktree root.
+const SCRATCH_PREFIX_RE = /^\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+\//
 const normalizeFile = (file, worktreePath) => {
   let p = String(file).trim()
-  if (worktreePath) {
-    const root = String(worktreePath).replace(/\/+$/, '') + '/'
-    if (p.startsWith(root)) p = p.slice(root.length)
-  }
+  const root = worktreePath ? String(worktreePath).replace(/\/+$/, '') + '/' : null
+  p = root && p.startsWith(root) ? p.slice(root.length) : p.replace(SCRATCH_PREFIX_RE, '')
   return p.replace(/^(\.\/)+/, '')
 }
+const ownsFinding = (routing, slug) => routing.bySlug.has(slug) || routing.shared.has(slug)
 function routeFindings(result, filesBySlug, slugs, worktreePath) {
   const bySlug = new Map()
+  const shared = new Map()
   let unrouted = (Boolean(result.has_medium_plus_findings) && !result.findings.some(isMediumPlus)) ||
     (Boolean(result.has_cheap_lows) && !result.findings.some((f) => f.severity === 'low' && f.fix_cost_now === 'contained'))
   for (const f of result.findings.filter(needsCure)) {
-    const owners = slugs.filter((s) => (filesBySlug[s] || []).includes(normalizeFile(f.file, worktreePath)))
-    if (!owners.length) unrouted = true
-    for (const s of owners) bySlug.set(s, [...(bySlug.get(s) || []), f])
+    const file = normalizeFile(f.file, worktreePath)
+    const owners = slugs.filter((s) => (filesBySlug[s] || []).includes(file))
+    if (!owners.length) {
+      unrouted = true
+      continue
+    }
+    const [first, ...others] = owners
+    bySlug.set(first, [...(bySlug.get(first) || []), { ...f, file }])
+    for (const s of others) shared.set(s, new Set([...(shared.get(s) || []), first]))
   }
-  return { bySlug, unrouted }
+  return { bySlug, shared, unrouted }
 }
 
 const redoPrompt = (original, errors) => `${original}\n\nYour previous answer failed these checks. Fix each one.\n${data('errors', errors.map((e) => e.msg))}`
@@ -681,7 +690,7 @@ const integratePrompt = (base, refs) => mergePrompt('You are the Integrate barri
 // The reviewer pins the integration head, so a later move of the branch cannot change what it reads.
 const pinHeadStep = (head) => `First run \`git checkout --detach ${head}\` and confirm \`git rev-parse HEAD\` prints ${head}. Review that commit only.`
 
-const FINDINGS_RETURN = '"findings":[{"dimension":"...","severity":"blocker|high|medium|low","fix_cost_now":"contained|sprawling|n/a","file":"<repo-relative path>","line":<n>,"claim":"...","why_it_matters":"...","fix_direction":"..."}]'
+const FINDINGS_RETURN = '"findings":[{"dimension":"...","severity":"blocker|high|medium|low","fix_cost_now":"contained|moderate|sprawling|n/a","file":"<repo-relative path>","line":<n>,"claim":"...","why_it_matters":"...","fix_direction":"..."}]'
 
 function ageBarrierPrompt(head, refs) {
   return reviewerPrompt('severity-report', `You are a read-only opus reviewer running the Age barrier of the /cheese-factory workflow over the integration head that merges the surviving curd branches.
@@ -692,7 +701,7 @@ Run \`/age origin/main...${head} --auto\` via the Skill tool over the whole inte
 
 Curd branches in this integration:
 ${data('branches', refs)}
-Report every finding in one flat list with its repo-relative file. Do not attribute findings to curds; code does that. Set fix_cost_now to contained, sprawling, or n/a for each finding.
+Report every finding in one flat list with its repo-relative file. Do not attribute findings to curds; code does that. Set fix_cost_now to contained, moderate, sprawling, or n/a for each finding.
 
 ${NO_CHAIN_DIRECTIVE} In particular: do NOT invoke /cure yourself even if /age --auto documents that chain.
 
@@ -708,7 +717,7 @@ ${pinHeadStep(newHead)}
 
 Run \`/age ${reviewedHead}..${newHead} --auto\` via the Skill tool. The range holds the cure commits. If the skill returns mode skipped-unchanged, run it again over the same range with the full diff; do not report skipped-unchanged.
 
-These findings drove the cure. Judge each one resolved or still present:
+These findings drove the cure. Report one of them again only if it is still present:
 ${data('prior_findings', priorFindings)}
 
 Curd branches in this integration:
@@ -967,18 +976,10 @@ if (integrate && integratedRefs.length) {
   const useFanout = integrate.files_changed > 15 || integrate.lines_changed > 800
   if (useFanout) {
     try {
-      let fan = await workflow('age-fanout', { worktree_path: integrate.worktree_path, range: `origin/main...${integrate.head}`, slug: parentSlug, route_curds: integratedRefs.map(({ slug, branch }) => ({ slug, branch })) })
+      const fan = await workflow('age-fanout', { worktree_path: integrate.worktree_path, range: `origin/main...${integrate.head}`, slug: parentSlug, route_curds: integratedRefs.map(({ slug, branch }) => ({ slug, branch })) })
       if (!fan || fan.status !== 'ok') throw new Error((fan && fan.error) || 'age-fanout returned non-ok')
-      let fanErrors = checkAge(fan)
-      if (fanErrors.length && fanErrors.every((e) => e.kind === 'form')) {
-        const fixed = await attempt(repairPrompt(fan, fanErrors), { label: 'age:fanout:repair1', phase: 'Age', schema: AGE_BARRIER_SCHEMA, model: 'haiku', effort: 'low' })
-        if (fixed.value) {
-          fan = { ...fan, ...fixed.value }
-          fanErrors = checkAge(fan)
-        }
-      }
+      const fanErrors = checkAge(fan)
       if (fanErrors.length) throw new Error(errorText(fanErrors))
-      if (fan.status !== 'ok') throw new Error(`age-fanout result is ${fan.status} after repair`)
       ageResult = fan
       ageMode = 'fanout'
     } catch (e) {
@@ -997,7 +998,7 @@ if (integrate && integratedRefs.length) {
     }
   }
   if (ageResult) {
-    routing = routeFindings(ageResult, integrate.files_by_slug, integratedRefs.map((r) => r.slug), integrate.worktree_path)
+    routing = routeFindings(ageResult, integrate.files_by_slug, integratedRefs.map((r) => r.slug), ageResult.worktree_path || integrate.worktree_path)
     if (routing.unrouted) log('Barrier age reported a finding that needs cure and no curd owns its file — integrated curds marked dirty.')
   }
 }
@@ -1048,7 +1049,7 @@ if ([...cureBySlug.values()].some((c) => c && c.committed)) {
       log(`Re-age is ${reaged.value.status} (${reageBlocked}) — the re-merged head has no ok review; integrated curds stay dirty.`)
     } else {
       reage = reaged.value
-      reageRouting = routeFindings(reage, remerge.files_by_slug, remerge.merged, remerge.worktree_path)
+      reageRouting = routeFindings(reage, { ...integrate.files_by_slug, ...remerge.files_by_slug }, integratedRefs.map((r) => r.slug), reage.worktree_path || remerge.worktree_path)
     }
   }
 }
@@ -1071,8 +1072,11 @@ const withStatus = chainResults.map((r, i) => {
   if (!routing.bySlug.has(curd.slug)) {
     // A curd with no cure still sits in the re-merged tree that the re-age reviewed, so the re-merge and re-age results apply to it too.
     if (remergeConflicted.has(curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-merge conflicted after cure' }
+    // A shared finding is cured on its first owner's branch only, so this curd stays dirty unless that cure committed.
+    const owners = routing.shared.get(curd.slug)
+    if (owners && [...owners].some((o) => !(cureBySlug.get(o) && cureBySlug.get(o).committed))) return { curd, branch, status: 'dirty', excluded_reason: 'cure by the owning curd did not commit a fix' }
     if (reageRouting && reageRouting.unrouted) return { curd, branch, status: 'dirty', excluded_reason: 're-age reported a finding that needs cure and no curd owns its file' }
-    if (reageRouting && reageRouting.bySlug.has(curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age reports findings that need cure' }
+    if (reageRouting && ownsFinding(reageRouting, curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age reports findings that need cure' }
     return { curd, branch, sha, status: 'clean' }
   }
   const cure = cureBySlug.get(curd.slug)
@@ -1082,7 +1086,7 @@ const withStatus = chainResults.map((r, i) => {
   if (!reage) return { curd, branch, status: 'dirty', excluded_reason: 're-age did not run after cure' }
   if (!reage.reviewed_slugs.includes(curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age has no entry for the cured curd' }
   if (reageRouting.unrouted) return { curd, branch, status: 'dirty', excluded_reason: 're-age reported a finding that needs cure and no curd owns its file' }
-  if (reageRouting.bySlug.has(curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age still reports findings that need cure' }
+  if (ownsFinding(reageRouting, curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age still reports findings that need cure' }
   return { curd, branch, sha, status: 'clean' }
 })
 
