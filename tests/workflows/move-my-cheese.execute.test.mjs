@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  ageFull, aged, approve, built, builtConsolidation, detail, integrated, keepPlanRoutes, minimalPlan, noTensions,
-  openPr, plain, planRoutes, published, ready, reconRoutes, run, sha, survey, verified,
+  ageFull, aged, approve, built, builtConsolidation, detail, finalized, integrated, keepPlanRoutes, minimalPlan,
+  noTensions, openPr, plain, planRoutes, published, ready, reconRoutes, run, sha, survey, verified,
 } from './move-my-cheese.fixtures.mjs'
 
 test('auto with clean, already-aged PRs reaches ready without building, publishing, or reviewing', async () => {
@@ -50,7 +50,7 @@ test('a malformed aged marker reads as no marker, so the PR is reviewed', async 
     ['survey', survey],
     ['tensions', noTensions],
     ['age:1', ageFull(1)],
-    ['finalize:1', { pushed: false, head_sha: sha(1), marker_updated: true }],
+    ['finalize:1', finalized],
     ['review:1:status', ready(1)],
   ])
   assert.ok(labels.includes('age:1'))
@@ -58,30 +58,34 @@ test('a malformed aged marker reads as no marker, so the PR is reviewed', async 
   assert.match(call('recon:detail').prompt, /select\(\.user\.login == "me"\)/)
 })
 
-test('cure commits that finalize could not push fail the review instead of reading as ready', async () => {
+test('cure commits that cure could not push fail the review before re-age, finalize, or polling', async () => {
   const { result, labels } = await run({ prs: [1], auto: true }, [
     ...reconRoutes([openPr(1)], [detail(1)]),
     ['survey', survey],
     ['tensions', noTensions],
-    ['age:1', ageFull(1, { has_medium_plus_findings: true })],
-    ['cure:1', { status: 'ok', committed: true, artifact: 'c.md' }],
-    ['reage:1', ageFull(1, { mode: 'incremental' })],
-    ['finalize:1', { pushed: false, head_sha: sha(1), marker_updated: false }],
+    ['age:1', ageFull(1, { artifact: 'a.md', has_medium_plus_findings: true })],
+    ['cure:1', { status: 'blocked', committed: true, pushed: false, head_sha: sha(1, 5), worktree_path: '/tmp/wt-c', artifact: 'c.md', note: '' }],
   ])
   assert.equal(result.status, 'partial')
   assert.equal(result.targets[0].review, 'failed')
   assert.match(result.targets[0].reason, /cure commits were not pushed/)
-  assert.equal(labels.some((l) => l.startsWith('review:1:status')), false)
+  assert.equal(labels.some((l) => l === 'reage:1' || l === 'finalize:1' || l.startsWith('review:1:status')), false)
 })
 
-test('a keep-only plan with a command criterion still integrates and verifies in an isolated judge worktree', async () => {
+test('a keep-only plan with a command criterion verifies in the pinned integration worktree without a checkout', async () => {
   const { result, labels, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['integrate:pre', { ...integrated(['T-1', 'T-2']), head: sha(97) }],
-    ['verify:pre:AC-1', verified],
+    ['verify:pre:AC-1', { ...verified, evidence: 'grep printed 1 and 1' }],
   ]))
   assert.equal(result.status, 'ready')
-  assert.equal(call('verify:pre:AC-1').opts.isolation, 'worktree')
-  assert.match(call('verify:pre:AC-1').prompt, new RegExp(`git checkout --detach ${sha(97)}`))
+  const verify = call('verify:pre:AC-1')
+  assert.equal(verify.opts.isolation, undefined)
+  assert.match(verify.prompt, /^Judge mode: verify\n/)
+  assert.ok(verify.prompt.includes(`worktree_path: /tmp/int. head: ${sha(97)}`))
+  assert.ok(verify.prompt.includes(`git -C /tmp/int rev-parse HEAD and confirm that it equals ${sha(97)}`))
+  assert.ok(verify.prompt.includes("cd /tmp/int && bash -c 'grep -c helper src/1.js src/2.js'"))
+  assert.ok(verify.prompt.includes('git -C /tmp/int status --porcelain'))
+  assert.doesNotMatch(verify.prompt, /git checkout --detach/)
   assert.deepEqual(plain(result.verification.verdicts).map((v) => v.result), ['pass'])
   assert.equal(labels.some((l) => l.startsWith('target:') || l === 'publish'), false)
 })
@@ -110,11 +114,15 @@ test('builders, integration, and publish use a run-scoped local branch, never th
   const local = `mmc/${first.result.digest.slice(0, 8)}/land/combined`
   const { result, call } = await run(args, builtConsolidation())
   assert.equal(result.status, 'ready')
-  assert.ok(call('target:T-1').prompt.includes(`git checkout -B ${local} origin/main`))
+  const target = call('target:T-1').prompt
+  assert.ok(target.includes('git checkout --detach origin/main'))
+  assert.ok(target.includes(`git update-ref refs/heads/${local} HEAD`))
+  assert.ok(!target.includes('git checkout -B'))
   assert.ok(call('integrate:pre').prompt.includes(`T-1=${local}`))
   assert.ok(call('publish').prompt.includes(`"local_branch": "${local}"`))
   assert.ok(call('publish').prompt.includes('<local_branch>:refs/heads/<branch>'))
   assert.ok(call('publish').prompt.includes(`move-my-cheese:landing digest=${first.result.digest}`))
+  assert.doesNotMatch(call('publish').prompt, /worktree_path|\bcd /)
 })
 
 test('a failed target build stops the run before anything is pushed', async () => {
@@ -144,7 +152,7 @@ test('a branch this run rebuilt gets a full review, never an incremental one', a
     ['verify:pre:AC-1', verified],
     ['publish', published('T-2', 2, sha(60))],
     ['age:2', ageFull(2, { worktree_path: '/tmp/wt-t2' })],
-    ['finalize:2', { pushed: false, head_sha: sha(60), marker_updated: true }],
+    ['finalize:2', finalized],
     ['review:1:status', ready(1)],
     ['review:2:status', ready(2, { head_sha: sha(60) })],
   ]))

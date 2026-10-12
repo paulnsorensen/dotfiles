@@ -55,6 +55,8 @@ looked like a T3 MCP problem.
 |---|---|---|
 | `chezmoi/.chezmoidata/t3.yaml` → `dot_t3/userdata/modify_settings.json` | `~/.t3/userdata/settings.json` | Merges `providers.claudeAgent.launchArgs` into the live file. T3 rewrites this file from its UI, so the guard preserves UI state through `lib/drift-gate.sh` with `lib/t3-settings-ignore.txt`. |
 | `dot_t3/userdata/claude-settings.json` | `~/.t3/userdata/claude-settings.json` | Passed via `--settings`. Sets `disableClaudeAiConnectors: true` for T3 sessions only, so the connectors never push tilth into the deferred tool list. |
+| `dot_config/systemd/user/t3code.service.d/telemetry.conf` (Linux only) | `~/.config/systemd/user/t3code.service.d/telemetry.conf` | Sets `T3CODE_TELEMETRY_ENABLED=false` for the background service. A drop-in, because `t3 service install` and `t3 update` rewrite the unit file. `run_onchange_after_reload-t3-service.sh.tmpl` runs `daemon-reload` only; the setting applies at the next service restart. |
+| `zsh/core.zsh` | shell profile | Exports `T3CODE_TELEMETRY_ENABLED=false` for the macOS desktop app, which reads the shell profile, and for foreground `t3 serve`. |
 
 The registry string uses a literal `$HOME`; the modify script expands it
 because chezmoi data files are not templated. `--settings` in Claude Code

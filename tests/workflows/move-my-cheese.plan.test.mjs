@@ -103,12 +103,6 @@ test('a keep disposition that points at another PR\'s target is rejected', async
   assert.ok(trace.logs.some((l) => /#2 is keep, so its target must be the existing target for #2/.test(l)))
 })
 
-test('a plan with open questions returns needs-input without an approve digest', async () => {
-  const { result } = await run({ prs: [1, 2] }, planRoutes([['plan:minimal', consolidatePlan({ open_questions: ['which helper wins?'] })]]))
-  assert.equal(result.status, 'needs-input')
-  assert.equal(result.digest, undefined)
-})
-
 test('an approved plan edited after approval is refused before any agent runs', async () => {
   const { args } = await approve(planRoutes())
   args.plan.plan.summary = 'edited'

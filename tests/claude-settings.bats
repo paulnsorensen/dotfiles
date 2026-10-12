@@ -430,6 +430,29 @@ setup_custom_registry() {
     [ "$status" -ne 0 ]
 }
 
+@test "modify_settings: a path marketplace named by its marketplace.json is overlaid" {
+    # vaudeville@paulnsorensen: plugin and marketplace names differ, so the
+    # overlay takes the marketplace name from the source's marketplace.json.
+    mkdir -p "$TEST_HOME/acme/.claude-plugin" "$TEST_HOME/shared"
+    echo '{"name": "acme"}' > "$TEST_HOME/acme/.claude-plugin/marketplace.json"
+    setup_custom_registry '  widget@acme:
+    load: true
+    path: ~/acme
+    gate: MYGATE
+  gadget@local:
+    load: true
+    path: ~/shared
+    gate: MYGATE'
+    run bash -c "env -u TODOIST MYGATE=true \
+        CHEZMOI_SOURCE_DIR='$CUSTOM_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.extraKnownMarketplaces["acme"].source.path' "$OUT")" = "$TEST_HOME/acme" ]
+    [ "$(jq -r '.enabledPlugins["widget@acme"]' "$OUT")" = "true" ]
+    # No marketplace.json names `local`, so the shared name is not overlaid.
+    run jq -e '.extraKnownMarketplaces["local"]' "$OUT"
+    [ "$status" -ne 0 ]
+}
+
 @test "modify_settings: missing plugin registry falls back to claude.yaml-only with a warning" {
     local root="$TEST_HOME/noreg"
     local src="$root/chezmoi"

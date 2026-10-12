@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  ageFull, aged, approve, approveDone, built, integrated, merged, noTensions, openPr, plain, planRoutes, published,
+  ageFull, aged, approve, approveDone, built, finalized, integrated, merged, noTensions, openPr, plain, planRoutes, published,
   ready, reconRoutes, replaceOnePlan, run, sha, stateMerged, survey, verified,
 } from './move-my-cheese.fixtures.mjs'
 
@@ -32,8 +32,11 @@ test('land merges a stack bottom-up, restacks the child, and fully re-reviews it
   assert.deepEqual(labels.filter((l) => /^(merge|merged|restack|recheck-age):/.test(l)), ['merge:1', 'merged:1:1', 'restack:2', 'recheck-age:2', 'merge:2', 'merged:2:1'])
   assert.equal(labels.some((l) => l.startsWith('integrate:') || l.startsWith('verify:')), false)
   assert.match(call('merge:2').prompt, new RegExp(`Run gh pr merge 2 --squash --match-head-commit ${sha(2, 3)}\\.`))
-  assert.ok(call('restack:2').prompt.includes('git rebase --onto origin/main origin/feat/pr-1'))
-  assert.ok(!call('restack:2').prompt.includes('git checkout -B feat/pr-2 '))
+  assert.equal(call('restack:2').opts.isolation, 'worktree')
+  const restack = call('restack:2').prompt
+  assert.ok(restack.includes('git checkout --detach origin/feat/pr-2'))
+  assert.ok(restack.includes('git rebase --onto origin/main origin/feat/pr-1'))
+  assert.ok(!restack.includes('git checkout -B feat/pr-2 '))
   const recheck = call('recheck-age:2').prompt
   assert.ok(recheck.includes('/age origin/main...HEAD --auto'))
   assert.ok(!recheck.includes('origin/feat/pr-1...HEAD'))
@@ -74,7 +77,7 @@ const replaceRoutes = (overrides = []) => planRoutes([
   ['verify', verified],
   ['publish', published('T-1', 10, sha(50))],
   ['age:10', ageFull(10, { worktree_path: '/tmp/wt-t1' })],
-  ['finalize:10', { pushed: false, head_sha: sha(50), marker_updated: true }],
+  ['finalize:10', finalized],
   ['review:10:status', ready(10, { head_sha: sha(50) })],
   ['review:2:status', ready(2)],
   ['advise:done', approveDone],

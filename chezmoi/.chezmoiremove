@@ -40,3 +40,8 @@ local-llm/configs/lean.json
 
 # OpenCode v2 replaced tui.json with cli.json (dot_config/opencode/cli.json).
 .config/opencode/tui.json
+
+# Retired: the wheypoint stop/idle gate. The /wheypoint skill stays; only the
+# automatic gate left. Claude and Codex hook scripts leave through exact_hooks.
+.config/opencode/plugins/wheypoint-idle.js
+.config/opencode/lib/wheypoint-stop-gate.cjs

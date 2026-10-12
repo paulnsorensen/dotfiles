@@ -10,7 +10,9 @@
 # Marketplaces (all registered in settings.json:extraKnownMarketplaces or built-in):
 #   - claude-plugins-official:    Official workflow plugins (anthropics/claude-code-plugins)
 #   - todoist-flow:               In-repo Todoist productivity plugin (directory source)
-#   - local:                      Out-of-repo local plugins; `path:` resolves the source dir
+#   - paulnsorensen:              vaudeville's own marketplace; `path:` is its checkout,
+#                                 whose marketplace.json names the marketplace
+#   - local:                      cheese-flow (out-of-repo); `path:` resolves the source dir
 #
 # Code intelligence is provided by tilth; keep routing in agents/preamble.md.
 #
@@ -53,7 +55,9 @@ plugins:
     gate: TODOIST
 
   # --- Out-of-repo local plugins (path resolved at sync time) ---
-  vaudeville@local:
+  # The marketplace name comes from ~/Dev/vaudeville/.claude-plugin/marketplace.json.
+  # That manifest installs the plugin from GitHub paulnsorensen/vaudeville@main.
+  vaudeville@paulnsorensen:
     description: SLM-powered semantic hook enforcement via local Phi-3-mini
     scope: user
     load: true

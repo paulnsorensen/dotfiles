@@ -74,4 +74,6 @@ Library/LaunchAgents/com.dotfiles.bin-doctor-clean.plist
 # The weekly bin-doctor clean job: systemd user timer on Linux only.
 .config/systemd/user/bin-doctor-clean.service
 .config/systemd/user/bin-doctor-clean.timer
+# The T3 background service is a systemd user unit on Linux only.
+.config/systemd/user/t3code.service.d
 {{- end }}

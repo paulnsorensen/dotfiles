@@ -37,13 +37,16 @@ export const tension = { id: 'TN-1', prs: [1, 2], kind: 'duplicate', severity: '
 export const ready = (number, overrides = {}) => ({ state: 'OPEN', head_sha: sha(number), ci: 'pass', merge_state: 'CLEAN', review_decision: 'NONE', unresolved_threads: 0, ...overrides })
 export const approveP1 = { verdict: 'approve', chosen: 'P-1', concerns: [], guidance: '' }
 export const approveDone = { verdict: 'approve', concerns: [], guidance: '' }
-export const ageFull = (number, overrides = {}) => ({ mode: 'full', scope: 'origin/main...HEAD', slug: `pr-${number}`, artifact: `.cheese/age/pr-${number}.md`, worktree_path: `/tmp/wt-${number}`, has_medium_plus_findings: false, ...overrides })
+export const ageFull = (number, overrides = {}) => ({ mode: 'full', scope: 'origin/main...HEAD', slug: `pr-${number}`, artifact: `.cheese/age/pr-${number}.md`, worktree_path: `/tmp/wt-${number}`, has_medium_plus_findings: false, has_cheap_lows: false, ...overrides })
 export const built = (head, worktree) => ({ status: 'done', completed: ['built'], remaining: [], checkpoint: head, head_sha: head, worktree_path: worktree, note: '' })
 export const integrated = (merged) => ({ status: 'done', worktree_path: '/tmp/int', head: sha(98), merged, conflicted: [] })
-export const verified = { criterion: 'AC-1', passes: true, evidence: 'grep -c printed 1' }
+export const verified = { criterion: 'AC-1', passes: true, tree_clean: true, missing_paths: [], evidence: 'grep -c printed 1' }
 export const published = (target, number, head) => ({ results: [{ target, pr_number: number, url: `https://example.test/pr/${number}`, head_sha: head, changed_files: 2, lines_changed: 30 }] })
 export const merged = { result: 'merged', note: '' }
 export const stateMerged = { state: 'MERGED' }
+export const finalized = { marker_updated: true }
+// Isolated worktrees live under <main>/.claude/worktrees/<id>.
+export const wt = (name) => `/repo/.claude/worktrees/wf_test-${name}`
 
 const AC_1 = { id: 'AC-1', statement: 'the helper exists once', check_kind: 'command', check: 'grep -c helper src/1.js' }
 
@@ -118,11 +121,12 @@ export function router(routes) {
 }
 
 export const reconRoutes = (opens, details) => [['recon:index', index(opens)], ['recon:detail', { prs: details }]]
+export const reconOnly = () => reconRoutes([openPr(1), openPr(2)], [detail(1), detail(2)])
 
 // Two PRs with one duplicate tension; the single planner consolidates them. Overrides win.
 export const planRoutes = (overrides = []) => [
   ...overrides,
-  ...reconRoutes([openPr(1), openPr(2)], [detail(1), detail(2)]),
+  ...reconOnly(),
   ['survey', survey],
   ['tensions', { blast_radius: 'low', tensions: [tension], note: '' }],
   ['plan:minimal', consolidatePlan()],
@@ -148,16 +152,36 @@ export const builtConsolidation = (overrides = []) => planRoutes([
   ['verify:pre:AC-1', verified],
   ['publish', published('T-1', 10, sha(50))],
   ['age:10', ageFull(10, { worktree_path: '/tmp/wt-t1' })],
-  ['finalize:10', { pushed: false, head_sha: sha(50), marker_updated: true }],
+  ['finalize:10', finalized],
   ['review:10:status', ready(10, { head_sha: sha(50) })],
   ['mark', { results: [{ pr: 1, action: 'drafted', note: '' }, { pr: 2, action: 'drafted', note: '' }] }],
 ])
 
-export async function run(args, routes) {
+// One PR with medium+ findings that a pushed cure fixes; the poll then needs two /affinage rounds.
+export const curedReviewRoutes = (cure) => [
+  ...reconRoutes([openPr(1)], [detail(1)]),
+  ['survey', survey],
+  ['tensions', noTensions],
+  ['age:1', ageFull(1, { worktree_path: wt('age'), has_medium_plus_findings: true })],
+  ['cure:1', cure],
+  ['reage:1', ageFull(1, { mode: 'incremental', worktree_path: wt('reage') })],
+  ['finalize:1', finalized],
+  ['review:1:status:1', ready(1, { ci: 'fail', head_sha: sha(1, 5) })],
+  ['review:1:status:2', ready(1, { ci: 'fail', head_sha: sha(1, 6) })],
+  ['review:1:status', ready(1, { head_sha: sha(1, 7) })],
+  ['review:1:affinage', ({ opts }) => ({ status: 'ok', pushed: true, worktree_path: wt(opts.label.replaceAll(':', '-')), note: '' })],
+]
+export const pushedCure = { status: 'ok', committed: true, pushed: true, head_sha: sha(1, 5), worktree_path: wt('cure'), artifact: '.cheese/cure/pr-1.md', note: '' }
+
+// Fallbacks after each test's own routes: every executing run ends with stamp and cleanup agents,
+// and the done advisor approves unless a test routes it first.
+const DEFAULT_ROUTES = [['stamp', { results: [] }], ['cleanup', { removed: [], note: '' }], ['advise:done', approveDone]]
+
+// A test may pass its own budget object; the harness default has no total, so the floor never applies.
+export async function run(args, routes, budget = null) {
   const workflow = await loadWorkflow(path)
-  // Every executing run ends with a stamp agent; tests that care route it themselves.
-  const { globals, trace } = createRuntime({ respond: router([...routes, ['stamp', { results: [] }]]) })
-  const result = await workflow.run({ ...globals, args })
+  const { globals, trace } = createRuntime({ respond: router([...routes, ...DEFAULT_ROUTES]) })
+  const result = await workflow.run({ ...globals, ...(budget ? { budget } : {}), args })
   const labels = trace.agents.map(({ opts }) => opts.label)
   const call = (label) => trace.agents.find(({ opts }) => opts.label === label)
   return { result, trace, labels, call }

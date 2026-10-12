@@ -1,7 +1,7 @@
 export const meta = {
   name: 'move-my-cheese',
   description: 'Land a set of PRs or stacks: digest each PR intent, find tensions, plan the landing with fresh opus planners and an advisor, gate on user approval, assemble the final PRs, age and affinage them until ready, and merge when land is set.',
-  whenToUse: 'Several open PRs or stacks that should land, where some may overlap, conflict, or replace each other. The first run returns a landing plan and an approve digest. Re-run with { prs, plan, approve } to execute it. Pass auto:true to skip the user gate and land:true to merge.',
+  whenToUse: 'Several open PRs or stacks that should land, where some may overlap, conflict, or replace each other. The first run returns a landing plan and an approve digest. Re-run with { prs, plan, approve } to execute it, or add revise:"<change>" to change the plan first. Pass auto:true to skip the user gate and land:true to merge.',
   phases: [
     { title: 'Recon', detail: 'haiku indexes open PRs; code expands stacks; haiku collects per-PR detail' },
     { title: 'Survey', detail: 'one read-only sonnet explorer per PR writes an intent digest' },
@@ -22,19 +22,35 @@ export const meta = {
 //
 // Args: { prs?: number[] | number | string, stacks?: same, all?, includeDrafts?,
 //   expandStacks? = true, auto? = false, land? = false, mergeMethod? = 'squash',
-//   allowNoChecks? = false, plan?: <landing object from a needs-approval result>,
-//   approve?: <its digest> }
+//   allowNoChecks? = false, plan?: <landing object from a needs-approval or
+//   needs-input result>, approve?: <its digest>, answers?: { <question text or
+//   1-based number>: <answer> }, revise?: <one change request> }
 //   - no prs and no plan: return the open-PR candidates.
 //   - prs: plan the landing and return needs-approval with { landing, digest }.
 //   - prs + plan + approve: check the digest and staleness, then execute.
+//   - plan + approve + answers: one planner folds the answers into a
+//     needs-input landing. The run returns needs-approval with a fresh digest,
+//     or needs-input again when questions remain. It never executes.
+//   - plan + approve + revise: one planner folds the change request into the
+//     landing, alone or together with answers. The previous plan need not
+//     validate, so revise also repairs a plan that a newer check rejects.
+//     The run returns needs-approval with a fresh digest. It never executes.
+//   - Each planner-written or folded plan without open questions goes to the
+//     advisor. A revise verdict gets one planner revision. When the advisor
+//     still does not approve, the run returns needs-input with the candidates.
 //   - auto: plan and execute in one run. A run that holds any PR by another
 //     author still stops at needs-approval, because later stages push and merge.
 //   - land: merge the final PRs when every target is ready.
 //   - allowNoChecks: treat a PR with no CI checks as ready (repos without CI).
 //
-// Agents never check out a PR branch by name. Each works on a run-scoped local
-// branch mmc/<digest8>/<branch> and pushes with HEAD:<branch>, so the user's
-// local branches and checkouts stay untouched.
+// Agents never check out a PR branch by name, so the user's local branches and
+// checkouts stay untouched. Every stage that edits code runs in its own
+// isolated worktree, so the worktree guard roots it in the tree it edits. No
+// agent works in a directory that another agent returned. State moves through
+// refs and SHAs: builders record progress on the run-scoped ref
+// mmc/<digest8>/<branch> with git update-ref on a detached HEAD, and review
+// writers push with HEAD:<branch>. A successful run removes its scratch
+// worktrees and run branches.
 //
 // The Workflow runtime cannot pause for input, so the user gate is two runs.
 // The digest binds approval to the exact landing object. It detects edits; it
@@ -52,7 +68,9 @@ export const meta = {
 // viewer's comments, and a marker without full 40-hex values reads as none.
 
 // ---- Limits and closed sets: every loop has a bound in code ----
-const LIMITS = { maxPrs: 12, maxTargets: 12, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000 }
+const LIMITS = { maxPrs: 12, maxTargets: 12, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000 }
+// Worst case for one age-fanout child: packet, two attempts for each of about 12 dimensions, reconcile.
+const AGE_FANOUT_MAX_AGENTS = 27
 const MARKER_PREFIX = 'move-my-cheese:aged'
 const MERGE_METHODS = ['squash', 'merge', 'rebase']
 const BLAST_RADII = ['low', 'medium', 'high']
@@ -72,6 +90,7 @@ const TASK_STATUSES = ['done', 'partial', 'blocked']
 const ADVICE_VERDICTS = ['approve', 'revise', 'stop']
 const INTEGRATE_STATUSES = ['done', 'blocked']
 const CI_STATES = ['pass', 'fail', 'pending', 'none']
+const MERGE_STATES = ['BEHIND', 'BLOCKED', 'CLEAN', 'DIRTY', 'DRAFT', 'HAS_HOOKS', 'UNKNOWN', 'UNSTABLE']
 const PR_STATES = ['OPEN', 'CLOSED', 'MERGED']
 const REVIEW_DECISIONS = ['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED', 'NONE']
 const AGE_MODES = ['skipped-unchanged', 'incremental', 'full']
@@ -84,6 +103,9 @@ const SHA_RE = /^[0-9a-f]{7,40}$/i
 const FULL_SHA_RE = /^[0-9a-f]{40}$/i
 const VIEWER_RE = /^[A-Za-z0-9][A-Za-z0-9-]*(?:\[bot\])?$/
 const isSafeRef = (ref) => typeof ref === 'string' && SAFE_REF_RE.test(ref) && !ref.includes('..') && !ref.endsWith('.lock')
+const SAFE_PATH_RE = /^\/[A-Za-z0-9._/@+-]+$/
+// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>.
+const SCRATCH_WORKTREE_RE = /^\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+$/
 
 // ---- Schemas: one constant per contract; enums for closed sets ----
 const str = { type: 'string' }
@@ -118,7 +140,7 @@ const DETAIL_SCHEMA = obj({
     base: str,
     head_sha: str,
     state: oneOf(PR_STATES),
-    merge_state: text('gh mergeStateStatus'),
+    merge_state: oneOf(MERGE_STATES),
     ci: oneOf(CI_STATES),
     files: strs,
     changed_files: int,
@@ -173,18 +195,20 @@ const LANDING_SCHEMA = obj({ inputs: ints, recon: obj({ base_sha: str, heads: { 
 const PLAN_ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), chosen: { type: 'string', pattern: '^P-[0-9]+$' }, concerns: strs, guidance: text('Under 80 words') })
 const ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), concerns: strs, guidance: text('Under 80 words') })
 const TARGET_SCHEMA = obj({ status: oneOf(TASK_STATUSES), completed: strs, remaining: strs, checkpoint: text('Last commit SHA, or empty'), head_sha: str, worktree_path: str, note: str })
-const SALVAGE_SCHEMA = obj({ found: bool, checkpoint: str, worktree_path: str, completed: strs, remaining: strs })
+const SALVAGE_SCHEMA = obj({ found: bool, checkpoint: str, completed: strs, remaining: strs })
 const INTEGRATE_SCHEMA = obj({ status: oneOf(INTEGRATE_STATUSES), worktree_path: text('Absolute path of the integration worktree'), head: text('Commit SHA of the integration HEAD'), merged: strs, conflicted: strs })
-const VERDICT_SCHEMA = obj({ criterion: str, passes: bool, evidence: text('Command run and its observed result') })
+const VERDICT_SCHEMA = obj({ criterion: str, passes: bool, evidence: text('Command run and its observed result'), tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' }, missing_paths: { type: 'array', items: str, description: 'Paths that the check reads and that do not exist in the worktree' } })
 const PUBLISH_SCHEMA = obj({ results: list(obj({ target: str, pr_number: int, url: str, head_sha: str, changed_files: int, lines_changed: int })) })
-const AGE_SCHEMA = obj({ mode: oneOf(AGE_MODES), scope: text('The exact ref range reviewed, empty when skipped'), slug: text('The /age handoff slug, empty when skipped'), artifact: str, worktree_path: str, has_medium_plus_findings: bool })
-const CURE_SCHEMA = obj({ status: oneOf(FIX_STATUSES), committed: bool, artifact: str })
-const FINALIZE_SCHEMA = obj({ pushed: bool, head_sha: str, marker_updated: bool })
-const STATUS_SCHEMA = obj({ state: oneOf(PR_STATES), head_sha: str, ci: oneOf(CI_STATES), merge_state: text('gh mergeStateStatus'), review_decision: oneOf(REVIEW_DECISIONS), unresolved_threads: int })
+const AGE_SCHEMA = obj({ mode: oneOf(AGE_MODES), scope: text('The exact ref range reviewed, empty when skipped'), slug: text('The /age handoff slug, empty when skipped'), artifact: str, worktree_path: str, has_medium_plus_findings: bool, has_cheap_lows: bool })
+const CURE_SCHEMA = obj({ status: oneOf(FIX_STATUSES), committed: bool, pushed: bool, head_sha: str, worktree_path: str, artifact: str, note: str })
+const PREP_SCHEMA = obj({ worktree_path: str })
+const FINALIZE_SCHEMA = obj({ marker_updated: bool })
+const STATUS_SCHEMA = obj({ state: oneOf(PR_STATES), head_sha: str, ci: oneOf(CI_STATES), merge_state: oneOf(MERGE_STATES), review_decision: oneOf(REVIEW_DECISIONS), unresolved_threads: int })
 const FIX_SCHEMA = obj({ status: oneOf(FIX_STATUSES), pushed: bool, worktree_path: str, note: str })
 const MERGE_SCHEMA = obj({ result: oneOf(MERGE_RESULTS), note: str })
 const STATE_SCHEMA = obj({ state: oneOf(PR_STATES) })
 const MARK_SCHEMA = obj({ results: list(obj({ pr: int, action: oneOf(MARK_ACTIONS), note: str })) })
+const CLEANUP_SCHEMA = obj({ removed: strs, note: str })
 
 // ---- Validators: the schema checks shape; code checks meaning ----
 // Each error is { kind, msg }. 'form' errors are mechanical, so a cheap model
@@ -256,6 +280,129 @@ const UNSAFE_CHECKS = [
   ['GitHub API write', /\bgh\s+api\b.*(?:-X|--method)[\s=]*(?:POST|PATCH|PUT|DELETE)\b/i],
   ['GitHub API field write', /\bgh\s+api\b.*\s(?:-f|-F|--field|--raw-field|--input)[\s=]/i],
 ]
+
+// A negated search passes when its input is missing: grep and rg exit 2 on a missing file, git grep
+// exits 1 on an unmatched pathspec, and grep with no file reads empty input. So each path of a negated
+// search needs an existence test earlier in the same && chain. A negated pipeline also hides a failed
+// producer. This check is lexical; the verify judge also tests each path that a check reads.
+const SEARCH_TOOLS = ['grep', 'egrep', 'fgrep', 'rg']
+// Short options whose value is the next word when the option ends its cluster.
+const VALUE_LETTERS = { rg: 'efgtTmABCjMEr', grep: 'efmABCdD' }
+const LONG_VALUE_OPTS = ['regexp', 'file', 'max-count', 'after-context', 'before-context', 'context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth']
+
+// Splits a check into words and the operators && || ; |, with POSIX quotes removed. Returns null on an open quote.
+function shellWords(check) {
+  const words = []
+  let word = null
+  const end = () => { if (word !== null) words.push(word); word = null }
+  for (let i = 0; i < check.length; i++) {
+    const c = check[i]
+    const pair = check.slice(i, i + 2)
+    if (/\s/.test(c)) end()
+    else if (pair === '&&' || pair === '||') { end(); words.push(pair); i++ }
+    else if (c === ';' || c === '|') { end(); words.push(c) }
+    else if (c === "'") {
+      const close = check.indexOf("'", i + 1)
+      if (close < 0) return null
+      word = (word ?? '') + check.slice(i + 1, close)
+      i = close
+    } else if (c === '"') {
+      let j = i + 1
+      let text = ''
+      for (; j < check.length && check[j] !== '"'; j++) text += check[j] === '\\' && j + 1 < check.length ? check[++j] : check[j]
+      if (j >= check.length) return null
+      word = (word ?? '') + text
+      i = j
+    } else if (c === '\\' && i + 1 < check.length) word = (word ?? '') + check[++i]
+    else word = (word ?? '') + c
+  }
+  end()
+  return words
+}
+
+// A redirect such as 2>/dev/null, >&2, or &> is not an operand; a bare operator such as > takes the next word.
+const REDIRECT_RE = /^(?:\d*|&)[<>]/
+const BARE_REDIRECT_RE = /^(?:\d*|&)(?:[<>]|>>)&?$/
+// ./a and a name the same path.
+const samePath = (path) => path.replace(/^(?:\.\/)+/, '')
+
+// test -e P, [ -e P ], or [[ -e P ]] with -e, -f, -d, -s, or -r; returns P or ''.
+function guardedPath(words) {
+  const flag = /^-[efdsr]$/
+  if (words.length === 3 && words[0] === 'test' && flag.test(words[1])) return samePath(words[2])
+  if (words.length === 4 && flag.test(words[1]) && ((words[0] === '[' && words[3] === ']') || (words[0] === '[[' && words[3] === ']]'))) return samePath(words[2])
+  return ''
+}
+
+// Returns { tool, paths, stdin } for a grep, rg, or git grep command, or null for any other command.
+function searchOf(words) {
+  const git = words[0] === 'git' && words[1] === 'grep'
+  if (!git && !SEARCH_TOOLS.includes(words[0])) return null
+  const tool = git ? 'git grep' : words[0]
+  const args = words.slice(git ? 2 : 1)
+  const valueLetters = tool === 'rg' ? VALUE_LETTERS.rg : VALUE_LETTERS.grep
+  const positional = []
+  let patternGiven = false
+  let recursive = false
+  let options = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (REDIRECT_RE.test(arg)) {
+      if (BARE_REDIRECT_RE.test(arg)) i++
+    } else if (options && arg === '--') options = false
+    else if (options && arg.startsWith('--')) {
+      const [name, value] = arg.slice(2).split('=')
+      if (name === 'regexp' || name === 'file') patternGiven = true
+      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
+      if (value === undefined && LONG_VALUE_OPTS.includes(name)) i++
+    } else if (options && arg.length > 1 && arg.startsWith('-')) {
+      const letters = arg.slice(1)
+      for (let k = 0; k < letters.length; k++) {
+        if (tool !== 'rg' && 'rR'.includes(letters[k])) recursive = true
+        if (!valueLetters.includes(letters[k])) continue
+        if ('ef'.includes(letters[k])) patternGiven = true
+        if (k === letters.length - 1) i++
+        break
+      }
+    } else positional.push(arg)
+  }
+  const paths = (patternGiven ? positional : positional.slice(1)).map(samePath)
+  return { tool, paths, stdin: tool !== 'rg' && tool !== 'git grep' && !paths.length && !recursive }
+}
+
+// Returns why a check can pass without testing anything, or '' when it can fail.
+function vacuousReason(check) {
+  const words = shellWords(check)
+  if (!words) return 'it has an unclosed quote'
+  const commands = [{ op: '', words: [] }]
+  for (const w of words) {
+    if (['&&', '||', ';'].includes(w)) commands.push({ op: w, words: [] })
+    else commands[commands.length - 1].words.push(w)
+  }
+  let guarded = new Set()
+  for (const { op, words: command } of commands) {
+    if (op !== '&&' || command[0] === 'cd') guarded = new Set()
+    const negated = command[0] === '!'
+    const body = negated ? command.slice(1) : command
+    const stages = [[]]
+    for (const w of body) {
+      if (w === '|') stages.push([])
+      else stages[stages.length - 1].push(w)
+    }
+    if (!negated) {
+      const path = guardedPath(body)
+      if (path) guarded.add(path)
+      continue
+    }
+    const search = searchOf(stages[stages.length - 1])
+    if (!search) continue
+    if (stages.length > 1) return `it negates a pipeline into ${search.tool}, which passes when the producer fails`
+    if (search.stdin) return `it negates ${search.tool} with no file, which reads empty input`
+    const open = search.paths.filter((p) => !guarded.has(p))
+    if (open.length) return `it negates ${search.tool} over ${open.join(', ')} with no existence test of that path earlier in the same && chain`
+  }
+  return ''
+}
 
 function checkIndex(index) {
   const errors = []
@@ -360,6 +507,8 @@ function checkPlan(plan, ctx) {
     for (const [label, pattern] of UNSAFE_CHECKS) {
       if (typeof c.check === 'string' && pattern.test(c.check)) errors.push(substance(`${c.id} check is unsafe (${label}); use a read-only check`))
     }
+    const vacuous = typeof c.check === 'string' ? vacuousReason(c.check) : ''
+    if (vacuous) errors.push(substance(`${c.id} check can pass without testing anything: ${vacuous}. Put test -e <path> && before the search for each path that it reads`))
   }
   for (const id of acIds) {
     if (!plan.targets.some((t) => t.satisfies.includes(id))) errors.push(substance(`${id} has no target`))
@@ -384,17 +533,35 @@ function checkAdvice(advice) {
     : []
 }
 
+// Age and re-age: a real review names its scope.
+function checkAge(age) {
+  return age.mode !== 'skipped-unchanged' && blank(age.scope) ? [substance('scope must name the exact ref range reviewed')] : []
+}
+
+function checkStatus(status) {
+  return FULL_SHA_RE.test(status.head_sha.trim()) ? [] : [substance('head_sha must be the full 40-character headRefOid')]
+}
+
+function checkFinalize(result) {
+  return result.marker_updated ? [] : [substance('marker_updated is false; write the marker comment, then confirm that it holds the new marker')]
+}
+
+function checkPrep(result) {
+  return absolute(result.worktree_path) ? [] : [substance('worktree_path must be the absolute output of git rev-parse --show-toplevel')]
+}
+
+const noCheck = () => []
+
 function checkTarget(result) {
   if (result.status !== 'done') return []
   const errors = []
   if (!SHA_RE.test(result.head_sha.trim())) errors.push(substance('head_sha must be the commit SHA of the target branch'))
-  if (!absolute(result.worktree_path)) errors.push(substance('worktree_path must be the absolute path of your worktree'))
   return errors
 }
 
 function checkIntegrate(result, ids) {
   const errors = []
-  if (!absolute(result.worktree_path)) errors.push(substance('worktree_path must be the absolute path of the integration worktree'))
+  if (!absolute(result.worktree_path) || !SAFE_PATH_RE.test(result.worktree_path.trim())) errors.push(substance('worktree_path must be the absolute path of the integration worktree'))
   if (!SHA_RE.test(String(result.head).trim())) errors.push(substance('head must be a commit SHA of 7 to 40 hex characters'))
   for (const id of result.merged) errors.push(refError(id, ids, 'merged'))
   for (const id of result.conflicted) errors.push(refError(id, ids, 'conflicted'))
@@ -432,6 +599,23 @@ function checkLanding(landing) {
   if (!landing.inputs.length || landing.inputs.some((n) => n <= 0)) errors.push('plan.inputs must hold positive PR numbers')
   if (Object.values(landing.recon.heads).some((sha) => typeof sha !== 'string')) errors.push('plan.recon.heads must map PR numbers to SHAs')
   return errors
+}
+
+// Keys are the exact question text or its 1-based number. Returns the answered pairs in question order.
+function matchAnswers(questions, raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { errors: ['answers must be an object that maps a question or its 1-based number to an answer'], answers: [] }
+  const errors = []
+  const byIndex = new Map()
+  for (const [key, value] of Object.entries(raw)) {
+    const index = /^[1-9][0-9]*$/.test(key) ? Number(key) - 1 : questions.indexOf(key)
+    if (index < 0 || index >= questions.length) errors.push(`answers key ${JSON.stringify(key)} names no open question`)
+    else if (typeof value !== 'string' || blank(value)) errors.push(`the answer to question ${index + 1} must be a non-empty string`)
+    else if (byIndex.has(index)) errors.push(`question ${index + 1} has two answers`)
+    else byIndex.set(index, value.trim())
+  }
+  if (!errors.length && !byIndex.size) errors.push('answers holds no answer')
+  const answers = [...byIndex.keys()].sort(ascending).map((i) => ({ question: questions[i], answer: byIndex.get(i) }))
+  return { errors, answers }
 }
 
 // ---- Digest: binds approval to the exact landing object ----
@@ -547,7 +731,19 @@ function estimateOf(plan) {
     kept: count('keep'), modified: count('modify'), superseded: count('supersede'), closed: count('close'),
     builder_agents_min: builds,
     review_agents_per_target: `2 to 4, plus up to ${LIMITS.pollRounds} status and /affinage pairs`,
+    agents_max: agentsMax(plan),
   }
+}
+
+// Worst-case agent count before repair rounds. The runtime stops a workflow at LIMITS.agentCap agents.
+function agentsMax(plan) {
+  const build = 1 + LIMITS.continuations * 2 // first round, then a salvage and a continuation per round
+  const age = 1 + AGE_FANOUT_MAX_AGENTS + 1 // fan-out prep and child, then the one-reviewer fallback
+  const review = age + 3 + LIMITS.pollRounds * 2 // cure, re-age, finalize, then status and /affinage pairs
+  const verify = 2 * (1 + plan.criteria.filter((c) => c.check_kind !== 'ci').length) // pre and final rounds
+  // restack, polls, re-age and verify of a moved head, merge, merge polls, close of its superseded PRs
+  const land = LAND ? 1 + LIMITS.pollRounds * 2 + 1 + verify / 2 + 1 + LIMITS.mergePolls + 1 : 0
+  return plan.targets.length * (build + review + land) + verify + 6 // publish, mark, close, advise:done, stamp, cleanup
 }
 
 // ---- Readiness: a mechanical predicate over gh fields ----
@@ -585,14 +781,26 @@ const data = (name, value) => `<data name="${name}">\n${JSON.stringify(value, nu
 const prompt = (...parts) => [PREAMBLE, ...parts.filter(Boolean)].join('\n\n')
 // The judge agent type reads its mode from the first line of the prompt.
 const judgePrompt = (mode, ...parts) => `Judge mode: ${mode}\n\n${prompt(...parts)}`
-// Agents never check out a PR's real branch: a run-scoped local branch stands in for it.
+// The reviewer agent type returns blocked: missing-contract without this line.
+const reviewerPrompt = (...parts) => `Review mode: severity-report\n\n${prompt(...parts)}`
+// POSIX single-quote a string so a shell passes it through unchanged.
+const shq = (s) => `'${String(s).replaceAll("'", "'\\''")}'`
+// Exact read commands, so no model counts or classifies by hand.
+const checksCmd = (n) => `gh pr checks ${n} --json bucket --jq '[.[].bucket] | if length == 0 then "none" elif any(.[]; . == "fail" or . == "cancel") then "fail" elif any(.[]; . == "pending") then "pending" else "pass" end'`
+const threadsCmd = (n) => `gh api graphql -F owner='{owner}' -F name='{repo}' -F number=${n} -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved } } } } }' --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] | length'`
+// Agents never check out a PR's real branch: a run-scoped ref stands in for it.
 // That keeps the user's local branches and checkouts out of reach. runTag is set once the digest exists.
 let runTag = 'unset'
 const localOf = (branch) => `mmc/${runTag}/${branch}`
-const checkoutStep = (branch, worktreePath) => [
-  worktreePath ? `cd ${worktreePath} first.` : 'You are in a fresh isolated worktree.',
-  `Run git fetch origin && git checkout -B ${localOf(branch)} origin/${branch} && git branch --set-upstream-to=origin/${branch}.`,
-  `The local branch ${localOf(branch)} stands in for ${branch}. Never check out ${branch} itself. Push only with git push origin HEAD:${branch}, adding --force-with-lease=${branch}:<old remote sha> when history changes.`,
+// Each stage starts in its own fresh worktree. Git refuses a branch that another worktree has
+// checked out, so no stage holds a shared branch: read-only stages and most writers detach.
+const pinStep = (branch, sha) => `You are in a fresh isolated worktree. Run git fetch origin ${branch} && git checkout --detach ${sha}. Never check out a branch.`
+const writerStep = (branch, start, own) => [
+  'You are in a fresh isolated worktree. Edit only inside it.',
+  own
+    ? `Run git fetch origin ${branch} && git checkout --ignore-other-worktrees -B ${own} ${start} && git branch --set-upstream-to=origin/${branch}. The local branch ${own} belongs to this stage alone and stands in for ${branch}.`
+    : `Run git fetch origin ${branch} && git checkout --detach ${start}. Commit on the detached HEAD.`,
+  `Never check out ${branch} itself. Push only with git push origin HEAD:${branch}, adding --force-with-lease=${branch}:<old remote sha> when history changes.`,
 ].join(' ')
 
 const indexPrompt = () => prompt(
@@ -605,10 +813,10 @@ const detailPrompt = (numbers, viewer) => prompt(
   `Collect landing detail for PRs ${numbers.join(', ')}. Use Bash. Change nothing.`,
   [
     'For each PR:',
-    '1. Run gh pr view <n> --json number,title,body,headRefName,baseRefName,headRefOid,state,mergeStateStatus,reviewDecision,changedFiles,additions,deletions,files,url. Cut body to its first 1500 characters. Set files to the changed paths. Map an empty reviewDecision to NONE.',
-    '2. Classify gh pr checks <n> as pass, fail, pending, or none.',
+    '1. Run gh pr view <n> --json number,title,headRefName,baseRefName,headRefOid,state,mergeStateStatus,reviewDecision,changedFiles,additions,deletions,files,url. Set files to the changed paths. Map an empty reviewDecision to NONE. Take body from gh pr view <n> --json body --jq \'.body[:1500]\'.',
+    `2. Set ci to the output of ${checksCmd('<n>')}. Use none when it prints nothing.`,
     `3. Aged marker: read only comments by ${viewer}: gh api repos/{owner}/{repo}/issues/<n>/comments --jq '.[] | select(.user.login == "${viewer}") | .body'. Find the last one that contains ${MARKER_PREFIX}. Parse its sha=, patch=, and dirty= fields. Use empty strings and false when there is no marker.`,
-    '4. Count review threads with isResolved=false through gh api graphql. Use 0 when the count is unavailable.',
+    `4. Set unresolved_threads to the output of ${threadsCmd('<n>')}. Use 0 when it fails.`,
     `5. Landing marker: in the same comments by ${viewer} (never the PR body), find the last one that contains ${LANDING_PREFIX}. Parse its digest= and head= fields into landing_digest and landing_head. Use empty strings when there is no such comment.`,
   ].join('\n'),
 )
@@ -622,36 +830,60 @@ const surveyPrompt = (pr, prs) => prompt(
   data('other_prs', prs.filter((p) => p.number !== pr.number).map((p) => ({ number: p.number, title: p.title, branch: p.branch, base: p.base }))),
 )
 
-const tensionsPrompt = (digests, overlaps, edges) => prompt(
+const tensionsPrompt = (digests, overlaps, edges, pairs) => prompt(
   'Find the tensions between the PRs in this landing run. You are read-only: do not edit, commit, push, or comment.',
   'A tension is a reason the PRs cannot all land as they are. conflict: incompatible edits. duplicate: the same goal twice. supersedes: one PR makes another obsolete. ordering: one PR must land before another that is not stacked on it. semantic: disjoint files, but incompatible contracts or assumptions.',
-  'The overlaps list holds every file overlap that code found. It cannot show semantic tensions, so compare every pair of digests yourself, including pairs with no shared file. Read code when a digest is not enough.',
+  'The overlaps list holds every file overlap that code found. It cannot show semantic tensions. The pairs list holds every PR pair, so compare the digests of each listed pair, including pairs with no shared file. Read code when a digest is not enough.',
   'A stack edge alone is not a tension. Report only tensions with evidence, and number them TN-1, TN-2, and so on. Return an empty list when there are none.',
   'Set blast_radius to low when the landing needs only small edits, medium when PRs must merge or change, and high when contracts conflict across several PRs.',
   data('digests', digests),
   data('overlaps', overlaps),
   data('stack_edges', edges),
+  data('pairs', pairs),
 )
 
-const planPrompt = (angle, context, concerns, previous) => prompt(
+const ANSWER_ANGLE = { id: 'answers', text: 'Revise previous_plan with the user answers. Change only what an answer requires.' }
+const REVISE_ANGLE = { id: 'revise', text: 'Revise previous_plan with the user change request. Change only what the request requires.' }
+const ANSWER_REVISE_ANGLE = { id: 'answers+revise', text: 'Revise previous_plan with the user answers and the user change request. Change only what they require.' }
+// A plan that the user shaped has no planning angle of its own, so an advisor revision uses this one.
+const ADVICE_ANGLE = { id: 'advice', text: 'Revise previous_plan to resolve the advisor concerns. Change only what a concern requires.' }
+
+// fold: { previous, advice, answers, revision, flaws, user }; every field is optional.
+// user holds the answers and change that previous_plan already applies, for an advisor revision of a folded plan.
+const planPrompt = (angle, context, fold = {}) => prompt(
   'Write a landing plan for the PRs in this run. You are read-only: do not edit, commit, push, or comment.',
   `Planning angle: ${angle.text}`,
   'Give every input PR exactly one disposition. keep: it lands as it is. modify: its branch changes. supersede: a target replaces it, and that target lists it in sources. close: it does not land.',
   'Targets are the final PRs. An existing target reuses a kept or modified PR, its number, and its branch. A new target has pr 0, a new branch name, a title, and a brief. base is the default branch or the id of another target; list that id in depends_on too.',
   'Each tension id must appear in the resolves list of a target. Each target satisfies at least one criterion.',
   'Criteria are observable outcomes, such as an intent that holds on the combined result. Give each an exact read-only check: a test command or a grep. Use check_kind ci with the target id as the check when the outcome is that the target passes its required CI. Never use a check that writes, pushes, fetches from the network, or calls a mutating gh command.',
+  'Write each check as one bash command that runs from the repository root. When a tool reads its config from a subdirectory, such as a workspace member with its own pyproject.toml or package.json, start the check with cd <that directory> && and make its paths relative to that directory. Quote every glob. Put every option before --.',
+  'A check must be able to fail. Every path that it reads must exist on the default branch or come from a target.',
+  'grep exits 2 on a missing file, and a leading ! turns that into a pass. Put test -e <path> && before a negated search, once for each path.',
   `Use at most ${LIMITS.maxTargets} targets. Put each unresolved question in open_questions. Do not guess.`,
+  fold.answers?.length && 'The user answered open questions of previous_plan. Apply each answer and remove its question from open_questions. Settle an unanswered question from repository evidence, or keep it in open_questions.',
+  fold.revision && 'The user asks for the change in user_change. Apply it to previous_plan. Keep the open questions of previous_plan unless the change settles them.',
+  fold.advice && 'The advisor asked for revisions of previous_plan. Resolve each concern in advisor. When the guidance names a fix, apply that fix.',
+  fold.flaws?.length && 'previous_plan fails the checks in plan_errors. Fix each one.',
+  fold.user && 'previous_plan already applies the user decisions in user_input. Keep them.',
   data('context', context),
-  previous && data('previous_plan', previous),
-  concerns && data('advisor_concerns', concerns),
+  fold.previous && data('previous_plan', fold.previous),
+  fold.advice && data('advisor', { concerns: fold.advice.concerns, guidance: fold.advice.guidance }),
+  fold.answers?.length && data('answers', fold.answers),
+  fold.revision && data('user_change', fold.revision),
+  fold.flaws?.length && data('plan_errors', fold.flaws.map((e) => e.msg)),
+  fold.user && data('user_input', fold.user),
 )
 
-const planAdvicePrompt = (pool, context) => judgePrompt('advise',
+const planAdvicePrompt = (pool, context, user) => judgePrompt('advise',
   'You are the advisor: a read-only judge one level above the planners. Do not edit files or change state.',
   'Stage: plan. Pick the candidate that lands the most intent with the least risk. Check that each resolution removes its tension, that no close or supersede drops intent without a reason, and that the target order is safe.',
-  'Return approve with chosen set to that candidate, revise with chosen and concrete concerns, or stop when no candidate is safe. Keep guidance under 80 words.',
+  'A check that passes on a missing file proves nothing. Check that every path a criterion check reads exists on the default branch or comes from a target.',
+  user && 'The user made the decisions in user_input. Do not ask to undo them. Return stop when they make the landing unsafe.',
+  'Return approve with chosen set to that candidate, revise with chosen and concrete concerns, or stop when no candidate is safe. A planner applies a revise once, so put the exact fix in guidance. Keep guidance under 80 words.',
   data('candidates', pool.map((c) => ({ id: c.id, angle: c.angle, plan: c.plan }))),
   data('context', context),
+  user && data('user_input', user),
 )
 
 const advisorPrompt = (stage, payload) => judgePrompt('advise',
@@ -661,35 +893,35 @@ const advisorPrompt = (stage, payload) => judgePrompt('advise',
   data('payload', payload),
 )
 
-const targetPrompt = (job, resumeFrom) => prompt(
-  `Build landing target ${job.target.id} on the run-scoped local branch ${localOf(job.target.branch)}. It stands in for ${job.target.branch}; never check out ${job.target.branch} itself. Use Bash and the Skill tool.`,
-  resumeFrom
-    ? (resumeFrom.worktree_path
-      ? `Resume in ${resumeFrom.worktree_path}: cd there first. Do not recreate it, reset it, or check out another branch. Continue from commit ${resumeFrom.checkpoint}.`
-      : `Resume in this fresh worktree: run git checkout ${localOf(job.target.branch)}. Continue from commit ${resumeFrom.checkpoint}.`)
-    : job.target.kind === 'existing'
-      ? `Start: git fetch origin && git checkout -B ${localOf(job.target.branch)} origin/${job.target.branch}.`
-      : `Start: git fetch origin && git checkout -B ${localOf(job.target.branch)} ${job.baseRef}.`,
-  `The base is ${job.baseRef}. When the branch does not start from it, rebase onto it. Resolve conflicts with /melt through the Skill tool. Return blocked when conflicts remain.`,
-  job.sources.length
-    ? 'Bring in the changes of the source PRs below. Cherry-pick the commits of each source (git log --reverse --format=%H origin/<source base>..origin/<source branch>), or merge it with --no-ff. Resolve conflicts as the brief and the tensions require.'
-    : 'This target brings in no other PR.',
-  'Apply the brief exactly. Change nothing outside it.',
-  'Run the repository quality gate (just check when the justfile defines check). Fix the failures that this work causes.',
-  'Commit with Conventional Commits after each step. Do not push, open a PR, comment, or touch any other branch.',
-  'Return done only when remaining is empty, with head_sha from git rev-parse HEAD and worktree_path from git rev-parse --show-toplevel. Return partial with checkpoint set to the last commit SHA when context runs low. Return blocked with a note when you cannot proceed.',
-  NO_CHAIN,
-  data('target', job.target),
-  data('sources', job.sources),
-  data('tensions', job.tensions),
-  data('criteria', job.criteria),
-  resumeFrom && data('resume_from', resumeFrom),
-)
+const targetPrompt = (job, resumeFrom) => {
+  const local = localOf(job.target.branch)
+  const start = resumeFrom ? resumeFrom.checkpoint : job.target.kind === 'existing' ? `origin/${job.target.branch}` : job.baseRef
+  return prompt(
+    `Build landing target ${job.target.id}. The run-scoped ref ${local} records your progress and stands in for ${job.target.branch}. Use Bash and the Skill tool.`,
+    `You are in a fresh isolated worktree. Start: git fetch origin && git checkout --detach ${start}.`,
+    `Keep HEAD detached: never check out ${local} or ${job.target.branch}. Run git update-ref refs/heads/${local} HEAD right after the checkout, after each commit, and before you return.`,
+    resumeFrom && `Continue the work from commit ${resumeFrom.checkpoint}. Do not redo the completed steps.`,
+    `The base is ${job.baseRef}. When the branch does not start from it, rebase onto it. Resolve conflicts with /melt through the Skill tool. Return blocked when conflicts remain.`,
+    job.sources.length
+      ? 'Bring in the changes of the source PRs below. Cherry-pick the commits of each source (git log --reverse --format=%H origin/<source base>..origin/<source branch>), or merge it with --no-ff. Resolve conflicts as the brief and the tensions require.'
+      : 'This target brings in no other PR.',
+    'Apply the brief exactly. Change nothing outside it.',
+    'Run the repository quality gate (just check when the justfile defines check). Fix the failures that this work causes.',
+    'Commit with Conventional Commits after each step. Do not push, open a PR, comment, or touch any other branch.',
+    'Return done only when remaining is empty, with head_sha from git rev-parse HEAD and worktree_path from git rev-parse --show-toplevel. Return partial with checkpoint set to the last commit SHA when context runs low. Return blocked with a note when you cannot proceed.',
+    NO_CHAIN,
+    data('target', job.target),
+    data('sources', job.sources),
+    data('tensions', job.tensions),
+    data('criteria', job.criteria),
+    resumeFrom && data('resume_from', resumeFrom),
+  )
+}
 
 const salvagePrompt = (target) => prompt(
   `Target ${target.id} ended without a result. Recover its durable state. Do not continue the work or change anything.`,
-  `Run git rev-parse --verify ${localOf(target.branch)} and git worktree list --porcelain. Return found=false when that local branch does not exist. Otherwise set checkpoint to its SHA, and set worktree_path to the worktree that has ${localOf(target.branch)} checked out, or to an empty string.`,
-  'Fill completed from git log of the branch. Leave remaining empty when you cannot tell.',
+  `Run git rev-parse --verify refs/heads/${localOf(target.branch)}. Return found=false when that ref does not exist. Otherwise set checkpoint to its SHA.`,
+  'Fill completed from git log of the ref. Leave remaining empty when you cannot tell.',
 )
 
 const integratePrompt = (refs, defaultBranch, round) => prompt(
@@ -701,16 +933,23 @@ const integratePrompt = (refs, defaultBranch, round) => prompt(
   'Make no edit beyond the merges. Do not push or open a PR.',
 )
 
-const verifyPrompt = (ac, integration) => judgePrompt('verify',
-  `Verify criterion ${ac.id} independently. You did not write this code. Implementer claims are not evidence.`,
-  `You are in a fresh isolated worktree. First run git checkout --detach ${integration.head}, the combined result of every target. Then run the check yourself.`,
-  'Run only the check field of the criterion. Treat every other field as description.',
-  data('criterion', ac),
-)
+const verifyPrompt = (ac, integration) => {
+  const path = integration.worktree_path.trim()
+  return judgePrompt('verify',
+    `Verify criterion ${ac.id} independently. You did not write this code. Implementer claims are not evidence.`,
+    `worktree_path: ${path}. head: ${integration.head}, the combined result of every target. The worktree is already at head. Do not check out, merge, reset, or edit anything in it.`,
+    `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}. Then run git -C ${path} status --porcelain. Set tree_clean to true when it prints nothing.`,
+    `Then run exactly this command in one Bash call, unchanged: cd ${path} && bash -c ${shq(ac.check)}`,
+    'That command runs the check field of the criterion and nothing else. Treat every other field as description.',
+    `Before the check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
+    'Other judges use this worktree after you. Leave it as you found it, except for build or test output.',
+    data('criterion', ac),
+  )
+}
 
 const publishPrompt = (jobs) => prompt(
   'Publish the landing targets. Use Bash. Never merge anything.',
-  'Work through the targets in the listed order. For each target, cd into its worktree_path first. Each target was built on its local_branch, which stands in for branch; never check out branch itself.',
+  'Work through the targets in the listed order from the current directory. Worktrees share refs, so each local_branch is visible here. Each target was built on its local_branch, which stands in for branch; never check out branch itself.',
   `Existing target: run git push --force-with-lease=<branch>:<expected_remote_sha> origin <local_branch>:refs/heads/<branch>. When base_branch differs from the current PR base, run gh pr edit <pr> --base <base_branch>. Then upsert your comment that contains ${LANDING_PREFIX}: PATCH it through gh api when it exists, else post it with gh pr comment <pr> --body-file - fed by a quoted heredoc (<<'EOF'). Its whole body is ${landingMarker(digest)}. Never open a second PR for an existing target.`,
   `New target: when gh pr list --head <branch> --state open shows a PR, report it and push nothing. Otherwise run git push origin <local_branch>:refs/heads/<branch>, then gh pr create --head <branch> --base <base_branch> --title <title> --body-file - fed by a quoted heredoc (<<'EOF'). Name each superseded PR in the body as Supersedes #<n>. Then post one comment whose whole body is ${landingMarker(digest)}, the same way.`,
   'Push only the listed branches. Never use --force without a lease, --admin, or --no-verify.',
@@ -719,17 +958,17 @@ const publishPrompt = (jobs) => prompt(
   data('targets', jobs),
 )
 
-function agePrompt(m, worktreePath) {
+function agePrompt(m) {
   const full = `/age origin/${m.base}...HEAD --auto`
-  return prompt(
+  return reviewerPrompt(
     `You are a read-only reviewer running the Age stage for PR #${m.number}.`,
-    checkoutStep(m.branch, worktreePath),
+    pinStep(m.branch, m.head_sha),
     `Last aged marker: sha=${JSON.stringify(m.aged_sha)}, patch=${JSON.stringify(m.aged_patch)}, dirty=${m.aged_dirty ? 1 : 0}. Decide the scope before you invoke /age:`,
     m.aged_dirty
       ? `The last age left medium+ findings (dirty=1). Do not skip and do not scope incrementally. Run ${full} through the Skill tool. Mode full.`
       : [
           `1. Compute the full-diff patch-id: git diff origin/${m.base}...HEAD | git patch-id --stable | cut -d' ' -f1.`,
-          '2. When it equals the marker patch, the content is unchanged. Do not invoke /age. Return mode skipped-unchanged with has_medium_plus_findings false.',
+          '2. When it equals the marker patch, the content is unchanged. Do not invoke /age. Return mode skipped-unchanged with has_medium_plus_findings and has_cheap_lows false.',
           ...(m.rebuilt
             ? [`3. Else run ${full} through the Skill tool. Mode full. This run rebuilt the branch, so a <marker sha>..HEAD range can hold base-branch changes; do not scope incrementally.`]
             : [
@@ -738,60 +977,72 @@ function agePrompt(m, worktreePath) {
               ]),
         ].join('\n'),
     `${NO_CHAIN} Do not invoke /cure, even when /age --auto documents that chain.`,
-    'Read the report. Set has_medium_plus_findings to true when any finding is medium or above. Set worktree_path to the output of git rev-parse --show-toplevel.',
+    'Read the report. Set has_medium_plus_findings to true when any finding is medium or above. Set has_cheap_lows to true when any low finding has fix-cost-now: contained. Set artifact to the report path and worktree_path to the output of git rev-parse --show-toplevel.',
   )
 }
 
-const PREP_SCHEMA = obj({ worktree_path: str })
 const ageFanoutPrepPrompt = (m) => prompt(
   `Prepare a worktree for PR #${m.number}. Use Bash.`,
-  `Run git fetch origin ${m.branch} ${m.base} && git checkout -B ${localOf(m.branch)} origin/${m.branch}. Never check out ${m.branch} itself.`,
+  `Run git fetch origin ${m.branch} ${m.base} && git checkout --detach ${m.head_sha}. Never check out a branch.`,
   'Return worktree_path from git rev-parse --show-toplevel.',
 )
 
-const curePrompt = (m, worktreePath, age) => prompt(
-  `You are the Cure stage for PR #${m.number}. cd ${worktreePath} first (branch ${m.branch}).`,
-  `Run /cure ${age.slug} --auto --stake medium+ through the Skill tool to apply the medium+ findings in ${age.artifact}.`,
-  `Commit locally on the checked-out branch ${localOf(m.branch)}. Do not push; a later stage pushes. ${NO_CHAIN}`,
+// The age report stays in the reviewer's worktree. Cure copies that one file by absolute path and works in its own tree.
+const curePrompt = (m, age, report) => prompt(
+  `You are the Cure stage for PR #${m.number}.`,
+  writerStep(m.branch, m.head_sha),
+  `Copy the age report into this worktree first: mkdir -p .cheese/age && cp ${report} .cheese/age/${age.slug}.md. Return status blocked when the copy fails.`,
+  `Run /cure ${age.slug} --auto --stake medium+ through the Skill tool. This floor selects every blocker, high, and medium finding in .cheese/age/${age.slug}.md, plus every low with fix-cost-now: contained.`,
+  'Never ask which findings to cure and never render a selection gate. Apply sprawling and structural findings too. Defer a finding only when it rests on a false premise or conflicts with another finding, and record why under ### Deferred.',
+  `Commit the fixes, then push them with git push origin HEAD:${m.branch}. Never force-push. When the push is rejected, return status blocked. ${NO_CHAIN}`,
+  'Set committed to true when you made commits, and pushed to true only when the push succeeded. Set head_sha to the output of git rev-parse HEAD and worktree_path to the output of git rev-parse --show-toplevel.',
+  'Return status ok only when /cure finished. Set note to the reason when status is partial or blocked, and to an empty string otherwise.',
 )
 
-const reagePrompt = (m, worktreePath, scope) => prompt(
-  `You are a read-only reviewer running the Re-age stage for PR #${m.number} after a cure. cd ${worktreePath} first.`,
-  `Run /age ${scope} --auto through the Skill tool. HEAD now includes the cure commits.`,
+const reagePrompt = (m, scope, sha) => reviewerPrompt(
+  `You are a read-only reviewer running the Re-age stage for PR #${m.number} after a cure.`,
+  pinStep(m.branch, sha),
+  `Run /age ${scope} --auto through the Skill tool. HEAD is the cured commit.`,
   `${NO_CHAIN} Do not invoke /cure.`,
-  'Read the report. Return mode incremental, the scope, slug, artifact, and worktree_path, and whether any finding is medium or above.',
+  'Read the report. Return mode incremental, the scope, slug, artifact, and worktree_path, whether any finding is medium or above, and whether any low finding has fix-cost-now: contained.',
 )
 
-const finalizePrompt = (m, worktreePath, dirty) => prompt(
-  `Finalize the review of PR #${m.number}. Use Bash. cd ${worktreePath} first (branch ${m.branch}).`,
-  `1. Run git fetch origin ${m.branch}. When HEAD has commits that origin/${m.branch} lacks, run git push origin HEAD:${m.branch}. Never force-push and never push another branch.`,
+// Finalize needs no worktree: it reads remote-tracking refs and writes only the PR comment.
+const finalizePrompt = (m, sha, dirty) => prompt(
+  `Finalize the review of PR #${m.number}. Use Bash. Change no files and push nothing.`,
+  `1. Run git fetch origin ${m.base} ${m.branch}. The reviewed commit is ${sha}.`,
   [
     '2. Upsert the aged marker comment on the PR:',
-    '   - sha: git rev-parse HEAD',
-    `   - patch: git diff origin/${m.base}...HEAD | git patch-id --stable | cut -d' ' -f1 (fetch origin/${m.base} first)`,
-    `   - body: <!-- ${MARKER_PREFIX} sha=<sha> patch=<patch> dirty=${dirty ? 1 : 0} --> followed by one line: move-my-cheese: aged at <short sha>${dirty ? ', medium+ findings remain' : ''}.`,
+    `   - sha: ${sha}`,
+    `   - patch: git diff origin/${m.base}...${sha} | git patch-id --stable | cut -d' ' -f1`,
+    `   - body: <!-- ${MARKER_PREFIX} sha=${sha} patch=<patch> dirty=${dirty ? 1 : 0} --> followed by one line: move-my-cheese: aged at ${sha.slice(0, 12)}${dirty ? ', medium+ findings remain' : ''}.`,
     `   - Find the comment that contains ${MARKER_PREFIX} through gh api repos/{owner}/{repo}/issues/${m.number}/comments. PATCH it when found, else post it with gh pr comment ${m.number}.`,
   ].join('\n'),
+  'Set marker_updated to true when the comment holds the new marker.',
 )
 
 const statusPrompt = (number) => prompt(
   `Report the merge readiness of PR #${number}. Use Bash. Change nothing.`,
   `First wait for the checks: timeout 900 gh pr checks ${number} --watch --interval 30. Ignore its exit status.`,
-  `Then run gh pr view ${number} --json state,headRefOid,mergeStateStatus,reviewDecision. Classify gh pr checks ${number} as pass, fail, pending, or none. Count review threads with isResolved=false through gh api graphql. Map an empty reviewDecision to NONE.`,
+  `Then run gh pr view ${number} --json state,headRefOid,mergeStateStatus,reviewDecision. Map an empty reviewDecision to NONE.`,
+  `Set ci to the output of ${checksCmd(number)}. Use none when it prints nothing.`,
+  `Set unresolved_threads to the output of ${threadsCmd(number)}.`,
 )
 
-const affinagePrompt = (number, branch, worktreePath) => prompt(
+const affinagePrompt = (number, branch, own) => prompt(
   `Make PR #${number} ready to merge. Use Bash and the Skill tool.`,
-  checkoutStep(branch, worktreePath),
+  writerStep(branch, `origin/${branch}`, own),
   `Run /affinage ${number} --auto --no-age --stake medium+ --plate through the Skill tool. It grades review threads and CI failures, cures what it accepts, replies, and publishes through /plate.`,
+  `The PR head branch is ${branch}. When /plate pushes, it pushes with git push origin HEAD:${branch}, never with a bare branch name.`,
+  'Never ask which findings to cure. The medium+ floor selects every blocker, high, and medium finding plus every low with fix-cost-now: contained. A cure selection is never a human decision.',
   'When the branch is behind its base or conflicts with it, let /affinage resolve that through /melt and /plate.',
   'Never merge or close a PR. Never force-push without a lease. Set pushed to true when the remote head changed. Return blocked with a note when a human decision is needed. Set worktree_path to the output of git rev-parse --show-toplevel.',
   NO_CHAIN,
 )
 
-const restackPrompt = (number, branch, parentBranch, defaultBranch, worktreePath) => prompt(
+const restackPrompt = (number, branch, parentBranch, defaultBranch) => prompt(
   `The parent of PR #${number} has merged. Move #${number} onto ${defaultBranch}. Use Bash and the Skill tool.`,
-  checkoutStep(branch, worktreePath),
+  writerStep(branch, `origin/${branch}`),
   `Record LEASE=$(git rev-parse origin/${branch}). Run gh pr edit ${number} --base ${defaultBranch}. Then run git rebase --onto origin/${defaultBranch} origin/${parentBranch}, so only this PR's own commits move. Resolve conflicts with /melt through the Skill tool. Push with git push --force-with-lease=${branch}:$LEASE origin HEAD:${branch}.`,
   'Never merge or close a PR. Return blocked with a note when conflicts remain. Set worktree_path to the output of git rev-parse --show-toplevel.',
   NO_CHAIN,
@@ -817,6 +1068,14 @@ const markPrompt = (items, close) => prompt(
     : `For each PR: post its comment with gh pr comment <pr> --body-file - fed by a quoted heredoc (<<'EOF'), never with --body. Then convert it to a draft with gh pr ready <pr> --undo.`,
   'Return one result per PR. Use skipped with a note when a command fails.',
   data('prs', items),
+)
+
+const cleanupPrompt = (paths) => prompt(
+  'Remove the scratch worktrees and local branches of this finished run. Use Bash. Never touch the remote. Never remove the main worktree or the current directory.',
+  `Run git worktree list --porcelain. Remove each path in the list below that it shows, and each worktree whose branch is under refs/heads/mmc/${runTag}/, with git worktree remove --force <path>. Skip every other worktree.`,
+  `Then delete the run refs: git for-each-ref --format='%(refname)' refs/heads/mmc/${runTag}/ | while read -r ref; do git update-ref -d "$ref"; done. Then run git worktree prune.`,
+  'Return the removed paths. Put each skipped path and its reason in note.',
+  data('worktrees', paths),
 )
 
 const redoPrompt = (original, errors) => `${original}\n\nYour previous answer failed these checks. Fix each one.\n${data('errors', errors.map((e) => e.msg))}`
@@ -860,28 +1119,31 @@ async function salvage(target) {
   const found = await agent(salvagePrompt(target),
     { label: `salvage:${target.id}`, phase: 'Assemble', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA })
   return found && found.found && !blank(found.checkpoint)
-    ? { completed: found.completed, remaining: found.remaining, checkpoint: found.checkpoint.trim(), worktree_path: absolute(found.worktree_path) ? found.worktree_path.trim() : '' }
+    ? { completed: found.completed, remaining: found.remaining, checkpoint: found.checkpoint.trim() }
     : null
 }
 
+// Every round, the first included, starts in a fresh worktree; the run-scoped ref carries the work between rounds.
 async function buildTarget(job) {
   const id = job.target.id
-  const opts = { phase: 'Assemble', model: 'sonnet', schema: TARGET_SCHEMA }
-  let result = await agent(targetPrompt(job, null), { ...opts, label: `target:${id}`, isolation: 'worktree' })
+  const opts = { phase: 'Assemble', model: 'sonnet', schema: TARGET_SCHEMA, isolation: 'worktree' }
+  let result = await agent(targetPrompt(job, null), { ...opts, label: `target:${id}` })
   let lastCheckpoint = null
   for (let round = 1; ; round++) {
+    if (result) noteWorktree(result.worktree_path)
     const state = normalizeTask(result)
-    if (state.status === 'done') return { id, status: 'done', local: true, head_sha: state.head_sha.trim(), worktree_path: state.worktree_path.trim() }
+    if (state.status === 'done') return { id, status: 'done', local: true, head_sha: state.head_sha.trim() }
     if (state.status === 'blocked') return { id, status: 'blocked', reason: state.note }
     if (round > LIMITS.continuations) return { id, status: 'exhausted', reason: `no done result after ${LIMITS.continuations} continuations` }
     const resumeFrom = state.status === 'partial'
-      ? { completed: state.completed, remaining: state.remaining, checkpoint: state.checkpoint.trim(), worktree_path: absolute(state.worktree_path) ? state.worktree_path.trim() : '' }
+      ? { completed: state.completed, remaining: state.remaining, checkpoint: state.checkpoint.trim() }
       : await salvage(job.target)
-    if (!resumeFrom) return { id, status: 'lost', reason: 'no result and no local branch to resume from' }
+    if (!resumeFrom) return { id, status: 'lost', reason: 'no result and no run-scoped ref to resume from' }
+    if (!SHA_RE.test(resumeFrom.checkpoint)) return { id, status: 'lost', reason: 'the checkpoint is not a commit SHA' }
     if (resumeFrom.checkpoint === lastCheckpoint) return { id, status: 'stalled', reason: `no new commit since ${lastCheckpoint}` }
     lastCheckpoint = resumeFrom.checkpoint
     log(`${id}: resuming from ${lastCheckpoint} (continuation ${round})`)
-    result = await agent(targetPrompt(job, resumeFrom), { ...opts, label: `target:${id}:c${round}`, ...(resumeFrom.worktree_path ? {} : { isolation: 'worktree' }) })
+    result = await agent(targetPrompt(job, resumeFrom), { ...opts, label: `target:${id}:c${round}` })
   }
 }
 
@@ -890,12 +1152,13 @@ async function integrateAndVerify(round, refs, criteria = plan.criteria) {
   const ids = refs.map((r) => r.id)
   const integrated = await typed(integratePrompt(refs, idx.default_branch, round),
     { label: `integrate:${round}`, phase: 'Verify', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA },
-    (r) => checkIntegrate(r, ids))
+    // Every attempt gets its own worktree, so record each one for cleanup, valid or not.
+    (r) => { noteWorktree(r.worktree_path); return checkIntegrate(r, ids) })
   if (!integrated.value) return { ok: false, reason: `integration failed: ${errorText(integrated.errors)}`, verdicts: [] }
   const integration = integrated.value
   if (integration.status !== 'done') return { ok: false, reason: 'integration blocked', verdicts: [] }
   if (integration.conflicted.length) return { ok: false, reason: `targets conflict when combined: ${integration.conflicted.join(', ')}`, verdicts: [] }
-  // Judges run one after another, each in its own worktree at the pinned integration commit.
+  // Judges run one after another in the integration worktree. A judge may not check out, so it reads the tree that integrate pinned.
   const verdicts = []
   for (const ac of criteria) {
     if (ac.check_kind === 'ci') {
@@ -903,9 +1166,15 @@ async function integrateAndVerify(round, refs, criteria = plan.criteria) {
       continue
     }
     const { value, errors } = await typed(verifyPrompt(ac, integration),
-      { label: `verify:${round}:${ac.id}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', isolation: 'worktree', schema: VERDICT_SCHEMA }, (v) => checkVerdict(v, ac))
+      { label: `verify:${round}:${ac.id}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERDICT_SCHEMA }, (v) => checkVerdict(v, ac))
+    // A check that an earlier check's files could affect still counts, but the verdict says so.
+    if (value && !value.tree_clean) log(`verify:${round}:${ac.id}: the integration worktree had changes before the check`)
+    const note = value && !value.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
+    // A check that reads a missing path can pass without testing anything, so it fails here.
+    const missing = value ? value.missing_paths.filter((p) => !blank(p)) : []
+    const gap = missing.length ? ` (the check reads missing paths: ${missing.join(', ')})` : ''
     verdicts.push(value
-      ? { criterion: ac.id, result: value.passes ? 'pass' : 'fail', evidence: value.evidence }
+      ? { criterion: ac.id, result: value.passes && !missing.length ? 'pass' : 'fail', evidence: `${value.evidence}${note}${gap}` }
       : { criterion: ac.id, result: 'fail', evidence: `not verified: ${errorText(errors)}` })
   }
   const failed = verdicts.filter((v) => v.result === 'fail').map((v) => v.criterion)
@@ -913,28 +1182,35 @@ async function integrateAndVerify(round, refs, criteria = plan.criteria) {
 }
 
 // ---- Poll: status, then /affinage when work remains; bounded, with a stall guard ----
-async function pollUntilReady(id, number, branch, prefix, phaseName) {
+async function pollUntilReady(number, branch, prefix, phaseName, onStatus) {
   let before = null
   let last = null
   for (let round = 1; round <= LIMITS.pollRounds; round++) {
-    const status = await agent(statusPrompt(number), { label: `${prefix}:status:${round}`, phase: phaseName, model: 'haiku', effort: 'low', schema: STATUS_SCHEMA })
-    if (!status) return { verdict: 'failed', reason: 'status agent returned no output', status: last }
+    const checked = await typed(statusPrompt(number), { label: `${prefix}:status:${round}`, phase: phaseName, model: 'haiku', effort: 'low', schema: STATUS_SCHEMA }, checkStatus)
+    const status = checked.value
+    if (!status) return { verdict: 'failed', reason: `status failed: ${errorText(checked.errors)}`, status: last }
     last = status
-    lastHead.set(id, status.head_sha.trim())
+    onStatus(status)
     const verdict = classify(status)
     if (verdict === 'waiting') continue
     if (verdict !== 'needs-work') return { verdict, reason: verdict === 'awaiting-review' ? 'branch protection waits for a human review' : '', status }
     const print = statusFingerprint(status)
     if (print === before) return { verdict: 'stalled', reason: '/affinage made no progress since the last round', status }
     before = print
-    const wt = worktrees.get(id) || ''
-    const fix = await agent(affinagePrompt(number, branch, wt),
-      { label: `${prefix}:affinage:${round}`, phase: phaseName, model: 'opus', schema: FIX_SCHEMA, ...(wt ? {} : { isolation: 'worktree' }) })
+    // A branch of its own per round: an earlier round's worktree may still hold its branch.
+    const own = `${localOf(branch)}--${phaseName.toLowerCase()}-${round}`
+    const fix = await agent(affinagePrompt(number, branch, own),
+      { label: `${prefix}:affinage:${round}`, phase: phaseName, model: 'opus', schema: FIX_SCHEMA, isolation: 'worktree' })
     if (!fix) return { verdict: 'failed', reason: '/affinage agent returned no output', status }
-    if (absolute(fix.worktree_path)) worktrees.set(id, fix.worktree_path.trim())
+    noteWorktree(fix.worktree_path)
     if (fix.status === 'blocked') return { verdict: 'needs-human', reason: fix.note, status }
   }
   return { verdict: 'exhausted', reason: `not ready after ${LIMITS.pollRounds} poll rounds`, status: last }
+}
+
+// Each poll round records its head, so a throw mid-poll keeps the head this run last saw.
+async function pollTarget(id, number, branch, prefix, phaseName) {
+  return pollUntilReady(number, branch, prefix, phaseName, (status) => lastHead.set(id, status.head_sha.trim()))
 }
 
 // ---- Review stages: one pipeline item per target, no barrier between PRs ----
@@ -948,70 +1224,79 @@ function markerFor(t) {
   }
 }
 
-async function runAgeFanout(id, m) {
-  let wt = worktrees.get(id) || ''
-  if (!wt) {
-    const prep = await agent(ageFanoutPrepPrompt(m), { label: `age-fanout-prep:${m.number}`, phase: 'Review', model: 'haiku', effort: 'low', isolation: 'worktree', schema: PREP_SCHEMA })
-    if (!prep || !absolute(prep.worktree_path)) throw new Error('age-fanout prep returned no worktree')
-    wt = prep.worktree_path.trim()
-    worktrees.set(id, wt)
-  }
+async function runAgeFanout(m) {
+  const prep = await typed(ageFanoutPrepPrompt(m), { label: `age-fanout-prep:${m.number}`, phase: 'Review', model: 'haiku', effort: 'low', isolation: 'worktree', schema: PREP_SCHEMA }, checkPrep)
+  if (!prep.value) throw new Error(`age-fanout prep failed: ${errorText(prep.errors)}`)
+  const wt = prep.value.worktree_path.trim()
+  noteWorktree(wt)
   const scope = `origin/${m.base}...HEAD`
   const slug = `pr-${m.number}`
   const fan = await workflow('age-fanout', { worktree_path: wt, range: scope, slug })
   // age-fanout reports failure by returning status blocked, not by throwing.
   if (!fan || fan.status !== 'ok') throw new Error((fan && fan.error) || 'age-fanout returned non-ok')
-  return { mode: 'full', scope, slug, artifact: fan.artifact, worktree_path: wt, has_medium_plus_findings: fan.has_medium_plus_findings }
+  return { mode: 'full', scope, slug, artifact: fan.artifact, worktree_path: wt, has_medium_plus_findings: fan.has_medium_plus_findings, has_cheap_lows: fan.has_cheap_lows === true }
 }
 
 async function ageStage(t) {
   const m = markerFor(t)
   if (m.aged_sha && m.aged_sha === m.head_sha && !m.aged_dirty) {
-    return { t, m, stamped: true, age: { mode: 'skipped-unchanged', scope: '', slug: '', artifact: '', worktree_path: '', has_medium_plus_findings: false } }
+    return { t, m, stamped: true, age: { mode: 'skipped-unchanged', scope: '', slug: '', artifact: '', worktree_path: '', has_medium_plus_findings: false, has_cheap_lows: false } }
   }
   if (wantsAgeFanout(m)) {
     try {
-      return { t, m, age: await runAgeFanout(t.id, m) }
+      return { t, m, age: await runAgeFanout(m) }
     } catch (e) {
       log(`#${m.number}: age-fanout unavailable (${e.message}); falling back to one reviewer.`)
     }
   }
-  const wt = worktrees.get(t.id) || ''
-  const raw = await agent(agePrompt(m, wt), { label: `age:${m.number}`, phase: 'Review', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA, ...(wt ? {} : { isolation: 'worktree' }) })
-  if (!raw) return { t, m, failure: 'age agent returned no output' }
-  // A skipped review has no findings by definition; a real review must name its scope.
-  const age = raw.mode === 'skipped-unchanged' ? { ...raw, has_medium_plus_findings: false } : raw
-  if (age.mode !== 'skipped-unchanged' && blank(age.scope)) return { t, m, failure: 'age agent returned no review scope' }
-  if (absolute(age.worktree_path)) worktrees.set(t.id, age.worktree_path.trim())
+  const checked = await typed(agePrompt(m), { label: `age:${m.number}`, phase: 'Review', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA, isolation: 'worktree' },
+    (a) => { noteWorktree(a.worktree_path); return checkAge(a) })
+  if (!checked.value) return { t, m, failure: `age failed: ${errorText(checked.errors)}` }
+  const raw = checked.value
+  // A skipped review has no findings by definition.
+  const age = raw.mode === 'skipped-unchanged' ? { ...raw, has_medium_plus_findings: false, has_cheap_lows: false } : raw
   return { t, m, age }
 }
 
+// The age report stays in the reviewer's worktree; a writer copies that file and never works there.
+function reportPath(age) {
+  const artifact = age.artifact.trim()
+  if (!artifact) return ''
+  const path = artifact.startsWith('/') ? artifact : absolute(age.worktree_path) ? `${age.worktree_path.trim().replace(/\/+$/, '')}/${artifact}` : ''
+  return SAFE_PATH_RE.test(path) && !path.split('/').includes('..') ? path : ''
+}
+
 async function cureStage(r) {
-  if (r.failure || !r.age.has_medium_plus_findings) return r
-  const wt = worktrees.get(r.t.id) || r.age.worktree_path
-  if (!absolute(wt)) return { ...r, failure: 'no review worktree for cure' }
-  const cure = await agent(curePrompt(r.m, wt, r.age), { label: `cure:${r.m.number}`, phase: 'Review', model: 'sonnet', schema: CURE_SCHEMA })
+  // Cure the medium+ floor, which includes contained lows, without asking.
+  if (r.failure || !(r.age.has_medium_plus_findings || r.age.has_cheap_lows)) return r
+  const report = reportPath(r.age)
+  if (!report) return { ...r, failure: 'no readable age report path for cure' }
+  const cure = await agent(curePrompt(r.m, r.age, report), { label: `cure:${r.m.number}`, phase: 'Review', model: 'sonnet', schema: CURE_SCHEMA, isolation: 'worktree' })
   if (!cure) return { ...r, failure: 'cure agent returned no output' }
-  if (!cure.committed) return { ...r, cure }
-  const reage = await agent(reagePrompt(r.m, wt, r.age.scope), { label: `reage:${r.m.number}`, phase: 'Review', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA })
-  return reage ? { ...r, cure, reage } : { ...r, cure, failure: 're-age agent returned no output' }
+  noteWorktree(cure.worktree_path)
+  // A cure that did not finish leaves the selected findings unfixed, so the review fails instead of passing clean.
+  if (!cure.committed) return cure.status === 'ok' ? { ...r, cure } : { ...r, cure, failure: `cure ${cure.status} with no commits: ${cure.note || 'no note'}` }
+  // Cure commits must reach the remote, or the re-age and the poll would judge a head without the fix.
+  if (!cure.pushed || !FULL_SHA_RE.test(cure.head_sha.trim())) return { ...r, cure, failure: 'cure commits were not pushed' }
+  const reaged = await typed(reagePrompt(r.m, r.age.scope, cure.head_sha.trim()), { label: `reage:${r.m.number}`, phase: 'Review', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA, isolation: 'worktree' },
+    (a) => { noteWorktree(a.worktree_path); return a.mode === 'skipped-unchanged' ? [substance('re-age must review the cure commits; return mode incremental')] : checkAge(a) })
+  if (!reaged.value) return { ...r, cure, failure: `re-age failed: ${errorText(reaged.errors)}` }
+  return { ...r, cure, reage: reaged.value }
 }
 
 async function finalizeStage(r) {
   if (r.failure || r.stamped) return r
-  const wt = worktrees.get(r.t.id) || r.age.worktree_path
-  if (!absolute(wt)) return { ...r, failure: 'no review worktree to finalize from' }
-  const finalize = await agent(finalizePrompt(r.m, wt, isDirtyChain(r)), { label: `finalize:${r.m.number}`, phase: 'Review', model: 'haiku', effort: 'low', schema: FINALIZE_SCHEMA })
-  if (!finalize) return { ...r, failure: 'finalize agent returned no output' }
-  // Cure commits must reach the remote, or the poll would judge a head without the fix.
-  if (r.cure && r.cure.committed && (!finalize.pushed || !FULL_SHA_RE.test(finalize.head_sha.trim()))) return { ...r, finalize, failure: 'cure commits were not pushed' }
-  return { ...r, finalize }
+  const sha = r.cure && r.cure.committed ? r.cure.head_sha.trim() : r.m.head_sha
+  const finalized = await typed(finalizePrompt(r.m, sha, isDirtyChain(r)), { label: `finalize:${r.m.number}`, phase: 'Review', model: 'haiku', effort: 'low', schema: FINALIZE_SCHEMA }, checkFinalize)
+  // The marker only lets a later run skip review, so a missing marker costs a full re-age, not this PR.
+  if (!finalized.value) log(`#${r.m.number}: aged marker not written (${errorText(finalized.errors)}); the next run reviews this PR in full.`)
+  return { ...r, finalize: finalized.value }
 }
 
 async function pollStage(r) {
   if (r.failure) return { ...r, verdict: 'failed', reason: r.failure }
   if (isDirtyChain(r)) return { ...r, verdict: 'dirty', reason: 'medium+ findings remain after cure' }
-  return { ...r, ...(await pollUntilReady(r.t.id, r.m.number, r.t.branch, `review:${r.m.number}`, 'Review')) }
+  return { ...r, ...(await pollTarget(r.t.id, r.m.number, r.t.branch, `review:${r.m.number}`, 'Review')) }
 }
 
 // A PR that this approval already drafted gets no second comment.
@@ -1038,8 +1323,17 @@ async function stampHeads(ids) {
     .filter((item) => item.pr && FULL_SHA_RE.test(item.head))
     .map((item) => ({ ...item, marker: landingMarker(digest, item.head) }))
   if (!items.length) return
-  const result = await agent(stampPrompt(items), { label: 'stamp', phase: 'Report', model: 'haiku', effort: 'low', schema: STAMP_SCHEMA })
+  const result = (await typed(stampPrompt(items), { label: 'stamp', phase: 'Report', model: 'haiku', effort: 'low', schema: STAMP_SCHEMA }, noCheck)).value
   if (!result) log('stamp agent returned no output; a later run of this approval will ask to plan again')
+}
+
+// agent() throws once the budget is spent, so a failed stamp only logs.
+async function stampOpen(ids) {
+  try {
+    await stampHeads(ids)
+  } catch (e) {
+    log(`stamp failed: ${e.message}; a later run of this approval will ask to plan again`)
+  }
 }
 
 // ---- Land: bottom-up; a head that moved after review is checked again before it merges ----
@@ -1052,25 +1346,26 @@ async function recheck(id, t, n, sha) {
   // Every earlier target has merged, so the base is now the default branch. A restack or an /affinage
   // merge can pull base changes into a reviewedHead..HEAD range, so a moved head gets a full review.
   const m = { ...markerFor(t), base: idx.default_branch, head_sha: sha, aged_sha: '', aged_patch: '', aged_dirty: false, rebuilt: true }
-  const wt = worktrees.get(id) || ''
-  const age = await agent(agePrompt(m, wt), { label: `recheck-age:${n}`, phase: 'Land', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA, ...(wt ? {} : { isolation: 'worktree' }) })
-  if (!age) return 'the re-age agent returned no output'
-  if (absolute(age.worktree_path)) worktrees.set(id, age.worktree_path.trim())
+  const checked = await typed(agePrompt(m), { label: `recheck-age:${n}`, phase: 'Land', agentType: 'reviewer', model: 'opus', schema: AGE_SCHEMA, isolation: 'worktree' },
+    (a) => { noteWorktree(a.worktree_path); return checkAge(a) })
+  const age = checked.value
+  if (!age) return `the re-age failed: ${errorText(checked.errors)}`
   if (age.mode !== 'skipped-unchanged' && age.has_medium_plus_findings) return `new medium+ findings after review (${age.artifact})`
   if (!needVerify) return ''
   const check = await integrateAndVerify(`land-${id}`, [{ id, ref: `origin/${t.branch}` }], landableCriteria(t))
   return check.ok ? '' : `verification failed on the moved head: ${check.reason}`
 }
 
+const stopAt = (id, reason) => { landed.set(id, { status: 'failed', reason }); return `landing stopped at ${id}: ${reason}` }
+
 async function landOne(id, t, n) {
-  const stop = (reason) => { landed.set(id, { status: 'failed', reason }); return `landing stopped at ${id}: ${reason}` }
+  const stop = (reason) => stopAt(id, reason)
   if (t.base !== idx.default_branch) {
-    const wt = worktrees.get(id) || ''
-    const moved = await agent(restackPrompt(n, t.branch, targetsById.get(t.base).branch, idx.default_branch, wt), { label: `restack:${n}`, phase: 'Land', model: 'sonnet', schema: FIX_SCHEMA, ...(wt ? {} : { isolation: 'worktree' }) })
+    const moved = await agent(restackPrompt(n, t.branch, targetsById.get(t.base).branch, idx.default_branch), { label: `restack:${n}`, phase: 'Land', model: 'sonnet', schema: FIX_SCHEMA, isolation: 'worktree' })
+    if (moved) noteWorktree(moved.worktree_path)
     if (!moved || moved.status !== 'ok') return stop(`restack failed: ${moved ? moved.note : 'no output'}`)
-    if (absolute(moved.worktree_path)) worktrees.set(id, moved.worktree_path.trim())
   }
-  const poll = await pollUntilReady(id, n, t.branch, `land:${n}`, 'Land')
+  const poll = await pollTarget(id, n, t.branch, `land:${n}`, 'Land')
   if (poll.verdict !== 'ready') return stop(`not ready before merge: ${poll.verdict}${poll.reason ? ` (${poll.reason})` : ''}`)
   const sha = poll.status.head_sha.trim()
   if (!FULL_SHA_RE.test(sha)) return stop('status returned no full head SHA')
@@ -1085,8 +1380,8 @@ async function landOne(id, t, n) {
   if (!merge || merge.result === 'refused') return stop(`merge refused: ${merge ? merge.note : 'no output'}`)
   let state = ''
   for (let round = 1; round <= LIMITS.mergePolls && state !== 'MERGED' && state !== 'CLOSED'; round++) {
-    const seen = await agent(mergedPrompt(n), { label: `merged:${n}:${round}`, phase: 'Land', model: 'haiku', effort: 'low', schema: STATE_SCHEMA })
-    state = seen ? seen.state : ''
+    const seen = await typed(mergedPrompt(n), { label: `merged:${n}:${round}`, phase: 'Land', model: 'haiku', effort: 'low', schema: STATE_SCHEMA }, noCheck)
+    state = seen.value ? seen.value.state : ''
   }
   if (state !== 'MERGED') return stop(`PR did not reach MERGED (last state ${state || 'unknown'})`)
   landed.set(id, { status: 'merged', reason: moved ? 'merged after a re-check of the moved head' : '' })
@@ -1103,7 +1398,8 @@ async function closeSuperseded(id) {
 async function landAll() {
   let stopped = ''
   for (const id of order) {
-    if (verdictOf(id) === 'merged') landed.set(id, { status: 'merged', reason: 'merged before this run reached it' })
+    if (floorReached()) stopped = stopAt(id, 'budget floor reached before this merge')
+    else if (verdictOf(id) === 'merged') landed.set(id, { status: 'merged', reason: 'merged before this run reached it' })
     else stopped = await landOne(id, targetsById.get(id), published.get(id).pr_number)
     if (stopped) break
     await closeSuperseded(id)
@@ -1176,10 +1472,25 @@ const APPROVED = input.plan === undefined ? null : input.plan
 const APPROVE = typeof input.approve === 'string' ? input.approve.trim() : ''
 if (APPROVED !== null) {
   const shapeErrors = checkLanding(APPROVED)
-  if (shapeErrors.length) return { status: 'blocked', error: `args.plan is not a landing object from a needs-approval result: ${shapeErrors.slice(0, 5).join('; ')}` }
-  if (!APPROVE) return { status: 'blocked', error: 'args.plan needs args.approve set to the digest that the needs-approval result returned' }
+  if (shapeErrors.length) return { status: 'blocked', error: `args.plan is not a landing object from a needs-approval or needs-input result: ${shapeErrors.slice(0, 5).join('; ')}` }
+  if (!APPROVE) return { status: 'blocked', error: 'args.plan needs args.approve set to the digest that the same result returned' }
   if (digestOf(APPROVED) !== APPROVE) return { status: 'blocked', error: 'approve does not match the digest of args.plan; the plan changed after approval' }
   if (requested.length && stable(requested) !== stable([...APPROVED.inputs].sort(ascending))) return { status: 'blocked', error: 'args.prs differs from the inputs of the approved plan' }
+}
+const ANSWERS = input.answers === undefined ? null : input.answers
+let answered = []
+if (ANSWERS !== null) {
+  if (APPROVED === null) return { status: 'blocked', error: 'args.answers needs args.plan set to the landing of a needs-input result, and args.approve set to its digest' }
+  if (!APPROVED.plan.open_questions.length) return { status: 'blocked', error: 'args.answers applies only to a landing with open questions' }
+  const matched = matchAnswers(APPROVED.plan.open_questions, ANSWERS)
+  if (matched.errors.length) return { status: 'blocked', error: `args.answers is invalid: ${matched.errors.slice(0, 5).join('; ')}` }
+  answered = matched.answers
+}
+const REVISION = typeof input.revise === 'string' ? input.revise.trim() : ''
+if (input.revise !== undefined) {
+  if (!REVISION) return { status: 'blocked', error: 'args.revise must be a non-empty string that describes one change to the plan' }
+  if (REVISION.length > LIMITS.revisionChars) return { status: 'blocked', error: `args.revise exceeds ${LIMITS.revisionChars} characters` }
+  if (APPROVED === null) return { status: 'blocked', error: 'args.revise needs args.plan set to the landing of a needs-approval or needs-input result, and args.approve set to its digest' }
 }
 
 // ---- Recon ----
@@ -1218,7 +1529,8 @@ if (!wanted.length) return { status: 'blocked', error: 'no open PR to land', ski
 
 const detailed = await typed(detailPrompt([...wanted, ...adoptable].sort(ascending), idx.viewer), { label: 'recon:detail', phase: 'Recon', model: 'haiku', schema: DETAIL_SCHEMA }, checkDetail)
 if (!detailed.value) return { status: 'blocked', error: `recon detail failed: ${errorText(detailed.errors)}`, skipped }
-const details = new Map(detailed.value.prs.map((p) => [p.number, p]))
+// The prompt asks jq for 1500 characters; code enforces the cap.
+const details = new Map(detailed.value.prs.map((p) => [p.number, { ...p, body: p.body.slice(0, 1500) }]))
 
 let active = []
 for (const n of wanted) {
@@ -1268,14 +1580,92 @@ let landing
 let digest
 let planSource = 'approved'
 const adviceLog = []
+const APPROVE_USAGE = 'To execute, re-run with { prs: landing.inputs, plan: landing, approve: digest }. Add land:true to merge. To change the plan first, re-run with the same fields and revise: "<change>".'
+const needsInput = (questions) => ({
+  status: 'needs-input', questions, plan_source: planSource, digest, landing, advice: adviceLog, skipped,
+  usage: 'Answer with { prs: landing.inputs, plan: landing, approve: digest, answers: { "<question text or 1-based number>": "<answer>" } }. Add revise: "<change>" to change the plan in the same run. One planner folds the input in, and the run returns needs-approval.',
+})
+// When the advisor cannot settle, the user picks: each candidate carries its own landing and digest.
+const choose = (reason, pool, landingOf) => ({
+  status: 'needs-input', reason, advice: adviceLog, skipped,
+  candidates: pool.map((c) => { const l = landingOf(c.plan); return { id: c.id, angle: c.angle, digest: digestOf(l), landing: l } }),
+  usage: 'Pick one candidate. To execute it, re-run with { prs: landing.inputs, plan: <candidate>.landing, approve: <candidate>.digest }. To change it first, add revise: "<change>". A candidate with open questions takes args.answers first.',
+})
+
+// The advisor picks a candidate, then approves, stops, or asks for revisions. A revise verdict gets
+// one planner revision, so the plan that comes back is the one the advisor read last.
+// user: { answers, change } that a folded plan already applies, or null; the advisor and the reviser keep it.
+// Returns { verdict: 'approve' | 'stop' | 'unsettled', pool, reason? }; on approve, pool[0] is the chosen plan.
+async function advisePlans(pool, context, ctx, labelPrefix, user) {
+  for (let round = 0; ; round++) {
+    const label = `${labelPrefix}:${round}`
+    const advised = await typed(planAdvicePrompt(pool, context, user),
+      { label, phase: 'Advise', agentType: 'judge', model: 'opus', schema: PLAN_ADVICE_SCHEMA }, (a) => checkPlanAdvice(a, pool.map((c) => c.id)))
+    if (!advised.value) {
+      log(`${label}: no valid advice (${errorText(advised.errors)})`)
+      return { verdict: 'unsettled', reason: `the advisor returned no valid advice: ${errorText(advised.errors)}`, pool }
+    }
+    const advice = advised.value
+    adviceLog.push(advice)
+    const chosen = pool.find((c) => c.id === advice.chosen)
+    if (advice.verdict === 'approve') return { verdict: 'approve', pool: [chosen] }
+    if (advice.verdict === 'stop') return { verdict: 'stop', pool }
+    if (round >= LIMITS.advisorRevisions) return { verdict: 'unsettled', reason: `the advisor still asks for revisions: ${advice.concerns.join('; ')}`, pool }
+    const angle = PLAN_ANGLES.find((a) => a.id === chosen.angle) || ADVICE_ANGLE
+    const revised = await typed(planPrompt(angle, context, { previous: chosen.plan, advice, user }),
+      { label: `plan:${chosen.angle}:r${round + 1}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))
+    // A failed revision leaves the advised candidates; the user can still approve or revise one.
+    if (!revised.value) return { verdict: 'unsettled', reason: `the advisor asks for revisions (${advice.concerns.join('; ')}), and the revised plan failed validation: ${errorText(revised.errors)}`, pool }
+    pool = [{ id: 'P-1', angle: chosen.angle, plan: revised.value }]
+  }
+}
+
 if (APPROVED) {
   digest = APPROVE
   // An adopted PR means this approval already started, so a moved default branch is expected.
   const stale = staleReasons(APPROVED, active, adopted.size ? APPROVED.recon.base_sha : idx.base_sha.trim(), APPROVE)
   if (stale.length) return { status: 'needs-replan', reasons: stale, skipped, usage: 'Re-run with { prs } to plan against the current state.' }
-  const errors = checkPlan(APPROVED.plan, planCtx(APPROVED.tensions.map((t) => t.id)))
-  if (errors.length) return { status: 'blocked', error: `the approved plan no longer validates: ${errorText(errors)}`, skipped }
+  const ctx = planCtx(APPROVED.tensions.map((t) => t.id))
+  const flaws = checkPlan(APPROVED.plan, ctx)
+  const folding = answered.length > 0 || Boolean(REVISION)
+  // A fold mints a new digest, but the stamps and adoption of a started approval name this one.
+  const started = adopted.size > 0 || active.some((p) => p.landing_digest === APPROVE)
+  if (folding && started) return { status: 'blocked', error: 'this approval already started; resume without revise or answers, or plan again with { prs }', skipped }
+  // A fold never executes and its result passes checkPlan, so it may repair a plan that a newer check rejects.
+  if (flaws.length && !folding) return { status: 'blocked', error: `the approved plan no longer validates: ${errorText(flaws)}. Re-run with revise: "<change>" to repair it, or with { prs } to plan again.`, skipped }
   landing = APPROVED
+  if (folding) {
+    // One planner folds the user input in. Survey and tensions do not run again, and the user approves the result.
+    phase('Plan')
+    const fold = answered.length && REVISION ? ANSWER_REVISE_ANGLE : answered.length ? ANSWER_ANGLE : REVISE_ANGLE
+    planSource = fold.id
+    const context = {
+      default_branch: idx.default_branch,
+      prs: active.map((p) => ({ number: p.number, title: p.title, branch: p.branch, base: p.base, author: p.author, ci: p.ci, merge_state: p.merge_state, changed_files: p.changed_files })),
+      tensions: APPROVED.tensions, overlaps: fileOverlaps(active), stack_edges: stackEdges(active),
+    }
+    const folded = await typed(planPrompt(fold, context, { previous: APPROVED.plan, answers: answered, revision: REVISION, flaws }),
+      { label: `plan:${fold.id}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))
+    if (!folded.value) return { status: 'blocked', error: `the ${fold === REVISE_ANGLE ? 'revised' : 'answered'} plan failed validation: ${errorText(folded.errors)}`, skipped }
+    const landingOf = (plan) => ({ ...APPROVED, plan })
+    const settle = (plan) => {
+      landing = landingOf(plan)
+      digest = digestOf(landing)
+    }
+    settle(folded.value)
+    if (folded.value.open_questions.length) return needsInput(folded.value.open_questions)
+    // User input can restructure targets, so the advisor reads the folded plan before the user does.
+    phase('Advise')
+    const user = { answers: answered, change: REVISION }
+    const settled = await advisePlans([{ id: 'P-1', angle: fold.id, plan: folded.value }], context, ctx, `advise:plan:${fold.id}`, user)
+    const plan = settled.pool[0].plan
+    settle(plan)
+    if (settled.verdict === 'stop') return { status: 'stopped', landing, digest, advice: adviceLog, skipped }
+    if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
+    if (plan.open_questions.length) return needsInput(plan.open_questions)
+    const reason = 'review the revised plan; the advisor approved it'
+    return { status: 'needs-approval', reason, plan_source: planSource, digest, landing, answers: answered, revision: REVISION, estimate: estimateOf(plan), advice: adviceLog, skipped, usage: APPROVE_USAGE }
+  }
 } else {
   phase('Survey')
   const surveyed = await parallel(active.map((pr) => () => typed(surveyPrompt(pr, active),
@@ -1287,11 +1677,13 @@ if (APPROVED) {
   phase('Tensions')
   const overlaps = fileOverlaps(active)
   const edges = stackEdges(active)
-  const found = await typed(tensionsPrompt(digests, overlaps, edges),
+  const pairs = prNumbers.flatMap((a, i) => prNumbers.slice(i + 1).map((b) => [a, b]))
+  const found = await typed(tensionsPrompt(digests, overlaps, edges, pairs),
     { label: 'tensions', phase: 'Tensions', agentType: 'explorer', model: 'sonnet', effort: 'medium', schema: TENSIONS_SCHEMA }, (r) => checkTensions(r, prNumbers))
   if (!found.value) return { status: 'blocked', error: `tension analysis failed, so the run fails closed: ${errorText(found.errors)}`, skipped }
   const tensions = found.value.tensions
   const ctx = planCtx(tensions.map((t) => t.id))
+  const landingOf = (p) => ({ inputs: prNumbers, recon: { base_sha: idx.base_sha.trim(), heads: Object.fromEntries(active.map((x) => [String(x.number), x.head_sha])) }, tensions, plan: p })
 
   phase('Plan')
   let chosenPlan = null
@@ -1310,7 +1702,7 @@ if (APPROVED) {
     }
     const angles = PLAN_ANGLES.slice(0, PLANNER_COUNT[found.value.blast_radius])
     log(`${tensions.length} tension(s), ${incomplete.length} incomplete PR(s), blast radius ${found.value.blast_radius}: ${angles.length} planner(s).`)
-    const drafted = await parallel(angles.map((angle) => () => typed(planPrompt(angle, context, null, null),
+    const drafted = await parallel(angles.map((angle) => () => typed(planPrompt(angle, context),
       { label: `plan:${angle.id}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))))
     let pool = []
     angles.forEach((angle, i) => {
@@ -1320,31 +1712,16 @@ if (APPROVED) {
     if (!pool.length) return { status: 'blocked', error: 'no planner produced a valid plan', tensions, skipped }
 
     phase('Advise')
-    for (let round = 0; !chosenPlan; round++) {
-      const advised = await typed(planAdvicePrompt(pool, context),
-        { label: `advise:plan:${round}`, phase: 'Advise', agentType: 'judge', model: 'opus', schema: PLAN_ADVICE_SCHEMA }, (a) => checkPlanAdvice(a, pool.map((c) => c.id)))
-      if (!advised.value) return { status: 'needs-input', reason: `the advisor returned no valid advice: ${errorText(advised.errors)}`, candidates: pool, advice: adviceLog, skipped }
-      const advice = advised.value
-      adviceLog.push(advice)
-      const chosen = pool.find((c) => c.id === advice.chosen)
-      if (advice.verdict === 'stop') return { status: 'stopped', candidates: pool, advice: adviceLog, skipped }
-      if (advice.verdict === 'approve') {
-        chosenPlan = chosen.plan
-        planSource = chosen.angle
-        break
-      }
-      if (round >= LIMITS.advisorRevisions) return { status: 'needs-input', reason: 'the advisor still asks for revisions', candidates: pool, advice: adviceLog, skipped }
-      const angle = PLAN_ANGLES.find((a) => a.id === chosen.angle)
-      const revised = await typed(planPrompt(angle, context, advice.concerns, chosen.plan),
-        { label: `plan:${angle.id}:r${round + 1}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))
-      if (!revised.value) return { status: 'blocked', error: `the revised plan failed validation: ${errorText(revised.errors)}`, advice: adviceLog, skipped }
-      pool = [{ id: 'P-1', angle: angle.id, plan: revised.value }]
-    }
+    const settled = await advisePlans(pool, context, ctx, 'advise:plan', null)
+    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped }
+    if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
+    chosenPlan = settled.pool[0].plan
+    planSource = settled.pool[0].angle
   }
 
-  landing = { inputs: prNumbers, recon: { base_sha: idx.base_sha.trim(), heads: Object.fromEntries(active.map((p) => [String(p.number), p.head_sha])) }, tensions, plan: chosenPlan }
+  landing = landingOf(chosenPlan)
   digest = digestOf(landing)
-  if (chosenPlan.open_questions.length) return { status: 'needs-input', questions: chosenPlan.open_questions, landing, advice: adviceLog, skipped, usage: 'Answer the questions and plan again. A plan with open questions cannot be approved.' }
+  if (chosenPlan.open_questions.length) return needsInput(chosenPlan.open_questions)
 
   // Auto mode acts without a human only on the viewer's own PRs: later stages push to and merge every PR in the run.
   const othersTouched = active.filter((p) => p.author !== idx.viewer).map((p) => p.number)
@@ -1353,12 +1730,12 @@ if (APPROVED) {
       status: 'needs-approval',
       reason: AUTO ? `auto does not push to or merge PRs by other authors without approval: #${othersTouched.join(', #')}` : 'review the landing plan',
       plan_source: planSource, digest, landing, estimate: estimateOf(chosenPlan), advice: adviceLog, skipped,
-      usage: 'To execute, re-run with { prs: landing.inputs, plan: landing, approve: digest }. Add land:true to merge.',
+      usage: APPROVE_USAGE,
     }
   }
 }
 
-if (landing.plan.open_questions.length) return { status: 'blocked', error: 'the plan has open questions; answer them and plan again', skipped }
+if (landing.plan.open_questions.length) return { status: 'blocked', error: 'the plan has open questions; pass the answers in args.answers before approval', skipped }
 runTag = digest.slice(0, 8)
 
 // ---- Execution state: declared before any report() call ----
@@ -1369,7 +1746,12 @@ const waveOrder = waves(plan.targets).order
 const order = waveOrder.flat()
 const baseBranchOf = (t) => (t.base === idx.default_branch ? t.base : targetsById.get(t.base).branch)
 const outcomes = new Map()
-const worktrees = new Map()
+// Cleanup hints only: no stage works in a directory that another agent returned.
+const scratchWorktrees = new Set()
+function noteWorktree(path) {
+  const p = typeof path === 'string' ? path.trim() : ''
+  if (SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')) scratchWorktrees.add(p)
+}
 const published = new Map()
 const reviewById = new Map()
 const landed = new Map()
@@ -1378,6 +1760,8 @@ let verification = { ok: true, reason: 'not run', verdicts: [] }
 const lastHead = new Map()
 const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
 const rebuilt = (id) => outcomes.get(id)?.local === true
+const worstCase = agentsMax(plan)
+if (worstCase > LIMITS.agentCap * 0.8) log(`worst case ${worstCase} agents before repairs, near the runtime cap of ${LIMITS.agentCap}; a run that hits the cap stops early`)
 
 // ---- Assemble: one barrier per dependency wave ----
 phase('Assemble')
@@ -1432,7 +1816,6 @@ for (const wave of waveOrder) {
   const results = await parallel(runnable.map((t) => () => buildTarget(jobOf(t))))
   results.forEach((r, i) => outcomes.set(runnable[i].id, r || { id: runnable[i].id, status: 'lost', reason: 'builder threw' }))
 }
-for (const o of outcomes.values()) if (rebuilt(o.id)) worktrees.set(o.id, o.worktree_path)
 const notBuilt = order.filter((id) => outcomes.get(id).status !== 'done')
 if (notBuilt.length) return report('fail', `targets not built: ${notBuilt.map((id) => `${id} (${outcomes.get(id).status})`).join(', ')}; nothing was pushed`)
 
@@ -1443,6 +1826,7 @@ const needVerify = plan.dispositions.some((d) => d.action !== 'keep')
   || plan.criteria.some((c) => c.check_kind !== 'ci')
   || landing.tensions.length > 0
 const refsOf = (afterPublish) => order.map((id) => ({ id, ref: afterPublish || !rebuilt(id) ? `origin/${targetsById.get(id).branch}` : localOf(targetsById.get(id).branch) }))
+if (floorReached()) return report('partial', 'budget floor reached before verification; nothing was pushed')
 if (needVerify) {
   phase('Verify')
   verification = await integrateAndVerify('pre', refsOf(false))
@@ -1461,10 +1845,11 @@ const pushJobs = order.filter(rebuilt).map((id) => {
   const pr = t.kind === 'existing' ? byNumber.get(t.pr) : null
   return {
     target: id, kind: t.kind, pr: pr ? pr.number : 0, branch: t.branch, local_branch: localOf(t.branch), base_branch: baseBranchOf(t), title: t.title,
-    worktree_path: worktrees.get(id) || '', expected_remote_sha: pr ? pr.head_sha : '',
+    expected_remote_sha: pr ? pr.head_sha : '',
     supersedes: plan.dispositions.filter((d) => d.action === 'supersede' && d.target === id).map((d) => d.pr),
   }
 })
+if (pushJobs.length && floorReached()) return report('partial', 'budget floor reached before publish; nothing was pushed')
 if (pushJobs.length) {
   phase('Publish')
   // Publish pushes and opens PRs, so it never reruns; a malformed report gets one form-only repair.
@@ -1478,14 +1863,28 @@ if (pushJobs.length) {
   if (errors.length) return report('fail', `publish reported invalid results; check the remote branches and PRs before a rerun: ${errorText(errors)}`)
   for (const r of pub.results) published.set(r.target, { ...r, head_sha: r.head_sha.trim() })
 }
+// A stop before the first poll still stamps the head that publish left.
+for (const [id, p] of published) lastHead.set(id, p.head_sha)
 
 // ---- Review: pipelined per PR ----
-if (floorReached()) return report('partial', 'budget floor reached before review')
+if (floorReached()) {
+  await stampOpen(order)
+  return report('partial', 'budget floor reached before review')
+}
 phase('Review')
 const reviewed = await pipeline(order.map((id) => targetsById.get(id)), ageStage, cureStage, finalizeStage, pollStage)
 order.forEach((id, i) => reviewById.set(id, reviewed[i] || { verdict: 'failed', reason: 'review chain threw' }))
 const verdictOf = (id) => reviewById.get(id).verdict
 const allReady = order.every((id) => ['ready', 'merged'].includes(verdictOf(id)))
+
+const donePayload = () => ({
+  summary: plan.summary,
+  targets: order.map((id) => ({ id, pr: published.get(id).pr_number, review: verdictOf(id) })),
+  verdicts: verification.verdicts,
+  dispositions: plan.dispositions,
+})
+let doneApproved = false
+let doneNote = ''
 
 // Without land: draft a superseded PR once its replacement is ready. Close nothing.
 if (!LAND) {
@@ -1500,7 +1899,20 @@ if (!LAND) {
     }
     if (d.action === 'close' && order.every(settled)) items.push({ pr: d.pr, comment: `Dropped from the landing plan: ${d.reason} Converted to draft by move-my-cheese.` })
   }
-  if (items.length) marks.push(...(await markPrs(items, false, 'mark', 'Review')))
+  // The advisor gates the draft conversions and the ready verdict, as it gates land.
+  if (items.length || allReady) {
+    let advice = null
+    try {
+      advice = floorReached() ? null : await advise('done', 'advise:done', donePayload())
+    } catch (e) {
+      log(`advise:done failed: ${e.message}`)
+    }
+    if (advice) adviceLog.push(advice)
+    if (advice && advice.verdict === 'approve') {
+      doneApproved = true
+      if (items.length) marks.push(...(await markPrs(items, false, 'mark', 'Review')))
+    } else doneNote = `drafts and the ready verdict wait: the advisor did not approve${advice ? `: ${advice.concerns.join('; ')}` : ''}`
+  }
 }
 
 // ---- Land ----
@@ -1511,19 +1923,19 @@ if (LAND) {
   if (notReady.length) landNote = `land skipped; not ready: ${notReady.map((id) => `${id} (${verdictOf(id)})`).join(', ')}`
   else if (floorReached()) landNote = 'land skipped: budget floor reached'
   else {
-    // Cure and /affinage changed the code after Verify, so verify the final heads again.
-    if (needVerify) verification = await integrateAndVerify('final', refsOf(true))
-    if (!verification.ok) landNote = `land skipped: final verification failed: ${verification.reason}`
-    else {
-      const advice = await advise('done', 'advise:done', {
-        summary: plan.summary,
-        targets: order.map((id) => ({ id, pr: published.get(id).pr_number, review: verdictOf(id) })),
-        verdicts: verification.verdicts,
-        dispositions: plan.dispositions,
-      })
-      if (advice) adviceLog.push(advice)
-      if (!advice || advice.verdict !== 'approve') landNote = `land skipped: the advisor did not approve${advice ? `: ${advice.concerns.join('; ')}` : ''}`
-      else landNote = await landAll()
+    // agent() throws once the token budget is spent; a throw here must still reach the report.
+    try {
+      // Cure and /affinage changed the code after Verify, so verify the final heads again.
+      if (needVerify) verification = await integrateAndVerify('final', refsOf(true))
+      if (!verification.ok) landNote = `land skipped: final verification failed: ${verification.reason}`
+      else {
+        const advice = await advise('done', 'advise:done', donePayload())
+        if (advice) adviceLog.push(advice)
+        if (!advice || advice.verdict !== 'approve') landNote = `land skipped: the advisor did not approve${advice ? `: ${advice.concerns.join('; ')}` : ''}`
+        else landNote = await landAll()
+      }
+    } catch (e) {
+      landNote = `land stopped by an error: ${e.message}; check which PRs merged before a rerun`
     }
   }
 }
@@ -1532,6 +1944,13 @@ if (LAND) {
 phase('Report')
 const finalStatus = LAND
   ? (order.every((id) => landed.get(id)?.status === 'merged') ? 'landed' : 'partial')
-  : (allReady ? 'ready' : 'partial')
-await stampHeads(order.filter((id) => landed.get(id)?.status !== 'merged' && verdictOf(id) !== 'merged'))
-return report(finalStatus, landNote)
+  : (allReady && doneApproved ? 'ready' : 'partial')
+await stampOpen(order.filter((id) => landed.get(id)?.status !== 'merged' && verdictOf(id) !== 'merged'))
+// The runtime removes only unchanged isolated worktrees. A successful run removes the rest and its run refs;
+// a failed run keeps them for inspection and salvage.
+if (['landed', 'ready'].includes(finalStatus) && (scratchWorktrees.size || order.some(rebuilt))) {
+  const swept = (await typed(cleanupPrompt([...scratchWorktrees]), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, noCheck)).value
+  if (!swept) log(`cleanup returned no output; remove the mmc/${runTag}/ refs and these worktrees by hand: ${[...scratchWorktrees].join(', ') || 'none recorded'}`)
+  else if (swept.note) log(`cleanup: ${swept.note}`)
+}
+return report(finalStatus, landNote || doneNote)
