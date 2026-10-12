@@ -143,6 +143,37 @@ stub() {
     [[ "${lines[0]}" == "shadow"$'\t'"jq"$'\t'* ]]
 }
 
+@test "shadows: a mise shim to an npm global in mise's node is the same copy" {
+    # npm globals live in mise's node bin dir, which is also on PATH. The
+    # shim forwards to that exact file, so it is not a second install.
+    exe "$XDG_DATA_HOME/mise/installs/node/26/lib/node_modules/tilth/bin/tilth"
+    mkdir -p "$XDG_DATA_HOME/mise/installs/node/26/bin"
+    ln -s ../lib/node_modules/tilth/bin/tilth "$XDG_DATA_HOME/mise/installs/node/26/bin/tilth"
+    exe "$XDG_DATA_HOME/mise/shims/tilth"
+    stub mise "echo '$XDG_DATA_HOME/mise/installs/node/26/bin'"
+    export PATH="$XDG_DATA_HOME/mise/installs/node/26/bin:$XDG_DATA_HOME/mise/shims:$BASE_PATH"
+
+    run bd_check_shadows "$ALLOW"
+    [[ $status -eq 0 ]]
+    [[ -z "$output" ]]
+}
+
+@test "shadows: a mise shim to an npm global still flags a brew copy" {
+    exe "$XDG_DATA_HOME/mise/installs/node/26/lib/node_modules/tilth/bin/tilth"
+    mkdir -p "$XDG_DATA_HOME/mise/installs/node/26/bin"
+    ln -s ../lib/node_modules/tilth/bin/tilth "$XDG_DATA_HOME/mise/installs/node/26/bin/tilth"
+    exe "$XDG_DATA_HOME/mise/shims/tilth"
+    exe "$T/.linuxbrew/Cellar/tilth/1/bin/tilth"
+    mkdir -p "$T/.linuxbrew/bin"
+    ln -s ../Cellar/tilth/1/bin/tilth "$T/.linuxbrew/bin/tilth"
+    stub mise "echo '$XDG_DATA_HOME/mise/installs/node/26/bin'"
+    export PATH="$XDG_DATA_HOME/mise/shims:$T/.linuxbrew/bin:$BASE_PATH"
+
+    run bd_check_shadows "$ALLOW"
+    [[ $status -eq 0 ]]
+    [[ "${lines[0]}" == "shadow"$'\t'"tilth"$'\t'"npm=$XDG_DATA_HOME/mise/installs/node/26/bin/tilth, brew=$T/.linuxbrew/bin/tilth" ]]
+}
+
 @test "shadows: the allowlist suppresses an accepted duplicate" {
     exe "$T/.linuxbrew/bin/jq"
     exe "$XDG_DATA_HOME/mise/installs/aqua-jq/1.8/jq"
