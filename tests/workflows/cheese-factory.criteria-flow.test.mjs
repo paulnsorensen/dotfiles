@@ -92,7 +92,6 @@ async function run(table, over = {}, { budget } = {}) {
 }
 
 const plain = (value) => JSON.parse(JSON.stringify(value))
-const labels = (trace) => trace.agents.map(({ opts }) => opts.label)
 const calls = (trace, label) => trace.agents.filter(({ opts }) => opts.label === label)
 const dataOf = (promptText, name) => JSON.parse(new RegExp(`<data name="${name}">\\n([\\s\\S]*?)\\n</data>`).exec(promptText)[1])
 
