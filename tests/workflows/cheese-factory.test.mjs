@@ -57,7 +57,7 @@ function plate(results) {
 
 const fileOf = (slug) => `src/${slug}.js`
 
-function integrateResult({ worktree_path = '/tmp/worktrees/integration', merged = [], conflicted = [], head = INTEGRATE_HEAD, files_by_slug, files_changed = 5, lines_changed = 50 } = {}) {
+function integrateResult({ worktree_path = '/repo/.claude/worktrees/integration', merged = [], conflicted = [], head = INTEGRATE_HEAD, files_by_slug, files_changed = 5, lines_changed = 50 } = {}) {
   return { worktree_path, merged, conflicted, head, files_by_slug: files_by_slug || Object.fromEntries(merged.map((s) => [s, [fileOf(s)]])), files_changed, lines_changed }
 }
 
@@ -131,7 +131,7 @@ test('single-pass chain runs when candidate_curds < 2, no decompose call', async
   assert.equal(result.curds[0].slug, 'parent')
   assert.equal(result.curds[0].status, 'clean')
   assert.equal(result.curds[0].branch, 'curd/parent')
-  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['resolve', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate'])
+  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['resolve', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate', 'cleanup'])
 })
 
 test('decompose merges file-overlapping curds, writes mini-specs, and fans out only disjoint curds', async () => {
@@ -185,7 +185,7 @@ test('decompose merges file-overlapping curds, writes mini-specs, and fans out o
 
   const labelSet = new Set(trace.agents.map(({ opts }) => opts.label))
   assert.deepEqual([...labelSet].sort(), [
-    'age:barrier', 'cook:a', 'cook:c', 'decompose:plan', 'decompose:write-minispecs',
+    'age:barrier', 'cleanup', 'cook:a', 'cook:c', 'decompose:plan', 'decompose:write-minispecs',
     'integrate', 'plate', 'press:a', 'press:c', 'resolve', 'taste:a', 'taste:c',
   ])
 })
@@ -225,7 +225,7 @@ test('phase order and per-phase model/agentType/isolation assertions', async () 
   await workflow.run({ ...globals, args: { spec: 'parent' } })
 
   const labels = trace.agents.map(({ opts }) => opts.label)
-  assert.deepEqual(labels, ['resolve', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate'])
+  assert.deepEqual(labels, ['resolve', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate', 'cleanup'])
   assert.deepEqual(trace.phases, ['Resolve', 'Cook', 'Integrate', 'Age', 'Plate', 'Report'])
 
   const byLabel = Object.fromEntries(trace.agents.map((call) => [call.opts.label, call.opts]))
@@ -697,7 +697,7 @@ test('a large integrated diff dispatches age-fanout with exact workflow args', a
   assert.equal(fanoutCalls.length, 1)
   assert.equal(fanoutCalls[0].name, 'age-fanout')
   assert.deepEqual(fanoutCalls[0].opts, {
-    worktree_path: '/tmp/worktrees/integration',
+    worktree_path: '/repo/.claude/worktrees/integration',
     range: `origin/main...${INTEGRATE_HEAD}`,
     slug: 'a',
     route_curds: [{ slug: 'a', branch: 'curd/a' }],
@@ -806,7 +806,7 @@ test('a finding file with a leading ./ or the integration worktree prefix routes
   const workflow = await loadWorkflow(path)
   const findings = [
     finding('a', { file: './src/a.js', claim: 'DOT-SLASH-CLAIM' }),
-    finding('a', { file: '/tmp/worktrees/integration/src/a.js', claim: 'ABSOLUTE-CLAIM' }),
+    finding('a', { file: '/repo/.claude/worktrees/integration/src/a.js', claim: 'ABSOLUTE-CLAIM' }),
   ]
   const respond = respondTwoCurds({
     ...twoCurdCureLoop,
@@ -1088,8 +1088,8 @@ test('AC-2: a non-40-hex head_sha fails the curd at its stage and no later write
 
     assert.equal(result.curds[0].status, 'failed', stage)
     assert.match(result.curds[0].excluded_reason, new RegExp(`^${stage}: \\$\\.head_sha must be a 40-hex commit SHA`), stage)
-    assert.equal(labels.some((l) => l.startsWith('press:') && stage === 'cook'), false)
-    assert.equal(labels.some((l) => l.startsWith('taste:') && stage === 'cook'), false)
+    const laterStages = stage === 'cook' ? ['taste:', 'press:'] : []
+    assert.equal(labels.some((l) => laterStages.some((p) => l.startsWith(p))), false, stage)
     assert.equal(labels.some((l) => l === 'integrate' || l === 'plate'), false, stage)
   }
 })
