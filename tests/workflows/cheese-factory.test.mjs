@@ -2188,6 +2188,51 @@ test('AC-10: the other owner of a shared finding is dirty when the first owner c
   assert.match(bySlug.b.excluded_reason, /owning curd did not commit/)
 })
 
+test('AC-10: a cured co-owner stays dirty and unplated when the first owner of its shared finding commits nothing', async () => {
+  const fanout = async () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { file: 'src/shared.js' }), finding('b', { file: 'src/b.js', claim: 'only in b' })] })
+  const files = { a: ['src/shared.js'], b: ['src/shared.js', 'src/b.js'] }
+  const { trace, bySlug } = await runTwoCurds({
+    integrate: () => integrateResult({ merged: ['a', 'b'], files_by_slug: files, files_changed: 20, lines_changed: 900 }),
+    'cure:a': () => cureResult({ committed: false }),
+    'cure:b': () => cureResult({ committed: true, head_sha: CURE_SHA }),
+    're-merge': () => integrateResult({ merged: ['a', 'b'], files_by_slug: files, head: NEW_HEAD }),
+    'age:reage': () => ageBarrierResult({ perCurd: [{ slug: 'a' }, { slug: 'b' }] }),
+  }, fanout)
+
+  assert.equal(bySlug.a.status, 'dirty')
+  assert.equal(bySlug.b.status, 'dirty')
+  assert.match(bySlug.b.excluded_reason, /owning curd did not commit.*owner a/)
+  assert.equal(callsOf(trace, 'plate').length, 0)
+})
+
+test('AC-10: a cured co-owner stays dirty when the first owner of its shared finding conflicts in re-merge', async () => {
+  const fanout = async () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { file: 'src/shared.js' }), finding('b', { file: 'src/b.js', claim: 'only in b' })] })
+  const files = { a: ['src/shared.js'], b: ['src/shared.js', 'src/b.js'] }
+  const { trace, bySlug } = await runTwoCurds({
+    integrate: () => integrateResult({ merged: ['a', 'b'], files_by_slug: files, files_changed: 20, lines_changed: 900 }),
+    'cure:a': () => cureResult({ committed: true, head_sha: CURE_SHA }),
+    'cure:b': () => cureResult({ committed: true, head_sha: CURE_SHA }),
+    're-merge': () => integrateResult({ merged: ['b'], conflicted: ['a'], files_by_slug: files, head: NEW_HEAD }),
+    'age:reage': () => ageBarrierResult({ perCurd: [{ slug: 'b' }] }),
+  }, fanout)
+
+  assert.equal(bySlug.a.status, 'dirty')
+  assert.equal(bySlug.b.status, 'dirty')
+  assert.match(bySlug.b.excluded_reason, /owner a/)
+  assert.equal(callsOf(trace, 'plate').length, 0)
+})
+
+test('AC-10: a shared co-owner reports has_medium_plus_findings while it is dirty from a shared medium finding', async () => {
+  const fanout = async () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { file: 'src/shared.js' })] })
+  const { bySlug } = await runTwoCurds({
+    integrate: () => integrateResult({ merged: ['a', 'b'], files_by_slug: { a: ['src/shared.js'], b: ['src/shared.js', 'src/b.js'] }, files_changed: 20, lines_changed: 900 }),
+    'cure:a': () => cureResult({ committed: false }),
+  }, fanout)
+
+  assert.equal(bySlug.b.status, 'dirty')
+  assert.equal(bySlug.b.age.has_medium_plus_findings, true)
+})
+
 test('a re-age finding on a file two curds changed marks both owners dirty', async () => {
   const fanout = async () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('a', { file: 'src/a.js' })] })
   const shared = { a: ['src/a.js', 'src/shared.js'], b: ['src/shared.js'] }
