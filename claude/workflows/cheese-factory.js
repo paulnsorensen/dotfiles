@@ -317,7 +317,12 @@ function findDuplicateSlugs(curds) {
 // 'form' errors are mechanical, so a cheap model repairs them. 'substance' errors need new facts,
 // so the producer redoes the same call. After LIMITS.fixRounds the value is null and callers fail
 // the curd (or barrier) with errorText(errors).
-// maxCurds keeps a run under the runtime cap of 1000 agents. A curd chain can spend about 26 agents, so about 38 curds reach the cap.
+// maxCurds keeps a run under the runtime cap of 1000 agents. One typed call spends at most fixRounds + 1 = 3 attempts.
+// A curd chain spends at most 57 agents: cook 32, taste 17, press 4, cure 4.
+// Cook: (continuations + 1) rounds x 3 attempts = 12, plus 2 SHA expansions per round = 8, plus continuations x (3 salvage attempts + 1 expansion) = 12.
+// Taste: 3 attempts, plus correctiveRounds (2) x (3 correct attempts + 1 expansion + 3 retaste attempts) = 17.
+// Press and cure: 3 attempts + 1 expansion each.
+// So 17 curds reach the cap before the shared barrier agents. Recount before a reader raises maxCurds.
 const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12 }
 // The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. Recorded paths are cleanup hints. The same pattern also gates the integrate and re-merge worktree paths.
 // Only writer calls in an isolated worktree feed the cleanup set. A reviewer path goes to reportWorktrees instead.
@@ -332,9 +337,10 @@ function noteWorktree(path, into = scratchWorktrees) {
 }
 const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
 const SHA_RE = /^[0-9a-f]{40}$/
-// A SHA is checked in code, not by a schema pattern. A bad SHA is always substance: a formatter has no repo access and could only invent one.
+// Code checks a SHA, not a schema pattern. A bad SHA is always substance: a formatter has no repo access and could only invent one.
+// typed() trims every SHA field before a check runs, so a padded SHA never reaches this test.
 const shaErrors = (path, value) =>
-  (typeof value === 'string' && SHA_RE.test(value.trim()) ? [] : [substance(`${path} must be a 40-hex commit SHA`)])
+  (typeof value === 'string' && SHA_RE.test(value) ? [] : [substance(`${path} must be a 40-hex commit SHA`)])
 const FIX_STATUSES = ['fixed', 'partial', 'blocked']
 const PRESS_STATUSES = ['ok', 'partial', 'blocked']
 const AGE_STATUSES = ['ok', 'blocked']
@@ -517,7 +523,7 @@ async function attempt(text, opts) {
 // A writer throw is final, because the work ref may have moved. A read-only throw retries within LIMITS.fixRounds.
 const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'worktree' && opts.agentType !== 'reviewer')
 
-// A status or verdict that differs only by case or spaces is the same answer. Callers read the normalized value.
+// A status or verdict that differs only by case or spaces is the same answer. A SHA field loses its surrounding spaces. Callers read the normalized value.
 const normalizeEnums = (v) => {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return v
   const norm = (s) => s.trim().toLowerCase()
@@ -530,6 +536,7 @@ const normalizeEnums = (v) => {
   if (typeof out.status === 'string') out.status = normStatus(out.status)
   if (typeof out.verdict === 'string') out.verdict = norm(out.verdict)
   if (Array.isArray(out.results)) out.results = out.results.map((r) => (r && typeof r.status === 'string' ? { ...r, status: norm(r.status) } : r))
+  for (const field of SHA_FIELDS) if (typeof out[field] === 'string') out[field] = out[field].trim()
   return out
 }
 
@@ -542,7 +549,7 @@ async function expandShortShas(value, opts) {
   const out = { ...value }
   let changed = false
   for (const field of SHA_FIELDS) {
-    const short = typeof value[field] === 'string' ? value[field].trim() : ''
+    const short = typeof value[field] === 'string' ? value[field] : ''
     if (!SHORT_SHA_RE.test(short)) continue
     const { value: reply } = await attempt(prompt(
       'Expand a short commit SHA. Run git rev-parse --verify "<short>^{commit}" in the repo at worktree_path. Use the current directory when worktree_path is empty. Return {"sha":"<40 hex>"}.',
@@ -571,13 +578,17 @@ async function typed(text, opts, check, nullIsFinal = false) {
       value = normalizeEnums(value)
       if (opts.isolation === 'worktree') noteWorktree(value.worktree_path, opts.agentType === 'reviewer' ? reportWorktrees : scratchWorktrees)
     }
-    const errors = value == null ? [substance('agent returned no output')] : check(value)
-    if (!errors.length) return { value, errors, lost: null }
-    if (!expanded && !nullIsFinal && value != null) {
+    let errors = value == null ? [substance('agent returned no output')] : check(value)
+    if (errors.length && !expanded && !nullIsFinal && value != null) {
       expanded = true
       const full = await expandShortShas(value, opts)
-      if (full && !check(full).length) return { value: full, errors: [], lost: null }
+      // A repair or redo then starts from the expanded value, so only the remaining errors drive it.
+      if (full) {
+        value = full
+        errors = check(value)
+      }
     }
+    if (!errors.length) return { value, errors, lost: null }
     if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null }
     sent = errors.every((e) => e.kind === 'form')
       ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' } }
@@ -786,7 +797,7 @@ ${NO_CHAIN_DIRECTIVE}
 Return {"status":"ok|partial|blocked","head_sha":"<40 hex>","artifact":"...","worktree_path":"<git rev-parse --show-toplevel>","orientation":"..."}.`)
 }
 
-// Integrate and re-merge share one prompt. Both build on a detached HEAD at the run's base SHA, so no branch is held by two worktrees and both heads share one base.
+// Integrate and re-merge share one prompt. Both build on a detached HEAD at the run's base SHA, so no two worktrees hold one branch, and both heads share one base.
 function mergePrompt(intro, base, refs) {
   return prompt(`${intro} You are in an isolated worktree of the project repo (worktrees share the repo's branches).
 
@@ -985,7 +996,7 @@ log(`Running ${curds.length} curd chain(s)${singlePass ? ' (single-pass)' : ''}:
 const baseSha = resolved.base_sha.trim()
 
 // Cook, then bounded continuations. Every round starts in a fresh isolated worktree at a commit SHA;
-// curd/<slug> carries the work between rounds. A null result is salvaged from that ref once per round.
+// curd/<slug> carries the work between rounds. Code salvages a null result from that ref once per round.
 async function cookCurd(curd, branch) {
   const opts = { phase: 'Cook', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: COOK_SCHEMA }
   const stop = (message) => ({ curd, branch, cook: null, sha: null, failure: { stage: 'cook', message } })
@@ -993,26 +1004,27 @@ async function cookCurd(curd, branch) {
   let call = await typed(cookPrompt(curd, baseSha), { ...opts, label: callLabel }, checkCook, true)
   let lastCheckpoint = null
   for (let round = 1; ; round++) {
-    let cook = call.value
-    // A short SHA is expanded by a read-only call. The cook prompt is never redone. The final SHA check stays strict.
-    const shaDefect = !cook ? [] : cook.status === 'ok' ? shaErrors('$.head_sha', cook.head_sha) : cook.status === 'partial' ? shaErrors('$.checkpoint', cook.checkpoint) : []
-    if (shaDefect.length) cook = (await expandShortShas(cook, { label: callLabel, phase: 'Cook' })) ?? cook
-    if (cook && cook.status === 'ok') {
-      const defect = shaErrors('$.head_sha', cook.head_sha)
-      return defect.length ? stop(errorText(defect)) : { curd, branch, cook, sha: cook.head_sha.trim(), failure: null }
+    // "blocked: <reason>" is a blocked cook with a reason. Every other out-of-enum status is salvaged (user decision B).
+    let cook = call.value && splitBlocked(call.value)
+    if (cook && cook.status === 'blocked') {
+      return stop(`cook did not reach status ok (last status: blocked${cook.reason ? `: ${sanitizeReason(cook.reason)}` : ''})`)
     }
-    if (cook && cook.status === 'blocked') return stop('cook did not reach status ok (last status: blocked)')
+    // A read-only call expands a short SHA. Code never redoes the cook prompt. The final SHA check stays strict.
+    if (cook) cook = (await expandShortShas(cook, { label: callLabel, phase: 'Cook' })) ?? cook
+    const partial = Boolean(cook) && cook.status === 'partial'
+    const shaDefect = !cook ? [] : cook.status === 'ok' ? shaErrors('$.head_sha', cook.head_sha) : partial ? shaErrors('$.checkpoint', cook.checkpoint) : []
+    if (cook && cook.status === 'ok') {
+      return shaDefect.length ? stop(errorText(shaDefect)) : { curd, branch, cook, sha: cook.head_sha, failure: null }
+    }
     if (round > LIMITS.continuations) return stop(`cook did not finish after ${LIMITS.continuations} continuations`)
-    // A missing answer, a throw, a status other than partial, and a partial answer with a bad checkpoint are salvaged from the ref.
+    // Code salvages a missing answer, a throw, a status other than partial, and a partial answer with a bad checkpoint from the ref.
     // Salvage only reads the ref. Any other malformed answer fails the curd with its error text.
     if (!cook && !call.lost) return stop(errorText(call.errors))
-    const partial = Boolean(cook) && cook.status === 'partial'
-    const checkpointDefect = partial ? shaErrors('$.checkpoint', cook.checkpoint) : []
-    const resume = partial && !checkpointDefect.length
-      ? { completed: clipField(cook.completed), remaining: clipField(cook.remaining), checkpoint: cook.checkpoint.trim(), source_ranges: groundedRanges(cook.source_ranges) }
+    const resume = partial && !shaDefect.length
+      ? { completed: clipField(cook.completed), remaining: clipField(cook.remaining), checkpoint: cook.checkpoint, source_ranges: groundedRanges(cook.source_ranges) }
       : await salvage(curd)
     if (!resume || resume.failed) {
-      const ended = cook && !partial ? `ended with status ${isNeedsContext(cook) ? 'needs-context' : JSON.stringify(cook.status)}` : `returned no valid result (${errorText(checkpointDefect.length ? checkpointDefect : call.errors)})`
+      const ended = cook && !partial ? `ended with status ${isNeedsContext(cook) ? 'needs-context' : JSON.stringify(cook.status)}` : `returned no valid result (${errorText(shaDefect.length ? shaDefect : call.errors)})`
       return stop(resume ? `cook ${ended} and the salvage of ${branch} failed (${resume.failed})` : `cook ${ended} and ${branch} has no ref to resume from`)
     }
     if (resume.checkpoint === lastCheckpoint) return stop(`cook stalled: no new commit since ${lastCheckpoint}`)
@@ -1029,7 +1041,7 @@ async function salvage(curd) {
   const state = found.value
   if (!state) return { failed: errorText(found.errors) }
   return state.found
-    ? { completed: clipField(state.completed), remaining: clipField(state.remaining), checkpoint: state.checkpoint.trim(), source_ranges: [] }
+    ? { completed: clipField(state.completed), remaining: clipField(state.remaining), checkpoint: state.checkpoint, source_ranges: [] }
     : null
 }
 
@@ -1061,7 +1073,7 @@ const chainResults = await pipeline(
         log(`${curd.slug}: corrective round ${round} produced an uncommitted correction — stopping the taste loop.`)
         break
       }
-      current = correction.head_sha.trim()
+      current = correction.head_sha
       const retasted = await typed(tastePrompt(curd, current), { label: `taste:${curd.slug}:r${round}`, phase: 'Taste', agentType: 'reviewer', model: 'opus', schema: TASTE_SCHEMA }, checkTaste)
       if (!retasted.value) return stageRecord(prev, { sha: current, taste }, stageFailure('taste', errorText(retasted.errors)))
       taste = tasteOf(retasted.value)
@@ -1076,7 +1088,7 @@ const chainResults = await pipeline(
     if (!pressed.value) return stageRecord(prev, {}, stageFailure('press', errorText(pressed.errors)))
     const press = pressed.value
     if (press.status !== 'ok') return stageRecord(prev, { press }, stageFailure('press', `press returned status ${press.status}`))
-    return stageRecord(prev, { sha: press.head_sha.trim(), press })
+    return stageRecord(prev, { sha: press.head_sha, press })
   },
 )
 
@@ -1092,7 +1104,7 @@ if (surviving.length) {
     .map((r) => ({ slug: r.curd.slug, branch: r.branch, sha: r.sha }))
     .sort((a, b) => (a.slug < b.slug ? -1 : 1))
   const integrated = await typed(integratePrompt(baseSha, refs), { label: 'integrate', phase: 'Integrate', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA }, checkIntegrate(refs.map((r) => r.slug)))
-  integrate = integrated.value && { ...integrated.value, head: integrated.value.head.trim() }
+  integrate = integrated.value
   if (!integrate) integrateReason = errorText(integrated.errors)
   if (integrate) {
     const conflicted = new Set(integrate.conflicted)
@@ -1171,10 +1183,10 @@ if ([...cureBySlug.values()].some((c) => c && c.committed)) {
   // A cured curd merges at its cure head; every other curd merges at the SHA the chain already validated.
   const remergeRefs = integratedRefs.map((ref) => {
     const cure = cureBySlug.get(ref.slug)
-    return cure && cure.committed ? { ...ref, sha: cure.head_sha.trim() } : ref
+    return cure && cure.committed ? { ...ref, sha: cure.head_sha } : ref
   })
   const remerged = await typed(remergePrompt(baseSha, remergeRefs), { label: 're-merge', phase: 'Re-age', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA }, checkIntegrate(integratedRefs.map((r) => r.slug)))
-  remerge = remerged.value && { ...remerged.value, head: remerged.value.head.trim() }
+  remerge = remerged.value
   if (!remerge) {
     remergeInvalid = errorText(remerged.errors)
     log(`Re-merge returned no valid result (${remergeInvalid}) — integrated curds are excluded.`)
@@ -1237,7 +1249,7 @@ const withStatus = chainResults.map((r, i) => {
   }
   const cure = cureBySlug.get(curd.slug)
   if (!cure || !cure.committed) return { curd, branch, status: 'dirty', excluded_reason: 'cure did not commit a fix' }
-  sha = cure.head_sha.trim()
+  sha = cure.head_sha
   if (remergeConflicted.has(curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-merge conflicted after cure' }
   if (!reage) return { curd, branch, status: 'dirty', excluded_reason: 're-age did not run after cure' }
   if (!reage.reviewed_slugs.includes(curd.slug)) return { curd, branch, status: 'dirty', excluded_reason: 're-age has no entry for the cured curd' }

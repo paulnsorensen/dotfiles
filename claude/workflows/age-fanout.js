@@ -80,18 +80,17 @@ const WORKTREE_PATH = input.worktree_path
 const RANGE = input.range
 const SLUG = input.slug
 const ROUTE_CURDS = input.route_curds || null
-// The packet path is a constant. The agent-returned packet_path never enters a prompt.
+// The packet path is a constant. The packet answer carries no path, and every prompt uses this constant.
 const PACKET_PATH = `.cheese/age/${SLUG}-packet.md`
 
 // ---- schemas ----
 const PACKET_SCHEMA = {
   type: 'object',
-  required: ['skill_files_ok', 'dimensions', 'packet_path'],
+  required: ['skill_files_ok', 'dimensions'],
   properties: {
     skill_files_ok: { type: 'boolean' },
     blocked_reason: { type: 'string' },
     dimensions: { type: 'array', items: { type: 'string', pattern: DIM_SLUG_PATTERN } },
-    packet_path: { type: 'string' },
   },
 }
 
@@ -172,13 +171,13 @@ function packetPrompt(worktreePath, range, slug) {
 
 cd ${worktreePath} first.
 
-First verify these files exist and are readable: \`~/.claude/skills/age/SKILL.md\`, \`~/.claude/skills/age/references/dimensions.md\`, \`~/.claude/skills/age/references/packet.md\`. If any is missing or unreadable, stop here and return {"skill_files_ok":false,"blocked_reason":"<which file, and why>","dimensions":[],"packet_path":""} -- do not guess a dimension list or improvise a packet from memory.
+First verify these files exist and are readable: \`~/.claude/skills/age/SKILL.md\`, \`~/.claude/skills/age/references/dimensions.md\`, \`~/.claude/skills/age/references/packet.md\`. If any is missing or unreadable, stop here and return {"skill_files_ok":false,"blocked_reason":"<which file, and why>","dimensions":[]} -- do not guess a dimension list or improvise a packet from memory.
 
-Assemble the shared context packet per \`~/.claude/skills/age/references/packet.md\` for the diff range \`${range}\`, and write it to \`.cheese/age/${slug}-packet.md\` (via Bash redirection).
+Assemble the shared context packet per \`~/.claude/skills/age/references/packet.md\` for the diff range \`${range}\`, and write it to \`${PACKET_PATH}\` (via Bash redirection).
 
-Then parse the dimension list from \`~/.claude/skills/age/references/dimensions.md\`: find its \`## Per-dimension rubrics\` section and list exactly the \`###\` heading text beneath it, verbatim and lowercase, one entry per heading -- do not invent, rename, expand, or title-case any heading. These strings feed directly into a \`### <dim>\` heading lookup in the Review phase, so they must byte-match the heading text exactly. If that section is absent or its headings don't parse cleanly, return {"skill_files_ok":false,"blocked_reason":"<what went wrong>","dimensions":[],"packet_path":""} instead of guessing.
+Then parse the dimension list from \`~/.claude/skills/age/references/dimensions.md\`: find its \`## Per-dimension rubrics\` section and list exactly the \`###\` heading text beneath it, verbatim and lowercase, one entry per heading -- do not invent, rename, expand, or title-case any heading. These strings feed directly into a \`### <dim>\` heading lookup in the Review phase, so they must byte-match the heading text exactly. If that section is absent or its headings don't parse cleanly, return {"skill_files_ok":false,"blocked_reason":"<what went wrong>","dimensions":[]} instead of guessing.
 
-Return {"skill_files_ok":true,"dimensions":["<dim>", ...],"packet_path":".cheese/age/${slug}-packet.md"}.`
+Return {"skill_files_ok":true,"dimensions":["<dim>", ...]}.`
 }
 
 function reviewPrompt(dim, worktreePath, range, packetPath) {
@@ -285,17 +284,25 @@ const allFindings = reviewResults.flatMap((r) => r.findings || [])
 
 // ---- Reconcile ----
 phase('Reconcile')
-let reconcile
-try {
-  reconcile = await agent(reconcilePrompt(WORKTREE_PATH, SLUG, allFindings, PACKET_PATH, RANGE), { label: 'reconcile', phase: 'Reconcile', agentType: 'reviewer', model: 'opus', schema: RECONCILE_SCHEMA })
-} catch (e) {
-  log(`Reconcile phase failed: ${e.message}`)
-  return { status: 'blocked', error: `reconcile phase failed: ${e.message}` }
+// Reconcile gets one retry with the same findings, as a review worker does.
+let reconcile = null
+let reconcileReason = 'reconcile returned no report'
+for (const attempt of [1, 2]) {
+  const label = attempt === 1 ? 'reconcile' : 'reconcile:retry'
+  try {
+    reconcile = await agent(reconcilePrompt(WORKTREE_PATH, SLUG, allFindings, PACKET_PATH, RANGE), { label, phase: 'Reconcile', agentType: 'reviewer', model: 'opus', schema: RECONCILE_SCHEMA })
+  } catch (e) {
+    reconcile = null
+    reconcileReason = `reconcile phase failed: ${e.message}`
+    log(`Reconcile attempt ${attempt} failed: ${e.message}`)
+    continue
+  }
+  if (reconcile && reconcile.status === 'ok') break
+  reconcileReason = (reconcile && reconcile.blocked_reason) || 'reconcile returned no report'
+  log(`Reconcile attempt ${attempt} blocked: ${reconcileReason}`)
 }
 if (!reconcile || reconcile.status !== 'ok') {
-  const reason = (reconcile && reconcile.blocked_reason) || 'reconcile returned no report'
-  log(`Reconcile phase blocked: ${reason}`)
-  return { status: 'blocked', error: `reconcile blocked: ${reason}` }
+  return { status: 'blocked', error: `reconcile blocked: ${reconcileReason}` }
 }
 
 return {
