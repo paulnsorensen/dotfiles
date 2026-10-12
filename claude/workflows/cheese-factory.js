@@ -6,7 +6,7 @@ export const meta = {
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
     { title: 'Decompose', detail: 'opus decomposer produces curds with depends_on edges; JS merges file-overlapping or dependency-coupled curds; mini-specs written per curd' },
     { title: 'Cook', detail: 'sonnet coder implements one curd in an isolated worktree via /cook --auto; a cook that runs low on context returns partial and gets up to three fresh isolated continuations from its commit SHA' },
-    { title: 'Taste', detail: 'opus taste-tester over the cook diff, run through its own seven lenses; revise triggers a bounded corrective pass' },
+    { title: 'Taste', detail: 'taste-tester over the cook diff, run through its own seven lenses; revise triggers a bounded corrective pass' },
     { title: 'Press', detail: 'sonnet coder hardens tests via /press --auto' },
     { title: 'Integrate', detail: 'one coder merges each surviving curd SHA on a detached HEAD at the base SHA, slug-sorted, --no-ff; conflicts exclude that curd downstream' },
     { title: 'Age', detail: 'barrier review of the whole integrated diff; large diffs fan out via the age-fanout child workflow, else one opus reviewer runs /age --auto, and code routes the flat findings to curds by files_by_slug' },
