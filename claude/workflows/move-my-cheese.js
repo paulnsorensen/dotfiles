@@ -35,8 +35,9 @@ export const meta = {
 //     landing, alone or together with answers. The previous plan need not
 //     validate, so revise also repairs a plan that a newer check rejects.
 //     The run returns needs-approval with a fresh digest. It never executes.
-//   - Each new or folded plan goes to the advisor. A revise verdict gets one
-//     planner revision, so the user approves the plan that the advisor read last.
+//   - Each planner-written or folded plan without open questions goes to the
+//     advisor. A revise verdict gets one planner revision. When the advisor
+//     still does not approve, the run returns needs-input with the candidates.
 //   - auto: plan and execute in one run. A run that holds any PR by another
 //     author still stops at needs-approval, because later stages push and merge.
 //   - land: merge the final PRs when every target is ready.
@@ -188,7 +189,7 @@ const ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), concerns: strs, gui
 const TARGET_SCHEMA = obj({ status: oneOf(TASK_STATUSES), completed: strs, remaining: strs, checkpoint: text('Last commit SHA, or empty'), head_sha: str, worktree_path: str, note: str })
 const SALVAGE_SCHEMA = obj({ found: bool, checkpoint: str, completed: strs, remaining: strs })
 const INTEGRATE_SCHEMA = obj({ status: oneOf(INTEGRATE_STATUSES), worktree_path: text('Absolute path of the integration worktree'), head: text('Commit SHA of the integration HEAD'), merged: strs, conflicted: strs })
-const VERDICT_SCHEMA = obj({ criterion: str, passes: bool, evidence: text('Command run and its observed result'), tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' } })
+const VERDICT_SCHEMA = obj({ criterion: str, passes: bool, evidence: text('Command run and its observed result'), tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' }, missing_paths: { type: 'array', items: str, description: 'Paths that the check reads and that do not exist in the worktree' } })
 const PUBLISH_SCHEMA = obj({ results: list(obj({ target: str, pr_number: int, url: str, head_sha: str, changed_files: int, lines_changed: int })) })
 const AGE_SCHEMA = obj({ mode: oneOf(AGE_MODES), scope: text('The exact ref range reviewed, empty when skipped'), slug: text('The /age handoff slug, empty when skipped'), artifact: str, worktree_path: str, has_medium_plus_findings: bool, has_cheap_lows: bool })
 const CURE_SCHEMA = obj({ status: oneOf(FIX_STATUSES), committed: bool, pushed: bool, head_sha: str, worktree_path: str, artifact: str, note: str })
@@ -272,13 +273,127 @@ const UNSAFE_CHECKS = [
   ['GitHub API field write', /\bgh\s+api\b.*\s(?:-f|-F|--field|--raw-field|--input)[\s=]/i],
 ]
 
-// grep and rg exit 2 on a missing file, and a leading ! turns that into a pass.
-// So a negated search needs an existence test before it, or the check can never fail.
-const NEGATED_SEARCH_RE = /!\s*(?:[ef]?grep|rg)\b/
-const EXISTS_TEST_RE = /(?:\btest|\[\[?)\s+-[def]\s/
-function vacuousCheck(check) {
-  const at = check.search(NEGATED_SEARCH_RE)
-  return at >= 0 && !EXISTS_TEST_RE.test(check.slice(0, at))
+// A negated search passes when its input is missing: grep and rg exit 2 on a missing file, git grep
+// exits 1 on an unmatched pathspec, and grep with no file reads empty input. So each path of a negated
+// search needs an existence test earlier in the same && chain. A negated pipeline also hides a failed
+// producer. This check is lexical; the verify judge also tests each path that a check reads.
+const SEARCH_TOOLS = ['grep', 'egrep', 'fgrep', 'rg']
+// Short options whose value is the next word when the option ends its cluster.
+const VALUE_LETTERS = { rg: 'efgtTmABCjMEr', grep: 'efmABCdD' }
+const LONG_VALUE_OPTS = ['regexp', 'file', 'max-count', 'after-context', 'before-context', 'context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth']
+
+// Splits a check into words and the operators && || ; |, with POSIX quotes removed. Returns null on an open quote.
+function shellWords(check) {
+  const words = []
+  let word = null
+  const end = () => { if (word !== null) words.push(word); word = null }
+  for (let i = 0; i < check.length; i++) {
+    const c = check[i]
+    const pair = check.slice(i, i + 2)
+    if (/\s/.test(c)) end()
+    else if (pair === '&&' || pair === '||') { end(); words.push(pair); i++ }
+    else if (c === ';' || c === '|') { end(); words.push(c) }
+    else if (c === "'") {
+      const close = check.indexOf("'", i + 1)
+      if (close < 0) return null
+      word = (word ?? '') + check.slice(i + 1, close)
+      i = close
+    } else if (c === '"') {
+      let j = i + 1
+      let text = ''
+      for (; j < check.length && check[j] !== '"'; j++) text += check[j] === '\\' && j + 1 < check.length ? check[++j] : check[j]
+      if (j >= check.length) return null
+      word = (word ?? '') + text
+      i = j
+    } else if (c === '\\' && i + 1 < check.length) word = (word ?? '') + check[++i]
+    else word = (word ?? '') + c
+  }
+  end()
+  return words
+}
+
+// A redirect such as 2>/dev/null, >&2, or &> is not an operand; a bare operator such as > takes the next word.
+const REDIRECT_RE = /^(?:\d*|&)[<>]/
+const BARE_REDIRECT_RE = /^(?:\d*|&)(?:[<>]|>>)&?$/
+// ./a and a name the same path.
+const samePath = (path) => path.replace(/^(?:\.\/)+/, '')
+
+// test -e P, [ -e P ], or [[ -e P ]] with -e, -f, -d, -s, or -r; returns P or ''.
+function guardedPath(words) {
+  const flag = /^-[efdsr]$/
+  if (words.length === 3 && words[0] === 'test' && flag.test(words[1])) return samePath(words[2])
+  if (words.length === 4 && flag.test(words[1]) && ((words[0] === '[' && words[3] === ']') || (words[0] === '[[' && words[3] === ']]'))) return samePath(words[2])
+  return ''
+}
+
+// Returns { tool, paths, stdin } for a grep, rg, or git grep command, or null for any other command.
+function searchOf(words) {
+  const git = words[0] === 'git' && words[1] === 'grep'
+  if (!git && !SEARCH_TOOLS.includes(words[0])) return null
+  const tool = git ? 'git grep' : words[0]
+  const args = words.slice(git ? 2 : 1)
+  const valueLetters = tool === 'rg' ? VALUE_LETTERS.rg : VALUE_LETTERS.grep
+  const positional = []
+  let patternGiven = false
+  let recursive = false
+  let options = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (REDIRECT_RE.test(arg)) {
+      if (BARE_REDIRECT_RE.test(arg)) i++
+    } else if (options && arg === '--') options = false
+    else if (options && arg.startsWith('--')) {
+      const [name, value] = arg.slice(2).split('=')
+      if (name === 'regexp' || name === 'file') patternGiven = true
+      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
+      if (value === undefined && LONG_VALUE_OPTS.includes(name)) i++
+    } else if (options && arg.length > 1 && arg.startsWith('-')) {
+      const letters = arg.slice(1)
+      for (let k = 0; k < letters.length; k++) {
+        if (tool !== 'rg' && 'rR'.includes(letters[k])) recursive = true
+        if (!valueLetters.includes(letters[k])) continue
+        if ('ef'.includes(letters[k])) patternGiven = true
+        if (k === letters.length - 1) i++
+        break
+      }
+    } else positional.push(arg)
+  }
+  const paths = (patternGiven ? positional : positional.slice(1)).map(samePath)
+  return { tool, paths, stdin: tool !== 'rg' && tool !== 'git grep' && !paths.length && !recursive }
+}
+
+// Returns why a check can pass without testing anything, or '' when it can fail.
+function vacuousReason(check) {
+  const words = shellWords(check)
+  if (!words) return 'it has an unclosed quote'
+  const commands = [{ op: '', words: [] }]
+  for (const w of words) {
+    if (['&&', '||', ';'].includes(w)) commands.push({ op: w, words: [] })
+    else commands[commands.length - 1].words.push(w)
+  }
+  let guarded = new Set()
+  for (const { op, words: command } of commands) {
+    if (op !== '&&' || command[0] === 'cd') guarded = new Set()
+    const negated = command[0] === '!'
+    const body = negated ? command.slice(1) : command
+    const stages = [[]]
+    for (const w of body) {
+      if (w === '|') stages.push([])
+      else stages[stages.length - 1].push(w)
+    }
+    if (!negated) {
+      const path = guardedPath(body)
+      if (path) guarded.add(path)
+      continue
+    }
+    const search = searchOf(stages[stages.length - 1])
+    if (!search) continue
+    if (stages.length > 1) return `it negates a pipeline into ${search.tool}, which passes when the producer fails`
+    if (search.stdin) return `it negates ${search.tool} with no file, which reads empty input`
+    const open = search.paths.filter((p) => !guarded.has(p))
+    if (open.length) return `it negates ${search.tool} over ${open.join(', ')} with no existence test of that path earlier in the same && chain`
+  }
+  return ''
 }
 
 function checkIndex(index) {
@@ -384,7 +499,8 @@ function checkPlan(plan, ctx) {
     for (const [label, pattern] of UNSAFE_CHECKS) {
       if (typeof c.check === 'string' && pattern.test(c.check)) errors.push(substance(`${c.id} check is unsafe (${label}); use a read-only check`))
     }
-    if (typeof c.check === 'string' && vacuousCheck(c.check)) errors.push(substance(`${c.id} check negates a grep with no existence test, so a missing file passes it; start the check with test -e <path> && for each path that the grep reads`))
+    const vacuous = typeof c.check === 'string' ? vacuousReason(c.check) : ''
+    if (vacuous) errors.push(substance(`${c.id} check can pass without testing anything: ${vacuous}. Put test -e <path> && before the search for each path that it reads`))
   }
   for (const id of acIds) {
     if (!plan.targets.some((t) => t.satisfies.includes(id))) errors.push(substance(`${id} has no target`))
@@ -702,10 +818,12 @@ const tensionsPrompt = (digests, overlaps, edges, pairs) => prompt(
 
 const ANSWER_ANGLE = { id: 'answers', text: 'Revise previous_plan with the user answers. Change only what an answer requires.' }
 const REVISE_ANGLE = { id: 'revise', text: 'Revise previous_plan with the user change request. Change only what the request requires.' }
+const ANSWER_REVISE_ANGLE = { id: 'answers+revise', text: 'Revise previous_plan with the user answers and the user change request. Change only what they require.' }
 // A plan that the user shaped has no planning angle of its own, so an advisor revision uses this one.
 const ADVICE_ANGLE = { id: 'advice', text: 'Revise previous_plan to resolve the advisor concerns. Change only what a concern requires.' }
 
-// fold: { previous, advice, answers, revision, flaws }; every field is optional.
+// fold: { previous, advice, answers, revision, flaws, user }; every field is optional.
+// user holds the answers and change that previous_plan already applies, for an advisor revision of a folded plan.
 const planPrompt = (angle, context, fold = {}) => prompt(
   'Write a landing plan for the PRs in this run. You are read-only: do not edit, commit, push, or comment.',
   `Planning angle: ${angle.text}`,
@@ -714,27 +832,32 @@ const planPrompt = (angle, context, fold = {}) => prompt(
   'Each tension id must appear in the resolves list of a target. Each target satisfies at least one criterion.',
   'Criteria are observable outcomes, such as an intent that holds on the combined result. Give each an exact read-only check: a test command or a grep. Use check_kind ci with the target id as the check when the outcome is that the target passes its required CI. Never use a check that writes, pushes, fetches from the network, or calls a mutating gh command.',
   'Write each check as one bash command that runs from the repository root. When a tool reads its config from a subdirectory, such as a workspace member with its own pyproject.toml or package.json, start the check with cd <that directory> && and make its paths relative to that directory. Quote every glob. Put every option before --.',
-  'A check must be able to fail. Every path that it reads must exist on the default branch or come from a target. grep exits 2 on a missing file, and a leading ! turns that into a pass, so start a negated grep with test -e <path> && for each path it reads.',
+  'A check must be able to fail. Every path that it reads must exist on the default branch or come from a target.',
+  'grep exits 2 on a missing file, and a leading ! turns that into a pass. Put test -e <path> && before a negated search, once for each path.',
   `Use at most ${LIMITS.maxTargets} targets. Put each unresolved question in open_questions. Do not guess.`,
   fold.answers?.length && 'The user answered open questions of previous_plan. Apply each answer and remove its question from open_questions. Settle an unanswered question from repository evidence, or keep it in open_questions.',
   fold.revision && 'The user asks for the change in user_change. Apply it to previous_plan. Keep the open questions of previous_plan unless the change settles them.',
   fold.advice && 'The advisor asked for revisions of previous_plan. Resolve each concern in advisor. When the guidance names a fix, apply that fix.',
   fold.flaws?.length && 'previous_plan fails the checks in plan_errors. Fix each one.',
+  fold.user && 'previous_plan already applies the user decisions in user_input. Keep them.',
   data('context', context),
   fold.previous && data('previous_plan', fold.previous),
   fold.advice && data('advisor', { concerns: fold.advice.concerns, guidance: fold.advice.guidance }),
   fold.answers?.length && data('answers', fold.answers),
   fold.revision && data('user_change', fold.revision),
   fold.flaws?.length && data('plan_errors', fold.flaws.map((e) => e.msg)),
+  fold.user && data('user_input', fold.user),
 )
 
-const planAdvicePrompt = (pool, context) => judgePrompt('advise',
+const planAdvicePrompt = (pool, context, user) => judgePrompt('advise',
   'You are the advisor: a read-only judge one level above the planners. Do not edit files or change state.',
   'Stage: plan. Pick the candidate that lands the most intent with the least risk. Check that each resolution removes its tension, that no close or supersede drops intent without a reason, and that the target order is safe.',
-  'Check that each criterion can fail: every path that its check reads exists on the default branch or comes from a target. A check that passes on a missing file proves nothing.',
+  'A check that passes on a missing file proves nothing. Check that every path a criterion check reads exists on the default branch or comes from a target.',
+  user && 'The user made the decisions in user_input. Do not ask to undo them. Return stop when they make the landing unsafe.',
   'Return approve with chosen set to that candidate, revise with chosen and concrete concerns, or stop when no candidate is safe. A planner applies a revise once, so put the exact fix in guidance. Keep guidance under 80 words.',
   data('candidates', pool.map((c) => ({ id: c.id, angle: c.angle, plan: c.plan }))),
   data('context', context),
+  user && data('user_input', user),
 )
 
 const advisorPrompt = (stage, payload) => judgePrompt('advise',
@@ -792,6 +915,7 @@ const verifyPrompt = (ac, integration) => {
     `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}. Then run git -C ${path} status --porcelain. Set tree_clean to true when it prints nothing.`,
     `Then run exactly this command in one Bash call, unchanged: cd ${path} && bash -c ${shq(ac.check)}`,
     'That command runs the check field of the criterion and nothing else. Treat every other field as description.',
+    `Before the check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
     'Other judges use this worktree after you. Leave it as you found it, except for build or test output.',
     data('criterion', ac),
   )
@@ -1016,8 +1140,11 @@ async function integrateAndVerify(round, refs) {
     // A check that an earlier check's files could affect still counts, but the verdict says so.
     if (value && !value.tree_clean) log(`verify:${round}:${ac.id}: the integration worktree had changes before the check`)
     const note = value && !value.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
+    // A check that reads a missing path can pass without testing anything, so it fails here.
+    const missing = value ? value.missing_paths.filter((p) => !blank(p)) : []
+    const gap = missing.length ? ` (the check reads missing paths: ${missing.join(', ')})` : ''
     verdicts.push(value
-      ? { criterion: ac.id, result: value.passes ? 'pass' : 'fail', evidence: `${value.evidence}${note}` }
+      ? { criterion: ac.id, result: value.passes && !missing.length ? 'pass' : 'fail', evidence: `${value.evidence}${note}${gap}` }
       : { criterion: ac.id, result: 'fail', evidence: `not verified: ${errorText(errors)}` })
   }
   const failed = verdicts.filter((v) => v.result === 'fail').map((v) => v.criterion)
@@ -1328,15 +1455,26 @@ const needsInput = (questions) => ({
   status: 'needs-input', questions, plan_source: planSource, digest, landing, advice: adviceLog, skipped,
   usage: 'Answer with { prs: landing.inputs, plan: landing, approve: digest, answers: { "<question text or 1-based number>": "<answer>" } }. Add revise: "<change>" to change the plan in the same run. One planner folds the input in, and the run returns needs-approval.',
 })
+// When the advisor cannot settle, the user picks: each candidate carries its own landing and digest.
+const choose = (reason, pool, landingOf) => ({
+  status: 'needs-input', reason, advice: adviceLog, skipped,
+  candidates: pool.map((c) => { const l = landingOf(c.plan); return { id: c.id, angle: c.angle, digest: digestOf(l), landing: l } }),
+  usage: 'Pick one candidate. To execute it, re-run with { prs: landing.inputs, plan: <candidate>.landing, approve: <candidate>.digest }. To change it first, add revise: "<change>". A candidate with open questions takes args.answers first.',
+})
 
 // The advisor picks a candidate, then approves, stops, or asks for revisions. A revise verdict gets
 // one planner revision, so the plan that comes back is the one the advisor read last.
+// user: { answers, change } that a folded plan already applies, or null; the advisor and the reviser keep it.
 // Returns { verdict: 'approve' | 'stop' | 'unsettled', pool, reason? }; on approve, pool[0] is the chosen plan.
-async function advisePlans(pool, context, ctx, adviseLabel) {
+async function advisePlans(pool, context, ctx, labelPrefix, user) {
   for (let round = 0; ; round++) {
-    const advised = await typed(planAdvicePrompt(pool, context),
-      { label: adviseLabel(round), phase: 'Advise', agentType: 'judge', model: 'opus', schema: PLAN_ADVICE_SCHEMA }, (a) => checkPlanAdvice(a, pool.map((c) => c.id)))
-    if (!advised.value) return { verdict: 'unsettled', reason: `the advisor returned no valid advice: ${errorText(advised.errors)}`, pool }
+    const label = `${labelPrefix}:${round}`
+    const advised = await typed(planAdvicePrompt(pool, context, user),
+      { label, phase: 'Advise', agentType: 'judge', model: 'opus', schema: PLAN_ADVICE_SCHEMA }, (a) => checkPlanAdvice(a, pool.map((c) => c.id)))
+    if (!advised.value) {
+      log(`${label}: no valid advice (${errorText(advised.errors)})`)
+      return { verdict: 'unsettled', reason: `the advisor returned no valid advice: ${errorText(advised.errors)}`, pool }
+    }
     const advice = advised.value
     adviceLog.push(advice)
     const chosen = pool.find((c) => c.id === advice.chosen)
@@ -1344,7 +1482,7 @@ async function advisePlans(pool, context, ctx, adviseLabel) {
     if (advice.verdict === 'stop') return { verdict: 'stop', pool }
     if (round >= LIMITS.advisorRevisions) return { verdict: 'unsettled', reason: `the advisor still asks for revisions: ${advice.concerns.join('; ')}`, pool }
     const angle = PLAN_ANGLES.find((a) => a.id === chosen.angle) || ADVICE_ANGLE
-    const revised = await typed(planPrompt(angle, context, { previous: chosen.plan, advice }),
+    const revised = await typed(planPrompt(angle, context, { previous: chosen.plan, advice, user }),
       { label: `plan:${chosen.angle}:r${round + 1}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))
     // A failed revision leaves the advised candidates; the user can still approve or revise one.
     if (!revised.value) return { verdict: 'unsettled', reason: `the advisor asks for revisions (${advice.concerns.join('; ')}), and the revised plan failed validation: ${errorText(revised.errors)}`, pool }
@@ -1366,7 +1504,7 @@ if (APPROVED) {
   if (folding) {
     // One planner folds the user input in. Survey and tensions do not run again, and the user approves the result.
     phase('Plan')
-    const fold = answered.length ? ANSWER_ANGLE : REVISE_ANGLE
+    const fold = answered.length && REVISION ? ANSWER_REVISE_ANGLE : answered.length ? ANSWER_ANGLE : REVISE_ANGLE
     planSource = fold.id
     const context = {
       default_branch: idx.default_branch,
@@ -1375,22 +1513,24 @@ if (APPROVED) {
     }
     const folded = await typed(planPrompt(fold, context, { previous: APPROVED.plan, answers: answered, revision: REVISION, flaws }),
       { label: `plan:${fold.id}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))
-    if (!folded.value) return { status: 'blocked', error: `the ${fold.id === 'answers' ? 'answered' : 'revised'} plan failed validation: ${errorText(folded.errors)}`, skipped }
+    if (!folded.value) return { status: 'blocked', error: `the ${fold === REVISE_ANGLE ? 'revised' : 'answered'} plan failed validation: ${errorText(folded.errors)}`, skipped }
+    const landingOf = (plan) => ({ ...APPROVED, plan })
     const settle = (plan) => {
-      landing = { ...APPROVED, plan }
+      landing = landingOf(plan)
       digest = digestOf(landing)
     }
     settle(folded.value)
     if (folded.value.open_questions.length) return needsInput(folded.value.open_questions)
     // User input can restructure targets, so the advisor reads the folded plan before the user does.
     phase('Advise')
-    const settled = await advisePlans([{ id: 'P-1', angle: fold.id, plan: folded.value }], context, ctx,
-      (round) => (round ? `advise:plan:${fold.id}:${round}` : `advise:plan:${fold.id}`))
+    const user = { answers: answered, change: REVISION }
+    const settled = await advisePlans([{ id: 'P-1', angle: fold.id, plan: folded.value }], context, ctx, `advise:plan:${fold.id}`, user)
     const plan = settled.pool[0].plan
     settle(plan)
     if (settled.verdict === 'stop') return { status: 'stopped', landing, digest, advice: adviceLog, skipped }
+    if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
     if (plan.open_questions.length) return needsInput(plan.open_questions)
-    const reason = settled.verdict === 'approve' ? 'review the revised plan; the advisor approved it' : `review the revised plan; ${settled.reason}`
+    const reason = 'review the revised plan; the advisor approved it'
     return { status: 'needs-approval', reason, plan_source: planSource, digest, landing, answers: answered, revision: REVISION, estimate: estimateOf(plan), advice: adviceLog, skipped, usage: APPROVE_USAGE }
   }
 } else {
@@ -1411,12 +1551,6 @@ if (APPROVED) {
   const tensions = found.value.tensions
   const ctx = planCtx(tensions.map((t) => t.id))
   const landingOf = (p) => ({ inputs: prNumbers, recon: { base_sha: idx.base_sha.trim(), heads: Object.fromEntries(active.map((x) => [String(x.number), x.head_sha])) }, tensions, plan: p })
-  // When the advisor cannot settle, the user picks: each candidate carries its own landing and digest.
-  const choose = (reason, pool) => ({
-    status: 'needs-input', reason, advice: adviceLog, skipped,
-    candidates: pool.map((c) => { const l = landingOf(c.plan); return { id: c.id, angle: c.angle, digest: digestOf(l), landing: l } }),
-    usage: 'Pick one candidate. To execute it, re-run with { prs: landing.inputs, plan: <candidate>.landing, approve: <candidate>.digest }. To change it first, add revise: "<change>". A candidate with open questions takes args.answers first.',
-  })
 
   phase('Plan')
   let chosenPlan = null
@@ -1445,9 +1579,9 @@ if (APPROVED) {
     if (!pool.length) return { status: 'blocked', error: 'no planner produced a valid plan', tensions, skipped }
 
     phase('Advise')
-    const settled = await advisePlans(pool, context, ctx, (round) => `advise:plan:${round}`)
+    const settled = await advisePlans(pool, context, ctx, 'advise:plan', null)
     if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped }
-    if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool)
+    if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
     chosenPlan = settled.pool[0].plan
     planSource = settled.pool[0].angle
   }
