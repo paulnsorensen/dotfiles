@@ -4,7 +4,8 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime, loadWorkflow } from './harness.mjs'
+import { createRuntime, withAdvisors } from './cheese-factory.fixtures.mjs'
+import { loadWorkflow } from './harness.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
@@ -42,7 +43,7 @@ const responder = (over) => (call) => {
 // lenient skips the harness schema validation, so a test can model a runtime that lets a malformed field through.
 async function run(over = {}, { lenient = false } = {}) {
   const workflow = await loadWorkflow(path)
-  const respond = responder(over)
+  const respond = withAdvisors(responder(over))
   const { globals, trace } = createRuntime({ respond })
   if (lenient) {
     globals.agent = async (prompt, opts = {}) => {

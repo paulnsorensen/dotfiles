@@ -134,25 +134,25 @@ _Source: `claude/workflows/cheese-factory.js`, `claude/workflows/age-fanout.js`,
 - **Alternatives:** concat at deploy (repo file differs from deployed file; ADR-007 rejected template machinery); a drift test only (fixes still need manual ports).
 - **Consequences:** The deployed file equals the repo file, and the harness and deploy stay unchanged. An edit inside a block fails the test until it moves to the source.
 
-## ADR-015: Extract one read-only check per spec AC at resolve [status: proposed]
+## ADR-015: Extract one read-only check per spec AC at resolve [status: accepted]
 
 - **Context:** Spec ACs are EARS prose with no check command. move-my-cheese's planner emits criteria with checks, and code gates them with `UNSAFE_CHECKS` (`claude/workflows/move-my-cheese.js:189,269`).
-- **Decision:** After resolve, one read-only opus agent returns one criterion per spec AC id: a check_kind (command, test, inspection, or ci) and a check. Code requires exact AC-id coverage and gates each command or test with `UNSAFE_CHECKS`. A spec with no AC line skips verification.
+- **Decision:** After resolve, one read-only opus agent returns one criterion per spec AC id: a check_kind (command, test, inspection, or ci) and a check. Code requires exact AC-id coverage and gates each non-ci check with `UNSAFE_CHECKS` and the negated-search gate. A spec with no AC line skips verification.
 - **Alternatives:** judges read the prose and choose a check (less reproducible); the mold spec format carries checks (changes the easy-cheese mold skill and every older spec).
 - **Consequences:** Checks are reproducible and reviewable before cook. An extracted check can be weak; the plan advisor reviews it.
 
-## ADR-016: A failed spec criterion blocks Plate [status: proposed]
+## ADR-016: A failed spec criterion blocks Plate [status: accepted]
 
 - **Context:** Today a curd plates when its review is clean, without a check against the spec's ACs.
-- **Decision:** Before Plate, one judge per non-ci criterion verifies it at the final integration head. A fail, a missing path, or no valid verdict blocks Plate, and the run returns status partial with the verdicts. CI criteria are deferred.
+- **Decision:** Before Plate, one judge per non-ci criterion verifies it at the final integration head. A fail, a missing path, or no valid verdict blocks Plate for the whole run, even when some curds failed earlier (user decision of 2026-10-12: fail closed for all). The run returns status partial with the verdicts, and each clean curd stays unplated. CI criteria are deferred.
 - **Alternatives:** one corrective round before blocking (ACs do not map to curds); advisory only (no guarantee).
-- **Consequences:** Fail closed, as in move-my-cheese. A run can finish clean on review but still not plate.
+- **Consequences:** Fail closed, as in move-my-cheese. A run can finish clean on review but still not plate. One failed criterion blocks every clean curd, even when an unrelated curd causes it.
 
-## ADR-017: Advisor gates on the plan and on done [status: proposed]
+## ADR-017: Advisor gates on the plan and on done [status: accepted]
 
 - **Context:** move-my-cheese advises on its plan (approve, one revise, or stop) and on done (`claude/workflows/move-my-cheese.js:1103-1108,1599-1621`). cheese-factory starts cook on an unreviewed decomposition.
-- **Decision:** A judge in advise mode reviews the curds and criteria before any cook: approve, one revise, or stop. A second advise call after verification gates Plate: only approve proceeds.
+- **Decision:** A judge in advise mode reviews the curds and criteria before any cook: approve, one revise, or stop. A second advise call after verification gates Plate: only approve proceeds. Both advisors always run, including for a spec with no AC line. The done advisor does not run after a verification failure, because Plate is already blocked.
 - **Alternatives:** a done gate only (a bad plan surfaces late); no advisor.
 - **Consequences:** Two or three opus calls per run. A stopped plan spends no cook agents.
 
-_Source: /mold specs `cfh-shared-prelude` and `cfh-criteria-gate` (durable corpus) · Decided: 2026-10-12 · Status proposed until the specs land_
+_Source: /mold specs `cfh-shared-prelude` and `cfh-criteria-gate` (durable corpus) · Decided: 2026-10-12 · ADR-015..017 accepted when `cfh-criteria-gate` landed_

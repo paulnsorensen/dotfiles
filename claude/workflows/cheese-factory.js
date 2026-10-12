@@ -4,7 +4,9 @@ export const meta = {
     'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs.',
   phases: [
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
+    { title: 'Criteria', detail: 'one read-only explorer maps each spec AC line to one check; code rejects unsafe or vacuous checks' },
     { title: 'Decompose', detail: 'opus decomposer produces curds with depends_on edges; JS merges file-overlapping or dependency-coupled curds; mini-specs written per curd' },
+    { title: 'Advise', detail: 'a judge advisor reviews the curds and criteria before any cook; one revision at most, then it blocks the run' },
     { title: 'Cook', detail: 'sonnet coder implements one curd in an isolated worktree via /cook --auto; a cook that runs low on context returns partial and gets up to three fresh isolated continuations from its commit SHA' },
     { title: 'Taste', detail: 'taste-tester over the cook diff, run through its own seven lenses; revise triggers a bounded corrective pass' },
     { title: 'Press', detail: 'sonnet coder hardens tests via /press --auto' },
@@ -12,6 +14,8 @@ export const meta = {
     { title: 'Age', detail: 'barrier review of the whole integrated diff; large diffs fan out via the age-fanout child workflow, else one opus reviewer runs /age --auto, and code routes the flat findings to curds by files_by_slug' },
     { title: 'Cure', detail: 'parallel sonnet coders fix only curds that own a medium+ finding or a contained low, via /cure --auto --stake medium+, and never ask which findings to fix' },
     { title: 'Re-age', detail: 'once, only if a cure committed: re-merge the branches, then run an incremental /age over the range from the reviewed head to the new head; a cured curd missing from reviewed_slugs is dirty' },
+    { title: 'Verify', detail: 'one judge per criterion runs its check serially at the integration head; ci criteria are deferred' },
+    { title: 'Done', detail: 'a judge advisor signs off on the verified work before Plate; no sign-off blocks Plate' },
     { title: 'Plate', detail: 'one opus barrier stacks clean curd branches into (stacked) PRs; never merges' },
     { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, and excluded-curd reasons' },
   ],
@@ -70,6 +74,9 @@ const repairPrompt = (value, errors) => prompt(
 // Replaces claude/workflows/curd-flock.js (deleted, no alias). Spec:
 // specs/cheese-factory-workflow.md (durable corpus). See
 // .hallouminate/wiki/adr/cheese-factory-workflow.md for ADR-001..013.
+//
+// ADR-015..017 add criteria, plan advice, serial verify judges, and a done advisor
+// that gate Cook and Plate. Every failure closes the gate (fail closed).
 //
 // Review moved from per-curd to a barrier whole-diff age before plate
 // (ADR-006): reviewing each curd's diff in isolation left cross-curd
@@ -372,7 +379,8 @@ function findDuplicateSlugs(curds) {
 // Taste: 3 attempts, plus correctiveRounds (2) x (3 correct attempts + 1 expansion + 3 retaste attempts) = 17.
 // Press and cure: 3 attempts + 1 expansion each.
 // So 17 curds reach the cap before the shared barrier agents. Recount before a reader raises maxCurds.
-const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12 }
+// With maxCriteria: 24 and advisorRevisions: 1, ADR-015..017 add at most 93 agents: criteria 3, plan advice 3, multi-curd revise 9, second plan advice 3, 24 verify x 3 = 72, done advice 3. 684 + 93 = 777, under 1000.
+const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12, maxCriteria: 24, advisorRevisions: 1 }
 // Only writer calls in an isolated worktree feed the cleanup set. A reviewer path goes to reportWorktrees instead.
 // Reviewer worktrees hold the gitignored age reports, so cleanup keeps them and the return value lists them.
 const isScratchWorktree = (p) => SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')
@@ -672,7 +680,7 @@ ${SPEC_ARG
 Return only the structured JSON described above.`)
 }
 
-function decomposePrompt(specText) {
+function decomposePrompt(specText, concerns) {
   return prompt(`You are an opus decomposer for the /cheese-factory workflow. Read the spec below and split it into file-disjoint, independently implementable curds.
 
 Spec:
@@ -683,7 +691,7 @@ Splitting rules:
 - If the spec declares a multi-site contract (one deliverable spanning N named sites), keep those sites in ONE curd — never split an indivisible contract.
 - If one curd would consume symbols, exports, or behavior another curd introduces, either fold them into one curd or declare the edge in "depends_on" — dependency-coupled curds are merged back into one curd rather than run in parallel.
 
-Return {"curds":[{"slug":"<kebab-slug>","brief":"<what this curd must do>","files":["<path>", ...],"depends_on":["<sibling-slug>", ...]}, ...]} ("depends_on" optional, omit or leave empty when independent). Return at most ${LIMITS.maxCurds} curds. Each slug must match ${SLUG_RE} and be unique. List every file each curd is expected to touch so overlaps can be detected.`)
+Return {"curds":[{"slug":"<kebab-slug>","brief":"<what this curd must do>","files":["<path>", ...],"depends_on":["<sibling-slug>", ...]}, ...]} ("depends_on" optional, omit or leave empty when independent). Return at most ${LIMITS.maxCurds} curds. Each slug must match ${SLUG_RE} and be unique. List every file each curd is expected to touch so overlaps can be detected.`, concerns && data('advisor_concerns', concerns))
 }
 
 function miniSpecPrompt(parentSlug, curds) {
@@ -975,6 +983,270 @@ Scope fence: submit those branches and open or update their PRs only through the
 Return {"results":[{"slug":"...","status":"ok|failed|blocked","pr_url":"...","reason":"..."}]}. Report status ok only for a slug that the plate skill submitted and whose PR is open; pr_url is then required. Add reason to every row whose status is not ok.`)
 }
 
+// Provenance: the judge helpers below are copied from claude/workflows/move-my-cheese.js (norm, blank, refError, UNSAFE_CHECKS, the negated-search gate, checkAdvice, checkVerdict, judgePrompt, shq, advisorPrompt, verifyPrompt). Keep both copies in step.
+const CHECK_KINDS = ['command', 'test', 'inspection', 'ci']
+const ADVICE_VERDICTS = ['approve', 'revise', 'stop']
+const ADVICE_SCHEMA = {
+  type: 'object',
+  required: ['verdict', 'concerns', 'guidance'],
+  properties: {
+    verdict: { type: 'string', enum: ADVICE_VERDICTS },
+    concerns: { type: 'array', items: { type: 'string' } },
+    guidance: { type: 'string', description: 'Under 80 words' },
+  },
+}
+const VERDICT_SCHEMA = {
+  type: 'object',
+  required: ['criterion', 'passes', 'evidence', 'tree_clean', 'missing_paths'],
+  properties: {
+    criterion: { type: 'string' },
+    passes: { type: 'boolean' },
+    evidence: { type: 'string', description: 'Command run and its observed result' },
+    tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' },
+    missing_paths: { type: 'array', items: { type: 'string' }, description: 'Paths that the check reads and that do not exist in the worktree' },
+  },
+}
+const CRITERIA_SCHEMA = {
+  type: 'object',
+  required: ['criteria'],
+  properties: {
+    criteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'statement', 'check_kind', 'check'],
+        properties: {
+          id: { type: 'string', pattern: '^AC-[0-9]+$' },
+          statement: { type: 'string' },
+          check_kind: { type: 'string', enum: CHECK_KINDS },
+          check: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+
+const norm = (id) => String(id).trim().toUpperCase()
+const blank = (value) => typeof value !== 'string' || !value.trim()
+
+function refError(ref, known, where) {
+  if (known.includes(ref)) return null
+  const fix = norm(ref)
+  return known.includes(fix) ? form(`${where}: '${ref}' should be '${fix}'`) : substance(`${where}: unknown id '${ref}'`)
+}
+
+// A judge runs each criterion check, so a check must not fetch, write, or mutate.
+// This denylist is defense in depth; the judge agent definition is the other guard.
+const UNSAFE_CHECKS = [
+  ['network access', /\b(?:curl|wget|nc|ssh|scp)\b/i],
+  ['pipe into a shell', /\|\s*(?:sh|bash|zsh)\b/i],
+  ['output redirection to a file', />(?!&|\s*\/dev\/null)/],
+  ['tee to a file', /\btee\b/i],
+  ['inline interpreter code', /\b(?:python3?|node|perl|ruby)\s+-[ce]\b/i],
+  ['in-place edit', /\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i/i],
+  ['git mutation', /\bgit\b(?:\s+-{1,2}[\w-]+(?:[\s=]\S+)?)*\s+(?:push|commit|reset|checkout|switch|merge|rebase|stash|clean|tag|am|apply|restore|rm|mv|worktree|update-ref|config|branch\s+-[dDmMfc])\b/i],
+  ['file removal', /\brm\s|\s-delete\b|\bunlink\b|\btruncate\b/i],
+  ['package publish or install', /\b(?:npm|pnpm|yarn|cargo|pip3?|uv)\s+(?:publish|install|add|ci)\b/i],
+  ['GitHub mutation', /\bgh\s+(?:pr\s+(?:merge|close|comment|edit|ready|review|create|reopen)|issue|release|workflow\s+run|run\s+(?:rerun|cancel)|repo\s+(?:edit|delete|rename)|secret|variable|label)\b/i],
+  ['GitHub API write', /\bgh\s+api\b.*(?:-X|--method)[\s=]*(?:POST|PATCH|PUT|DELETE)\b/i],
+  ['GitHub API field write', /\bgh\s+api\b.*\s(?:-f|-F|--field|--raw-field|--input)[\s=]/i],
+]
+
+// A negated search passes when its input is missing: grep and rg exit 2 on a missing file, git grep
+// exits 1 on an unmatched pathspec, and grep with no file reads empty input. So each path of a negated
+// search needs an existence test earlier in the same && chain. A negated pipeline also hides a failed
+// producer. This check is lexical; the verify judge also tests each path that a check reads.
+const SEARCH_TOOLS = ['grep', 'egrep', 'fgrep', 'rg']
+// Short options whose value is the next word when the option ends its cluster.
+const VALUE_LETTERS = { rg: 'efgtTmABCjMEr', grep: 'efmABCdD' }
+const LONG_VALUE_OPTS = ['regexp', 'file', 'max-count', 'after-context', 'before-context', 'context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth']
+
+// Splits a check into words and the operators && || ; |, with POSIX quotes removed. Returns null on an open quote.
+function shellWords(check) {
+  const words = []
+  let word = null
+  const end = () => { if (word !== null) words.push(word); word = null }
+  for (let i = 0; i < check.length; i++) {
+    const c = check[i]
+    const pair = check.slice(i, i + 2)
+    if (/\s/.test(c)) end()
+    else if (pair === '&&' || pair === '||') { end(); words.push(pair); i++ }
+    else if (c === ';' || c === '|') { end(); words.push(c) }
+    else if (c === "'") {
+      const close = check.indexOf("'", i + 1)
+      if (close < 0) return null
+      word = (word ?? '') + check.slice(i + 1, close)
+      i = close
+    } else if (c === '"') {
+      let j = i + 1
+      let text = ''
+      for (; j < check.length && check[j] !== '"'; j++) text += check[j] === '\\' && j + 1 < check.length ? check[++j] : check[j]
+      if (j >= check.length) return null
+      word = (word ?? '') + text
+      i = j
+    } else if (c === '\\' && i + 1 < check.length) word = (word ?? '') + check[++i]
+    else word = (word ?? '') + c
+  }
+  end()
+  return words
+}
+
+// A redirect such as 2>/dev/null, >&2, or &> is not an operand; a bare operator such as > takes the next word.
+const REDIRECT_RE = /^(?:\d*|&)[<>]/
+const BARE_REDIRECT_RE = /^(?:\d*|&)(?:[<>]|>>)&?$/
+// ./a and a name the same path.
+const samePath = (path) => path.replace(/^(?:\.\/)+/, '')
+
+// test -e P, [ -e P ], or [[ -e P ]] with -e, -f, -d, -s, or -r; returns P or ''.
+function guardedPath(words) {
+  const flag = /^-[efdsr]$/
+  if (words.length === 3 && words[0] === 'test' && flag.test(words[1])) return samePath(words[2])
+  if (words.length === 4 && flag.test(words[1]) && ((words[0] === '[' && words[3] === ']') || (words[0] === '[[' && words[3] === ']]'))) return samePath(words[2])
+  return ''
+}
+
+// Returns { tool, paths, stdin } for a grep, rg, or git grep command, or null for any other command.
+function searchOf(words) {
+  const git = words[0] === 'git' && words[1] === 'grep'
+  if (!git && !SEARCH_TOOLS.includes(words[0])) return null
+  const tool = git ? 'git grep' : words[0]
+  const args = words.slice(git ? 2 : 1)
+  const valueLetters = tool === 'rg' ? VALUE_LETTERS.rg : VALUE_LETTERS.grep
+  const positional = []
+  let patternGiven = false
+  let recursive = false
+  let options = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (REDIRECT_RE.test(arg)) {
+      if (BARE_REDIRECT_RE.test(arg)) i++
+    } else if (options && arg === '--') options = false
+    else if (options && arg.startsWith('--')) {
+      const [name, value] = arg.slice(2).split('=')
+      if (name === 'regexp' || name === 'file') patternGiven = true
+      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
+      if (value === undefined && LONG_VALUE_OPTS.includes(name)) i++
+    } else if (options && arg.length > 1 && arg.startsWith('-')) {
+      const letters = arg.slice(1)
+      for (let k = 0; k < letters.length; k++) {
+        if (tool !== 'rg' && 'rR'.includes(letters[k])) recursive = true
+        if (!valueLetters.includes(letters[k])) continue
+        if ('ef'.includes(letters[k])) patternGiven = true
+        if (k === letters.length - 1) i++
+        break
+      }
+    } else positional.push(arg)
+  }
+  const paths = (patternGiven ? positional : positional.slice(1)).map(samePath)
+  return { tool, paths, stdin: tool !== 'rg' && tool !== 'git grep' && !paths.length && !recursive }
+}
+
+// Returns why a check can pass without testing anything, or '' when it can fail.
+function vacuousReason(check) {
+  const words = shellWords(check)
+  if (!words) return 'it has an unclosed quote'
+  const commands = [{ op: '', words: [] }]
+  for (const w of words) {
+    if (['&&', '||', ';'].includes(w)) commands.push({ op: w, words: [] })
+    else commands[commands.length - 1].words.push(w)
+  }
+  let guarded = new Set()
+  for (const { op, words: command } of commands) {
+    if (op !== '&&' || command[0] === 'cd') guarded = new Set()
+    const negated = command[0] === '!'
+    const body = negated ? command.slice(1) : command
+    const stages = [[]]
+    for (const w of body) {
+      if (w === '|') stages.push([])
+      else stages[stages.length - 1].push(w)
+    }
+    if (!negated) {
+      const path = guardedPath(body)
+      if (path) guarded.add(path)
+      continue
+    }
+    const search = searchOf(stages[stages.length - 1])
+    if (!search) continue
+    if (stages.length > 1) return `it negates a pipeline into ${search.tool}, which passes when the producer fails`
+    if (search.stdin) return `it negates ${search.tool} with no file, which reads empty input`
+    const open = search.paths.filter((p) => !guarded.has(p))
+    if (open.length) return `it negates ${search.tool} over ${open.join(', ')} with no existence test of that path earlier in the same && chain`
+  }
+  return ''
+}
+
+function checkAdvice(advice) {
+  return advice.verdict !== 'approve' && !advice.concerns.length
+    ? [substance(`verdict ${advice.verdict} needs at least one concern`)]
+    : []
+}
+
+function checkVerdict(verdict, ac) {
+  const idError = refError(verdict.criterion, [ac.id], 'criterion')
+  const errors = idError ? [idError] : []
+  if (blank(verdict.evidence)) errors.push(substance('evidence must name the check run and its result'))
+  return errors
+}
+
+// Exact coverage: one criterion per spec AC id. Every check that CI does not own passes the same gates as move-my-cheese.
+const checkCriteria = (specAcIds) => checkWith(CRITERIA_SCHEMA, (v) => {
+  const errors = []
+  const seen = new Set()
+  v.criteria.forEach((c, i) => {
+    const where = `$.criteria[${i}]`
+    const idError = refError(c.id, specAcIds, `${where}.id`)
+    if (idError) errors.push(idError)
+    else if (seen.has(c.id)) errors.push(substance(`${where}.id: duplicate id '${c.id}'`))
+    seen.add(c.id)
+    if (blank(c.statement)) errors.push(substance(`${where}.statement must not be blank`))
+    if (blank(c.check)) errors.push(substance(`${where}.check must not be blank`))
+    else if (c.check_kind !== 'ci') {
+      const unsafe = UNSAFE_CHECKS.find(([, re]) => re.test(c.check))
+      if (unsafe) errors.push(substance(`${where}.check is unsafe: ${unsafe[0]}`))
+      else {
+        const why = vacuousReason(c.check)
+        if (why) errors.push(substance(`${where}.check can pass without testing anything: ${why}`))
+      }
+    }
+  })
+  for (const id of specAcIds) if (!seen.has(id)) errors.push(substance(`${id} has no criterion`))
+  return errors
+})
+
+// The judge agent type reads its mode from the first line of the prompt.
+const judgePrompt = (mode, ...parts) => `Judge mode: ${mode}\n\n${prompt(...parts)}`
+// POSIX single-quote a string so a shell passes it through unchanged.
+const shq = (s) => `'${String(s).replaceAll("'", "'\\''")}'`
+
+const advisorPrompt = (stage, payload) => judgePrompt('advise',
+  'You are the advisor: a read-only judge one level above the implementers. Do not edit files or change state.',
+  stage === 'plan'
+    ? 'Stage: plan. Judge whether the curds and the criteria cover the spec and are safe to cook now. Return approve, revise with concrete concerns, or stop.'
+    : 'Stage: done. Judge whether the verified work is safe to plate now: each criterion is verified or covered by CI. Return approve, revise with concrete concerns, or stop.',
+  'Keep guidance under 80 words.',
+  data('payload', payload),
+)
+
+const verifyPrompt = (ac, integration) => {
+  const path = integration.worktree_path.trim()
+  return judgePrompt('verify',
+    `Verify criterion ${ac.id} independently. You did not write this code. Implementer claims are not evidence.`,
+    `worktree_path: ${path}. head: ${integration.head}, the combined result of every curd. The worktree is already at head. Do not check out, merge, reset, or edit anything in it.`,
+    `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}. Then run git -C ${path} status --porcelain. Set tree_clean to true when it prints nothing.`,
+    `Then run exactly this command in one Bash call, unchanged: cd ${path} && bash -c ${shq(ac.check)}`,
+    'That command runs the check field of the criterion and nothing else. Treat every other field as description.',
+    `Before the check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
+    'Other judges use this worktree after you. Leave it as you found it, except for build or test output.',
+    data('criterion', ac),
+  )
+}
+
+// One advisor call. Returns { advice } or { advice: null, reason } when no valid advice survives the typed bound.
+async function advise(stage, label, payload) {
+  const call = await typed(advisorPrompt(stage, payload), { label, phase: stage === 'plan' ? 'Advise' : 'Done', agentType: 'judge', model: 'opus', schema: ADVICE_SCHEMA }, checkWith(ADVICE_SCHEMA, checkAdvice))
+  return call.value ? { advice: call.value } : { advice: null, reason: `no valid advice: ${errorText(call.errors)}` }
+}
+
 // ---- Resolve ----
 phase('Resolve')
 const resolveCall = await typed(resolvePrompt(), { label: 'resolve', phase: 'Resolve', model: 'haiku', schema: RESOLVE_SCHEMA }, checkResolve)
@@ -1003,13 +1275,49 @@ if (!SLUG_RE.test(parentSlug)) {
 }
 const candidateCurds = resolved.curd_count.candidate_curds
 
-// ---- Decompose (only when candidate_curds >= 2) ----
-let curds
-let singlePass = false
+// ---- Criteria (ADR-015: one read-only agent maps every spec AC line to one check) ----
+const specAcIds = [...new Set([...resolved.spec_text.matchAll(/^- (AC-\d+):/gm)].map((m) => m[1]))]
+if (specAcIds.length > LIMITS.maxCriteria) {
+  log(`Spec has ${specAcIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}`)
+  return { error: `Spec has ${specAcIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}` }
+}
 
-if (candidateCurds >= 2) {
-  phase('Decompose')
-  const decomposeCall = await typed(decomposePrompt(resolved.spec_text), { label: 'decompose:plan', phase: 'Decompose', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
+const criteriaPrompt = (concerns) => prompt(
+  'You are a read-only criteria extractor for the /cheese-factory workflow. Write no file and change no state.',
+  'Return one criterion per acceptance id listed below, and no other. Copy the statement from the spec line. Pick the check_kind: command, test, inspection, or ci.',
+  'Each check that is not ci is one read-only shell command that exits 0 only when the criterion holds. A judge runs it with bash -c in the integrated worktree.',
+  'A check must not use the network, write a file, redirect output, or change git state. A negated search needs a test -e of each searched path earlier in the same && chain.',
+  'Use check_kind ci when only a CI run can verify the criterion. Its check text then describes the CI evidence.',
+  data('spec', resolved.spec_text),
+  data('acceptance_ids', specAcIds),
+  concerns && data('advisor_concerns', concerns),
+)
+
+async function extractCriteria(concerns, round = 0) {
+  const label = round ? `criteria:r${round}` : 'criteria'
+  const call = await typed(criteriaPrompt(concerns), { label, phase: 'Criteria', agentType: 'explorer', model: 'opus', schema: CRITERIA_SCHEMA }, checkCriteria(specAcIds))
+  if (!call.value) return { error: `Criteria failed: ${errorText(call.errors)}` }
+  return { criteria: specAcIds.map((id) => call.value.criteria.find((c) => c.id === id)) }
+}
+
+let criteriaList = []
+if (specAcIds.length) {
+  phase('Criteria')
+  const extracted = await extractCriteria(null)
+  if (extracted.error) {
+    log(extracted.error)
+    return { error: extracted.error }
+  }
+  criteriaList = extracted.criteria
+}
+
+// ---- Decompose (only when candidate_curds >= 2) ----
+// Returns { error } or { curds, singlePass }. A plan revision reruns it with the advisor concerns.
+async function decomposeCurds(concerns, round = 0) {
+  const suffix = round ? `:r${round}` : ''
+  const single = { curds: [{ slug: parentSlug, spec_path: parentSpecPath, brief: null, files: [] }], singlePass: true }
+  if (candidateCurds < 2) return single
+  const decomposeCall = await typed(decomposePrompt(resolved.spec_text, concerns), { label: `decompose:plan${suffix}`, phase: 'Decompose', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
   if (!decomposeCall.value) {
     log(`Decompose failed: ${errorText(decomposeCall.errors)}`)
     return { error: `Decompose failed: ${errorText(decomposeCall.errors)}` }
@@ -1020,36 +1328,68 @@ if (candidateCurds >= 2) {
 
   if (merged.length < 2) {
     log(`Decomposition merged down to ${merged.length} curd(s) — running single-pass against the parent spec.`)
-    singlePass = true
-    curds = [{ slug: parentSlug, spec_path: parentSpecPath, brief: null, files: [] }]
-  } else {
-    const invalidSlugs = findInvalidSlugs(merged)
-    if (invalidSlugs.length) {
-      log(`Invalid curd slug(s) from decomposer: ${invalidSlugs.join(', ')}`)
-      return { error: `Invalid curd slug(s): ${invalidSlugs.join(', ')}` }
-    }
-    const duplicateSlugs = findDuplicateSlugs(merged)
-    if (duplicateSlugs.length) {
-      log(`Duplicate curd slug(s) from decomposer: ${duplicateSlugs.join(', ')}`)
-      return { error: `Duplicate curd slug(s): ${duplicateSlugs.join(', ')}` }
-    }
-
-    const miniSpecCall = await typed(miniSpecPrompt(parentSlug, merged), { label: 'decompose:write-minispecs', phase: 'Decompose', agentType: 'coder', model: 'opus', schema: MINISPEC_SCHEMA }, checkMiniSpecs)
-    if (!miniSpecCall.value) {
-      log(`Mini-spec writing failed: ${errorText(miniSpecCall.errors)}`)
-      return { error: `Mini-spec writing failed: ${errorText(miniSpecCall.errors)}` }
-    }
-    const pathBySlug = new Map(miniSpecCall.value.curds.map((c) => [c.slug, c.spec_path]))
-    const unresolvedSlugs = merged.filter((c) => !pathBySlug.get(c.slug)).map((c) => c.slug)
-    if (unresolvedSlugs.length) {
-      log(`Mini-spec agent did not resolve a spec_path for curd slug(s): ${unresolvedSlugs.join(', ')}`)
-      return { error: `Unresolved mini-spec path(s) for curd slug(s): ${unresolvedSlugs.join(', ')}` }
-    }
-    curds = merged.map((c) => ({ ...c, spec_path: pathBySlug.get(c.slug) }))
+    return single
   }
-} else {
-  singlePass = true
-  curds = [{ slug: parentSlug, spec_path: parentSpecPath, brief: null, files: [] }]
+  const invalidSlugs = findInvalidSlugs(merged)
+  if (invalidSlugs.length) {
+    log(`Invalid curd slug(s) from decomposer: ${invalidSlugs.join(', ')}`)
+    return { error: `Invalid curd slug(s): ${invalidSlugs.join(', ')}` }
+  }
+  const duplicateSlugs = findDuplicateSlugs(merged)
+  if (duplicateSlugs.length) {
+    log(`Duplicate curd slug(s) from decomposer: ${duplicateSlugs.join(', ')}`)
+    return { error: `Duplicate curd slug(s): ${duplicateSlugs.join(', ')}` }
+  }
+
+  const miniSpecCall = await typed(miniSpecPrompt(parentSlug, merged), { label: `decompose:write-minispecs${suffix}`, phase: 'Decompose', agentType: 'coder', model: 'opus', schema: MINISPEC_SCHEMA }, checkMiniSpecs)
+  if (!miniSpecCall.value) {
+    log(`Mini-spec writing failed: ${errorText(miniSpecCall.errors)}`)
+    return { error: `Mini-spec writing failed: ${errorText(miniSpecCall.errors)}` }
+  }
+  const pathBySlug = new Map(miniSpecCall.value.curds.map((c) => [c.slug, c.spec_path]))
+  const unresolvedSlugs = merged.filter((c) => !pathBySlug.get(c.slug)).map((c) => c.slug)
+  if (unresolvedSlugs.length) {
+    log(`Mini-spec agent did not resolve a spec_path for curd slug(s): ${unresolvedSlugs.join(', ')}`)
+    return { error: `Unresolved mini-spec path(s) for curd slug(s): ${unresolvedSlugs.join(', ')}` }
+  }
+  return { curds: merged.map((c) => ({ ...c, spec_path: pathBySlug.get(c.slug) })), singlePass: false }
+}
+
+let curds
+let singlePass = false
+if (candidateCurds >= 2) phase('Decompose')
+const decomposed = await decomposeCurds(null)
+if (decomposed.error) return { error: decomposed.error }
+;({ curds, singlePass } = decomposed)
+
+// ---- Advise (ADR-017: the plan advisor always runs, even for a spec with no AC line) ----
+phase('Advise')
+const planPayload = () => ({ curds: curds.map((c) => ({ slug: c.slug, brief: c.brief, files: c.files })), criteria: criteriaList, single_pass: singlePass })
+let planAdvice = await advise('plan', 'advise:plan', planPayload())
+let planRevisions = 0
+while (planAdvice.advice && planAdvice.advice.verdict === 'revise' && planRevisions < LIMITS.advisorRevisions) {
+  planRevisions++
+  const concerns = planAdvice.advice.concerns
+  log(`Plan advisor asked for a revision: ${concerns.join('; ')}`)
+  if (!singlePass) {
+    const redone = await decomposeCurds(concerns, planRevisions)
+    if (redone.error) return { error: redone.error }
+    ;({ curds, singlePass } = redone)
+  }
+  if (specAcIds.length) {
+    const reextracted = await extractCriteria(concerns, planRevisions)
+    if (reextracted.error) {
+      log(reextracted.error)
+      return { error: reextracted.error }
+    }
+    criteriaList = reextracted.criteria
+  }
+  planAdvice = await advise('plan', `advise:plan:r${planRevisions}`, planPayload())
+}
+if (!planAdvice.advice || planAdvice.advice.verdict !== 'approve') {
+  const reason = planAdvice.advice ? `plan advisor did not approve: ${planAdvice.advice.verdict}` : planAdvice.reason
+  log(`${reason} — no cook runs.`)
+  return { status: 'blocked', reason, concerns: planAdvice.advice ? planAdvice.advice.concerns : [] }
 }
 
 // ---- Per-curd chain (pipelined) ----
@@ -1347,15 +1687,61 @@ const withStatus = chainResults.map((r, i) => {
 
 const cleanEntries = withStatus.filter((r) => r && r.status === 'clean')
 
+// ---- Verify and Done (ADR-015, ADR-017): judges check each criterion at the final head, then the done advisor signs off before Plate ----
+const floorMessage = () => `budget floor reached before Plate: ${budget.remaining()} remaining, below ${LIMITS.minBudget}`
+let budgetReason = null
+let blockReason = null
+let blockedText
+let doneAdvice = null
+let doneConcerns = null
+let verification = { status: 'not-run', head: null, criteria: [] }
+if (cleanEntries.length && floorReached()) {
+  budgetReason = floorMessage()
+  log(`${budgetReason} — skipping verify and plate.`)
+} else if (cleanEntries.length) {
+  phase('Verify')
+  const tree = remerge || integrate
+  const rows = []
+  for (const ac of criteriaList) {
+    if (ac.check_kind === 'ci') {
+      rows.push({ id: ac.id, check_kind: 'ci', verdict: 'deferred', evidence: 'covered by CI' })
+      continue
+    }
+    const judged = await typed(verifyPrompt(ac, { worktree_path: tree.worktree_path, head: tree.head }), { label: `verify:${ac.id}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERDICT_SCHEMA }, checkWith(VERDICT_SCHEMA, (v) => checkVerdict(v, ac)))
+    const v = judged.value
+    const missing = v ? v.missing_paths.filter((p) => !blank(p)) : []
+    const evidence = !v ? `not verified: ${errorText(judged.errors)}` : missing.length ? `${v.evidence} (missing paths: ${missing.join(', ')})` : v.evidence
+    rows.push({ id: ac.id, check_kind: ac.check_kind, verdict: v && v.passes === true && !missing.length ? 'pass' : 'fail', evidence })
+  }
+  const failed = rows.filter((r) => r.verdict === 'fail')
+  verification = { status: !criteriaList.length ? 'skipped-no-criteria' : failed.length ? 'failed' : 'passed', head: criteriaList.length ? tree.head : null, criteria: rows }
+  if (failed.length) {
+    blockReason = `criteria verification failed: ${failed.map((r) => r.id).join(', ')}`
+    blockedText = 'plate blocked: criteria verification failed'
+    log(`${blockReason} — skipping the done advisor and plate.`)
+  } else {
+    phase('Done')
+    const summaryNow = { clean: 0, dirty: 0, failed: 0 }
+    for (const r of withStatus) summaryNow[r.status] = (summaryNow[r.status] || 0) + 1
+    const done = await advise('done', 'advise:done', { summary: summaryNow, curds: withStatus.map((r) => ({ slug: r.curd.slug, status: r.status, excluded_reason: r.excluded_reason })), criteria: rows })
+    doneAdvice = done.advice
+    if (!doneAdvice || doneAdvice.verdict !== 'approve') {
+      doneConcerns = doneAdvice ? doneAdvice.concerns : ['done advisor returned no valid advice']
+      blockReason = doneAdvice ? `done advisor did not approve: ${doneAdvice.verdict}` : done.reason
+      blockedText = 'plate blocked: done advisor did not approve'
+      log(`${blockReason} — skipping plate.`)
+    } else if (floorReached()) {
+      budgetReason = floorMessage()
+      log(`${budgetReason} — skipping plate.`)
+    }
+  }
+}
+
 phase('Plate')
 let plateRows = []
 let plateRan = false
 let plateFailure = null
-let budgetReason = null
-if (cleanEntries.length && floorReached()) {
-  budgetReason = `budget floor reached before Plate: ${budget.remaining()} remaining, below ${LIMITS.minBudget}`
-  log(`${budgetReason} — skipping plate.`)
-} else if (cleanEntries.length) {
+if (cleanEntries.length && !budgetReason && !blockReason) {
   const plated = await typed(platePrompt(cleanEntries.map((r) => ({ slug: r.curd.slug, sha: r.sha })), singlePass), { label: 'plate', phase: 'Plate', agentType: 'coder', model: 'opus', schema: PLATE_SCHEMA }, checkPlate, true)
   if (plated.value) {
     plateRows = plated.value.results
@@ -1364,7 +1750,7 @@ if (cleanEntries.length && floorReached()) {
     plateFailure = errorText(plated.errors)
     log(`Plate returned no valid result (${plateFailure}) — clean curds fail.`)
   }
-} else {
+} else if (!cleanEntries.length) {
   log('No clean curds — skipping plate.')
 }
 
@@ -1392,7 +1778,7 @@ const curdsOut = withStatus.map((r) => {
     branch: r.branch,
     status: plateReason ? 'failed' : r.status,
     pr_url: plate ? plate.pr_url : undefined,
-    excluded_reason: plateReason || r.excluded_reason,
+    excluded_reason: plateReason || r.excluded_reason || (r.status === 'clean' ? blockedText : undefined),
     age: ageMode ? { mode: ageMode, has_medium_plus_findings: owned.some(isMediumPlus) || unownedMedium } : undefined,
   }
 })
@@ -1411,10 +1797,13 @@ if (curdsOut.length && curdsOut.every((c) => c.status === 'clean' && platedBySlu
 }
 
 return {
-  status: budgetReason ? 'partial' : 'ok',
-  reason: budgetReason || undefined,
+  status: budgetReason || blockReason ? 'partial' : 'ok',
+  reason: budgetReason || blockReason || undefined,
+  concerns: doneConcerns || undefined,
   curds: curdsOut,
   summary,
+  verification,
+  advice: { plan: { verdict: planAdvice.advice.verdict, concerns: planAdvice.advice.concerns, revisions: planRevisions }, done: doneAdvice ? { verdict: doneAdvice.verdict, concerns: doneAdvice.concerns } : null },
   integration: integrate ? { merged: integrate.merged, conflicted: integrate.conflicted, head: integrate.head, base_sha: baseSha, remerge_head: remerge ? remerge.head : null } : null,
   age_worktrees: [...reportWorktrees].sort(),
 }

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime, loadWorkflow } from './harness.mjs'
+import { createRuntime } from './cheese-factory.fixtures.mjs'
+import { loadWorkflow } from './harness.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
@@ -134,7 +136,7 @@ test('single-pass chain runs when candidate_curds < 2, no decompose call', async
   assert.equal(result.curds[0].slug, 'parent')
   assert.equal(result.curds[0].status, 'clean')
   assert.equal(result.curds[0].branch, 'curd/parent')
-  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['resolve', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate', 'cleanup'])
+  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['resolve', 'advise:plan', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'advise:done', 'plate', 'cleanup'])
 })
 
 test('decompose merges file-overlapping curds, writes mini-specs, and fans out only disjoint curds', async () => {
@@ -189,7 +191,7 @@ test('decompose merges file-overlapping curds, writes mini-specs, and fans out o
 
   const labelSet = new Set(trace.agents.map(({ opts }) => opts.label))
   assert.deepEqual([...labelSet].sort(), [
-    'age:barrier', 'cleanup', 'cook:a', 'cook:c', 'decompose:plan', 'decompose:write-minispecs',
+    'advise:done', 'advise:plan', 'age:barrier', 'cleanup', 'cook:a', 'cook:c', 'decompose:plan', 'decompose:write-minispecs',
     'integrate', 'plate', 'press:a', 'press:c', 'resolve', 'taste:a', 'taste:c',
   ])
 })
@@ -230,8 +232,8 @@ test('phase order and per-phase model/agentType/isolation assertions', async () 
   await workflow.run({ ...globals, args: { spec: 'parent' } })
 
   const labels = trace.agents.map(({ opts }) => opts.label)
-  assert.deepEqual(labels, ['resolve', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'plate', 'cleanup'])
-  assert.deepEqual(trace.phases, ['Resolve', 'Cook', 'Integrate', 'Age', 'Plate', 'Report'])
+  assert.deepEqual(labels, ['resolve', 'advise:plan', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'advise:done', 'plate', 'cleanup'])
+  assert.deepEqual(trace.phases, ['Resolve', 'Advise', 'Cook', 'Integrate', 'Age', 'Verify', 'Done', 'Plate', 'Report'])
 
   const byLabel = Object.fromEntries(trace.agents.map((call) => [call.opts.label, call.opts]))
   assert.equal(byLabel['cook:parent'].model, 'sonnet')
@@ -346,7 +348,7 @@ test('bounded corrective taste loop caps at correctiveRounds and excludes the cu
 
   const labels = trace.agents.map(({ opts }) => opts.label)
   assert.deepEqual(labels, [
-    'resolve', 'cook:parent', 'taste:parent', 'correct:parent:r1', 'taste:parent:r1', 'correct:parent:r2', 'taste:parent:r2',
+    'resolve', 'advise:plan', 'cook:parent', 'taste:parent', 'correct:parent:r1', 'taste:parent:r1', 'correct:parent:r2', 'taste:parent:r2',
   ])
   assert.equal(labels.some((l) => l.startsWith('press:')), false)
   assert.equal(result.curds[0].status, 'failed')
@@ -562,7 +564,7 @@ test('an uncommitted correction stops the taste loop and the curd fails', async 
   const result = await workflow.run({ ...globals, args: { spec: 'parent', correctiveRounds: 2 } })
 
   const labels = trace.agents.map(({ opts }) => opts.label)
-  assert.deepEqual(labels, ['resolve', 'cook:parent', 'taste:parent', 'correct:parent:r1'])
+  assert.deepEqual(labels, ['resolve', 'advise:plan', 'cook:parent', 'taste:parent', 'correct:parent:r1'])
   assert.match(trace.logs.join('\n'), /uncommitted correction/)
   assert.equal(result.curds[0].status, 'failed')
 })
@@ -1154,7 +1156,7 @@ test('AC-12: a partial cook gets a fresh isolated continuation at its checkpoint
   const labels = labelsOf(trace)
   const next = trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1')
 
-  assert.deepEqual(labels.slice(0, 3), ['resolve', 'cook:parent', 'cook:parent:c1'])
+  assert.deepEqual(labels.slice(0, 4), ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
   assert.equal(next.opts.isolation, 'worktree')
   assert.equal(next.opts.agentType, 'coder')
   assert.ok(next.prompt.includes(`git checkout --detach ${checkpoint}`))
@@ -1177,7 +1179,7 @@ test('F-8: a partial cook with a valid checkpoint is never redone; invalid sourc
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const next = trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1')
 
-  assert.deepEqual(labelsOf(trace).slice(0, 3), ['resolve', 'cook:parent', 'cook:parent:c1'])
+  assert.deepEqual(labelsOf(trace).slice(0, 4), ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
   assert.equal(labelsOf(trace).some((l) => /^cook:parent:redo/.test(l)), false)
   assert.ok(next.prompt.includes(`git checkout --detach ${checkpoint}`))
   assert.deepEqual(JSON.parse(fence(next.prompt, 'source_ranges')), ['src/one.js#7-7'])
@@ -1217,7 +1219,7 @@ test('F-8: a partial cook with an invalid checkpoint is final: salvage reads the
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const labels = labelsOf(trace)
 
-  assert.deepEqual(labels.slice(0, 4), ['resolve', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
+  assert.deepEqual(labels.slice(0, 5), ['resolve', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
   assert.equal(labels.some((l) => /redo|repair/.test(l)), false)
   assert.ok(trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1').prompt.includes(`git checkout --detach ${found}`))
   assert.equal(result.curds[0].status, 'clean')
@@ -1274,7 +1276,7 @@ test('AC-12: a null cook result runs one haiku salvage from the curd ref and res
   const salvage = trace.agents.find(({ opts }) => opts.label === 'salvage:parent')
   const next = trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1')
 
-  assert.deepEqual(labels.slice(0, 4), ['resolve', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
+  assert.deepEqual(labels.slice(0, 5), ['resolve', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
   assert.equal(labels.filter((l) => l.startsWith('salvage')).length, 1)
   assert.equal(salvage.opts.model, 'haiku')
   assert.ok(salvage.prompt.includes('refs/heads/curd/parent'))
@@ -1324,7 +1326,7 @@ test('AC-12: a repeated checkpoint SHA stops the curd as stalled', async () => {
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const labels = labelsOf(trace)
 
-  assert.deepEqual(labels, ['resolve', 'cook:parent', 'cook:parent:c1'])
+  assert.deepEqual(labels, ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, new RegExp(`^cook: cook stalled: no new commit since ${same}`))
 })
@@ -1339,7 +1341,7 @@ test('cfh-shared-prelude AC-12: a checkpoint that differs only by case stops the
 
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
 
-  assert.deepEqual(labelsOf(trace), ['resolve', 'cook:parent', 'cook:parent:c1'])
+  assert.deepEqual(labelsOf(trace), ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /cook stalled: no new commit since/)
 })
@@ -1369,7 +1371,7 @@ test('AC-13: partial cooks with new SHAs stop after 3 continuations and no check
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const labels = labelsOf(trace)
 
-  assert.deepEqual(labels, ['resolve', 'cook:parent', 'cook:parent:c1', 'cook:parent:c2', 'cook:parent:c3'])
+  assert.deepEqual(labels, ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1', 'cook:parent:c2', 'cook:parent:c3'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /after 3 continuations/)
   assert.equal(labels.some((l) => /checkpoint/.test(l)), false)
@@ -1609,7 +1611,7 @@ test('AC-3: a null cook result is salvaged once and never redone, then the curd 
 
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
 
-  assert.deepEqual(labelsOf(trace), ['resolve', 'cook:parent', 'salvage:parent'])
+  assert.deepEqual(labelsOf(trace), ['resolve', 'advise:plan', 'cook:parent', 'salvage:parent'])
   assert.equal(result.curds.length, 1)
   assert.ok(result.curds.every((c) => c !== null))
   assert.equal(result.curds[0].status, 'failed')
@@ -1747,7 +1749,7 @@ test('AC-4: an out-of-enum cook status goes to salvage, never to a redo that res
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const labels = labelsOf(trace)
 
-  assert.deepEqual(labels.slice(0, 4), ['resolve', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
+  assert.deepEqual(labels.slice(0, 5), ['resolve', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
   assert.equal(labels.some((l) => /redo|repair/.test(l)), false)
   assert.ok(trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1').prompt.includes(`git checkout --detach ${found}`))
   assert.equal(labels.filter((l) => l.startsWith('cook:parent')).length, 2)
@@ -2765,7 +2767,7 @@ test('F-2: a needs-context cook goes to salvage, not repair or redo, and resumes
     const labels = labelsOf(trace)
     const next = trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1')
 
-    assert.deepEqual(labels.slice(0, 4), ['resolve', 'cook:parent', 'salvage:parent', 'cook:parent:c1'], status)
+    assert.deepEqual(labels.slice(0, 5), ['resolve', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'], status)
     assert.equal(labels.some((l) => /redo|repair/.test(l)), false, status)
     assert.ok(next.prompt.includes(`git checkout --detach ${found}`), status)
     assert.equal(result.curds[0].status, 'clean', status)
@@ -3090,4 +3092,460 @@ test('AGE-1: a blocked re-age leaves the cured curd dirty and plates nothing', a
   assert.equal(result.curds[0].status, 'dirty')
   assert.match(result.curds[0].excluded_reason, /^re-age blocked: /)
   assert.equal(callsOf(trace, 'plate').length, 0)
+})
+
+// ---- cfh-criteria-gate: spec criteria, plan advisor, verify judges, done advisor ----
+
+const CG = 'cfh-criteria-gate'
+const SPEC_TEXT = '# Spec\n\n## Acceptance\n\n- AC-1: WHEN x THE SYSTEM SHALL y.\n- AC-2: WHEN a THE SYSTEM SHALL b.\n'
+const REMERGE_HEAD = sha(0x2222)
+const REMERGE_TREE = '/repo/.claude/worktrees/remerge'
+const cgCriterion = (id, over = {}) => ({ id, statement: `statement ${id}`, check_kind: 'command', check: 'test -e src/parent.js', ...over })
+const cgCriteria = (ids = ['AC-1', 'AC-2'], over = {}) => ({ criteria: ids.map((id) => cgCriterion(id, over)) })
+const cgVerdict = (id, over = {}) => ({ criterion: id, passes: true, evidence: 'ran the check: exit 0', tree_clean: true, missing_paths: [], ...over })
+const cgAdvice = (verdict, concerns = []) => ({ verdict, concerns, guidance: '' })
+const cgSpec = (n) => Array.from({ length: n }, (_, i) => `- AC-${i + 1}: THE SYSTEM SHALL do ${i + 1}.`).join('\n')
+const cleanAge = (...slugs) => ageBarrierResult({ perCurd: slugs.map((slug) => ({ slug, has_medium_plus_findings: false, findings: [] })) })
+
+const cgSingle = {
+  resolve: () => resolveResolved({ spec_text: SPEC_TEXT }),
+  criteria: () => cgCriteria(),
+  'advise:plan': () => cgAdvice('approve'),
+  'cook:parent': () => cook('parent'),
+  'taste:parent': () => taste('pass'),
+  'press:parent': () => phaseOk('parent', 'press'),
+  integrate: () => integrateResult({ merged: ['parent'] }),
+  'age:barrier': () => cleanAge('parent'),
+  'advise:done': () => cgAdvice('approve'),
+  plate: () => plate([{ slug: 'parent', status: 'ok', pr_url: 'https://example.test/pr/parent' }]),
+  cleanup: () => ({ removed: [] }),
+}
+
+const cgMulti = {
+  resolve: () => resolveResolved({ candidate_curds: 3, spec_text: SPEC_TEXT }),
+  criteria: () => cgCriteria(),
+  'decompose:plan': () => decompose([{ slug: 'a', brief: 'do a', files: ['a.js'] }, { slug: 'c', brief: 'do c', files: ['c.js'] }]),
+  'decompose:write-minispecs': () => miniSpecs([{ slug: 'a', spec_path: '/specs/parent--a.md' }, { slug: 'c', spec_path: '/specs/parent--c.md' }]),
+  'advise:plan': () => cgAdvice('approve'),
+  'cook:a': () => cook('a'),
+  'taste:a': () => taste('pass'),
+  'press:a': () => phaseOk('a', 'press'),
+  'cook:c': () => cook('c'),
+  'taste:c': () => taste('pass'),
+  'press:c': () => phaseOk('c', 'press'),
+  integrate: () => integrateResult({ merged: ['a', 'c'] }),
+  'age:barrier': () => cleanAge('a', 'c'),
+  'verify:AC-1': () => cgVerdict('AC-1'),
+  'verify:AC-2': () => cgVerdict('AC-2'),
+  'advise:done': () => cgAdvice('approve'),
+  plate: () => plate([{ slug: 'a', status: 'ok', pr_url: 'https://example.test/pr/a' }, { slug: 'c', status: 'ok', pr_url: 'https://example.test/pr/c' }]),
+  cleanup: () => ({ removed: [] }),
+}
+
+// A redo or repair label maps to its base label. A verify label with no script passes.
+function cgResponder(base, over = {}) {
+  const table = { ...base, ...over }
+  return ({ opts }) => {
+    const key = opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')
+    let fn = table[opts.label] || table[key]
+    if (!fn && key.startsWith('verify:')) fn = () => cgVerdict(key.slice('verify:'.length))
+    if (!fn) throw new Error(`unexpected agent ${opts.label}`)
+    return fn()
+  }
+}
+
+async function cgRun(base, over = {}, { configure } = {}) {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({ respond: cgResponder(base, over) })
+  if (configure) configure(globals, trace)
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+  return { result, trace, workflow }
+}
+
+// The workflow runs in a separate realm, so strict deepEqual needs a plain copy of its arrays.
+const cgPlain = (value) => JSON.parse(JSON.stringify(value))
+const cgLabels = (trace) => trace.agents.map(({ opts }) => opts.label)
+const cgCalls = (trace, label) => trace.agents.filter(({ opts }) => opts.label === label)
+const cgStarting = (trace, prefix) => trace.agents.filter(({ opts }) => opts.label.startsWith(prefix))
+
+test(`${CG} AC-1: one read-only explorer criteria agent covers every spec AC id`, async () => {
+  const { result, trace } = await cgRun(cgSingle)
+  const calls = cgCalls(trace, 'criteria')
+
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].opts.agentType, 'explorer')
+  assert.equal(calls[0].opts.model, 'opus')
+  assert.equal(calls[0].opts.phase, 'Criteria')
+  assert.match(calls[0].prompt, /read-only/)
+  assert.ok(calls[0].prompt.includes('AC-1') && calls[0].prompt.includes('AC-2'))
+  assert.deepEqual(cgPlain(result.verification.criteria.map((c) => c.id)), ['AC-1', 'AC-2'])
+})
+
+test(`${CG} AC-1: an answer that misses a spec AC id fails the run before any cook after the typed bound`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { criteria: () => cgCriteria(['AC-1']) })
+
+  assert.match(result.error, /AC-2/)
+  assert.equal(cgStarting(trace, 'criteria').length, 3)
+  assert.equal(cgStarting(trace, 'cook:').length, 0)
+  assert.equal(cgStarting(trace, 'advise:').length, 0)
+})
+
+test(`${CG} AC-1: a criterion for an id outside the spec, or a repeated id, is rejected`, async () => {
+  const extra = await cgRun(cgSingle, { criteria: () => cgCriteria(['AC-1', 'AC-2', 'AC-3']) })
+  const repeat = await cgRun(cgSingle, { criteria: () => cgCriteria(['AC-1', 'AC-1']) })
+
+  assert.match(extra.result.error, /AC-3/)
+  assert.ok(repeat.result.error)
+  assert.equal(cgStarting(repeat.trace, 'cook:').length, 0)
+})
+
+test(`${CG} AC-1: a redo that fixes the coverage is accepted within the bound`, async () => {
+  let calls = 0
+  const { result, trace } = await cgRun(cgSingle, { criteria: () => (++calls === 1 ? cgCriteria(['AC-1']) : cgCriteria()) })
+
+  assert.equal(result.error, undefined)
+  assert.equal(cgCalls(trace, 'criteria:redo1').length, 1)
+  assert.equal(cgCalls(trace, 'cook:parent').length, 1)
+})
+
+test(`${CG} AC-1: UNSAFE_CHECKS rejects a mutating check before any cook`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { criteria: () => cgCriteria(['AC-1', 'AC-2'], { check: 'curl -s https://example.test' }) })
+
+  assert.match(result.error, /unsafe/)
+  assert.equal(cgStarting(trace, 'cook:').length, 0)
+})
+
+test(`${CG} AC-1: the negated-search gate rejects a check that can pass without testing anything`, async () => {
+  const vacuous = await cgRun(cgSingle, { criteria: () => cgCriteria(['AC-1', 'AC-2'], { check: '! grep -q needle missing.txt' }) })
+  const guarded = await cgRun(cgSingle, { criteria: () => cgCriteria(['AC-1', 'AC-2'], { check: 'test -e src/a.js && ! grep -q needle src/a.js' }) })
+
+  assert.match(vacuous.result.error, /without testing anything/)
+  assert.equal(cgStarting(vacuous.trace, 'cook:').length, 0)
+  assert.equal(guarded.result.error, undefined)
+})
+
+test(`${CG} AC-1: a ci criterion skips the command gates`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { criteria: () => ({ criteria: [cgCriterion('AC-1'), cgCriterion('AC-2', { check_kind: 'ci', check: 'CI runs curl against staging' })] }) })
+
+  assert.equal(result.error, undefined)
+  assert.equal(cgCalls(trace, 'verify:AC-2').length, 0)
+})
+
+test(`${CG} AC-2: a spec with no AC line dispatches no criteria agent and no verify judge but both advisors`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { resolve: () => resolveResolved({ spec_text: 'spec body\n\nAC-1 mentioned in prose only' }) })
+
+  assert.equal(cgStarting(trace, 'criteria').length, 0)
+  assert.equal(cgStarting(trace, 'verify:').length, 0)
+  assert.equal(cgCalls(trace, 'advise:plan').length, 1)
+  assert.equal(cgCalls(trace, 'advise:done').length, 1)
+  assert.equal(result.verification.status, 'skipped-no-criteria')
+  assert.deepEqual(cgPlain(result.verification.criteria), [])
+  assert.equal(result.curds[0].pr_url, 'https://example.test/pr/parent')
+})
+
+test(`${CG} AC-3: the plan advisor starts with Judge mode: advise and runs before any cook`, async () => {
+  const { trace } = await cgRun(cgSingle)
+  const labels = cgLabels(trace)
+  const advise = cgCalls(trace, 'advise:plan')[0]
+
+  assert.ok(advise.prompt.startsWith('Judge mode: advise'))
+  assert.equal(advise.opts.agentType, 'judge')
+  assert.equal(advise.opts.phase, 'Advise')
+  assert.ok(labels.indexOf('advise:plan') < labels.indexOf('cook:parent'))
+  assert.ok(labels.indexOf('criteria') < labels.indexOf('advise:plan'))
+  assert.ok(advise.prompt.includes('statement AC-1'))
+})
+
+test(`${CG} AC-3: revise on a single-pass run re-runs only the criteria agent with the concerns as data`, async () => {
+  const { result, trace } = await cgRun(cgSingle, {
+    'advise:plan': () => cgAdvice('revise', ['check AC-2 reads no file']),
+    'advise:plan:r1': () => cgAdvice('approve'),
+    'criteria:r1': () => cgCriteria(),
+  })
+  const labels = cgLabels(trace)
+
+  assert.equal(cgStarting(trace, 'decompose').length, 0)
+  assert.ok(cgCalls(trace, 'criteria:r1')[0].prompt.includes('check AC-2 reads no file'))
+  assert.ok(labels.indexOf('criteria:r1') < labels.indexOf('advise:plan:r1'))
+  assert.ok(labels.indexOf('advise:plan:r1') < labels.indexOf('cook:parent'))
+  assert.equal(result.advice.plan.verdict, 'approve')
+})
+
+test(`${CG} AC-3: revise on a multi-curd run re-runs decomposition and criteria once, then advises again`, async () => {
+  let plans = 0
+  const { result, trace } = await cgRun(cgMulti, {
+    'advise:plan': () => cgAdvice('revise', ['split by layer']),
+    'advise:plan:r1': () => cgAdvice('approve'),
+    'decompose:plan': () => {
+      plans++
+      return decompose([{ slug: 'a', brief: 'do a', files: ['a.js'] }, { slug: 'c', brief: 'do c', files: ['c.js'] }])
+    },
+    'decompose:plan:r1': () => decompose([{ slug: 'a', brief: 'do a', files: ['a.js'] }, { slug: 'c', brief: 'do c', files: ['c.js'] }]),
+    'decompose:write-minispecs:r1': () => miniSpecs([{ slug: 'a', spec_path: '/specs/parent--a.md' }, { slug: 'c', spec_path: '/specs/parent--c.md' }]),
+    'criteria:r1': () => cgCriteria(),
+  })
+  const labels = cgLabels(trace)
+
+  assert.equal(plans, 1)
+  assert.ok(cgCalls(trace, 'decompose:plan:r1')[0].prompt.includes('split by layer'))
+  assert.ok(labels.indexOf('decompose:write-minispecs:r1') < labels.indexOf('criteria:r1'))
+  assert.ok(labels.indexOf('criteria:r1') < labels.indexOf('advise:plan:r1'))
+  assert.ok(labels.indexOf('advise:plan:r1') < labels.indexOf('cook:a'))
+  assert.deepEqual(result.curds.map((c) => c.slug).sort(), ['a', 'c'])
+})
+
+test(`${CG} AC-3: a second revise blocks the run with the concerns and dispatches no cook`, async () => {
+  const { result, trace } = await cgRun(cgSingle, {
+    'advise:plan': () => cgAdvice('revise', ['first concern']),
+    'advise:plan:r1': () => cgAdvice('revise', ['second concern']),
+    'criteria:r1': () => cgCriteria(),
+  })
+
+  assert.equal(result.status, 'blocked')
+  assert.ok(result.reason)
+  assert.deepEqual(result.concerns, ['second concern'])
+  assert.equal(cgStarting(trace, 'cook:').length, 0)
+  assert.equal(cgStarting(trace, 'advise:plan:r2').length, 0)
+  assert.equal(cgStarting(trace, 'criteria').length, 2)
+})
+
+test(`${CG} AC-3: a stop verdict blocks the run at once`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { 'advise:plan': () => cgAdvice('stop', ['wrong decomposition']) })
+
+  assert.equal(result.status, 'blocked')
+  assert.deepEqual(result.concerns, ['wrong decomposition'])
+  assert.equal(cgStarting(trace, 'cook:').length, 0)
+  assert.equal(cgStarting(trace, 'criteria:r').length, 0)
+})
+
+test(`${CG} AC-3: invalid advice blocks the run`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { 'advise:plan': () => ({ verdict: 'maybe', concerns: [], guidance: '' }) })
+
+  assert.equal(result.status, 'blocked')
+  assert.match(result.reason, /no valid advice/)
+  assert.equal(cgStarting(trace, 'cook:').length, 0)
+})
+
+test(`${CG} AC-4: verify judges run one at a time, pinned at the integration head and worktree`, async () => {
+  const { result, trace } = await cgRun(cgSingle)
+  const labels = cgLabels(trace)
+  const first = cgCalls(trace, 'verify:AC-1')[0]
+  const second = cgCalls(trace, 'verify:AC-2')[0]
+
+  for (const call of [first, second]) {
+    assert.ok(call.prompt.startsWith('Judge mode: verify'))
+    assert.equal(call.opts.agentType, 'judge')
+    assert.equal(call.opts.phase, 'Verify')
+    assert.ok(call.prompt.includes(INTEGRATE_HEAD))
+    assert.ok(call.prompt.includes('/repo/.claude/worktrees/integration'))
+    assert.ok(call.prompt.includes("bash -c 'test -e src/parent.js'"))
+  }
+  assert.equal(labels.indexOf('verify:AC-2'), labels.indexOf('verify:AC-1') + 1)
+  assert.ok(labels.indexOf('age:barrier') < labels.indexOf('verify:AC-1'))
+  assert.ok(labels.indexOf('verify:AC-2') < labels.indexOf('advise:done'))
+  assert.equal(result.verification.head, INTEGRATE_HEAD)
+})
+
+test(`${CG} AC-4: after a re-merge the judges pin the re-merge head and its worktree`, async () => {
+  const { result, trace } = await cgRun(cgSingle, {
+    'age:barrier': () => ageBarrierResult({ hasMediumPlus: true, findings: [finding('parent')] }),
+    'cure:parent': () => cureResult({ committed: true }),
+    're-merge': () => integrateResult({ merged: ['parent'], head: REMERGE_HEAD, worktree_path: REMERGE_TREE }),
+    'age:reage': () => cleanAge('parent'),
+  })
+  const call = cgCalls(trace, 'verify:AC-1')[0]
+
+  assert.ok(call.prompt.includes(REMERGE_HEAD))
+  assert.ok(call.prompt.includes(REMERGE_TREE))
+  assert.equal(call.prompt.includes(INTEGRATE_HEAD), false)
+  assert.equal(result.verification.head, REMERGE_HEAD)
+})
+
+test(`${CG} AC-4: with no clean curd, verify and the done advisor are skipped and the status is not-run`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { integrate: () => integrateResult({ merged: [], conflicted: ['parent'] }) })
+
+  assert.equal(cgStarting(trace, 'verify:').length, 0)
+  assert.equal(cgStarting(trace, 'advise:done').length, 0)
+  assert.equal(cgCalls(trace, 'advise:plan').length, 1)
+  assert.equal(result.verification.status, 'not-run')
+  assert.equal(result.verification.head, null)
+  assert.equal(result.advice.done, null)
+})
+
+test(`${CG} AC-4: a null integrate result skips verify and reports not-run`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { integrate: () => ({ bogus: true }) })
+
+  assert.equal(cgStarting(trace, 'verify:').length, 0)
+  assert.equal(cgStarting(trace, 'advise:done').length, 0)
+  assert.equal(result.verification.status, 'not-run')
+  assert.equal(result.verification.head, null)
+})
+
+test(`${CG} AC-5: a failed criterion blocks the done advisor, Plate, and cleanup with the verdicts`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { 'verify:AC-2': () => cgVerdict('AC-2', { passes: false, evidence: 'exit 1: no such behavior' }) })
+
+  assert.equal(result.status, 'partial')
+  assert.equal(result.verification.status, 'failed')
+  assert.deepEqual(cgPlain(result.verification.criteria.map((c) => [c.id, c.verdict])), [['AC-1', 'pass'], ['AC-2', 'fail']])
+  assert.match(result.verification.criteria[1].evidence, /no such behavior/)
+  assert.equal(cgStarting(trace, 'advise:done').length, 0)
+  assert.equal(cgStarting(trace, 'plate').length, 0)
+  assert.equal(cgStarting(trace, 'cleanup').length, 0)
+  assert.equal(result.curds[0].status, 'clean')
+  assert.equal(result.curds[0].pr_url, undefined)
+  assert.equal(result.curds[0].excluded_reason, 'plate blocked: criteria verification failed')
+})
+
+test(`${CG} AC-5: a missing path or an invalid verdict fails the criterion`, async () => {
+  const missing = await cgRun(cgSingle, { 'verify:AC-1': () => cgVerdict('AC-1', { missing_paths: ['src/gone.js'] }) })
+  const invalid = await cgRun(cgSingle, { 'verify:AC-1': () => ({ criterion: 'AC-9', passes: true, evidence: 'x', tree_clean: true, missing_paths: [] }) })
+
+  assert.equal(missing.result.verification.criteria[0].verdict, 'fail')
+  assert.match(missing.result.verification.criteria[0].evidence, /src\/gone\.js/)
+  assert.equal(invalid.result.verification.criteria[0].verdict, 'fail')
+  assert.match(invalid.result.verification.criteria[0].evidence, /not verified/)
+  for (const run of [missing, invalid]) {
+    assert.equal(run.result.status, 'partial')
+    assert.equal(cgStarting(run.trace, 'plate').length, 0)
+    assert.equal(cgStarting(run.trace, 'advise:done').length, 0)
+  }
+})
+
+test(`${CG} AC-5: a failed criterion blocks every clean curd even when another curd failed earlier`, async () => {
+  const { result, trace } = await cgRun(cgMulti, {
+    'cook:c': () => cook('c', { status: 'blocked' }),
+    integrate: () => integrateResult({ merged: ['a'] }),
+    'age:barrier': () => cleanAge('a'),
+    'verify:AC-1': () => cgVerdict('AC-1', { passes: false }),
+  })
+  const bySlug = Object.fromEntries(result.curds.map((c) => [c.slug, c]))
+
+  assert.equal(result.status, 'partial')
+  assert.equal(bySlug.c.status, 'failed')
+  assert.equal(bySlug.a.status, 'clean')
+  assert.equal(bySlug.a.excluded_reason, 'plate blocked: criteria verification failed')
+  assert.equal(cgStarting(trace, 'plate').length, 0)
+  assert.equal(cgStarting(trace, 'cleanup').length, 0)
+})
+
+test(`${CG} AC-5: a ci criterion is deferred and never fails the run`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { criteria: () => ({ criteria: [cgCriterion('AC-1'), cgCriterion('AC-2', { check_kind: 'ci', check: 'CI job green' })] }) })
+
+  assert.equal(cgStarting(trace, 'verify:AC-2').length, 0)
+  assert.deepEqual(cgPlain(result.verification.criteria.map((c) => [c.id, c.check_kind, c.verdict])), [['AC-1', 'command', 'pass'], ['AC-2', 'ci', 'deferred']])
+  assert.equal(result.verification.status, 'passed')
+  assert.equal(cgCalls(trace, 'plate').length, 1)
+  assert.equal(result.status, 'ok')
+})
+
+test(`${CG} AC-6: the done advisor sees the summary, curd statuses, and verdicts, and approve lets Plate run`, async () => {
+  const { result, trace } = await cgRun(cgSingle)
+  const labels = cgLabels(trace)
+  const done = cgCalls(trace, 'advise:done')[0]
+
+  assert.ok(done.prompt.startsWith('Judge mode: advise'))
+  assert.equal(done.opts.agentType, 'judge')
+  assert.equal(done.opts.phase, 'Done')
+  assert.ok(done.prompt.includes('ran the check: exit 0'))
+  assert.ok(done.prompt.includes('"slug": "parent"'))
+  assert.ok(done.prompt.includes('"clean"'))
+  assert.ok(labels.indexOf('verify:AC-2') < labels.indexOf('advise:done'))
+  assert.ok(labels.indexOf('advise:done') < labels.indexOf('plate'))
+  assert.equal(result.status, 'ok')
+  assert.equal(result.curds[0].pr_url, 'https://example.test/pr/parent')
+})
+
+test(`${CG} AC-6: a done advisor that does not approve blocks Plate and cleanup and returns the concerns`, async () => {
+  for (const answer of [cgAdvice('revise', ['tests miss the error path']), cgAdvice('stop', ['tests miss the error path'])]) {
+    const { result, trace } = await cgRun(cgSingle, { 'advise:done': () => answer })
+
+    assert.equal(result.status, 'partial')
+    assert.deepEqual(result.concerns, ['tests miss the error path'])
+    assert.equal(result.curds[0].status, 'clean')
+    assert.equal(result.curds[0].excluded_reason, 'plate blocked: done advisor did not approve')
+    assert.equal(cgStarting(trace, 'plate').length, 0)
+    assert.equal(cgStarting(trace, 'cleanup').length, 0)
+  }
+})
+
+test(`${CG} AC-6: invalid done advice blocks Plate`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { 'advise:done': () => ({ verdict: 'maybe', concerns: [], guidance: '' }) })
+
+  assert.equal(result.status, 'partial')
+  assert.equal(result.curds[0].excluded_reason, 'plate blocked: done advisor did not approve')
+  assert.equal(cgStarting(trace, 'plate').length, 0)
+})
+
+test(`${CG} AC-6: the floor is checked again after the done advisor and blocks Plate`, async () => {
+  const { result, trace } = await cgRun(cgSingle, {}, {
+    configure: (globals, runtime) => {
+      globals.budget = { total: 1000000, spent: () => 0, remaining: () => (runtime.agents.some(({ opts }) => opts.label === 'advise:done') ? 10 : 1000000) }
+    },
+  })
+
+  assert.equal(cgCalls(trace, 'advise:done').length, 1)
+  assert.equal(cgStarting(trace, 'plate').length, 0)
+  assert.equal(result.status, 'partial')
+  assert.match(result.reason, /budget floor/)
+})
+
+test(`${CG} AC-6: a floor already reached skips verify and both Plate gates`, async () => {
+  const { result, trace } = await cgRun(cgSingle, {}, {
+    configure: (globals) => { globals.budget = { total: 1000000, spent: () => 0, remaining: () => 10 } },
+  })
+
+  assert.equal(cgStarting(trace, 'verify:').length, 0)
+  assert.equal(cgStarting(trace, 'advise:done').length, 0)
+  assert.equal(cgStarting(trace, 'plate').length, 0)
+  assert.equal(result.status, 'partial')
+})
+
+test(`${CG} AC-7: the return carries verification and advice, and meta.phases lists the new phases`, async () => {
+  const { result, workflow } = await cgRun(cgSingle)
+
+  assert.equal(result.verification.status, 'passed')
+  assert.equal(result.verification.head, INTEGRATE_HEAD)
+  assert.deepEqual(cgPlain(result.verification.criteria), [
+    { id: 'AC-1', check_kind: 'command', verdict: 'pass', evidence: 'ran the check: exit 0' },
+    { id: 'AC-2', check_kind: 'command', verdict: 'pass', evidence: 'ran the check: exit 0' },
+  ])
+  assert.equal(result.advice.plan.verdict, 'approve')
+  assert.equal(result.advice.done.verdict, 'approve')
+  const titles = workflow.meta.phases.map((p) => p.title)
+  for (const title of ['Criteria', 'Advise', 'Verify', 'Done']) assert.ok(titles.includes(title), title)
+})
+
+test(`${CG} AC-7: the new phases run in order`, async () => {
+  const { trace } = await cgRun(cgSingle)
+
+  assert.deepEqual(trace.phases, ['Resolve', 'Criteria', 'Advise', 'Cook', 'Integrate', 'Age', 'Verify', 'Done', 'Plate', 'Report'])
+})
+
+test(`${CG} AC-8: more than LIMITS.maxCriteria spec ACs returns an error before any criteria agent`, async () => {
+  const { result, trace } = await cgRun(cgSingle, { resolve: () => resolveResolved({ spec_text: cgSpec(25) }) })
+
+  assert.match(result.error, /25/)
+  assert.match(result.error, /24/)
+  assert.deepEqual(cgLabels(trace), ['resolve'])
+})
+
+test(`${CG} AC-8: exactly LIMITS.maxCriteria spec ACs reach the criteria agent`, async () => {
+  const ids = Array.from({ length: 24 }, (_, i) => `AC-${i + 1}`)
+  const { result, trace } = await cgRun(cgSingle, { resolve: () => resolveResolved({ spec_text: cgSpec(24) }), criteria: () => cgCriteria(ids) })
+
+  assert.equal(result.error, undefined)
+  assert.equal(cgCalls(trace, 'criteria').length, 1)
+  assert.equal(cgStarting(trace, 'verify:').length, 24)
+})
+
+test(`${CG} AC-9: ADR-015..017 read accepted and record the user decisions`, async () => {
+  const adr = await readFile(resolve(import.meta.dirname, '../../.hallouminate/wiki/adr/cheese-factory-workflow.md'), 'utf8')
+  const section = (n) => adr.split(/^## /m).find((s) => s.startsWith(`ADR-0${n}:`))
+
+  for (const n of [15, 16, 17]) assert.match(section(n), /\[status: accepted\]/, `ADR-0${n}`)
+  assert.doesNotMatch(adr, /^## ADR-01[567].*status: proposed/m)
+  assert.match(section(16), /fail closed for all/)
+  assert.match(section(16), /2026-10-12/)
+  assert.match(section(17), /always run, including for a spec with no AC line/)
+  assert.doesNotMatch(adr, /Status proposed until the specs land/)
 })
