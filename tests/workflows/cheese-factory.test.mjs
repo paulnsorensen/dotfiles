@@ -1199,14 +1199,24 @@ test('F-7: an out-of-enum taste verdict is a substance error: the reviewer redoe
   const workflow = await loadWorkflow(path)
   const inner = respondCleanChain({ slug: 'parent' })
   const { globals, trace } = createRuntime({
-    respond: (call) => (call.opts.label === 'taste:parent' ? { verdict: 'maybe', lenses: [], issues: [] } : inner(call)),
+    respond: (call) => {
+      if (call.opts.label === 'taste:parent') return { verdict: 'maybe', lenses: [], issues: [] }
+      if (call.opts.label === 'taste:parent:redo1') return taste('pass')
+      return inner(call)
+    },
   })
 
-  await workflow.run({ ...globals, args: { spec: 'parent' } })
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const labels = labelsOf(trace)
+  const first = trace.agents.find(({ opts }) => opts.label === 'taste:parent')
+  const redo = trace.agents.find(({ opts }) => opts.label === 'taste:parent:redo1')
 
-  assert.ok(labels.includes('taste:parent:redo1'))
+  assert.ok(redo.prompt.startsWith(first.prompt))
+  assert.match(redo.prompt, /\$\.verdict must be one of pass, revise/)
+  assert.equal(redo.opts.agentType, 'reviewer')
   assert.equal(labels.some((l) => l.startsWith('taste:parent') && /:repair\d+$/.test(l)), false)
+  assert.ok(labels.indexOf('press:parent') > labels.indexOf('taste:parent:redo1'))
+  assert.equal(result.curds[0].status, 'clean')
 })
 
 test('AC-12: a null cook result runs one haiku salvage from the curd ref and resumes at its SHA', async () => {
@@ -1661,6 +1671,9 @@ test('AC-4: an out-of-enum cook status goes to salvage, never to a redo that res
   assert.deepEqual(labels.slice(0, 4), ['resolve', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
   assert.equal(labels.some((l) => /redo|repair/.test(l)), false)
   assert.ok(trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1').prompt.includes(`git checkout --detach ${found}`))
+  assert.equal(labels.filter((l) => l.startsWith('cook:parent')).length, 2)
+  assert.equal(labels.filter((l) => l === 'salvage:parent').length, 1)
+  assert.equal(trace.agents.filter(({ prompt }) => prompt.includes(`git update-ref refs/heads/curd/parent ${BASE_SHA}`)).length, 1)
   assert.equal(result.curds[0].status, 'clean')
 })
 
@@ -1668,6 +1681,8 @@ test('AC-4: an out-of-enum cook status with no curd ref fails at cook and names 
   const { result, trace } = await runParent({ 'cook:parent': { status: 'finished' }, 'salvage:parent': { found: false } })
 
   assert.equal(labelsOf(trace).some((l) => /redo|repair|cook:parent:c1/.test(l)), false)
+  assert.deepEqual(labelsOf(trace).filter((l) => /^(cook|salvage)/.test(l)), ['cook:parent', 'salvage:parent'])
+  assert.equal(labelsOf(trace).some((l) => /^(taste|press|integrate|plate)/.test(l)), false)
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /^cook: cook ended with status "finished" and curd\/parent has no ref to resume from/)
 })
@@ -1780,9 +1795,9 @@ test('AC-14: every reviewer dispatch starts with its Review mode line', async ()
 
 // ---- pass D: integrate gate, head pinning, flat-finding routing, review chain, budget floor, cleanup ----
 
-// A redo or repair call answers like its base label unless the test names it.
+// A redo, repair, or retry call answers like its base label unless the test names it.
 function pick(over, defaults, label) {
-  const base = label.replace(/:(?:redo|repair)\d+$/, '')
+  const base = label.replace(/:(?:redo|repair|retry)\d+$/, '')
   for (const key of [label, base]) {
     if (Object.hasOwn(over, key)) return over[key]
     if (Object.hasOwn(defaults, key)) return defaults[key]
@@ -2281,6 +2296,7 @@ test('G-3: an age-fanout result without a findings list falls back to the single
   }
   const { trace, bySlug } = await runTwoCurds({
     'age:barrier': () => ageBarrierResult({ perCurd: [{ slug: 'a' }, { slug: 'b' }] }),
+    'age:fanout:repair1': () => null,
   }, fanout)
 
   assert.equal(callsOf(trace, 'age:barrier').length, 1)
@@ -2319,15 +2335,92 @@ test('F-9: a throwing cure reports failed with cure: and the error text, and the
 })
 
 test('F-9: a throw in any stage keeps its stage name and every curd stays in the result', async () => {
-  for (const [stage, label] of [['cook', 'cook:parent'], ['taste', 'taste:parent'], ['press', 'press:parent'], ['integrate', 'integrate']]) {
-    const { result, trace } = await runParent({ [label]: () => { throw new Error('boom') } })
+  const boom = () => { throw new Error('boom') }
+  const cured = { ...withMedium, ...cureLoop }
+  // A writer throw is final: one call. A read-only throw retries within the fix rounds: three calls.
+  const cases = [
+    { stage: 'cook', label: 'cook:parent', over: { 'salvage:parent': { found: false } }, status: 'failed', reason: /^cook: .*agent threw: boom/ },
+    { stage: 'taste', label: 'taste:parent', readOnly: true, status: 'failed', reason: /^taste: agent threw: boom/ },
+    { stage: 'taste-correct', label: 'correct:parent:r1', over: { 'taste:parent': taste('revise') }, status: 'failed', reason: /^taste-correct: agent threw: boom/ },
+    { stage: 'press', label: 'press:parent', status: 'failed', reason: /^press: agent threw: boom/ },
+    { stage: 'integrate', label: 'integrate', status: 'failed', reason: /^integrate: .*agent threw: boom/ },
+    { stage: 'age barrier', label: 'age:barrier', readOnly: true, status: 'failed', reason: /^age: barrier age failed/ },
+    { stage: 're-merge', label: 're-merge', over: cured, status: 'failed', reason: /^integrate: re-merge returned no valid result \(agent threw: boom\)/ },
+    { stage: 're-age', label: 'age:reage', over: cured, readOnly: true, status: 'dirty', reason: /^re-age blocked: no valid result \(agent threw: boom\)/ },
+    { stage: 'cleanup', label: 'cleanup', readOnly: true, status: 'clean', log: /Worktree cleanup returned no valid result \(agent threw: boom\)/ },
+  ]
+  for (const c of cases) {
+    const { result, trace } = await runParent({ ...c.over, [c.label]: boom })
 
-    assert.equal(result.curds.length, 1, stage)
-    assert.equal(result.curds[0].status, 'failed', stage)
-    assert.match(result.curds[0].excluded_reason, new RegExp(`^${stage}: .*agent threw: boom`), stage)
-    assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith(label)), [label], stage)
-    if (stage === 'cook') assert.ok(labelsOf(trace).includes('salvage:parent'), stage)
+    assert.equal(result.curds.length, 1, c.stage)
+    assert.equal(result.curds[0].status, c.status, c.stage)
+    if (c.reason) assert.match(result.curds[0].excluded_reason, c.reason, c.stage)
+    if (c.log) assert.match(trace.logs.join('\n'), c.log, c.stage)
+    const expected = c.readOnly ? [c.label, `${c.label}:retry1`, `${c.label}:retry2`] : [c.label]
+    assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith(c.label)), expected, c.stage)
+    if (c.stage === 'cook') assert.ok(labelsOf(trace).includes('salvage:parent'), c.stage)
   }
+})
+
+test('F-9: a read-only throw retries and a later answer is used; the retry is not a redo', async () => {
+  let calls = 0
+  const { result, trace } = await runParent({
+    'taste:parent': () => { calls++; throw new Error('flaky') },
+    'taste:parent:retry1': () => taste('pass'),
+  })
+  const labels = labelsOf(trace)
+
+  assert.equal(calls, 1)
+  assert.deepEqual(labels.filter((l) => l.startsWith('taste:parent')), ['taste:parent', 'taste:parent:retry1'])
+  assert.equal(result.curds[0].status, 'clean')
+  assert.equal(callsOf(trace, 'taste:parent:retry1')[0].prompt, callsOf(trace, 'taste:parent')[0].prompt)
+})
+
+test('F-9: a writer that throws is never retried', async () => {
+  const { trace } = await runParent({ 'press:parent': () => { throw new Error('flaky') }, 'press:parent:retry1': () => phaseOk('parent', 'press') })
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('press')), ['press:parent'])
+})
+
+test('a writer that returns a short head_sha gets a haiku expansion, never a writer redo', async () => {
+  const full = `abc1234${'0'.repeat(33)}`
+  const { result, trace } = await runParent({
+    'press:parent': () => phaseOk('parent', 'press', { head_sha: full.slice(0, 7) }),
+    'press:parent:sha': () => ({ sha: full }),
+  })
+  const expand = callsOf(trace, 'press:parent:sha')[0]
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('press')), ['press:parent', 'press:parent:sha'])
+  assert.equal(expand.opts.model, 'haiku')
+  assert.equal(expand.opts.agentType, undefined)
+  assert.equal(expand.opts.isolation, undefined)
+  assert.ok(callsOf(trace, 'integrate')[0].prompt.includes(full))
+  assert.equal(result.curds[0].status, 'clean')
+})
+
+test('a short head_sha stays strict: an expansion that does not extend the short SHA is dropped and the writer redoes', async () => {
+  const short = 'abc1234'
+  const { result, trace } = await runParent({
+    'press:parent': () => phaseOk('parent', 'press', { head_sha: short }),
+    'press:parent:sha': () => ({ sha: `def5678${'0'.repeat(33)}` }),
+  })
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('press')), ['press:parent', 'press:parent:sha', 'press:parent:redo1', 'press:parent:redo2'])
+  assert.equal(result.curds[0].status, 'failed')
+  assert.equal(labelsOf(trace).includes('integrate'), false)
+})
+
+test('a status or verdict that differs only by case or spaces is accepted without a repair or redo', async () => {
+  const { result, trace } = await runParent({
+    'cook:parent': () => cook('parent', { status: ' OK ', worktree_path: SCRATCH('cook') }),
+    'taste:parent': () => ({ ...taste('pass'), verdict: 'Pass ' }),
+    'press:parent': () => ({ ...phaseOk('parent', 'press'), status: ' Ok' }),
+    plate: () => plate([{ slug: 'parent', status: ' OK', pr_url: 'https://example.test/pr/parent' }]),
+  })
+
+  assert.equal(labelsOf(trace).some((l) => /redo|repair|salvage/.test(l)), false)
+  assert.equal(result.curds[0].status, 'clean')
+  assert.equal(result.curds[0].pr_url, 'https://example.test/pr/parent')
 })
 
 test('F-9: a rejected attempt that a redo replaces still records its worktree for cleanup', async () => {
@@ -2355,7 +2448,8 @@ test('F-6: an ok cook with a bad head_sha is final: it fails at stage cook at on
 
   assert.deepEqual(labels.filter((l) => l.startsWith('cook:parent')), ['cook:parent'])
   assert.equal(labels.some((l) => /redo|repair|salvage/.test(l)), false)
-  assert.equal(labels.some((l) => /^(taste|press)/.test(l)), false)
+  assert.equal(labels.some((l) => /^(taste|press|integrate|plate)/.test(l)), false)
+  assert.deepEqual(trace.agents.filter(({ opts }) => opts.agentType === 'coder').map(({ opts }) => opts.label), ['cook:parent'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /^cook: \$\.head_sha must be a 40-hex commit SHA/)
 })
@@ -2381,6 +2475,8 @@ test('F-6: a bad writer SHA is a substance error: a repair that offers another v
     assert.deepEqual(labels.filter((l) => l.startsWith(label)), [label, `${label}:redo1`, `${label}:redo2`], stage)
     assert.equal(result.curds[0].status, 'failed', stage)
     assert.equal(trace.agents.some(({ prompt }) => prompt.includes(invented)), false, stage)
+    assert.deepEqual(trace.agents.filter(({ opts }) => opts.agentType === 'coder').map(({ opts }) => opts.label), ['cook:parent', label, `${label}:redo1`, `${label}:redo2`], stage)
+    assert.equal(labels.some((l) => l === 'integrate' || l === 'plate'), false, stage)
   }
 })
 
