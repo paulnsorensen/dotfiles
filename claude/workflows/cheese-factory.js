@@ -591,7 +591,7 @@ const normalizeEnums = (v) => {
 
 // A writer that commits but returns a short SHA needs no redo. A read-only haiku call expands the SHA, and code checks the result.
 const SHA_FIELDS = ['head_sha', 'head', 'checkpoint']
-// TRIM_FIELDS only loses surrounding spaces. base_sha is a resolver fact that never needs expansion.
+// TRIM_FIELDS loses surrounding spaces and its case. base_sha is a resolver fact that never needs expansion.
 const TRIM_FIELDS = [...SHA_FIELDS, 'base_sha']
 const SHORT_SHA_RE = /^[0-9a-f]{7,16}$/i
 const SHA_EXPAND_SCHEMA = { type: 'object', required: ['sha'], properties: { sha: { type: 'string' } } }
