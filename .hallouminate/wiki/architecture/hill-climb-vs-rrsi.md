@@ -19,7 +19,7 @@ Each step makes a change, measures it, and keeps or reverts it. Each loop keeps 
 | --- | --- | --- |
 | Metric | A deterministic count. `ratchet.py measure --runs 5` must report `deterministic: true`. | A stochastic task score. k trials per task and a noise band δ absorb run-to-run variance. |
 | Candidates per step | One. The agent traces the hot path and picks the best estimate per unit of risk. Parallel threads chase different metrics. | m variants that compete on the same metric. An analyst pass reads the worst and best traces first. Separate proposers write the variants. |
-| Objective | One primary metric per thread. | Score, plus a token-cost rule, plus domain guards. A gain inside δ must save tokens or add a new structural component. |
+| Objective | One primary metric per thread. | Candidates may be admitted down to `S* − δ` when the cost rule and domain guards pass. Within the band, weighted score, cost, and novelty determine admission. |
 | Anti-cheat | Red flags for a removed check or test. A skeptic agent re-measures and reads the diff after each claimed gain. | A regex denylist and an LLM critic reject benchmark-specific edits before evaluation. Edits are re-tagged from the real diff. |
 | Locking the gain | A CI ratchet. The threshold only tightens. Loosening is a human edit with a reason in the PR. | `S*` in `frontier.json` only. Nothing in CI stops a later hand edit from a regression. |
 | Human role | Human approval on every PR. Publishing is opt-in. | The loop accepts the winner to the `evolve/<domain>` branch with no human step. |
@@ -27,7 +27,11 @@ Each step makes a change, measures it, and keeps or reverts it. Each loop keeps 
 
 ## Why the metric rule decides fit
 
-Hill climb uses determinism as its defense against noise. A noisy metric makes a ratchet gate flaky, and a flaky gate gets skipped. RRSI uses statistics as its defense. It repeats each task and accepts a candidate only outside the noise band. A harness edit changes model behavior, so its outcome metric is noisy. Only the RRSI defense applies to that metric. The deterministic side metrics of the same edit, such as instruction tokens per source file, still suit a ratchet.
+Hill climb uses determinism as its defense against noise. A noisy metric makes a ratchet gate flaky, and a flaky gate gets skipped. RRSI uses statistics as its defense. It repeats each task and may admit candidates down to `S* − δ` when the cost rule and domain guards pass.
+
+For score changes `ΔS ≤ δ`, the weighted cost rule requires `w_s ΔS − w_c ΔC + w_n ν > 0`. Here, `ΔS` is the score change from the incumbent, and `ΔC` is the relative token-cost change. Novelty `ν` counts structural components with no previously accepted edit. The weights `w_s`, `w_c`, and `w_n` control the score, cost, and novelty terms. With positive `w_s`, a positive score change can pass with unchanged token cost and no new component. Token savings and novelty are not mandatory. For `ΔS > δ`, the token-budget rule applies.
+
+A harness edit changes model behavior, so its outcome metric is noisy. Only the RRSI defense applies to that metric. The deterministic side metrics of the same edit, such as instruction tokens per source file, still suit a ratchet.
 
 ## Decision context
 
