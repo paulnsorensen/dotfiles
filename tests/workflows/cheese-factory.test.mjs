@@ -2424,6 +2424,37 @@ test('F-2: a needs-context cook with no curd ref fails the curd without a contin
   assert.match(result.curds[0].excluded_reason, /^cook: cook ended with status needs-context and curd\/parent has no ref to resume from/)
 })
 
+test('F-2: the salvage prompt requires the base SHA to be an ancestor of the ref and bounds the log to base..ref', async () => {
+  const { trace } = await runParent({ 'cook:parent': { status: 'finished' }, 'salvage:parent': { found: false } })
+  const text = callsOf(trace, 'salvage:parent')[0].prompt
+
+  assert.ok(text.includes(`git merge-base --is-ancestor ${BASE_SHA} refs/heads/curd/parent`))
+  assert.ok(text.includes(`git log ${BASE_SHA}..refs/heads/curd/parent`))
+})
+
+test('F-2: salvaged completed and remaining are clipped to 2000 characters before the continuation prompt', async () => {
+  const { trace } = await runParent({
+    'cook:parent': { status: 'finished' },
+    'salvage:parent': { found: true, checkpoint: sha(0x5c), completed: 'c'.repeat(5000), remaining: 'r'.repeat(5000) },
+    'cook:parent:c1': () => cook('parent'),
+  })
+  const text = callsOf(trace, 'cook:parent:c1')[0].prompt
+
+  assert.equal(JSON.parse(fence(text, 'completed')).length, 2000)
+  assert.equal(JSON.parse(fence(text, 'remaining')).length, 2000)
+})
+
+test('F-2: a partial cook answer has completed and remaining clipped to 2000 characters before the continuation prompt', async () => {
+  const { trace } = await runParent({
+    'cook:parent': () => partialCook('parent', { completed: 'c'.repeat(5000), remaining: 'r'.repeat(5000) }),
+    'cook:parent:c1': () => cook('parent'),
+  })
+  const text = callsOf(trace, 'cook:parent:c1')[0].prompt
+
+  assert.equal(JSON.parse(fence(text, 'completed')).length, 2000)
+  assert.equal(JSON.parse(fence(text, 'remaining')).length, 2000)
+})
+
 test('F-2: cook prompts tell the coder to commit and update-ref at the soft warning, and no prompt asks for a phase-owned handoff', async () => {
   const { trace } = await runParent({
     'cook:parent': () => partialCook('parent'),
@@ -2462,6 +2493,33 @@ test('F-11: a missing or unsafe cook worktree_path or artifact tells Press that 
     assert.match(text, /No Cook handoff exists/, name)
     assert.equal(fence(text, 'cook_handoff'), undefined, name)
   }
+})
+
+test('F-11: Press gets the Cook worktree root and the slug the Cook handoff uses', async () => {
+  const { trace } = await runParent({ 'cook:parent': () => ({ ...cook('parent', { worktree_path: SCRATCH('cook') }), artifact: '.cheese/cook/parent--x.md' }) })
+  const text = callsOf(trace, 'press:parent')[0].prompt
+
+  assert.equal(JSON.parse(fence(text, 'cook_root')), SCRATCH('cook'))
+  assert.match(text, /resolve under this Cook worktree root/)
+  assert.ok(text.includes('with the arguments `parent--x --auto`'))
+})
+
+test('F-11: a nested Cook artifact path tells Press that no Cook handoff exists', async () => {
+  const { trace } = await runParent({ 'cook:parent': () => ({ ...cook('parent', { worktree_path: SCRATCH('cook') }), artifact: '.cheese/cook/sub/parent.md' }) })
+  const text = callsOf(trace, 'press:parent')[0].prompt
+
+  assert.match(text, /No Cook handoff exists/)
+  assert.equal(fence(text, 'cook_root'), undefined)
+  assert.ok(text.includes('with the arguments `parent --auto`'))
+})
+
+test('F-11: both Cook prompts define the artifact as the .cheese/cook/<slug>.md handoff report', async () => {
+  const { trace } = await runParent({
+    'cook:parent': () => partialCook('parent'),
+    'cook:parent:c1': () => cook('parent'),
+  })
+
+  for (const label of ['cook:parent', 'cook:parent:c1']) assert.match(callsOf(trace, label)[0].prompt, /"artifact":"<your cook handoff report, as \.cheese\/cook\/<slug>\.md/, label)
 })
 
 test('F10: integrate merges each curd by its validated SHA, re-merge uses the cure head, and Plate verifies the ref before /plate starts', async () => {
