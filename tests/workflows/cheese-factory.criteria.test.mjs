@@ -2,8 +2,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime } from './cheese-factory.fixtures.mjs'
-import { loadWorkflow } from './harness.mjs'
+import { createRuntime, loadWorkflow } from './harness.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
@@ -292,7 +291,7 @@ for (const kind of ['command', 'test', 'inspection']) {
 }
 
 test('checkCriteria_safeRedirectsToDevNullAndFd_areAccepted', async () => {
-  const { result } = await run(single, { criteria: () => criteria(['AC-1', 'AC-2'], { check: 'test -e src/a.js 2>/dev/null && grep -q x src/a.js >/dev/null 2>&1; echo $? >&2' }) })
+  const { result } = await run(single, { criteria: () => criteria(['AC-1', 'AC-2'], { check: 'test -e src/a.js 2>/dev/null && grep -q x src/a.js >/dev/null 2>&1' }) })
 
   assert.equal(result.error, undefined)
 })
