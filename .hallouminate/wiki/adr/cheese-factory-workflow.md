@@ -110,3 +110,16 @@ The coordinator's verified response remains an agent trust boundary; determinist
 - **Consequences:** Routing is deterministic and testable. `fix_cost_now` stays a reviewer judgment.
 
 _Source: /mold spec `cheese-factory-hardening` (durable corpus) · Decided: 2026-10-12 · ADR-011 supersedes ADR-010_
+
+## Implementation notes for ADR-011..013 (2026-10-12)
+
+The `cheese-factory-hardening` run implements ADR-011, ADR-012, and ADR-013. Review and user decisions refine them as follows.
+
+- **Cook answers that stay final (user decision B).** A partial cook or continuation with a bad checkpoint SHA goes to `salvage()`. An `ok` cook with a bad `head_sha` fails the curd at stage cook at once. A `needs-context` status, a null result, and a throw also go to `salvage()`. No cook SHA defect re-dispatches `cookPrompt`, because that prompt resets `curd/<slug>` to the base SHA.
+- **Ranges.** `groundedRanges` keeps the valid `source_ranges` and drops the rest. A one-line `#n-n` range is valid. This replaces the reject-all check that ADR-011 names.
+- **Integration (amends ADR-006).** Integrate and re-merge build on a detached HEAD at the resolved base SHA through one shared merge prompt. They merge each curd by its code-known SHA. No `integration/<parent>` branch exists, because a second worktree cannot check out a branch that another worktree holds.
+- **Fail-closed reviews.** A barrier, fan-out, or re-age result whose status is not `ok` is not a review. A blocked barrier fails every integrated curd. A blocked re-age after a cure marks every integrated curd dirty.
+- **Plate pin.** Plate checks `refs/heads/curd/<slug>` against the reviewed SHA once, before /plate starts any commit, restack, or push step. A check at push time conflicts with the stacked restack, which rewrites upper-layer SHAs.
+- **Typed calls.** A status or SHA error is a substance error, so the producer redoes the call. No formatter repairs it. Every `agent()` throw is final.
+
+_Source: `claude/workflows/cheese-factory.js`, `claude/workflows/age-fanout.js`, `tests/workflows/cheese-factory*.test.mjs` · Age reports `.cheese/age/pass{1,2}-cheese-factory-hardening.md` · Updated: 2026-10-12_

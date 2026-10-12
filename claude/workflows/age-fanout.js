@@ -5,7 +5,7 @@ export const meta = {
   phases: [
     { title: 'Packet', detail: 'one explorer agent assembles the shared review packet per references/packet.md and parses the dimension list off dimensions.md headings' },
     { title: 'Review', detail: 'one opus reviewer per dimension, fanned out in parallel, reads only its dimension rubric and reviews the diff read-only' },
-    { title: 'Reconcile', detail: 'one opus reviewer applies the dimension-boundaries table, dedups, writes the findings report, and (when route_curds given) attributes findings per curd branch' },
+    { title: 'Reconcile', detail: 'one opus reviewer applies the dimension-boundaries table, dedups, and writes the findings report; with route_curds it returns a flat findings list and does not attribute findings to curds' },
   ],
 }
 
@@ -22,12 +22,13 @@ export const meta = {
 //   [{slug, branch}] } — worktree_path, range, and slug are required and
 //   validated before any agent() call; invalid args return
 //   { status: 'blocked', error } with zero agents dispatched. route_curds is
-//   optional and, when present, is forwarded to Reconcile so it can attribute
-//   findings per curd branch.
+//   optional and, when present, makes Reconcile return a flat findings list
+//   that the caller routes to curds by file.
 //
 // Return: { status: 'ok'|'blocked', artifact, has_medium_plus_findings,
-//   dimensions: [...], per_curd: route_curds ? (reconcile.per_curd || []) :
-//   null, error? }
+//   has_cheap_lows, dimensions: [...], error? }. With route_curds the return
+//   adds a flat findings list (severity, fix_cost_now per item) and omits
+//   per_curd; without it the return carries per_curd: null.
 //
 // Every dimension must return a review. A worker that is lost or blocked
 // gets one retry. A dimension that still has no review blocks the run, so a
@@ -120,35 +121,27 @@ const REVIEW_SCHEMA = {
 
 const RECONCILE_SCHEMA = {
   type: 'object',
-  required: ['status', 'has_medium_plus_findings', 'has_cheap_lows', 'artifact'],
+  required: ['status', 'has_medium_plus_findings', 'has_cheap_lows', 'artifact', ...(ROUTE_CURDS ? ['findings'] : [])],
   properties: {
     status: { type: 'string', enum: REVIEW_STATUSES },
     blocked_reason: { type: 'string' },
     has_medium_plus_findings: { type: 'boolean' },
     has_cheap_lows: { type: 'boolean' },
     artifact: { type: 'string' },
-    per_curd: {
+    findings: {
       type: 'array',
       items: {
         type: 'object',
+        ...(ROUTE_CURDS ? { required: ['severity', 'fix_cost_now', 'file'] } : {}),
         properties: {
-          slug: { type: 'string' },
-          has_medium_plus_findings: { type: 'boolean' },
-          findings: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                dimension: { type: 'string' },
-                severity: { type: 'string' },
-                file: { type: 'string' },
-                line: { type: 'integer' },
-                claim: { type: 'string' },
-                why_it_matters: { type: 'string' },
-                fix_direction: { type: 'string' },
-              },
-            },
-          },
+          dimension: { type: 'string' },
+          severity: { type: 'string', enum: ['blocker', 'high', 'medium', 'low'] },
+          fix_cost_now: { type: 'string', enum: ['contained', 'sprawling', 'n/a'] },
+          file: { type: 'string' },
+          line: { type: 'integer' },
+          claim: { type: 'string' },
+          why_it_matters: { type: 'string' },
+          fix_direction: { type: 'string' },
         },
       },
     },
@@ -159,6 +152,8 @@ const RECONCILE_SCHEMA = {
 // The reviewer contract loads the age skill by default. These prompts name the
 // skill's reference files, so the reviewer reads them and skips the Skill tool.
 const AGE_FILES_DIRECTIVE = 'The files named below are the age skill references. Read them directly. Do not load the age skill or any other skill through the Skill tool.'
+// Code matches each finding's file against git diff --name-only output, so route mode needs paths in that exact form.
+const REPO_RELATIVE_PATH = '<repo-relative path, no leading ./, no absolute prefix>'
 const BLOCKED_DIRECTIVE = 'When you cannot do this review, return status blocked with blocked_reason. Never return status ok for a review you did not run.'
 
 function packetPrompt(worktreePath, range, slug) {
@@ -194,7 +189,7 @@ ${BLOCKED_DIRECTIVE}
 
 ${NO_CHAIN_DIRECTIVE}
 
-Return {"status":"ok","findings":[{"dimension":"${dim}","severity":"blocker|high|medium|low","file":"<path>","line":<int>,"claim":"<what's wrong>","why_it_matters":"<impact>","fix_direction":"<how to fix>","also_relevant_to":["<dim>", ...]}]}.`
+Return {"status":"ok","findings":[{"dimension":"${dim}","severity":"blocker|high|medium|low","file":"${ROUTE_CURDS ? REPO_RELATIVE_PATH : '<path>'}","line":<int>,"claim":"<what's wrong>","why_it_matters":"<impact>","fix_direction":"<how to fix>","also_relevant_to":["<dim>", ...]}]}.`
 }
 
 function reconcilePrompt(worktreePath, slug, findings, routeCurds, packetPath, range) {
@@ -211,16 +206,13 @@ ${JSON.stringify(findings)}
 
 Apply the "§ Dimension boundaries" table (verbatim) from \`~/.claude/skills/age/references/dimensions.md\` to (a) any file:line flagged by 2 or more workers, and (b) every \`also_relevant_to\` tag. Dedup findings describing the same defect. Write the findings report with tilth_write to the absolute path \`${worktreePath}/.cheese/age/${slug}.md\`. A \`cd\` does not carry into tilth_write, so never use a relative path. Use the format described in \`~/.claude/skills/age/SKILL.md § Output\`, including the handoff slug at the top per that section's template — read it there rather than assuming the shape. Ground the report's Orientation and Confidence sections in the context packet and the diff range above.
 
-${routeCurds ? `This review spans multiple curd branches. Determine per-finding ownership by running \`git log <branch> --name-only\` for each of these branches and matching each finding's file to the branch that touched it:
-${JSON.stringify(routeCurds)}
+${routeCurds ? `Return a flat "findings" array: every deduped finding, each with severity (blocker|high|medium|low) and fix_cost_now (contained|sprawling|n/a), plus dimension, file, line, claim, why_it_matters, and fix_direction. Write each file as a ${REPO_RELATIVE_PATH}; rewrite any worker path that is absolute or starts with ./ into that form. Downstream code consumes these objects, so keep file/line/fix_direction intact. Do not attribute findings to curds.
 
-Return a "per_curd" array: one entry per curd with its slug, whether it has any medium-or-above finding, and the full deduped finding objects attributed to it (same field shape as the worker findings, minus also_relevant_to) — downstream cure agents consume these objects, so keep file/line/fix_direction intact.` : ''}
-
-Set has_cheap_lows to true when any low finding has fix-cost-now: contained.
+` : ''}Set has_cheap_lows to true when any low finding has fix-cost-now: contained.
 
 ${BLOCKED_DIRECTIVE} Return status ok only after the report file exists.
 
-Return {"status":"ok","has_medium_plus_findings":true|false,"has_cheap_lows":true|false,"artifact":".cheese/age/${slug}.md"${routeCurds ? ',"per_curd":[{"slug":"...","has_medium_plus_findings":true|false,"findings":[{"dimension":"...","severity":"...","file":"...","line":<int>,"claim":"...","why_it_matters":"...","fix_direction":"..."}]}]' : ''}}.`
+Return {"status":"ok","has_medium_plus_findings":true|false,"has_cheap_lows":true|false,"artifact":".cheese/age/${slug}.md"${routeCurds ? ',"findings":[{"dimension":"...","severity":"blocker|high|medium|low","fix_cost_now":"contained|sprawling|n/a","file":"' + REPO_RELATIVE_PATH + '","line":<int>,"claim":"...","why_it_matters":"...","fix_direction":"..."}]' : ''}}.`
 }
 
 // ---- Packet ----
@@ -302,5 +294,5 @@ return {
   has_medium_plus_findings: reconcile.has_medium_plus_findings,
   has_cheap_lows: reconcile.has_cheap_lows === true,
   dimensions,
-  per_curd: ROUTE_CURDS ? (reconcile.per_curd || []) : null,
+  ...(ROUTE_CURDS ? { findings: reconcile.findings } : { per_curd: null }),
 }
