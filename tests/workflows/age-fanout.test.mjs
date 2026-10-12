@@ -78,6 +78,32 @@ test('relative worktree_path and worktree_path with a .. segment are rejected', 
   }
 })
 
+test('worktree_path with @ or + characters is accepted, as in cheese-factory', async () => {
+  const workflow = await loadWorkflow(path)
+  for (const good of ['/home/me+dev/@scope/repo/.claude/worktrees/a+b@c']) {
+    const { globals, trace } = createRuntime({ respond: respondHappy() })
+
+    const result = await workflow.run({ ...globals, args: { ...BASE_ARGS, worktree_path: good } })
+
+    assert.notEqual(result.status, 'blocked', good)
+    assert.ok(trace.agents.length > 0, good)
+  }
+})
+
+test('the no-chain directive names only statuses the schemas allow', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({ respond: respondHappy() })
+
+  await workflow.run({ ...globals, args: BASE_ARGS })
+
+  const phased = trace.agents.filter(({ opts }) => opts.label !== 'packet')
+  assert.ok(phased.length > 0)
+  for (const { prompt } of phased) {
+    assert.doesNotMatch(prompt, /halt/)
+    assert.match(prompt, /return status blocked with blocked_reason/)
+  }
+})
+
 test('missing range returns blocked', async () => {
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({ respond: () => { throw new Error('should not dispatch') } })

@@ -1933,6 +1933,13 @@ test('AC-8: merged and conflicted that do not partition the input slugs exclude 
   assert.equal(callsOf(trace, 'plate').length, 0)
 })
 
+test('an integrate worktree_path with surrounding spaces is accepted after the trim', async () => {
+  const { result, trace } = await runParent({ integrate: () => integrateResult({ worktree_path: ` ${SCRATCH('integ')} `, merged: ['parent'] }) })
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('integrate')), ['integrate'])
+  assert.equal(result.curds[0].status, 'clean')
+})
+
 test('AC-8: a result that omits an input slug fails the partition check', async () => {
   const { result } = await runParent({ integrate: () => integrateResult({ merged: [], conflicted: [] }) })
 
@@ -2424,6 +2431,14 @@ test('AC-16: a plate failure leaves no cleanup', async () => {
   assert.equal(callsOf(trace, 'cleanup').length, 0)
 })
 
+test('a Plate call with no output is never redone and reports a plate failure', async () => {
+  const { result, trace } = await runParent({ plate: null })
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('plate')), ['plate'])
+  assert.equal(result.curds[0].status, 'failed')
+  assert.match(result.curds[0].excluded_reason, /^plate: .*no output/)
+})
+
 test('AC-14: a resolver spec_path with a .. segment or shell text fails Resolve with the error text after the bound', async () => {
   for (const bad of ['/specs/../etc/passwd', '/specs/p.md; rm -rf x']) {
     const { result, trace } = await runParent({ resolve: () => resolveResolved({ spec_path: bad }) })
@@ -2567,6 +2582,22 @@ test('F-9: a writer that throws is never retried', async () => {
   assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('press')), ['press:parent'])
 })
 
+test('a throw from the haiku repair of a writer call is read-only: it retries and keeps the committed result', async () => {
+  // The harness checks the schema once, on the first read. A getter models a runtime check that is weaker than the in-code check.
+  const weakShape = () => {
+    let reads = 0
+    return Object.defineProperty({ ...phaseOk('parent', 'press') }, 'head_sha', { enumerable: true, get: () => (reads++ === 0 ? sha(1) : 42) })
+  }
+  const { result, trace } = await runParent({
+    'press:parent': weakShape,
+    'press:parent:repair1': () => { throw new Error('formatter down') },
+    'press:parent:retry2': () => phaseOk('parent', 'press'),
+  })
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('press')), ['press:parent', 'press:parent:repair1', 'press:parent:retry2'])
+  assert.equal(result.curds[0].status, 'clean')
+})
+
 test('a writer that returns a short head_sha gets a haiku expansion, never a writer redo', async () => {
   const full = `abc1234${'0'.repeat(33)}`
   const { result, trace } = await runParent({
@@ -2608,6 +2639,13 @@ test('a status or verdict that differs only by case or spaces is accepted withou
   assert.equal(result.curds[0].pr_url, 'https://example.test/pr/parent')
 })
 
+test('a blocked status keeps the case of its reason when the status word is normalized', async () => {
+  const { result } = await runParent({ 'taste:parent': () => ({ status: ' Blocked: Missing-Contract FOO' }) })
+
+  assert.equal(result.curds[0].status, 'failed')
+  assert.match(result.curds[0].excluded_reason, /Missing-Contract FOO/)
+})
+
 test('F-9: a rejected attempt that a redo replaces still records its worktree for cleanup', async () => {
   const { trace } = await runParent({
     'press:parent': (call) => (call.opts.label === 'press:parent'
@@ -2637,6 +2675,21 @@ test('F-6: an ok cook with a bad head_sha is final: it fails at stage cook at on
   assert.deepEqual(trace.agents.filter(({ opts }) => opts.agentType === 'coder').map(({ opts }) => opts.label), ['cook:parent'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /^cook: \$\.head_sha must be a 40-hex commit SHA/)
+})
+
+test('a short head_sha on an ok cook gets a read-only expansion, never a cook redo', async () => {
+  const full = `abcdef1${'0'.repeat(33)}`
+  const { result, trace } = await runParent({
+    'cook:parent': () => cook('parent', { head_sha: full.slice(0, 10), worktree_path: SCRATCH('cook') }),
+    'cook:parent:sha': () => ({ sha: full }),
+  })
+  const expand = callsOf(trace, 'cook:parent:sha')[0]
+
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('cook:parent')), ['cook:parent', 'cook:parent:sha'])
+  assert.equal(expand.opts.model, 'haiku')
+  assert.equal(expand.opts.agentType, undefined)
+  assert.equal(result.curds[0].status, 'clean')
+  assert.ok(callsOf(trace, 'taste:parent')[0].prompt.includes(full))
 })
 
 test('F-6: a bad writer SHA is a substance error: a repair that offers another valid SHA never reaches a later writer', async () => {

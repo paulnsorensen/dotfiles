@@ -319,7 +319,7 @@ function findDuplicateSlugs(curds) {
 // the curd (or barrier) with errorText(errors).
 // maxCurds keeps a run under the runtime cap of 1000 agents. A curd chain can spend about 26 agents, so about 38 curds reach the cap.
 const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12 }
-// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. Recorded paths are cleanup hints only.
+// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. Recorded paths are cleanup hints. The same pattern also gates the integrate and re-merge worktree paths.
 // Only writer calls in an isolated worktree feed the cleanup set. A reviewer path goes to reportWorktrees instead.
 // Reviewer worktrees hold the gitignored age reports, so cleanup keeps them and the return value lists them.
 const SCRATCH_WORKTREE_RE = /^\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+$/
@@ -413,7 +413,7 @@ const partitionErrors = (v, slugs) => {
 const fileListErrors = (v) => v.merged.flatMap((s) =>
   (Array.isArray(v.files_by_slug[s]) && v.files_by_slug[s].every((f) => typeof f === 'string') ? [] : [substance(`$.files_by_slug.${s} must be a list of file paths`)]))
 // The agent reports the worktree path, so code accepts only an absolute scratch path without a `..` segment.
-const worktreeErrors = (v) => (typeof v.worktree_path === 'string' && SCRATCH_WORKTREE_RE.test(v.worktree_path) && !v.worktree_path.split('/').includes('..')
+const worktreeErrors = (v) => (typeof v.worktree_path === 'string' && isScratchWorktree(v.worktree_path.trim())
   ? [] : [substance('$.worktree_path must be an absolute scratch worktree path with no .. segment')])
 const checkIntegrate = (slugs) => checkWith(INTEGRATE_SCHEMA,
   (v) => partitionErrors(v, slugs),
@@ -497,12 +497,13 @@ const repairPrompt = (value, errors) => prompt(
   data('object', value),
 )
 
-// Provenance: attempt, typed, and repairPrompt are copied from move-my-cheese.js. This copy differs in three ways.
+// Provenance: attempt, typed, and repairPrompt are copied from move-my-cheese.js. This copy differs as listed below.
 // typed takes the nullIsFinal parameter. typed calls noteWorktree on every non-null isolated answer.
 // typed also retries read-only throws, normalizes status and verdict values, and expands short SHAs.
 // Returns { value, errors, lost }. value is null when the bound is spent without a valid answer.
 // lost is 'missing' when the final outcome is no output, 'threw' when it is a throw, and null otherwise.
 // With nullIsFinal, a missing answer returns at once, because a redo of a writer can overwrite the work ref.
+// The Plate call and the cook calls use it. Plate never redoes, because a redo repeats publication.
 // Every non-null isolated attempt records its worktree, so a rejected attempt that a redo replaces still gets cleaned up.
 async function attempt(text, opts) {
   try {
@@ -520,8 +521,14 @@ const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'wo
 const normalizeEnums = (v) => {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return v
   const norm = (s) => s.trim().toLowerCase()
+  // Only the status word is lowercased in "blocked: <reason>", so the reason keeps its case.
+  const normStatus = (s) => {
+    const m = BLOCKED_STATUS_RE.exec(s.trim())
+    return m ? `${m[1].toLowerCase()}: ${m[2]}` : norm(s)
+  }
   const out = { ...v }
-  for (const key of ['status', 'verdict']) if (typeof out[key] === 'string') out[key] = norm(out[key])
+  if (typeof out.status === 'string') out.status = normStatus(out.status)
+  if (typeof out.verdict === 'string') out.verdict = norm(out.verdict)
   if (Array.isArray(out.results)) out.results = out.results.map((r) => (r && typeof r.status === 'string' ? { ...r, status: norm(r.status) } : r))
   return out
 }
@@ -555,7 +562,7 @@ async function typed(text, opts, check, nullIsFinal = false) {
   let expanded = false
   for (let round = 1; ; round++) {
     if (threw != null) {
-      if (isWriter(opts) || round > LIMITS.fixRounds) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw' }
+      if (isWriter(sent.opts) || round > LIMITS.fixRounds) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw' }
       sent = { text: sent.text, opts: { ...sent.opts, label: `${opts.label}:retry${round}` } }
       ;({ value, threw } = await attempt(sent.text, sent.opts))
       continue
@@ -982,10 +989,14 @@ const baseSha = resolved.base_sha.trim()
 async function cookCurd(curd, branch) {
   const opts = { phase: 'Cook', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: COOK_SCHEMA }
   const stop = (message) => ({ curd, branch, cook: null, sha: null, failure: { stage: 'cook', message } })
-  let call = await typed(cookPrompt(curd, baseSha), { ...opts, label: `cook:${curd.slug}` }, checkCook, true)
+  let callLabel = `cook:${curd.slug}`
+  let call = await typed(cookPrompt(curd, baseSha), { ...opts, label: callLabel }, checkCook, true)
   let lastCheckpoint = null
   for (let round = 1; ; round++) {
-    const cook = call.value
+    let cook = call.value
+    // A short SHA is expanded by a read-only call. The cook prompt is never redone. The final SHA check stays strict.
+    const shaDefect = !cook ? [] : cook.status === 'ok' ? shaErrors('$.head_sha', cook.head_sha) : cook.status === 'partial' ? shaErrors('$.checkpoint', cook.checkpoint) : []
+    if (shaDefect.length) cook = (await expandShortShas(cook, { label: callLabel, phase: 'Cook' })) ?? cook
     if (cook && cook.status === 'ok') {
       const defect = shaErrors('$.head_sha', cook.head_sha)
       return defect.length ? stop(errorText(defect)) : { curd, branch, cook, sha: cook.head_sha.trim(), failure: null }
@@ -1007,7 +1018,8 @@ async function cookCurd(curd, branch) {
     if (resume.checkpoint === lastCheckpoint) return stop(`cook stalled: no new commit since ${lastCheckpoint}`)
     lastCheckpoint = resume.checkpoint
     log(`${curd.slug}: resuming cook from ${lastCheckpoint} (continuation ${round})`)
-    call = await typed(cookContinuationPrompt(curd, resume), { ...opts, label: `cook:${curd.slug}:c${round}` }, checkCook, true)
+    callLabel = `cook:${curd.slug}:c${round}`
+    call = await typed(cookContinuationPrompt(curd, resume), { ...opts, label: callLabel }, checkCook, true)
   }
 }
 
@@ -1247,7 +1259,7 @@ if (cleanEntries.length && floorReached()) {
   budgetReason = `budget floor reached before Plate: ${budget.remaining()} remaining, below ${LIMITS.minBudget}`
   log(`${budgetReason} — skipping plate.`)
 } else if (cleanEntries.length) {
-  const plated = await typed(platePrompt(cleanEntries.map((r) => ({ slug: r.curd.slug, sha: r.sha })), singlePass), { label: 'plate', phase: 'Plate', agentType: 'coder', model: 'opus', schema: PLATE_SCHEMA }, checkPlate)
+  const plated = await typed(platePrompt(cleanEntries.map((r) => ({ slug: r.curd.slug, sha: r.sha })), singlePass), { label: 'plate', phase: 'Plate', agentType: 'coder', model: 'opus', schema: PLATE_SCHEMA }, checkPlate, true)
   if (plated.value) {
     plateRows = plated.value.results
     plateRan = true

@@ -35,7 +35,7 @@ export const meta = {
 // parent falls back to one full reviewer and never reads partial coverage as
 // a clean pass.
 
-const NO_CHAIN_DIRECTIVE = 'Do not chain forward to the next phase even though your auto-mode contract documents that. Write your handoff slug and stop. The parent workflow orchestrating /age-fanout is driving the chain. Run in the foreground — do not background yourself, spawn detached processes, or defer work to a later session. If you cannot complete the phase within your context window, write a partial slug with status: halt: <reason> and stop; do not silently timeout.'
+const NO_CHAIN_DIRECTIVE = 'Do not chain forward to the next phase even though your auto-mode contract documents that. Write your handoff slug and stop. The parent workflow orchestrating /age-fanout is driving the chain. Run in the foreground — do not background yourself, spawn detached processes, or defer work to a later session. If you cannot complete the phase within your context window, return status blocked with blocked_reason and stop; do not silently timeout.'
 
 const input = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { log(`args was a string but not valid JSON (${e.message})`); return {} } })() : args || {}
 
@@ -48,7 +48,7 @@ const SAFE_REF_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 // this is the same char class without move-my-cheese's extra `..` exclusion.
 const RANGE_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 // worktree_path must be absolute. Relative paths and ".." segments are invalid.
-const PATH_RE = /^\/[A-Za-z0-9._/-]*$/
+const PATH_RE = /^\/[A-Za-z0-9._/@+-]*$/
 // Verbatim slug of a `### heading` in ~/.claude/skills/age/references/dimensions.md's
 // "## Per-dimension rubrics" section (e.g. "correctness", "deslop") -- the
 // packet phase must return exactly these, byte-matched, so the Review
