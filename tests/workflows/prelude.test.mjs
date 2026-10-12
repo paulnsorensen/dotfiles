@@ -151,7 +151,7 @@ test('sync exits nonzero and names the file with zero or duplicate marker pairs'
 test('sync_crlfOutsideMarkers_preservedByteForByte', () => {
   const d = dir()
   const src = put(d, 'p.js', 'const a = 1\n')
-  const crlf = (s) => s.replace('\n', '\r\n')
+  const crlf = (s) => s.replaceAll('\n', '\r\n')
   const f = put(d, 'w.js', `head\r\n${crlf(BEGIN)}old\r\n${crlf(END)}tail\r\n`)
   assert.equal(run('--source', src, f).status, 0)
   assert.equal(readFileSync(f, 'utf8'), `head\r\n${crlf(BEGIN)}const a = 1\n${crlf(END)}tail\r\n`)
