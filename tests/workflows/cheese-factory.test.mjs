@@ -426,7 +426,7 @@ test('report shape carries curds[] and summary', async () => {
   assert.equal(result.curds[0].pr_url, 'https://example.test/pr/parent')
   assert.equal(result.curds[0].excluded_reason, undefined)
   assert.deepEqual({ ...result.summary }, { clean: 1, dirty: 0, failed: 0 })
-  assert.deepEqual(JSON.parse(JSON.stringify(result.integration)), { merged: ['parent'], conflicted: [] })
+  assert.deepEqual(JSON.parse(JSON.stringify(result.integration)), { merged: ['parent'], conflicted: [], head: INTEGRATE_HEAD, base_sha: BASE_SHA, remerge_head: null })
   assert.deepEqual(JSON.parse(JSON.stringify(result.curds[0].age)), { mode: 'single', has_medium_plus_findings: false })
 })
 
@@ -1245,6 +1245,21 @@ test('AC-12: salvage that finds no ref fails the curd without a continuation', a
 
   assert.equal(labelsOf(trace).some((l) => l === 'cook:parent:c1'), false)
   assert.match(result.curds[0].excluded_reason, /has no ref to resume from/)
+})
+
+test('telemetry: a failed salvage call says the salvage failed, not that the ref is absent', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals } = createRuntime({
+    respond: cookRespond(({ opts }) => {
+      if (opts.label === 'salvage:parent') throw new Error('salvage exploded')
+      return null
+    }),
+  })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+
+  assert.match(result.curds[0].excluded_reason, /the salvage of curd\/parent failed \(agent threw: salvage exploded\)/)
+  assert.doesNotMatch(result.curds[0].excluded_reason, /no ref to resume/)
 })
 
 test('AC-12: a repeated checkpoint SHA stops the curd as stalled', async () => {
@@ -2182,7 +2197,7 @@ test('AC-15: at or above the floor, or with no budget total, Plate runs', async 
 })
 
 test('AC-16: when every curd is clean and plated, one haiku cleanup agent removes the recorded worktrees and keeps curd branches', async () => {
-  const { trace } = await runParent({
+  const { result, trace } = await runParent({
     ...withMedium,
     'taste:parent': () => taste('revise'),
     'taste:parent:r1': () => taste('pass'),
@@ -2192,11 +2207,13 @@ test('AC-16: when every curd is clean and plated, one haiku cleanup agent remove
     're-merge': () => integrateResult({ worktree_path: SCRATCH('remerge'), merged: ['parent'], head: NEW_HEAD }),
     'age:reage': () => ({ ...ageBarrierResult({ perCurd: [{ slug: 'parent', has_medium_plus_findings: false }] }), worktree_path: SCRATCH('reage') }),
   })
+  assert.deepEqual([...result.age_worktrees], [SCRATCH('reage')])
 
   const cleanup = callsOf(trace, 'cleanup')
   assert.equal(cleanup.length, 1)
   assert.equal(cleanup[0].opts.model, 'haiku')
-  for (const name of ['cook', 'correct', 'press', 'integ', 'cure', 'remerge', 'reage']) assert.ok(cleanup[0].prompt.includes(SCRATCH(name)), name)
+  for (const name of ['cook', 'correct', 'press', 'integ', 'cure', 'remerge']) assert.ok(cleanup[0].prompt.includes(SCRATCH(name)), name)
+  assert.ok(!cleanup[0].prompt.includes(SCRATCH('reage')), 'the re-age worktree holds the age report')
   for (const label of ['press:parent', 'correct:parent:r1']) {
     const call = callsOf(trace, label)[0]
     assert.ok('worktree_path' in call.opts.schema.properties, `${label} schema`)
@@ -2204,6 +2221,31 @@ test('AC-16: when every curd is clean and plated, one haiku cleanup agent remove
   }
   assert.match(cleanup[0].prompt, /Never delete a branch: keep every curd\/\* branch/)
   assert.equal(trace.agents.at(-1).opts.label, 'cleanup')
+})
+
+test('pass1-#1: only isolated writer calls feed cleanup, and reviewer worktrees stay and are returned', async () => {
+  const { result, trace } = await runParent({
+    'taste:parent': () => ({ ...taste('pass'), worktree_path: SCRATCH('taste') }),
+    'age:barrier': () => ({ ...ageBarrierResult({ perCurd: [{ slug: 'parent', has_medium_plus_findings: false }] }), worktree_path: SCRATCH('barrier') }),
+    plate: () => ({ ...plate([{ slug: 'parent', status: 'ok', pr_url: 'https://example.test/pr/parent' }]), worktree_path: SCRATCH('plate') }),
+  })
+
+  const cleanup = callsOf(trace, 'cleanup')
+  assert.equal(cleanup.length, 1)
+  assert.deepEqual(JSON.parse(fence(cleanup[0].prompt, 'worktrees')), [SCRATCH('cook'), SCRATCH('integ')])
+  assert.deepEqual([...result.age_worktrees], [SCRATCH('barrier')])
+})
+
+test('telemetry: the return value carries the integration head, the base SHA, and the re-merge head', async () => {
+  const { result } = await runParent({
+    ...withMedium,
+    ...cureLoop,
+    'age:reage': () => ageBarrierResult({ perCurd: [{ slug: 'parent', has_medium_plus_findings: false }] }),
+  })
+
+  assert.equal(result.integration.head, INTEGRATE_HEAD)
+  assert.equal(result.integration.base_sha, BASE_SHA)
+  assert.equal(result.integration.remerge_head, NEW_HEAD)
 })
 
 test('AC-16: a path outside the scratch worktree pattern is never recorded for removal', async () => {
@@ -2308,6 +2350,14 @@ test('F-9: a throwing Plate reports the clean curd as failed with plate: and the
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /^plate: agent threw: plate exploded/)
   assert.equal(callsOf(trace, 'plate').length, 1)
+})
+
+test('telemetry: a Plate failure and a cure error are logged', async () => {
+  const plated = await runParent({ plate: () => { throw new Error('plate exploded') } })
+  assert.match(plated.trace.logs.join('\n'), /Plate returned no valid result \(agent threw: plate exploded\)/)
+
+  const cured = await runParent({ ...withMedium, 'cure:parent': () => { throw new Error('cure exploded') } })
+  assert.match(cured.trace.logs.join('\n'), /Cure for parent returned no valid result \(agent threw: cure exploded\)/)
 })
 
 test('F-9: a throwing cure reports failed with cure: and the error text, and the writer gets no redo', async () => {
@@ -2545,6 +2595,15 @@ test('F10: integrate merges each curd by its validated SHA, re-merge uses the cu
   assert.match(platePrompt, /before \/plate starts any commit, restack, or push step/)
 })
 
+test('#23: the single-pass Plate prompt ties /plate to the verified branch and says what to do when no slug passes', async () => {
+  const { trace } = await runParent({})
+
+  const single = callsOf(trace, 'plate')[0].prompt
+  assert.doesNotMatch(single, /on the one branch above/)
+  assert.match(single, /on the branch above, only if its slug passed the check/)
+  assert.match(single, /If no slug passes the check, do not run \/plate\. Return a failed row with a reason for each slug\./)
+})
+
 for (const [name, row, reason] of [
   ['blocked', { slug: 'parent', status: 'blocked' }, /^plate: blocked$/],
   ['failed', { slug: 'parent', status: 'failed', pr_url: 'https://example.test/pr/parent' }, /^plate: failed$/],
@@ -2560,15 +2619,35 @@ for (const [name, row, reason] of [
   })
 }
 
-test('F12: a clean curd with no Plate row fails, and an out-of-enum Plate status makes the producer redo', async () => {
-  let calls = 0
-  const { result, trace } = await runParent({
-    plate: () => (++calls === 1 ? plate([{ slug: 'parent', status: 'plated', pr_url: 'u' }]) : plate([])),
-  })
+test('#24: a Plate row reason appears in the curd failure message, and the schema allows it', async () => {
+  const { result, trace } = await runParent({ plate: () => plate([{ slug: 'parent', status: 'failed', reason: 'SHA mismatch on curd/parent' }]) })
 
-  assert.equal(callsOf(trace, 'plate:redo1').length, 1)
+  assert.equal(result.curds[0].status, 'failed')
+  assert.equal(result.curds[0].excluded_reason, 'plate: failed: SHA mismatch on curd/parent')
+  assert.equal(callsOf(trace, 'plate')[0].opts.schema.properties.results.items.properties.reason.type, 'string')
+})
+
+test('F12: a clean curd with no Plate row fails with no result for this curd', async () => {
+  const { result } = await runParent({ plate: () => plate([]) })
+
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /^plate: no result for this curd$/)
+})
+
+test('#4: an out-of-enum Plate row status fails only that curd and never redoes Plate', async () => {
+  const { bySlug, trace } = await runTwoCurds({
+    integrate: () => integrateResult({ merged: ['a', 'b'] }),
+    'age:barrier': () => ageBarrierResult({ perCurd: [{ slug: 'a', has_medium_plus_findings: false }, { slug: 'b', has_medium_plus_findings: false }] }),
+    plate: () => plate([{ slug: 'a', status: 'plated', pr_url: 'u' }, { slug: 'b', status: 'ok', pr_url: 'https://example.test/pr/b' }]),
+  })
+
+  assert.equal(callsOf(trace, 'plate').length, 1)
+  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('plate:')), false)
+  assert.equal(bySlug.a.status, 'failed')
+  assert.equal(bySlug.a.excluded_reason, 'plate: unrecognized status "plated"')
+  assert.equal(bySlug.a.pr_url, undefined)
+  assert.equal(bySlug.b.status, 'clean')
+  assert.equal(bySlug.b.pr_url, 'https://example.test/pr/b')
 })
 
 test('F12: an ok row with a pr_url plates the curd and cleans up', async () => {
