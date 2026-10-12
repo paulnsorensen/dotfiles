@@ -983,7 +983,7 @@ Scope fence: submit those branches and open or update their PRs only through the
 Return {"results":[{"slug":"...","status":"ok|failed|blocked","pr_url":"...","reason":"..."}]}. Report status ok only for a slug that the plate skill submitted and whose PR is open; pr_url is then required. Add reason to every row whose status is not ok.`)
 }
 
-// Provenance: the judge helpers below are copied from claude/workflows/move-my-cheese.js (norm, blank, refError, UNSAFE_CHECKS, the negated-search gate, checkAdvice, checkVerdict, judgePrompt, shq, advisorPrompt, verifyPrompt). Keep both copies in step.
+// Provenance: the judge helpers below are copied from claude/workflows/move-my-cheese.js (norm, blank, refError, UNSAFE_CHECKS, the negated-search gate, checkAdvice, checkVerdict, judgePrompt, shq, advisorPrompt, verifyPrompt). The check gate (UNSAFE_CHECKS, vacuousReason) is hardened beyond move-my-cheese: it covers redirects, tree mutations, and always-pass checks. Follow-up cfh-criteria-fu-3 ports the hardening back when the helpers move into the prelude.
 const CHECK_KINDS = ['command', 'test', 'inspection', 'ci']
 const ADVICE_VERDICTS = ['approve', 'revise', 'stop']
 const ADVICE_SCHEMA = {
@@ -1040,11 +1040,13 @@ function refError(ref, known, where) {
 const UNSAFE_CHECKS = [
   ['network access', /\b(?:curl|wget|nc|ssh|scp)\b/i],
   ['pipe into a shell', /\|\s*(?:sh|bash|zsh)\b/i],
-  ['output redirection to a file', />(?!&|\s*\/dev\/null)/],
+  // Only fd duplication (>&1, 2>&1, >&-) and a redirect to the whole token /dev/null stay allowed.
+  ['output redirection to a file', />(?!>?\s*\/dev\/null(?![^\s;|&)])|&(?:\d+|-)(?![^\s;|&)]))/],
+  ['tree mutation', /(?:^|[;&|(]\s*|\b(?:sudo|xargs|env|command|time)\s+)(?:touch|mkdir|rmdir|cp|mv|chmod|chown|chgrp|ln|install|truncate|dd|patch)\s/i],
   ['tee to a file', /\btee\b/i],
   ['inline interpreter code', /\b(?:python3?|node|perl|ruby)\s+-[ce]\b/i],
   ['in-place edit', /\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i/i],
-  ['git mutation', /\bgit\b(?:\s+-{1,2}[\w-]+(?:[\s=]\S+)?)*\s+(?:push|commit|reset|checkout|switch|merge|rebase|stash|clean|tag|am|apply|restore|rm|mv|worktree|update-ref|config|branch\s+-[dDmMfc])\b/i],
+  ['git mutation', /\bgit\b(?:\s+-{1,2}[\w-]+(?:[\s=]\S+)?)*\s+(?:push|add|commit|reset|checkout|switch|merge|rebase|stash|clean|tag|am|apply|restore|rm|mv|init|cherry-pick|revert|pull|worktree|update-ref|config|branch\s+-[dDmMfc])\b/i],
   ['file removal', /\brm\s|\s-delete\b|\bunlink\b|\btruncate\b/i],
   ['package publish or install', /\b(?:npm|pnpm|yarn|cargo|pip3?|uv)\s+(?:publish|install|add|ci)\b/i],
   ['GitHub mutation', /\bgh\s+(?:pr\s+(?:merge|close|comment|edit|ready|review|create|reopen)|issue|release|workflow\s+run|run\s+(?:rerun|cancel)|repo\s+(?:edit|delete|rename)|secret|variable|label)\b/i],
@@ -1151,7 +1153,13 @@ function vacuousReason(check) {
     else commands[commands.length - 1].words.push(w)
   }
   let guarded = new Set()
-  for (const { op, words: command } of commands) {
+  for (const [index, { op, words: command }] of commands.entries()) {
+    const last = index === commands.length - 1
+    const exitZero = command[0] === 'exit' && (command.length === 1 || (command.length === 2 && command[1] === '0'))
+    const constant = command.length === 1 && (command[0] === 'true' || command[0] === ':')
+    if (op === '||' && (constant || exitZero)) return 'it ends in an always-true fallback, which hides every failure'
+    if (op !== '&&' && exitZero) return 'it exits 0 whatever the earlier commands return'
+    if (op !== '&&' && last && constant) return 'its last command always succeeds'
     if (op !== '&&' || command[0] === 'cd') guarded = new Set()
     const negated = command[0] === '!'
     const body = negated ? command.slice(1) : command
@@ -1276,7 +1284,23 @@ if (!SLUG_RE.test(parentSlug)) {
 const candidateCurds = resolved.curd_count.candidate_curds
 
 // ---- Criteria (ADR-015: one read-only agent maps every spec AC line to one check) ----
-const specAcIds = [...new Set([...resolved.spec_text.matchAll(/^- (AC-\d+):/gm)].map((m) => m[1]))]
+// An AC line inside a fenced code block is an example, not a criterion.
+function acIdsOf(text) {
+  const ids = new Set()
+  let fence = null
+  for (const line of text.split('\n')) {
+    const open = /^\s*(`{3,}|~{3,})/.exec(line)
+    if (fence) {
+      if (open && open[1][0] === fence[0] && open[1].length >= fence.length && !line.trim().slice(open[1].length).trim()) fence = null
+    } else if (open) fence = open[1]
+    else {
+      const m = /^- (AC-\d+):/.exec(line)
+      if (m) ids.add(m[1])
+    }
+  }
+  return [...ids]
+}
+const specAcIds = acIdsOf(resolved.spec_text)
 if (specAcIds.length > LIMITS.maxCriteria) {
   log(`Spec has ${specAcIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}`)
   return { error: `Spec has ${specAcIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}` }
@@ -1710,7 +1734,9 @@ if (cleanEntries.length && floorReached()) {
     const judged = await typed(verifyPrompt(ac, { worktree_path: tree.worktree_path, head: tree.head }), { label: `verify:${ac.id}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERDICT_SCHEMA }, checkWith(VERDICT_SCHEMA, (v) => checkVerdict(v, ac)))
     const v = judged.value
     const missing = v ? v.missing_paths.filter((p) => !blank(p)) : []
-    const evidence = !v ? `not verified: ${errorText(judged.errors)}` : missing.length ? `${v.evidence} (missing paths: ${missing.join(', ')})` : v.evidence
+    if (v && !v.tree_clean) log(`verify:${ac.id}: the integration worktree had changes before the check`)
+    const dirtyNote = v && !v.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
+    const evidence = !v ? `not verified: ${errorText(judged.errors)}` : (missing.length ? `${v.evidence} (missing paths: ${missing.join(', ')})` : v.evidence) + dirtyNote
     rows.push({ id: ac.id, check_kind: ac.check_kind, verdict: v && v.passes === true && !missing.length ? 'pass' : 'fail', evidence })
   }
   const failed = rows.filter((r) => r.verdict === 'fail')
