@@ -6,7 +6,7 @@ export const meta = {
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
     { title: 'Decompose', detail: 'opus decomposer produces curds with depends_on edges; JS merges file-overlapping or dependency-coupled curds; mini-specs written per curd' },
     { title: 'Cook', detail: 'sonnet coder implements one curd in an isolated worktree via /cook --auto; a cook that runs low on context returns partial and gets up to three fresh isolated continuations from its commit SHA' },
-    { title: 'Taste', detail: 'opus reviewer 5-lens gate over the cook diff; revise triggers a bounded corrective pass' },
+    { title: 'Taste', detail: 'opus taste-tester over the cook diff, run through its own seven lenses; revise triggers a bounded corrective pass' },
     { title: 'Press', detail: 'sonnet coder hardens tests via /press --auto' },
     { title: 'Integrate', detail: 'one coder merges each surviving curd SHA on a detached HEAD at the base SHA, slug-sorted, --no-ff; conflicts exclude that curd downstream' },
     { title: 'Age', detail: 'barrier review of the whole integrated diff; large diffs fan out via the age-fanout child workflow, else one opus reviewer runs /age --auto, and code routes the flat findings to curds by files_by_slug' },
@@ -185,7 +185,6 @@ const CORRECT_SCHEMA = {
   required: ['status'],
   properties: { status: { type: 'string' }, summary: { type: 'string' }, committed: { type: 'boolean' }, head_sha: { type: 'string' }, worktree_path: { type: 'string' } },
 }
-const CORRECT_SHAPE = { ...CORRECT_SCHEMA, required: ['status', 'committed'] }
 
 const PHASE_SCHEMA = {
   type: 'object',
@@ -251,8 +250,7 @@ const CURE_SCHEMA = {
   required: ['status'],
   properties: { status: { type: 'string' }, committed: { type: 'boolean' }, head_sha: { type: 'string' }, worktree_path: { type: 'string' }, artifact: { type: 'string' }, orientation: { type: 'string' } },
 }
-// A stopped writer (blocked or needs-context) may omit committed, so code restores the required key for every other answer.
-const CURE_SHAPE = { ...CURE_SCHEMA, required: ['status', 'committed'] }
+// A stopped writer (blocked or needs-context) may omit committed. Every other answer needs it; see committedErrors.
 
 const CLEANUP_SCHEMA = {
   type: 'object',
@@ -334,6 +332,9 @@ const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
 const isScratchWorktree = (p) => SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')
 const scratchWorktrees = new Set()
 const reportWorktrees = new Set()
+// Each later stage overwrites the cook and corrective heads in the chain records, so this set keeps them for cleanup.
+const chainHeads = new Set()
+const noteHead = (s) => { if (typeof s === 'string') chainHeads.add(s) }
 function noteWorktree(path, into = scratchWorktrees) {
   const p = typeof path === 'string' ? path.trim() : ''
   if (isScratchWorktree(p)) into.add(p)
@@ -341,7 +342,7 @@ function noteWorktree(path, into = scratchWorktrees) {
 const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
 const SHA_RE = /^[0-9a-f]{40}$/
 // Code checks a SHA, not a schema pattern. A bad SHA is always substance: a formatter has no repo access and could only invent one.
-// typed() trims every SHA field before a check runs, so a padded SHA never reaches this test.
+// typed() trims the SHA fields in TRIM_FIELDS before a check runs, so a padded SHA in those fields never reaches this test.
 const shaErrors = (path, value) =>
   (typeof value === 'string' && SHA_RE.test(value) ? [] : [substance(`${path} must be a 40-hex commit SHA`)])
 const TASTE_VERDICTS = ['pass', 'revise', 'halt']
@@ -433,7 +434,9 @@ const stopText = (v) => {
   const why = v.reason || v.orientation || v.summary
   return sanitizeReason(`${v.status}${why ? `: ${why}` : ''}`)
 }
-const checkCorrect = writerCheck(CORRECT_SHAPE, (v) => statusErrors(v, FIX_STATUSES), (v) => (v.committed ? shaErrors('$.head_sha', v.head_sha) : []))
+// A fix answer that did not stop must say whether it committed. A formatter cannot know that, so a missing fact is substance and the writer redoes.
+const committedErrors = (v) => (typeof v.committed === 'boolean' ? [] : [substance('$.committed is required: say whether the work is committed')])
+const checkCorrect = writerCheck(CORRECT_SCHEMA, (v) => statusErrors(v, FIX_STATUSES), committedErrors, (v) => (v.committed ? shaErrors('$.head_sha', v.head_sha) : []))
 const checkPress = writerCheck(PHASE_SCHEMA, (v) => statusErrors(v, PRESS_STATUSES), (v) => (v.status === 'ok' ? shaErrors('$.head_sha', v.head_sha) : []))
 // merged and conflicted must partition the input slugs, the head must be a full SHA, and every merged slug needs a file list.
 const partitionErrors = (v, slugs) => {
@@ -477,7 +480,7 @@ const checkReage = reviewCheck(REAGE_SHAPE,
   (v) => statusErrors(v, AGE_STATUSES),
   (v) => (v.mode === 'skipped-unchanged' ? [substance('re-age must review the cure commits; return mode incremental')] : []),
   findingErrors)
-const checkCure = writerCheck(CURE_SHAPE, (v) => statusErrors(v, CURE_STATUSES), (v) => (v.committed ? shaErrors('$.head_sha', v.head_sha) : []))
+const checkCure = writerCheck(CURE_SCHEMA, (v) => statusErrors(v, CURE_STATUSES), committedErrors, (v) => (v.committed ? shaErrors('$.head_sha', v.head_sha) : []))
 // A Plate row status outside the enum fails only its own curd (see plateReasonFor). A Plate redo would publish again.
 const checkPlate = checkWith(PLATE_SCHEMA)
 const checkCleanup = checkWith(CLEANUP_SCHEMA)
@@ -502,13 +505,16 @@ function routeFindings(result, filesBySlug, slugs, worktreePath) {
   const bySlug = new Map()
   const shared = new Map()
   const sharedFindings = new Map()
-  let unrouted = (Boolean(result.has_medium_plus_findings) && !result.findings.some(isMediumPlus)) ||
+  // unownedMedium marks a medium+ finding that no curd owns. unrouted also fires for an unowned contained low.
+  let unownedMedium = Boolean(result.has_medium_plus_findings) && !result.findings.some(isMediumPlus)
+  let unrouted = unownedMedium ||
     (Boolean(result.has_cheap_lows) && !result.findings.some((f) => f.severity === 'low' && f.fix_cost_now === 'contained'))
   for (const f of result.findings.filter(needsCure)) {
     const file = normalizeFile(f.file, worktreePath)
     const owners = slugs.filter((s) => (filesBySlug[s] || []).includes(file))
     if (!owners.length) {
       unrouted = true
+      if (isMediumPlus(f)) unownedMedium = true
       continue
     }
     const [first, ...others] = owners
@@ -518,7 +524,7 @@ function routeFindings(result, filesBySlug, slugs, worktreePath) {
       sharedFindings.set(s, [...(sharedFindings.get(s) || []), { ...f, file }])
     }
   }
-  return { bySlug, shared, sharedFindings, unrouted }
+  return { bySlug, shared, sharedFindings, unrouted, unownedMedium }
 }
 
 const redoPrompt = (original, errors) => `${original}\n\nYour previous answer failed these checks. Fix each one.\n${data('errors', errors.map((e) => e.msg))}`
@@ -531,6 +537,7 @@ const repairPrompt = (value, errors) => prompt(
 // Provenance: attempt, typed, and repairPrompt are copied from move-my-cheese.js. This copy differs as listed below.
 // typed takes the nullIsFinal parameter. typed calls noteWorktree on every non-null isolated answer.
 // typed also retries read-only throws, normalizes status and verdict values, and expands short SHAs.
+// typed records the head_sha and checkpoint of every non-null isolated writer answer in chainHeads, for cleanup.
 // Returns { value, errors, lost }. value is null when the bound is spent without a valid answer.
 // lost is 'missing' when the final outcome is no output, 'threw' when it is a throw, and null otherwise.
 // With nullIsFinal, a missing answer returns at once, because a redo of a writer can overwrite the work ref.
@@ -548,7 +555,7 @@ async function attempt(text, opts) {
 // A writer throw is final, because the work ref may have moved. A read-only throw retries within LIMITS.fixRounds.
 const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'worktree' && opts.agentType !== 'reviewer')
 
-// A status or verdict that differs only by case or spaces is the same answer. A SHA field loses its surrounding spaces. Callers read the normalized value.
+// A status or verdict that differs only by case or spaces is the same answer. A field in TRIM_FIELDS loses its surrounding spaces. Callers read the normalized value.
 const normalizeEnums = (v) => {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return v
   const norm = (s) => s.trim().toLowerCase()
@@ -561,12 +568,14 @@ const normalizeEnums = (v) => {
   if (typeof out.status === 'string') out.status = normStatus(out.status)
   if (typeof out.verdict === 'string') out.verdict = norm(out.verdict)
   if (Array.isArray(out.results)) out.results = out.results.map((r) => (r && typeof r.status === 'string' ? { ...r, status: norm(r.status) } : r))
-  for (const field of SHA_FIELDS) if (typeof out[field] === 'string') out[field] = out[field].trim()
+  for (const field of TRIM_FIELDS) if (typeof out[field] === 'string') out[field] = out[field].trim()
   return out
 }
 
 // A writer that commits but returns a short SHA needs no redo. A read-only haiku call expands the SHA, and code checks the result.
 const SHA_FIELDS = ['head_sha', 'head', 'checkpoint']
+// TRIM_FIELDS only loses surrounding spaces. base_sha is a resolver fact that never needs expansion.
+const TRIM_FIELDS = [...SHA_FIELDS, 'base_sha']
 const SHORT_SHA_RE = /^[0-9a-f]{7,16}$/
 const SHA_EXPAND_SCHEMA = { type: 'object', required: ['sha'], properties: { sha: { type: 'string' } } }
 async function expandShortShas(value, opts) {
@@ -601,7 +610,10 @@ async function typed(text, opts, check, nullIsFinal = false) {
     }
     if (value != null) {
       value = normalizeEnums(value)
-      if (opts.isolation === 'worktree') noteWorktree(value.worktree_path, opts.agentType === 'reviewer' ? reportWorktrees : scratchWorktrees)
+      if (opts.isolation === 'worktree') {
+        noteWorktree(value.worktree_path, opts.agentType === 'reviewer' ? reportWorktrees : scratchWorktrees)
+        if (opts.agentType !== 'reviewer') { noteHead(value.head_sha); noteHead(value.checkpoint) }
+      }
     }
     let errors = value == null ? [substance('agent returned no output')] : check(value)
     if (errors.length && !expanded && !nullIsFinal && value != null) {
@@ -759,7 +771,7 @@ const salvagePrompt = (curd, baseSha) => {
 
 // The reviewer reads the diff by SHA, so it needs no worktree of its own.
 function tastePrompt(curd, sha) {
-  return reviewerPrompt('taste-test', `You are a read-only taste-tester running the Taste phase (5-lens gate) for curd "${curd.slug}".
+  return reviewerPrompt('taste-test', `You are a read-only taste-tester running the Taste phase for curd "${curd.slug}".
 
 ## Contract
 The curd's contract is its spec. Read the spec file and judge the diff against its Done means and locked decisions.
@@ -769,11 +781,7 @@ ${curd.brief ? data('brief', curd.brief) : ''}
 Diff under review: \`git diff origin/main...${sha}\` (read-only — do not check out or edit anything).
 
 ## Lenses (judge each pass | revise | halt)
-- drift: the diff implements the curd's intent, not an adjacent or weaker thing.
-- readability: minimal, clean, matches surrounding style.
-- scope: only files traceable to the curd changed.
-- production-path: reachable on the real code path, not just asserted in prose/tests.
-- wired-callers: any changed signature/export has its callers updated.
+Run your own seven lenses and judge each one.
 
 Use halt only when the diff violates a locked decision of the curd. The exact verdict set, for each lens and for the overall verdict, is pass, revise, or halt.
 
@@ -937,14 +945,14 @@ function platePrompt(cleanCurds, singlePass) {
 Clean curd branches (slug-sorted), each with the SHA its branch ref points at. No worktree holds these refs:
 ${data('branches', cleanCurds.map((c) => ({ slug: c.slug, branch: branchFor(c.slug), sha: c.sha })))}
 
-First, before /plate starts any commit, restack, or push step, check each slug above. Run \`git rev-parse refs/heads/curd/<slug>\` for the slug. Confirm that it prints the SHA given for that slug. On a mismatch, exclude that slug from the /plate run and report status failed for it, with a reason.
+Run these two checks in order, before /plate starts any commit, restack, or push step.
+1. You run in the invoking checkout. Run \`git status --porcelain --untracked-files=no\`. If it prints anything, stop and return status blocked for every slug, with a reason. Untracked paths do not count.
+2. Check each slug above. Run \`git rev-parse refs/heads/curd/<slug>\` for the slug. Confirm that it prints the SHA given for that slug. On a mismatch, exclude that slug from the /plate run and report status failed for it, with a reason.
 If no slug passes the check, do not start /plate. Return a failed row with a reason for each slug.
 
-You run in the invoking checkout. Run \`git status --porcelain\` first. If it prints anything, stop and return status blocked for every slug, with a reason. Publish only the pinned SHAs above. Never stage, commit, or push any other edit.
-
 ${singlePass
-  ? `Single-pass mode: then ${skillStep('plate', 'the verified branch listed above')} Open an ordinary single PR on that branch, only if its slug passed the check.`
-  : `Fan-out mode: then ${skillStep('plate', 'the verified branches listed above')} Stack the verified branches into a stacked-PR chain in slug-sorted order, stating the order in the PR bodies.`}
+  ? `Single-pass mode: then ${skillStep('plate', 'the verified branch listed above')} Open an ordinary single PR on that branch, only if its slug passed the check. Publish only the pinned SHA above. Never stage, commit, or push any other edit.`
+  : `Fan-out mode: then ${skillStep('plate', 'the verified branches listed above')} Stack the verified branches into a stacked-PR chain in slug-sorted order, stating the order in the PR bodies. The plate provider may restack the verified branches, and a restack makes new SHAs. Never stage, commit, or push any other edit.`}
 Let the plate skill commit, restack, and submit through its own provider flow.
 
 Done means: you opened or updated a PR for each verified clean curd branch listed above, and for no other branch.
@@ -1034,7 +1042,7 @@ if (candidateCurds >= 2) {
 phase('Cook')
 log(`Running ${curds.length} curd chain(s)${singlePass ? ' (single-pass)' : ''}: ${curds.map((c) => c.slug).join(', ')}`)
 
-const baseSha = resolved.base_sha.trim()
+const baseSha = resolved.base_sha
 
 // Cook, then bounded continuations. Every round starts in a fresh isolated worktree at a commit SHA;
 // curd/<slug> carries the work between rounds. Code salvages a null result from that ref once per round.
@@ -1070,6 +1078,7 @@ async function cookCurd(curd, branch) {
     }
     if (resume.checkpoint === lastCheckpoint) return stop(`cook stalled: no new commit since ${lastCheckpoint}`)
     lastCheckpoint = resume.checkpoint
+    noteHead(lastCheckpoint)
     log(`${curd.slug}: resuming cook from ${lastCheckpoint} (continuation ${round})`)
     callLabel = `cook:${curd.slug}:c${round}`
     call = await typed(cookContinuationPrompt(curd, resume), { ...opts, label: callLabel }, checkCook, true)
@@ -1094,14 +1103,11 @@ const stageFailure = (stage, message) => ({ stage, message })
 async function tasteAt(curd, sha, label) {
   const tasted = await typed(tastePrompt(curd, sha), { label, phase: 'Taste', agentType: 'taste-tester', schema: TASTE_SCHEMA }, checkTaste)
   if (!tasted.value) return { failure: errorText(tasted.errors) }
-  if (tasted.value.status === 'blocked') return { failure: `taste reviewer is blocked: ${sanitizeReason(tasted.value.reason || 'no reason given')}` }
-  const taste = tasteOf(tasted.value)
+  const answer = splitBlocked(tasted.value)
+  if (answer.status === 'blocked') return { failure: `taste reviewer is blocked: ${sanitizeReason(answer.reason || 'no reason given')}` }
+  const taste = tasteOf(answer)
   return taste.verdict === 'halt' ? { failure: `taste halted: ${tasteHaltNote(taste)}` } : { taste }
 }
-
-// Cook and corrective heads are overwritten in the chain records, so this set keeps them for cleanup.
-const chainHeads = new Set()
-const noteHead = (s) => { if (typeof s === 'string') chainHeads.add(s) }
 
 const chainResults = await pipeline(
   curds,
@@ -1365,7 +1371,7 @@ const plateReasonFor = (r) => {
 const curdsOut = withStatus.map((r) => {
   const plate = platedBySlug.get(r.curd.slug)
   const owned = [...((routing && routing.bySlug.get(r.curd.slug)) || []), ...((routing && routing.sharedFindings.get(r.curd.slug)) || [])]
-  const unrouted = Boolean(routing && routing.unrouted) || Boolean(reageRouting && reageRouting.unrouted)
+  const unownedMedium = integratedRefs.some((ref) => ref.slug === r.curd.slug) && (Boolean(routing && routing.unownedMedium) || Boolean(reageRouting && reageRouting.unownedMedium))
   const plateReason = plateReasonFor(r)
   return {
     slug: r.curd.slug,
@@ -1373,7 +1379,7 @@ const curdsOut = withStatus.map((r) => {
     status: plateReason ? 'failed' : r.status,
     pr_url: plate ? plate.pr_url : undefined,
     excluded_reason: plateReason || r.excluded_reason,
-    age: ageMode ? { mode: ageMode, has_medium_plus_findings: owned.some(isMediumPlus) || unrouted } : undefined,
+    age: ageMode ? { mode: ageMode, has_medium_plus_findings: owned.some(isMediumPlus) || unownedMedium } : undefined,
   }
 })
 

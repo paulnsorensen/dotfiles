@@ -89,7 +89,7 @@ test('#15: the plate prompt publishes only the pinned SHAs and stops on a dirty 
   const prompt = callsOf(trace, 'plate')[0].prompt
   assert.match(prompt, /git status --porcelain/)
   assert.match(prompt, /stop and return status blocked/)
-  assert.match(prompt, /Publish only the pinned SHAs/)
+  assert.match(prompt, /Publish only the pinned SHA/)
 })
 
 test('#14: cleanup drops --force, checks HEAD against recorded SHAs, and keeps branches', async () => {
