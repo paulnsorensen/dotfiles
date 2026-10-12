@@ -222,7 +222,7 @@ test('a blocked reconcile blocks the run', async () => {
     respond: ({ opts }) => {
       if (opts.label === 'packet') return packetOk()
       if (opts.label.startsWith('review:')) return reviewOk(opts.label.slice('review:'.length))
-      if (opts.label === 'reconcile') return { status: 'blocked', blocked_reason: 'missing-contract', has_medium_plus_findings: true, has_cheap_lows: false, artifact: '' }
+      if (opts.label.startsWith('reconcile')) return { status: 'blocked', blocked_reason: 'missing-contract', has_medium_plus_findings: true, has_cheap_lows: false, artifact: '' }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -482,4 +482,56 @@ test('packet returns a non-slug dimension: ends blocked/failed with zero review 
   // end-to-end property: blocked, with zero reviewer dispatches.
   assert.equal(result.status, 'blocked')
   assert.equal(trace.agents.some((c) => c.opts.label.startsWith('review:')), false)
+})
+
+test('packet answer without packet_path passes the schema, and the packet prompt names the constant path', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: (call) => {
+      if (call.opts.label === 'packet') return { skill_files_ok: true, dimensions: DIMS }
+      return respondHappy()(call)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: BASE_ARGS })
+
+  assert.equal(result.status, 'ok')
+  const packetCall = trace.agents.find(({ opts }) => opts.label === 'packet')
+  assert.ok(!packetCall.opts.schema.required.includes('packet_path'))
+  assert.ok(!packetCall.prompt.includes('"packet_path"'))
+  assert.ok(packetCall.prompt.includes('.cheese/age/parent-packet.md'))
+})
+
+test('a blocked first reconcile is retried once with the same findings', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: (call) => {
+      if (call.opts.label === 'reconcile') return { status: 'blocked', blocked_reason: 'flaky' }
+      if (call.opts.label === 'reconcile:retry') return reconcileOk()
+      return respondHappy()(call)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: BASE_ARGS })
+
+  assert.equal(result.status, 'ok')
+  const calls = trace.agents.filter(({ opts }) => opts.label.startsWith('reconcile'))
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].prompt, calls[1].prompt)
+})
+
+test('a thrown first reconcile is retried, and two misses return blocked', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: (call) => {
+      if (call.opts.label.startsWith('reconcile')) throw new Error('boom')
+      return respondHappy()(call)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: BASE_ARGS })
+
+  assert.equal(result.status, 'blocked')
+  assert.match(result.error, /reconcile/)
+  assert.equal(trace.agents.filter(({ opts }) => opts.label.startsWith('reconcile')).length, 2)
 })
