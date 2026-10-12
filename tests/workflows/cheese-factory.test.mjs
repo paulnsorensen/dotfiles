@@ -238,8 +238,8 @@ test('phase order and per-phase model/agentType/isolation assertions', async () 
   assert.equal(byLabel['cook:parent'].agentType, 'coder')
   assert.equal(byLabel['cook:parent'].isolation, 'worktree')
 
-  assert.equal(byLabel['taste:parent'].model, 'opus')
-  assert.equal(byLabel['taste:parent'].agentType, 'reviewer')
+  assert.equal(byLabel['taste:parent'].model, undefined)
+  assert.equal(byLabel['taste:parent'].agentType, 'taste-tester')
   assert.equal(byLabel['taste:parent'].isolation, undefined)
 
   assert.equal(byLabel['press:parent'].model, 'sonnet')
@@ -1236,8 +1236,8 @@ test('F-7: an out-of-enum taste verdict is a substance error: the reviewer redoe
   const redo = trace.agents.find(({ opts }) => opts.label === 'taste:parent:redo1')
 
   assert.ok(redo.prompt.startsWith(first.prompt))
-  assert.match(redo.prompt, /\$\.verdict must be one of pass, revise/)
-  assert.equal(redo.opts.agentType, 'reviewer')
+  assert.match(redo.prompt, /\$\.verdict must be one of pass, revise, halt/)
+  assert.equal(redo.opts.agentType, 'taste-tester')
   assert.equal(labels.some((l) => l.startsWith('taste:parent') && /:repair\d+$/.test(l)), false)
   assert.ok(labels.indexOf('press:parent') > labels.indexOf('taste:parent:redo1'))
   assert.equal(result.curds[0].status, 'clean')
@@ -1531,7 +1531,7 @@ async function runEveryPhase() {
 
 test('every reviewer dispatch starts with a Review mode line the reviewer agent accepts', async () => {
   const agents = await runEveryPhase()
-  const reviewers = agents.filter(({ opts }) => opts.agentType === 'reviewer')
+  const reviewers = agents.filter(({ opts }) => opts.agentType === 'reviewer' || opts.agentType === 'taste-tester')
 
   assert.deepEqual(reviewers.map(({ opts }) => opts.label).sort(), ['age:barrier', 'age:reage', 'taste:a', 'taste:a:r1', 'taste:c'])
   for (const { prompt, opts } of reviewers) {
@@ -1837,7 +1837,7 @@ test('AC-14: every reviewer dispatch starts with its Review mode line', async ()
 
   await workflow.run({ ...globals, args: { spec: 'parent' } })
 
-  const reviewers = trace.agents.filter(({ opts }) => opts.agentType === 'reviewer')
+  const reviewers = trace.agents.filter(({ opts }) => opts.agentType === 'reviewer' || opts.agentType === 'taste-tester')
   assert.deepEqual(reviewers.map(({ opts }) => opts.label), ['taste:parent', 'age:barrier', 'age:reage'])
   const modes = { 'taste:parent': 'taste-test', 'age:barrier': 'severity-report', 'age:reage': 'severity-report' }
   for (const { opts, prompt } of reviewers) assert.equal(prompt.split('\n')[0], `Review mode: ${modes[opts.label]}`)
