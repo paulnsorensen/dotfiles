@@ -43,3 +43,5 @@ Exit codes match `ci_optimize.py`: 0 pass, 1 gate failure, 2 input error.
 
 The skill lives in `skills/hill-climb/`. Claude selects it through `claude.skills` in `chezmoi/.chezmoidata/claude.yaml`. Codex, Cursor, and Pi receive the local skill tree through `~/.agents/skills`.
 The workflow lives in `claude/workflows/hill-climb-threads.js` and is Claude-only. Tests: `tests/hill-climb.bats` (wraps `tests/hill_climb/`) and `tests/workflows/hill-climb-threads.test.mjs`.
+
+For the comparison with RRSI and the reason a harness-improvement loop cannot use hill climb alone, see [[hill-climb-vs-rrsi]].
