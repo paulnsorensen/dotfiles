@@ -1118,6 +1118,20 @@ test('AC-2: a non-40-hex head_sha fails the curd at its stage and no later write
   }
 })
 
+test('AC-7: an uppercase 40-hex head_sha is accepted and reaches the next writer', async () => {
+  const workflow = await loadWorkflow(path)
+  const upper = sha(0xc0).toUpperCase()
+  const inner = respondCleanChain({ slug: 'parent' })
+  const { globals, trace } = createRuntime({
+    respond: (call) => (call.opts.label === 'cook:parent' ? cook('parent', { head_sha: upper }) : inner(call)),
+  })
+
+  const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
+
+  assert.notEqual(result.curds[0].status, 'failed')
+  assert.ok(trace.agents.find(({ opts }) => opts.label === 'taste:parent').prompt.includes(upper))
+})
+
 const cookRespond = (fn) => {
   const inner = respondCleanChain({ slug: 'parent' })
   return (call) => (/^(cook|salvage):parent/.test(call.opts.label) ? fn(call) : inner(call))

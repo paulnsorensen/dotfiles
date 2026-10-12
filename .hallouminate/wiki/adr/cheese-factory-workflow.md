@@ -129,8 +129,8 @@ _Source: `claude/workflows/cheese-factory.js`, `claude/workflows/age-fanout.js`,
 
 ## ADR-014: Shared helper prelude as a vendored block with a drift test [status: proposed]
 
-- **Context:** Workflow scripts cannot import. cheese-factory and move-my-cheese hold ten byte-identical helpers and a diverged `typed()`. `dots sync` copies `claude/workflows/` with `cp -L` and has no build step (`.sync-lib.sh:406,670`).
-- **Decision:** `claude/workflow-prelude/prelude.js` holds the shared helpers. `node claude/workflow-prelude/sync.mjs` pastes it between markers in both workflows. A test fails when a block drifts from the source. move-my-cheese adopts cheese-factory's `typed()`.
+- **Context:** Workflow scripts cannot import. cheese-factory and move-my-cheese hold nine byte-identical helpers, two scratch and SHA regexes that differ in form, and two diverged `typed()` functions. `dots sync` copies `claude/workflows/` with `cp -L` and has no build step (`.sync-lib.sh:406,670`).
+- **Decision:** `claude/workflow-prelude/prelude.js` holds the nine helpers plus the two converged regexes (`SCRATCH_WORKTREE_RE` with its `SCRATCH_PATH_SRC`, and `FULL_SHA_RE`). `node claude/workflow-prelude/sync.mjs` pastes it between markers in both workflows. A test fails when a block drifts from the source. Each workflow keeps its own `typed()`. The shared `FULL_SHA_RE` has the `i` flag, so cheese-factory now accepts an uppercase 40-hex SHA.
 - **Alternatives:** concat at deploy (repo file differs from deployed file; ADR-007 rejected template machinery); a drift test only (fixes still need manual ports).
 - **Consequences:** The deployed file equals the repo file, and the harness and deploy stay unchanged. An edit inside a block fails the test until it moves to the source.
 
