@@ -420,13 +420,14 @@ const FINDINGS_PATH_RE = /^\$\.findings\[/
 // A decision field is the producer's judgment: a verdict, a pass flag, or a check. A formatter must not choose it, so a shape error there also makes the producer redo.
 // The criteria-gate schemas and the three review shapes have decision paths. Every other schema keeps its classification.
 // A review that omits its outcome keys has not reviewed. A formatter would invent a pass, so the reviewer redoes the review.
-const decisionPathRe = (schema) =>
-  schema === AGE_BARRIER_SHAPE || schema === REAGE_SHAPE ? /^\$\.(has_medium_plus_findings|findings|reviewed_slugs)\b/
-    : schema === TASTE_SHAPE ? /^\$\.(verdict|lenses)\b/
-      : schema === VERDICT_SCHEMA ? /^\$\.(passes|tree_clean|missing_paths)\b/
-    : schema === ADVICE_SCHEMA ? /^\$\.verdict\b/
-      : schema === CRITERIA_SCHEMA ? /^\$\.criteria\[\d+\]\.(check_kind|check)\b/
-        : null
+const decisionPathRe = (schema) => {
+  if (schema === AGE_BARRIER_SHAPE || schema === REAGE_SHAPE) return /^\$\.(has_medium_plus_findings|findings|reviewed_slugs)\b/
+  if (schema === TASTE_SHAPE) return /^\$\.(verdict|lenses)\b/
+  if (schema === VERDICT_SCHEMA) return /^\$\.(passes|tree_clean|missing_paths)\b/
+  if (schema === ADVICE_SCHEMA) return /^\$\.verdict\b/
+  if (schema === CRITERIA_SCHEMA) return /^\$\.criteria\[\d+\]\.(check_kind|check)\b/
+  return null
+}
 const shapeError = (msg, schema) => {
   const decision = decisionPathRe(schema)
   return FINDINGS_PATH_RE.test(msg) || (decision && decision.test(msg)) ? substance(msg) : form(msg)
