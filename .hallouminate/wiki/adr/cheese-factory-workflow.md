@@ -146,7 +146,7 @@ _Source: `claude/workflows/cheese-factory.js`, `claude/workflows/age-fanout.js`,
 - **Context:** Today a curd plates when its review is clean, without a check against the spec's ACs.
 - **Decision:** Before Plate, one judge per non-ci criterion verifies it at the final integration head. A fail, a missing path, or no valid verdict blocks Plate for the whole run, even when some curds failed earlier (user decision of 2026-10-12: fail closed for all). The run returns status partial with the verdicts, and each clean curd stays unplated. CI criteria are deferred.
 - **Alternatives:** one corrective round before blocking (ACs do not map to curds); advisory only (no guarantee).
-- **Consequences:** Fail closed, as in move-my-cheese. A run can finish clean on review but still not plate. One failed criterion blocks every clean curd, even when an unrelated curd causes it.
+- **Consequences:** Fail closed, as in move-my-cheese. A run can finish clean on review but still not plate. One failed criterion blocks every clean curd, even when an unrelated curd causes it. A run that reaches Report is ok only when every curd is clean and plated. Otherwise it is partial. Only a budget or gate block sets reason.
 
 ## ADR-017: Advisor gates on the plan and on done [status: accepted]
 
