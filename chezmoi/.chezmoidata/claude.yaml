@@ -288,12 +288,14 @@ claude:
     - git-hygiene
     - git-risk
     - grok-codebase
+    - harness-climb
     - harness-doctor
     - hill-climb
     - interactive-system-diagram
     - land
     - nih-audit
     - prompt-analytics
+    - python-bdd
     - python-scaffold
     - rennet
     - session-analytics

@@ -28,7 +28,7 @@ export DOTFILES_DIR="$dir"
 olddir=~/.dotfiles.bak             # old dotfiles backup directory
 
 # State management
-DOTFILES_STATE_DIR="${HOME}/.local/state/dotfiles"
+DOTFILES_STATE_DIR="${DOTFILES_STATE_DIR:-${HOME}/.local/state/dotfiles}"
 
 # Source helpers from the script's own directory. Test harnesses that eval
 # this file may override the location via SYNC_SCRIPT.
@@ -152,6 +152,7 @@ run_sync() {
         exit 1
     fi
 
+    record_sync_history
     log_success "Sync completed successfully!"
 }
 

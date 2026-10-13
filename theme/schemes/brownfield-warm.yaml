@@ -1,0 +1,36 @@
+system: "base24"
+name: "Brownfield"
+author: "Brownfield"
+variant: "dark"
+description: "User-selected Brownfield base24 palette"
+palette:
+  base00: "211a16" # Main background
+  base01: "261f1b" # Lighter background (Black)
+  base02: "2b231f" # Selection background
+  base03: "8b8b8b" # Comments, invisibles (B.Black)
+  base04: "b7b2b0" # Dark foreground (dim)
+  base05: "e6dcd6" # Default foreground (White)
+  base06: "efeae7" # Light foreground
+  base07: "f8f8f8" # Lightest foreground (B.White)
+  base08: "b69599" # Red - errors, variables
+  base09: "ff7643" # Orange - warnings, integers
+  base0A: "f5d710" # Yellow - types, classes
+  base0B: "a1cb2d" # Green - success, strings
+  base0C: "99bec2" # Cyan - regex, info
+  base0D: "799af9" # Blue - functions
+  base0E: "d36bd1" # Magenta - keywords
+  base0F: "cf805d" # Red - deprecated
+  base10: "1c1512" # Darker background
+  base11: "18110d" # Darkest background
+  base12: "f49c89" # Bright red
+  base13: "f3d19f" # Bright yellow
+  base14: "8be46a" # Bright green
+  base15: "10edef" # Bright cyan
+  base16: "8abcff" # Bright blue
+  base17: "f1b3c5" # Bright magenta
+zed:
+  panel_background: "322b26"
+  elevated_background: "3c322b"
+  border: "8b8b8b"
+  ui_placeholder: "b7b2b0"
+  ui_accent: "799af9"

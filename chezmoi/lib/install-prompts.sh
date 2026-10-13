@@ -1,5 +1,5 @@
 #!/bin/bash
-# install-prompts.sh — wire agents/preamble.md as the Codex system prompt.
+# install-prompts.sh — wire agents/preamble.md into Codex and OpenCode.
 #
 # Claude Code reads preamble.md directly via the cc/ccc/ccr wrappers
 # in zsh/claude.zsh (--system-prompt-file), so it is not handled here.
@@ -13,12 +13,16 @@
 #               (codex-rs/core/gpt_5_*_prompt.md). AGENTS.md cascade still
 #               loads as developer-role messages (untouched).
 #
+#   OpenCode  — copy preamble.md to <OPENCODE_HOME>/preamble.md. The
+#               `instructions` key in opencode.json (chezmoi/.chezmoidata/
+#               opencode.yaml) appends it to OpenCode's own system prompt.
 #
 # Usage:
 #   install-prompts.sh <preamble_path>
 #
 # Honors:
 #   CODEX_HOME        defaults to ~/.codex
+#   OPENCODE_HOME     defaults to ~/.config/opencode
 #   INSTALL_PROMPTS_HAVE_CODEX       force-on/off codex detection (for tests)
 #   INSTALL_PROMPTS_HAVE_YQ          force-on/off yq detection (for tests)
 
@@ -86,6 +90,14 @@ install_prompts_wire_codex() {
     fi
 }
 
+install_prompts_wire_opencode() {
+    local preamble="$1"
+    local opencode_home="${OPENCODE_HOME:-$HOME/.config/opencode}"
+
+    mkdir -p "$opencode_home"
+    cp -f "$preamble" "$opencode_home/preamble.md"
+    echo "  Copied preamble.md -> $opencode_home/preamble.md"
+}
 
 install_prompts_main() {
     local preamble="${1:-}"
@@ -98,6 +110,7 @@ install_prompts_main() {
         return 0
     fi
     install_prompts_wire_codex "$preamble"
+    install_prompts_wire_opencode "$preamble"
 }
 
 # Only run main when this file is executed directly (not when sourced by bats).

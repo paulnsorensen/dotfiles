@@ -348,7 +348,7 @@ alias plugin-edit='${EDITOR:-vim} $DOTFILES_DIR/agents/plugins/registry.yaml'
 # until the cache is rebuilt. This nukes the version dir and reinstalls.
 #
 # Usage: cf-refresh                    # refresh cheese-flow@local (default)
-#        cf-refresh vaudeville         # refresh vaudeville@local
+#        plugin-refresh vaudeville paulnsorensen  # refresh vaudeville@paulnsorensen
 #        cf-refresh <plugin> <market>  # refresh <plugin>@<market>
 plugin-refresh() {
     local plugin_name="${1:-cheese-flow}"

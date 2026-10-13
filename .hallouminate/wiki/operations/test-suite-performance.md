@@ -129,14 +129,14 @@ Use at least three warm runs and report the median. Bats supports `-T/--timing`;
 
 ### Parallel-check verification (2026-10-13)
 
-The refreshed shard table uses Ubuntu run 38008877100 and filters out files absent from this checkout.
-It includes `hill-climb.bats` and the other Python unittest wrappers; all current files have measured hints.[^weights-20261013]
-The shard table changes assignment, not coverage. Missing future entries still use the median fallback.
+The refreshed shard table uses Ubuntu run 38008877100 and covers the 112 Bats files in the pre-merge checkout.
+It includes `hill-climb.bats` and the Python unittest wrappers present at revision `0cf54ea1`.[^weights-20261013]
+The shard table changes assignment, not coverage. New main-branch files use the median fallback.
 Retain the CPU-count Bats default and pytest `-n auto`; this change does not establish benefits from more workers.[^gate-20261013]
 
 A failed baseline cannot establish a speed gain, even when the repaired gate passes.
-Recent historical CI runs also include a soak check absent from this checkout.
-Do not compare these runs as equivalent validation workloads.[^comparison-20261013]
+Historical CI runs include a soak check absent from the original baseline checkout.
+The main-branch merge adds that check. Do not compare these runs as equivalent validation workloads.[^comparison-20261013]
 
 [^gate-20261013]: justfile:62-96; tests/check-affected.sh:40-64; tests/run-tests.sh:134-157.
 [^lint-20261013]: justfile:7-9; tests/just-check.bats, lint concurrency and failure regression.

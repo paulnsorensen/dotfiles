@@ -15,7 +15,7 @@ PLATFORM="$(uname)"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}"
 MISE_BOOTSTRAP_CONFIG_FILE="${MISE_BOOTSTRAP_CONFIG_FILE:-$SCRIPT_DIR/../chezmoi/dot_config/mise/config.toml}"
 # renovate: datasource=github-releases depName=can1357/oh-my-pi
-OMP_PIN="v18.8.6"
+OMP_PIN="v18.10.3"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -788,8 +788,9 @@ sync_gh_extensions() {
 # Brew package to migrate off, per harness ("" = none; "cask:NAME" = cask).
 native_harness_brew_pkg() {
     case "$1" in
-        claude) echo "cask:claude-code" ;;
-        omp)    echo "omp" ;;
+        claude)   echo "cask:claude-code" ;;
+        omp)      echo "omp" ;;
+        opencode) echo "opencode" ;;
         *)      echo "" ;;
     esac
 }
@@ -983,33 +984,29 @@ converge_omp_native() {
 
 # Remove every package-manager and native binary left by retired harnesses.
 retire_harnesses() {
-    local harness installed
-
-    if command -v brew &>/dev/null; then
-        installed=$(brew list --formulae 2>/dev/null || true)
-        for harness in opencode crush; do
-            if grep -qxF "$harness" <<<"$installed"; then
-                log_info "  Removing retired Homebrew $harness..."
-                brew uninstall "$harness" </dev/null || FAILED+=("retired-$harness-brew")
-            fi
-        done
+    if command -v brew &>/dev/null && grep -qxF crush <<<"$(brew list --formulae 2>/dev/null || true)"; then
+        log_info "  Removing retired Homebrew crush..."
+        brew uninstall crush </dev/null || FAILED+=("retired-crush-brew")
     fi
 
-    if command -v mise &>/dev/null && ! MISE_GLOBAL_CONFIG_FILE="$MISE_BOOTSTRAP_CONFIG_FILE" \
-        mise uninstall --yes --all \
-        aqua:anomalyco/opencode aqua:charmbracelet/crush </dev/null; then
-        log_error "failed to uninstall retired OpenCode/Crush mise packages"
-        FAILED+=("retired-harnesses")
-    fi
+    # OpenCode v2 installs from npm:@opencode/cli, so the old aqua backend is retired too.
+    local package
+    for package in aqua:charmbracelet/crush aqua:anomalyco/opencode; do
+        if command -v mise &>/dev/null && ! MISE_GLOBAL_CONFIG_FILE="$MISE_BOOTSTRAP_CONFIG_FILE" \
+            mise uninstall --yes --all "$package" </dev/null; then
+            log_error "failed to uninstall the retired mise package $package"
+            FAILED+=("retired-harnesses")
+        fi
+    done
 
-    rm -f "$HOME/.local/bin/opencode" "$HOME/.local/bin/crush"
+    rm -f "$HOME/.local/bin/crush"
 }
 
 sync_native_harnesses() {
     log_info "Syncing native AI-harness CLIs..."
 
     local harness
-    for harness in claude codex; do
+    for harness in claude codex opencode; do
         migrate_harness_off_brew "$harness"
         migrate_harness_off_native "$harness"
     done

@@ -170,7 +170,7 @@ settle_mise_pin_bump() {
         return 0
     fi
 
-    blob="$(git -C "$top" hash-object -w -- "$manifest")" || return 0
+    blob="$(git -C "$top" hash-object -w --path="$rel" -- "$manifest")" || return 0
     upstream_blob="$(mise_pin_blob_at "$top" origin/main "$rel")"
     if [[ "$blob" == "$upstream_blob" ]]; then
         mode=merged

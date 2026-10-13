@@ -112,10 +112,10 @@ ignore_paths=$(drift_ignore_paths "$IGNORE")
 # ── plugin-registry overlay ────────────────────────────────────────────────
 # Compose the gate-filtered plugin overlay for enabledPlugins /
 # extraKnownMarketplaces. A gate passes when its env var is "true"; unset is
-# closed. Marketplaces are only overlaid for one-plugin-per-marketplace entries
-# (mp name == plugin name) that carry a path — the same constraint sync.sh
-# applies. If the registry is missing, the overlay stays empty and composition
-# falls back to claude.yaml alone.
+# closed. Marketplaces are only overlaid for path entries that own their
+# marketplace: mp name == plugin name, or the source marketplace.json names the
+# marketplace — the same constraint sync.sh applies. If the registry is
+# missing, the overlay stays empty and composition falls back to claude.yaml alone.
 PLUGIN_REG="$CHEZMOI_SOURCE_DIR/../claude/plugins/registry.yaml"
 # `$g` is a jq variable, not a shell var — single quotes are intentional.
 # shellcheck disable=SC2016
@@ -127,20 +127,20 @@ plugin_reg_enabled() {
         | jq "[ to_entries[] | $gate_filter | {(.key): (.value.load // false)} ] | add // {}"
 }
 
-# Gate-filtered marketplace overlay: one-plugin-per-marketplace entries with a
-# path, resolved to absolute and skipped when the dir is absent. Kept in a
+# Gate-filtered marketplace overlay: path entries that own their marketplace,
+# resolved to absolute and skipped when the dir is absent. Kept in a
 # function so the case statement is NOT parsed inside a $() (bash miscounts the
 # case-pattern parens there).
 plugin_reg_marketplaces() {
     # Every /bin/sh this repo targets (macOS bash, dash) implements `local`.
     # shellcheck disable=SC3043
-    local repo_root mp_name mp_path abs_path
+    local repo_root plugin_name mp_name mp_path abs_path
     repo_root=$(cd "$CHEZMOI_SOURCE_DIR/.." && pwd)
     yq -o=json '.plugins' "$PLUGIN_REG" \
         | jq -r "to_entries[] | $gate_filter | select(.value.path)
-                 | (.key | split(\"@\")) as \$p | select(\$p[0] == \$p[1])
-                 | \$p[1] + \"\t\" + .value.path" \
-        | while IFS="$(printf '\t')" read -r mp_name mp_path; do
+                 | (.key | split(\"@\")) as \$p
+                 | \$p[0] + \"\t\" + \$p[1] + \"\t\" + .value.path" \
+        | while IFS="$(printf '\t')" read -r plugin_name mp_name mp_path; do
             [ -z "$mp_name" ] && continue
             # shellcheck disable=SC2088  # literal "~/" pattern, expanded explicitly below
             case "$mp_path" in
@@ -150,6 +150,11 @@ plugin_reg_marketplaces() {
             esac
             if [ ! -d "$abs_path" ]; then
                 echo "modify_settings.json: skipping $mp_name marketplace, path not found: $abs_path" >&2
+                continue
+            fi
+            # Shared names such as `@local` have no marketplace.json naming them.
+            if [ "$mp_name" != "$plugin_name" ] \
+                && [ "$(jq -r '.name // empty' "$abs_path/.claude-plugin/marketplace.json" 2>/dev/null)" != "$mp_name" ]; then
                 continue
             fi
             jq -n --arg n "$mp_name" --arg p "$abs_path" \

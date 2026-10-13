@@ -1,0 +1,151 @@
+# OpenCode registry. Chezmoi authors ~/.config/opencode/opencode.json from
+# `opencode.config`. OpenCode owns auth (~/.local/share/opencode/auth.json),
+# sessions, state, and the plugin install files it writes beside the config.
+# Schema: https://opencode.ai/config.json. Docs: https://opencode.ai/docs/config/
+
+opencode:
+  config:
+    $schema: https://opencode.ai/config.json
+    # mise pins the binary (chezmoi/dot_config/mise/config.toml); Renovate
+    # bumps the pin. Self-update would fight that pin.
+    autoupdate: false
+    share: disabled
+    model: openai/gpt-6.1-sol
+    provider:
+      openai:
+        models:
+          gpt-6-luna:
+            limit: {context: 1050000, output: 128000}
+          gpt-6.1-sol:
+            limit: {context: 1050000, output: 128000}
+          gpt-6-astra:
+            limit: {context: 1050000, output: 128000}
+    agent:
+      build:
+        prompt: Follow the shared execution preamble and applicable project instructions.
+      plan:
+        prompt: Follow the shared execution preamble and applicable project instructions. Plan only. Do not change workspace files.
+      general:
+        prompt: Follow the shared execution preamble and applicable project instructions.
+      explore:
+        prompt: Follow the shared execution preamble and applicable project instructions. Read only. Do not change files.
+      advisor:
+        description: Review a concise contract and evidence packet. Return advice only; never launch another agent.
+        mode: subagent
+        model: openai/gpt-6-astra
+        steps: 4
+        prompt: >-
+          Review only the supplied concise contract, evidence, and question.
+          Ask for a smaller packet when the input is too large.
+          Give a decision, supporting evidence, and remaining risk.
+          Do not edit files, execute commands, or launch another agent.
+        permission:
+          "*": deny
+          tilth_tilth_read: allow
+          tilth_tilth_search: allow
+          tilth_tilth_write: deny
+          bash: deny
+          task: deny
+    # Built-in formatters run after edits when the project has the formatter
+    # configured. Omitting the key disables them. OpenCode v2 has no language
+    # servers, so this config does not set the v1 `lsp` key.
+    formatter: true
+    snapshot: true
+    compaction:
+      auto: true
+    # Load the shared preamble; custom work-agent prompts replace native guidance.
+    # Global preferences load natively from ~/.config/opencode/AGENTS.md.
+    instructions:
+      - "~/.config/opencode/preamble.md"
+    watcher:
+      ignore:
+        - .git/**
+        - node_modules/**
+        - target/**
+        - dist/**
+        - .venv/**
+    # Same servers as Codex and Pi. Secret-bearing servers connect through
+    # the root-owned broker sockets, so this file holds no credentials.
+    mcp:
+      # OpenCode v2 reads v1-shaped entries through a v1 schema that has no
+      # `codemode`, so Tilth uses the v2 `servers` shape. Native file tools
+      # are disabled, so Tilth stays on the native tool list, not Code Mode.
+      servers:
+        tilth:
+          type: local
+          # `--edit` enables tilth_write (hash-anchored edits).
+          command: [tilth, --mcp, --edit]
+          codemode: false
+      context7:
+        type: local
+        command: [/usr/local/libexec/dotfiles/agent-secret-proxy, --socket, /var/run/dotfiles-agent-secrets/context7.sock]
+      tavily:
+        type: local
+        command: [/usr/local/libexec/dotfiles/agent-secret-proxy, --socket, /var/run/dotfiles-agent-secrets/tavily.sock]
+      milknado:
+        type: local
+        command: [uvx, --from, "git+https://github.com/paulnsorensen/milknado@main", milknado-mcp]
+      hallouminate:
+        type: local
+        command: [hallouminate, serve]
+    # Rules match with `*` = any characters (including `/`); the last
+    # matching rule wins. The deny lists mirror Claude's permissions.deny and
+    # Pi's permission-system paths. Only the native read tool checks the
+    # `read` map, and tilth-only.js removes that tool, so the map applies
+    # only if the plugin does not load. MCP tools such as tilth_read are not
+    # path-gated here.
+    permission:
+      "*": allow
+      # Claude and Codex run without approval prompts; match them.
+      external_directory: allow
+      read:
+        "*": allow
+        "*.env": deny
+        "*.env.*": deny
+        "*.env.example": allow
+        "*.env.sample": allow
+        "*.env.template": allow
+        "*.env.dist": allow
+        "*.env.defaults": allow
+        "*/.netrc": deny
+        "*/.pgpass": deny
+        "*/.npmrc": deny
+        "*/.pypirc": deny
+        "*/.git-credentials": deny
+        "*/kubeconfig": deny
+        "*/id_rsa": deny
+        "*/id_dsa": deny
+        "*/id_ecdsa": deny
+        "*/id_ed25519": deny
+        "*.pem": deny
+        "*.key": deny
+        "*.p12": deny
+        "*.pfx": deny
+        "*.keystore": deny
+        "*.jks": deny
+        "*.ppk": deny
+        "*.secret": deny
+        "*/secret.yaml": deny
+        "*/secret.yml": deny
+        "*/secret.json": deny
+        "*/secret.toml": deny
+        "*/secret.env": deny
+        "*/secrets.yaml": deny
+        "*/secrets.yml": deny
+        "*/secrets.json": deny
+        "*/secrets.toml": deny
+        "*/secrets.env": deny
+        "~/.aws/credentials": deny
+        "~/.gnupg/*": deny
+        "~/.ssh/*": deny
+        "~/.ssh/*.pub": allow
+        "~/.ssh/known_hosts": allow
+        "~/.ssh/config": allow
+        "~/.ssh/authorized_keys": allow
+      bash:
+        "*": allow
+        "sudo *": deny
+        "rm -rf *": deny
+        "security *": deny
+        "/usr/bin/security *": deny
+        "bws *": deny

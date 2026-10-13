@@ -26,7 +26,7 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 
 def _configured_path(name, default):
@@ -84,6 +84,7 @@ RAW_COLUMNS = {
     "isSidechain": "BOOLEAN",
     "userType": "VARCHAR",
     "filename": "VARCHAR",
+    "parentSessionId": "VARCHAR",
 }
 
 
@@ -259,6 +260,44 @@ def _codex_command(name, parsed, raw_input):
     return None
 
 
+def _codex_token_usage(payload, last_total):
+    """Map a token_count payload to (Claude-style usage, total_token_usage).
+
+    Returns usage None when last_token_usage is null or when total_token_usage
+    repeats the previous event (Codex re-emits it). The returned total is the
+    latest total seen on any token_count event, with or without usage.
+    """
+    info = payload.get("info")
+    if not isinstance(info, dict):
+        return None, last_total
+    total = info.get("total_token_usage")
+    new_total = last_total if total is None else total
+    last = info.get("last_token_usage")
+    if not isinstance(last, dict):
+        return None, new_total
+    if total is not None and total == last_total:
+        return None, new_total
+    usage = {
+        "input_tokens": last.get("input_tokens"),
+        "output_tokens": last.get("output_tokens"),
+        "cache_read_input_tokens": last.get("cached_input_tokens"),
+    }
+    return usage, new_total
+
+
+def _codex_parent_session(payload):
+    """Parent thread id of a sub-agent rollout, or None.
+
+    A sub-agent session_meta carries ``source.subagent.thread_spawn``; other
+    sessions carry a plain string or no ``source``.
+    """
+    source = payload.get("source")
+    subagent = source.get("subagent") if isinstance(source, dict) else None
+    spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
+    parent = spawn.get("parent_thread_id") if isinstance(spawn, dict) else None
+    return parent if isinstance(parent, str) and parent else None
+
+
 def codex_normalize(path):
     """Codex rollout JSONL -> canonical envelope.
 
@@ -269,9 +308,23 @@ def codex_normalize(path):
     custom tools) are kept verbatim, and ``input.command`` is normalized to the
     executed command string for shell-ish tools so ``bash_cmd`` extracts.
     ``tool_search_output`` items have no matching call item and are dropped.
+    A forked rollout holds two ``session_meta`` records (own id first, parent
+    second); the first id, ``cwd``, and ``cli_version`` describe the file. A
+    token row before any id falls back to the file path, so ids stay unique.
+    ``session_meta.cli_version`` stamps ``version`` on every entry. A
+    sub-agent rollout names its parent in the first ``session_meta``; that id
+    stamps ``parentSessionId`` on every entry. Each non-duplicate
+    ``token_count`` event with a ``last_token_usage`` becomes one
+    ``token_usage`` entry (unique ``message.id``, empty content). Only
+    model_turns reads it, as one row; no other table sees it.
     """
     session_id = None
+    parent_session_id = None
     cwd = None
+    cli_version = None
+    model = None
+    last_total = None
+    token_turns = 0
     for entry in _iter_jsonl(path):
         if not isinstance(entry, dict):
             continue
@@ -279,11 +332,40 @@ def codex_normalize(path):
         payload = entry.get("payload")
         etype = entry.get("type")
         if etype == "session_meta" and isinstance(payload, dict):
-            session_id = payload.get("id") or session_id
-            cwd = payload.get("cwd") or cwd
+            if session_id is None:
+                parent_session_id = _codex_parent_session(payload)
+            session_id = session_id or payload.get("id")
+            cwd = cwd or payload.get("cwd")
+            cli_version = cli_version or payload.get("cli_version") or None
             continue
         if etype == "turn_context" and isinstance(payload, dict):
             cwd = payload.get("cwd") or cwd
+            model = payload.get("model") or model
+            continue
+        if (
+            etype == "event_msg"
+            and isinstance(payload, dict)
+            and payload.get("type") == "token_count"
+        ):
+            usage, last_total = _codex_token_usage(payload, last_total)
+            if usage is None:
+                continue
+            token_turns += 1
+            yield {
+                "harness": "codex",
+                "type": "token_usage",
+                "timestamp": ts,
+                "sessionId": session_id,
+                "parentSessionId": parent_session_id,
+                "version": cli_version,
+                "cwd": cwd,
+                "message": {
+                    "id": f"codex-tokens:{session_id or path}:{token_turns}",
+                    "model": model or "unknown",
+                    "content": [],
+                    "usage": usage,
+                },
+            }
             continue
         if etype != "response_item" or not isinstance(payload, dict):
             continue
@@ -307,6 +389,8 @@ def codex_normalize(path):
                 "type": "assistant",
                 "timestamp": ts,
                 "sessionId": session_id,
+                "parentSessionId": parent_session_id,
+                "version": cli_version,
                 "cwd": cwd,
                 "message": {
                     "content": [
@@ -329,6 +413,8 @@ def codex_normalize(path):
                 "type": "user",
                 "timestamp": ts,
                 "sessionId": session_id,
+                "parentSessionId": parent_session_id,
+                "version": cli_version,
                 "cwd": cwd,
                 "message": {
                     "content": [
@@ -518,9 +604,9 @@ def _cursor_parse_timestamp(text):
         return None
     dt_str, offset = m.groups()
     try:
-        # Naive parse is intentional: the UTC offset is applied manually on
-        # the next line, so a %z-aware parse would double-count it.
-        dt = datetime.strptime(dt_str, "%b %d, %Y, %I:%M %p")  # noqa: DTZ007
+        # The UTC offset is applied manually below, so parse a wall-clock time
+        # and tag it UTC; a %z-aware parse would double-count the offset.
+        dt = datetime.strptime(dt_str, "%b %d, %Y, %I:%M %p").replace(tzinfo=UTC)
     except ValueError:
         return None
     dt -= timedelta(hours=int(offset))
@@ -906,6 +992,10 @@ def main():
     # usage takes one value. omp and other harnesses carry no `message.id` and
     # keep one row per entry. TRY_CAST keeps one malformed metric from
     # aborting the whole ingest. Latency and prompt_tokens are omp-only.
+    # Codex token rows carry no content, so tool_calls stays NULL (not measured).
+    # context_tokens is the prompt size the model read: Claude's input_tokens
+    # excludes cache reads and creation, so they are added; Codex's
+    # input_tokens already includes cached tokens.
     print("  Creating model_turns...")
     run_sql("""
         CREATE TABLE model_turns AS
@@ -914,11 +1004,12 @@ def main():
                 harness, sessionId, cwd, timestamp, message,
                 coalesce(json_extract_string(message, '$.id'),
                          'row:' || row_number() OVER ()) AS turn_key,
+                CASE WHEN harness = 'codex' THEN NULL ELSE
                 (SELECT count(*)
                    FROM unnest(json_extract(json_extract(message, '$.content'), '$[*]')) AS c(block)
-                  WHERE json_extract_string(block, '$.type') = 'tool_use') AS tool_calls
+                  WHERE json_extract_string(block, '$.type') = 'tool_use') END AS tool_calls
             FROM raw_entries
-            WHERE type = 'assistant'
+            WHERE type IN ('assistant', 'token_usage')
               AND message IS NOT NULL
               AND json_extract_string(message, '$.model') IS NOT NULL
         )
@@ -931,6 +1022,14 @@ def main():
             max(TRY_CAST(json_extract(message, '$.usage.output_tokens') AS BIGINT)) AS output_tokens,
             max(TRY_CAST(json_extract(message, '$.usage.cache_read_input_tokens') AS BIGINT))
                 AS cache_read_tokens,
+            max(TRY_CAST(json_extract(message, '$.usage.cache_creation_input_tokens') AS BIGINT))
+                AS cache_creation_tokens,
+            CASE WHEN harness = 'claude'
+                THEN max(TRY_CAST(json_extract(message, '$.usage.input_tokens') AS BIGINT))
+                    + coalesce(max(TRY_CAST(json_extract(message, '$.usage.cache_read_input_tokens') AS BIGINT)), 0)
+                    + coalesce(max(TRY_CAST(json_extract(message, '$.usage.cache_creation_input_tokens') AS BIGINT)), 0)
+                ELSE max(TRY_CAST(json_extract(message, '$.usage.input_tokens') AS BIGINT))
+            END AS context_tokens,
             max(TRY_CAST(json_extract(message, '$.prompt_tokens') AS BIGINT)) AS prompt_tokens,
             max(TRY_CAST(json_extract(message, '$.duration_ms') AS DOUBLE)) AS duration_ms,
             max(TRY_CAST(json_extract(message, '$.ttft_ms') AS DOUBLE)) AS ttft_ms,
@@ -981,7 +1080,9 @@ def main():
             max(timestamp) AS last_seen,
             cwd AS project,
             gitBranch AS branch,
-            count(*) AS entry_count
+            arg_max(version, timestamp) FILTER (WHERE version IS NOT NULL) AS version,
+            max(parentSessionId) AS parent_session_id,
+            count(*) FILTER (WHERE type IS DISTINCT FROM 'token_usage') AS entry_count
         FROM raw_entries
         WHERE sessionId IS NOT NULL
           AND timestamp IS NOT NULL

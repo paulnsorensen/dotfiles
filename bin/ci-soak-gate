@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# CI glue for the harness-climb soak hold and the aggregate test gate.
+# Usage: ci-soak-gate labels            (env PR_NUMBER, REPO; needs gh)
+#        ci-soak-gate guard <base-sha>  (run in the PR checkout)
+#        ci-soak-gate assert            (env EVENT, SHARDS, EXTRAS, SOAK)
+
+HOLD_DIR="skills/harness-climb/scripts/"
+HOLD_GATE="bin/ci-soak-gate"
+PIN_FILE="chezmoi/dot_config/mise/config.toml"
+
+cmd_labels() {
+    local labels
+    if ! labels="$(gh pr view "${PR_NUMBER:?}" --repo "${REPO:?}" --json labels --jq '[.labels[].name] | join(",")')"; then
+        echo "gh pr view failed; cannot read PR labels" >&2
+        return 1
+    fi
+    printf '%s\n' "$labels"
+}
+
+# The hold runs from the PR checkout. It runs every module under HOLD_DIR and
+# this script. Fail when one PR changes any of them and the pin file, so a PR
+# cannot weaken the check that gates it.
+cmd_guard() {
+    local base="${1:?usage: ci-soak-gate guard <base-sha>}" changed
+    changed="$(git diff --name-only "$base" HEAD)" || return 1
+    if { grep -q "^$HOLD_DIR" <<<"$changed" || grep -qxF "$HOLD_GATE" <<<"$changed"; } &&
+        grep -qxF "$PIN_FILE" <<<"$changed"; then
+        echo "One PR changes both the hold ($HOLD_DIR, $HOLD_GATE) and $PIN_FILE; split them" >&2
+        return 1
+    fi
+}
+
+# A skipped required check does not block a merge, so accept a skip only for
+# soak-check on push, where the job has no base SHA.
+cmd_assert() {
+    local event="${EVENT:?}" shards="${SHARDS:-}" extras="${EXTRAS:-}" soak="${SOAK:-}"
+    echo "event=$event test-shard=$shards test-extras=$extras soak-check=$soak"
+    [[ "$shards" == success && "$extras" == success ]] || return 1
+    [[ "$soak" == success ]] && return 0
+    [[ "$event" == push && "$soak" == skipped ]]
+}
+
+case "${1:-}" in
+    labels) cmd_labels ;;
+    guard) shift; cmd_guard "$@" ;;
+    assert) cmd_assert ;;
+    *) echo "Usage: ci-soak-gate labels | guard <base-sha> | assert" >&2; exit 2 ;;
+esac

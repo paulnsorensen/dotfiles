@@ -24,13 +24,11 @@ local-llm/configs/lean.json
 .pi/agent/mcp-adapter.json
 
 # Retired native harnesses. Remove their configuration and runtime state;
-# package binaries are removed by packages/sync.sh.
-.config/opencode
+# package binaries are removed by packages/sync.sh. OpenCode returned as a
+# native chezmoi harness (dot_config/opencode/); only the old `ap` profile
+# tree and the curl-installer directory stay retired.
 .opencode
 .config/opencode-profiles
-.local/share/opencode
-.local/state/opencode
-.cache/opencode
 .config/crush
 .local/share/crush
 .local/state/crush
@@ -39,3 +37,11 @@ local-llm/configs/lean.json
 # Retired 2026-09-29: the milknado-fleet workflow and its worker MCP file. The
 # ~/.claude/workflows copies leave through exact_workflows; this target does not.
 .config/milknado/worker-mcp.json
+
+# OpenCode v2 replaced tui.json with cli.json (dot_config/opencode/cli.json).
+.config/opencode/tui.json
+
+# Retired: the wheypoint stop/idle gate. The /wheypoint skill stays; only the
+# automatic gate left. Claude and Codex hook scripts leave through exact_hooks.
+.config/opencode/plugins/wheypoint-idle.js
+.config/opencode/lib/wheypoint-stop-gate.cjs

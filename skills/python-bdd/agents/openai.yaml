@@ -1,0 +1,5 @@
+interface:
+  display_name: "python-bdd"
+  short_description: "Build integration-first Python behavior suites."
+policy:
+  allow_implicit_invocation: false

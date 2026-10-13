@@ -23,6 +23,8 @@ packages:
   - gettext
   - taf2/tap/mdvi
   - mise                                      # tool-version manager; declared so upgrade mode moves the binary too
+  - ffmpeg                                    # audio/video encoder; VHS (mise pin) records TUI demos through it
+  - graphviz                                  # `dot` graph renderer
 
   # Remote access (Tailscale mesh VPN → SSH bootstrap → mosh)
   - mosh                                      # resilient mobile shell (UDP 60000-61000); survives roaming/sleep
@@ -73,7 +75,7 @@ packages:
 
   # Linters
   # renovate: datasource=npm depName=eslint
-  - eslint: { source: npm, version: "10.11.0" }
+  - eslint: { source: npm, version: "10.12.0" }
   # renovate: datasource=npm depName=markdownlint-cli2
   - markdownlint-cli2: { source: npm, version: "0.23.3" }
   # renovate: datasource=npm depName=@withgraphite/graphite-cli
@@ -81,7 +83,7 @@ packages:
 
   # Zed external-agent adapters (ACP)
   # renovate: datasource=npm depName=@agentclientprotocol/codex-acp
-  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "2.1.1", platform: mac } # runs Codex as a Zed ACP agent
+  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "2.2.2", platform: mac } # runs Codex as a Zed ACP agent
 
   # uv tools (Python)
   # renovate: datasource=pypi depName=ralphify
@@ -98,7 +100,7 @@ packages:
 
   # gh CLI extensions
   # renovate: datasource=github-releases depName=github/gh-stack
-  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.1.1" }
+  - gh-stack: { source: gh-extension, pkg: github/gh-stack, version: "v0.2.0" }
 
   # Cargo
   # renovate: datasource=crate depName=cargo-update

@@ -74,6 +74,8 @@
 
 2026-09-19 · 3481e45760db7ca6 · merged · operations/subagent-dispatch-analytics.md · Records soft-stop evidence, full-file write responses, checkpoint failures, and uncapped parent takeover. Historical samples remain unchanged.
 
+2026-09-28 · opencode-native · new-page · harnesses/opencode.md · Re-added OpenCode as a native chezmoi harness (opencode.yaml + drift-gated modify_opencode.json, tilth and shared MCPs, secret-path permissions, preamble via `instructions`). Merged the harness index and sync-and-chezmoi pages.
+
 2026-09-29 · milknado-worker-mcp-20260929 · merged · architecture/agents-dir.md · Recorded the milknado fleet worker MCP file: bare claude with `--strict-mcp-config --mcp-config ~/.config/milknado/worker-mcp.json` loads 3 servers instead of 15 after eight workers exhausted a 31 GiB devbox; an `ap` profile (adapter keys on argv[0]) and `--setting-sources ""` (drops skills) were rejected; milknado appends the project `.mcp.json` as a fourth config.
 
 2026-09-29 · milknado-fleet-retire-20260929 · merged · architecture/agents-dir.md · Retired the milknado-fleet workflow, worker TOML, and worker MCP file; `.chezmoiremove` drops `~/.config/milknado/worker-mcp.json`, `exact_workflows` drops the workflow copies. Milknado plugin, MCPs, and package stay.
@@ -93,5 +95,20 @@
 
 2026-10-08 · 1e3c11d2eab700a0 · merged · architecture/agents-dir.md · Records executable skill assets, reference separation, and recursive deployment for PR #1209.
 2026-10-08 · pr-1217-progressive-disclosure · merged · architecture/agents-dir.md · Credits the progressive-disclosure decisions to PR #1217. Adds the button-group and SVG group roles and the stricter check-widget stub from the review fix.
+
+2026-10-09 · harness-climb · new-page · architecture/harness-climb.md · Recorded the harness-climb skill: propose-only PRs, frozen gate file, field gate after the deploying sync, Codex n/a guards, self-edit denial, label-event-free soak override (re-run reads labels).
+2026-10-09 · harness-climb · merged · operations/sync-and-chezmoi.md, domain-model.md, architecture/index.md · Added the sync-history log, the Field gate and Soak window terms, and the architecture index entry.
+
+2026-10-09 · pr-1224-cure · skipped-near-duplicate · architecture/harness-climb.md · Dominant-version window rule was already on the page.
+2026-10-09 · pr-1224-cure · merged · architecture/harness-climb.md · Context-token cost, sub-agent exclusion, freeze leakage check, single STOP check and stop-check, sync-regressed, ci-soak-gate guard and aggregate checkout, re-ingest note.
+2026-10-09 · pr-1224-cure · merged · operations/session-analytics-gotchas.md · Codex token_usage rows, per-harness token fields, parent_session_id for sub-agent rollouts.
+2026-10-09 · pr-1224-cure · merged · operations/sync-and-chezmoi.md · Dirty marker on sync-history lines and the shared DOTFILES_STATE_DIR default.
+2026-10-09 · pr-1224-cure · merged · operations/dev-environment.md · CI ruff pin, local ruff drift, tomllib sort and PLR0402 gotchas.
+
+2026-10-11 · 69cdb117d9385336 · merged · harnesses/wheypoint-stop-hook.md, harnesses/opencode.md · PR #1253: confirmed mutation and checkpoint results replace model verdicts across Claude, Codex, and OpenCode.
+2026-10-11 · pr-1267 · merged · harnesses/wheypoint-stop-hook.md, harnesses/opencode.md · Retired the wheypoint Stop hook and OpenCode idle plugin in every harness; the skill stays.
+2026-10-11 · pr-1267 · merged · architecture/move-my-cheese-workflow.md · #1268: every writer stage runs isolated, state moves through refs and SHAs, and a successful run cleans up.
+2026-10-11 · pr-1267 · merged · architecture/move-my-cheese-workflow.md · #1269–#1272: judges read the integration worktree, planners write runnable checks, age-fanout retries blocked dimensions, and needs-input takes answers back. The age-fanout reconcile gap was not real: the guard allows `.cheese/`.
+2026-10-11 · pr-1267 · merged · architecture/move-my-cheese-workflow.md · claude-workflows assessment: land survives a spent budget, every stage result passes a code check, mechanical reads are exact commands, the done advisor gates every success, and stage branches survive a failed run.
 
 2026-10-13 · build-ci-parallelization-20261013 · merged · operations/test-suite-performance.md · Record read-only lint fan-out and Ubuntu shard hints. Supersede the stale mutating-gate description. Preserve worker defaults and failed-baseline comparison limits.

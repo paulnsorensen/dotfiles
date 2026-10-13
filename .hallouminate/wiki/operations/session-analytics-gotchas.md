@@ -69,6 +69,16 @@ The preamble budget rose to 575 tokens for these rules.
 
 `tool-reroute/search.js` still names the retired `cheez-search` skill in its deny text.
 
+## Codex token rows and sub-agent sessions (2026-10-09)
+
+The Codex ingest writes each non-duplicate `token_count` event as a `raw_entries` row of `type = 'token_usage'`. Only `model_turns` and the tool-efficiency token-economics query read these rows. A query that filters `type = 'assistant'` never sees Codex token usage, and `sessions.entry_count` excludes the rows.
+
+Token fields differ by harness. Claude `input_tokens` excludes cache reads and cache creation. Codex `input_tokens` includes cached tokens. Use `model_turns.context_tokens` for a cross-harness context measure.
+
+A Codex sub-agent rollout keeps its own session id. Its first `session_meta` names the parent in `source.subagent.thread_spawn.parent_thread_id`, which becomes `sessions.parent_session_id`. Claude sidechains share the parent `sessionId` instead. Filter or fold on `parent_session_id` when sessions must be independent samples. A database built before PR #1224 needs `ingest.py --force` to gain these columns.
+
+_Source: PR #1224 cure (`skills/session-analytics/scripts/ingest.py`, `canonical-schema.md`) · Updated: 2026-10-09_
+
 [^codeql-race]: <https://raw.githubusercontent.com/github/codeql/main/javascript/ql/src/Security/CWE-367/FileSystemRace.ql>; PR 878 alerts 110 and 111.
 
 [^rewrite-safety]: PR 878 review reproductions; `agents/lib/tool-reroute/cd-strip.js`; `agents/lib/tool-reroute/cd-git.js`; `tests/tool-reroute.bats`.

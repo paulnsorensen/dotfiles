@@ -16,6 +16,28 @@ The default puts the Project Panel on the left at 260px, Agent Panel on the righ
 
 Zed's Agentic layout is an intentional alternative, not this default: it places the Agent Panel and Threads Sidebar left, while Project/Git panels move right. Use `workspace: use agentic layout` to try that agent-first arrangement.
 
+### Brownfield surfaces (2026-10-11)
+
+The user selects Brownfield for dark mode and keeps the existing Modus light theme.
+This supersedes the historical dark defaults below.[^brownfield-selection]
+The center editor and gutter use the exact palette background `#211a16`.
+Both side panels use `#322b26`; elevated popups use `#3c322b`.
+These Zed-only surfaces live in the scheme’s optional `zed` role overrides, not in its 24 palette slots.[^brownfield-surfaces]
+Use `base04` for UI placeholder and disabled text on the lighter surfaces.
+Its contrast is 6.632:1 on side panels and 5.946:1 on elevated surfaces.
+Syntax comments retain the exact `base03` value on the editor background.
+The user selects blue `#799af9` for focus and modified-file indicators.
+The scheme’s `zed.ui_accent` controls these UI roles without changing yellow syntax, warnings, or ANSI slots.
+
+Zed’s file tree and Agent Panel both use `panel.background`.[^zed-shared-panel]
+The current theme API cannot assign independent backgrounds to those two panels.
+Do not invent an agent-specific theme key or claim separate left/right colors.
+The supported distinction is lighter side panels against the darker center editor.
+
+[^brownfield-selection]: chezmoi/dot_config/zed/settings.json.tmpl:17-21
+[^brownfield-surfaces]: theme/schemes/brownfield-warm.yaml; theme/lib-zed.sh:write_zed_theme
+[^zed-shared-panel]: [Project Panel](https://raw.githubusercontent.com/zed-industries/zed/main/crates/project_panel/src/project_panel.rs); [Agent Panel](https://raw.githubusercontent.com/zed-industries/zed/main/crates/agent_ui/src/agent_panel.rs); [Theme schema](https://zed.dev/schema/themes/v0.2.0.json)
+
 ## Accessibility theme
 
 Use the Modus Themes extension and select `Modus Vivendi Deuteranopia` in dark mode and `Modus Operandi Deuteranopia` in light mode. The upstream deuteranopia palette avoids red/green-only coding and uses yellow/blue distinctions, including diff additions/removals; it targets 7:1 foreground/background contrast. The Zed extension must still be installed on each machine before a checked-in `theme` setting can resolve.
@@ -36,6 +58,8 @@ A theme cannot make status accessible when Zed communicates it by color alone. V
 `settings.json.tmpl` now also configures vim mode and editor basics: `vim_mode` with system clipboard, smartcase f/t motions, relative line numbers, and `vertical_scroll_margin: 5` mirroring vimrc's `scrolloff=5`; `tab_size: 2` matching vimrc's `tabstop=2`; `format_on_save` (reversed to `on` on 2026-08-27 with per-language LSP formatting — see the update below) plus final-newline/trailing-whitespace on save; prek remains the commit-time backstop. Fonts are JetBrainsMono Nerd Font (buffer + terminal, size 14) with Hack Nerd Font Mono fallback. A managed `keymap.json` binds `ctrl-h/j/k/l` pane navigation in `Editor && vim_mode == normal` only (deliberately NOT in Terminal context, so the terminal keeps its own ctrl-h/j/k/l; cost: those keys can't navigate out of a focused terminal) and `cmd-j` → `workspace::ToggleBottomDock`. Claude Code is a fourth `agent_servers` entry: registry key `claude-acp` (NOT `claude-code-acp`).
 
 `theme/generate.sh` gained a `generate_zed_theme()` target: the active base24 scheme renders to `chezmoi/dot_config/zed/themes/dotfiles-theme.json` (fixed filename so scheme switches never strand a stale file; theme name inside is the scheme name). The checked-in Modus Deuteranopia pair stays the default — the generated theme is a manual-select alternative and is dark-only. Zed theme gotchas learned: the theme `$schema` is v0.2.0 (a v0.2.1 bump PR exists but is unmerged as of Aug 2026); `players[]` entries must set `background` to the same accent as `cursor` and `selection` to that accent with a `3d` alpha suffix, or participant chips vanish and selections paint opaque; provenance is folded into the `author` field because loader tolerance for JSONC comments/unknown keys is unverified. Regression coverage: `tests/zed-config.bats` (template render) and the zed test in `tests/theme-palette.bats` (generator).
+
+**Chocolate Donut 2 (2026-10-10).** `generate_zed_theme()` also renders every scheme in `ZED_EXTRA_SCHEMES` (`theme/generate.sh`) to `themes/<scheme-id>.json` without making it the active scheme. `chocolate-donut-2` (Brownfield native base24 solve from the PR #1233 comment) ships this way, and `settings.json.tmpl` selects `Chocolate Donut 2` for dark mode. The rest of the stack (ghostty, tmux, vim) stays on `chocolate-donut` until `theme/config.yaml` changes. The same palette feeds the OpenCode theme `chocolate-donut-2.json`, which is hand-mirrored like the existing OpenCode theme.
 
 ## MCP context servers + built-in LSP (2026-08-27)
 

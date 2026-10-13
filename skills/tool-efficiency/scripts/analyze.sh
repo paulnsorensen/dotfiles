@@ -247,13 +247,15 @@ d_token_economics() {
          GROUP BY harness;"
     echo
     echo "### Token totals per session (per assistant turn, NOT per tool call)"
-    run "SELECT sessionId,
+    echo "input_tokens: codex includes cached tokens; claude excludes cache reads (cache_read)"
+    run "SELECT sessionId, harness,
+             CASE harness WHEN 'codex' THEN 'incl_cache' ELSE 'excl_cache' END AS input_basis,
              sum(CAST(json_extract_string(message, '\$.usage.input_tokens') AS BIGINT)) AS input_tokens,
              sum(CAST(json_extract_string(message, '\$.usage.output_tokens') AS BIGINT)) AS output_tokens,
              sum(CAST(json_extract_string(message, '\$.usage.cache_read_input_tokens') AS BIGINT)) AS cache_read
          FROM raw_entries
-         WHERE type = 'assistant' AND json_extract(message, '\$.usage') IS NOT NULL $(hf)
-         GROUP BY sessionId ORDER BY output_tokens DESC LIMIT 10;"
+         WHERE type IN ('assistant','token_usage') AND json_extract(message, '\$.usage') IS NOT NULL $(hf)
+         GROUP BY sessionId, harness ORDER BY output_tokens DESC LIMIT 10;"
     echo
     echo "### Call-volume proxy (labelled NOT cost)"
     run "SELECT tool_name, count(*) AS calls

@@ -470,6 +470,22 @@ logic bug. Tracked in
 test using GNU-only flags (`touch -d @epoch`, `date -d`, `sed -i` without a
 backup arg, `readlink -f`) is a portability suspect.
 
+On 2026-10-11, the OpenCode integration test also requires GNU `timeout`, which the macOS environment does not provide.
+Use Python’s standard-library subprocess timeout for that test boundary instead of adding a platform-specific executable dependency.[^portable-opencode]
+OpenCode’s normalization output can include an empty document beside the document that defines Tilth.
+Require a nonempty set of configured Tilth entries and disabled Code Mode for every entry; ignore unrelated empty documents.[^portable-opencode]
+
+Two other failures come from path interpretation, not the theme palette.
+Git hashes an absolute manifest path and inspects parent attribute files, including the home `.gitattributes` symlink.
+Git rejects that symlink and writes an `ELOOP` warning.
+Pass the repository-relative `--path` to `hash-object` so repository attributes still apply without scanning unrelated parent paths.[^manifest-attributes]
+The package test also matches `codex` in temporary output paths such as `codex-tmp`.
+Check download URLs, not the complete curl argument log, to detect Codex network requests.[^curl-url]
+
+[^portable-opencode]: tests/opencode-config.bats:114-134
+[^manifest-attributes]: packages/lib-mise-pins.sh:160-186; tests/mise-pin-settle.bats
+[^curl-url]: tests/packages.bats:1664-1675
+
 ## Known drift pattern: bootstrap `@latest` yq in ~/.local/bin shadows the mise pin
 
 **Symptom**: `just check` red locally on `tests/sync-codex-sources.bats`

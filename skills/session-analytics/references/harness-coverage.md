@@ -44,6 +44,8 @@ Claude transcripts.
 
 ### codex
 
+A forked Codex sub-agent writes its own rollout, so it counts as a standalone session. A Claude sidechain keeps the parent `sessionId`.
+
 Rollout JSONL. Each line is `{timestamp, type, payload}`:
 
 - `session_meta` — `payload.id` (session id) + `payload.cwd`. Threaded onto every
@@ -66,7 +68,7 @@ Codex has no `Skill` / `Agent` tool primitives, so `skill_invocations` and
 `agent_spawns` stay claude-centric. `reasoning` items (encrypted) are dropped.
 
 - Structured `exit_code` (including negative values), failed status, `isError`/`is_error` true, and legacy `Process exited with code N` markers set `is_error`. Pending and successful session outputs remain non-errors. Wrapper parsing trusts complete JSON or an `Output:` JSON envelope, not arbitrary prose. Content-block arrays require an execution header in the first `input_text` block. The parser processes later JSON blocks independently.
-- Wrapper-level errors are lower bounds. Nested function or MCP calls can produce different counts. The adapter omits native Codex timing, user, model, and `event_msg` records.
+- Wrapper-level errors are lower bounds. Nested function or MCP calls can produce different counts. The adapter omits native Codex timing and user records. It reads two other records. `session_meta.cli_version` becomes `raw_entries.version` on every entry of the session. The first `session_meta` of a sub-agent rollout names its parent in `source.subagent.thread_spawn.parent_thread_id`; that id becomes `raw_entries.parentSessionId` and `sessions.parent_session_id`. Each `event_msg` `token_count` event with a non-null `last_token_usage` becomes one `raw_entries` row of `type` `token_usage`. Only `model_turns` reads that row; `tool_uses`, `stop_events`, and `sessions.entry_count` do not. The row takes its model from the latest `turn_context`, or `unknown` before the first one, and its tokens from `last_token_usage`. The adapter skips an event whose `total_token_usage` repeats the previous event. Other `event_msg` records stay omitted.
 - Codex `is_error` values are adapter-derived. `explicit_error_flag_pct` does not establish source evidence for inferred wrapper, status, or exit-code signals.
 
 ### omp and pi

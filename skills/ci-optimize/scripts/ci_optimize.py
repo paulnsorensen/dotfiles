@@ -9,7 +9,7 @@ import math
 import os
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from statistics import median
@@ -1067,7 +1067,7 @@ def _from_hyperfine(args: argparse.Namespace) -> dict[str, Any]:
         captured_at = args.captured_at
     else:
         mtime = Path(args.input).stat().st_mtime
-        captured_at = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+        captured_at = datetime.fromtimestamp(mtime, tz=UTC).isoformat()
     benchmark_source = {"tool": "hyperfine", "evidence_file": args.input}
     if args.tool_version is not None:
         benchmark_source["version"] = args.tool_version

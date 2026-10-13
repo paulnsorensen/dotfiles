@@ -22,7 +22,8 @@ DB="$TEST_HOME/.cache/dotfiles/session-analytics/sessions.duckdb"
 setup() {
     setup_test_env
     export XDG_CACHE_HOME="$TEST_HOME/.cache"
-    command -v duckdb  >/dev/null || skip "duckdb not installed"
+    # The pure-Python unittest needs no duckdb; every other test does.
+    [[ "$BATS_TEST_DESCRIPTION" == "codex ingest unittest" ]] || command -v duckdb >/dev/null || skip "duckdb not installed"
     mkdir -p "$TEST_HOME/.claude/projects/proj"
     mkdir -p "$TEST_HOME/.codex/sessions/2026/05/30"
     mkdir -p "$TEST_HOME/.pi/agent/sessions/2026/05/30"
@@ -88,6 +89,54 @@ q() { duckdb "$DB" -json -c "$1"; }
     assert_success
     run q "SELECT count(*) AS n FROM tool_uses WHERE harness='codex';"
     assert_output_contains '"n":1'
+}
+
+@test "codex ingest unittest" {
+    run python3 -m unittest discover -s "$REAL_DOTFILES_DIR/tests/session_analytics" -t "$REAL_DOTFILES_DIR/tests" -p 'test_*.py'
+    [ "$status" -eq 0 ] || { echo "$output" >&2; false; }
+}
+
+@test "ingest: sessions.version and codex token_count model_turns rows land for claude and codex" {
+    cat > "$TEST_HOME/.claude/projects/proj/sess-claude.jsonl" <<'JSONL'
+{"type":"assistant","timestamp":"2026-05-30T10:00:00Z","sessionId":"c-1","cwd":"/work/claude","version":"2.1.0","message":{"content":[{"type":"tool_use","id":"tu-c-1","name":"Skill","input":{"skill":"cook"}}]}}
+JSONL
+    cat > "$TEST_HOME/.codex/sessions/2026/05/30/rollout-codex.jsonl" <<'JSONL'
+{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"x-1","cwd":"/work/codex","cli_version":"0.159.3"}}
+{"timestamp":"2026-05-30T11:00:01Z","type":"turn_context","payload":{"cwd":"/work/codex","model":"gpt-x"}}
+{"timestamp":"2026-05-30T11:00:02Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"ls\"]}","call_id":"call-x-1"}}
+{"timestamp":"2026-05-30T11:00:03Z","type":"event_msg","payload":{"type":"token_count","info":null}}
+{"timestamp":"2026-05-30T11:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}
+{"timestamp":"2026-05-30T11:00:05Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}
+{"timestamp":"2026-05-30T11:00:06Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":130,"cached_input_tokens":50,"output_tokens":12},"last_token_usage":{"input_tokens":30,"cached_input_tokens":10,"output_tokens":5}}}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT harness, version FROM sessions ORDER BY harness;"
+    assert_output_contains '"harness":"claude","version":"2.1.0"'
+    assert_output_contains '"harness":"codex","version":"0.159.3"'
+    run q "SELECT count(*) AS n, sum(input_tokens) AS i, sum(output_tokens) AS o, sum(cache_read_tokens) AS c FROM model_turns WHERE harness='codex' AND model='gpt-x';"
+    assert_output_contains '"n":2'
+    assert_output_contains '"i":"130"'
+    assert_output_contains '"o":"12"'
+    assert_output_contains '"c":"50"'
+    run q "SELECT count(*) AS n FROM tool_uses WHERE harness='codex';"
+    assert_output_contains '"n":1'
+}
+
+@test "ingest: forked codex rollout and its parent keep separate model_turns rows with NULL tool_calls" {
+    local d="$TEST_HOME/.codex/sessions/2026/05/30"
+    local tok='{"timestamp":"2026-05-30T11:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}'
+    local ctx='{"timestamp":"2026-05-30T11:00:01Z","type":"turn_context","payload":{"cwd":"/work/codex","model":"gpt-x"}}'
+    local parent_meta='{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"parent-1","cwd":"/work/codex"}}'
+    local child_meta='{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"child-1","cwd":"/work/codex","forked_from_id":"parent-1"}}'
+    printf '%s\n' "$parent_meta" "$ctx" "$tok" > "$d/rollout-parent.jsonl"
+    printf '%s\n' "$child_meta" "$parent_meta" "$ctx" "$tok" > "$d/rollout-child.jsonl"
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT count(*) AS n, count(DISTINCT sessionId) AS s, count(tool_calls) AS t FROM model_turns WHERE harness='codex';"
+    assert_output_contains '"n":2'
+    assert_output_contains '"s":2'
+    assert_output_contains '"t":0'
 }
 
 
@@ -169,6 +218,40 @@ JSONL
     assert_output_contains '"stop":"tool_use"'
 }
 
+@test "ingest: claude context_tokens adds cache reads and creation; codex keeps input_tokens" {
+    cat > "$TEST_HOME/.claude/projects/proj/sess-ctx.jsonl" <<'JSONL'
+{"type":"assistant","timestamp":"2026-05-30T10:00:00Z","sessionId":"c-8","cwd":"/w","message":{"id":"msg_c","model":"claude-x","usage":{"input_tokens":8,"output_tokens":5,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200},"content":[]}}
+JSONL
+    cat > "$TEST_HOME/.codex/sessions/2026/05/30/rollout-ctx.jsonl" <<'JSONL'
+{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"x-8","cwd":"/w"}}
+{"timestamp":"2026-05-30T11:00:01Z","type":"turn_context","payload":{"cwd":"/w","model":"gpt-x"}}
+{"timestamp":"2026-05-30T11:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}
+JSONL
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT harness, context_tokens, cache_creation_tokens FROM model_turns ORDER BY harness;"
+    assert_output_contains '"harness":"claude","context_tokens":1208,"cache_creation_tokens":200'
+    assert_output_contains '"harness":"codex","context_tokens":100,"cache_creation_tokens":null'
+}
+
+@test "ingest: codex token rows stay out of entry_count and assistant readers; sub-agents keep a parent link" {
+    local d="$TEST_HOME/.codex/sessions/2026/05/30"
+    local tok='{"timestamp":"2026-05-30T11:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}'
+    local ctx='{"timestamp":"2026-05-30T11:00:01Z","type":"turn_context","payload":{"cwd":"/w","model":"gpt-x"}}'
+    local call='{"timestamp":"2026-05-30T11:00:02Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"ls\"]}","call_id":"call-1"}}'
+    local meta='{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"sub-1","cwd":"/w","source":{"subagent":{"thread_spawn":{"parent_thread_id":"top-1"}}}}}'
+    printf '%s\n' "$meta" "$ctx" "$call" "$tok" > "$d/rollout-sub.jsonl"
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT entry_count, parent_session_id FROM sessions WHERE sessionId='sub-1';"
+    assert_output_contains '"entry_count":1'
+    assert_output_contains '"parent_session_id":"top-1"'
+    run q "SELECT count(*) AS n FROM raw_entries WHERE type='assistant' AND json_extract(message, '\$.usage') IS NOT NULL;"
+    assert_output_contains '"n":0'
+    run q "SELECT count(*) AS n FROM model_turns WHERE harness='codex';"
+    assert_output_contains '"n":1'
+}
+
 @test "ingest: a malformed omp metric becomes NULL and does not abort the ingest" {
     mkdir -p "$TEST_HOME/.omp/agent/sessions/proj"
     cat > "$TEST_HOME/.omp/agent/sessions/proj/bad.jsonl" <<'JSONL'
@@ -201,6 +284,24 @@ JSONL
     [[ "$output" =~ omp[[:space:]]*\|[[:space:]]*p/gpt-x[[:space:]]*\|[[:space:]]*2[[:space:]]*\|[[:space:]]*0\.5[[:space:]]*\|[[:space:]]*50\.0[[:space:]]*\|[[:space:]]*4\.0 ]]
     [[ "$output" =~ \|[[:space:]]*1[[:space:]]*\|$ ]]
     [[ "$output" != *claude* ]]
+}
+
+@test "query: latency reports NULL single_call_pct for codex turns without tool_calls" {
+    write_codex_fixture
+    local d="$TEST_HOME/.codex/sessions/2026/05/30"
+    printf '%s\n' \
+        '{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"x-2","cwd":"/work/codex"}}' \
+        '{"timestamp":"2026-05-30T11:00:01Z","type":"turn_context","payload":{"cwd":"/work/codex","model":"gpt-x"}}' \
+        '{"timestamp":"2026-05-30T11:00:04Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}}}' \
+        > "$d/rollout-latency.jsonl"
+    run python3 "$INGEST" --force
+    assert_success
+    run q "SELECT count(*) AS n, count(tool_calls) AS t FROM model_turns WHERE harness='codex';"
+    assert_output_contains '"t":0'
+    run env SESSIONS_DB="$DB" "$REAL_DOTFILES_DIR/skills/session-analytics/scripts/query.sh" latency codex
+    assert_success
+    [[ "$output" != *"| 0.0 "* ]]
+    [[ "$output" =~ gpt-x[[:space:]]*\|[[:space:]]*1[[:space:]]*\|[[:space:]]*NULL[[:space:]]*\| ]]
 }
 
 @test "query: latency names the re-ingest fix when the database predates model_turns" {

@@ -55,6 +55,8 @@ looked like a T3 MCP problem.
 |---|---|---|
 | `chezmoi/.chezmoidata/t3.yaml` → `dot_t3/userdata/modify_settings.json` | `~/.t3/userdata/settings.json` | Merges `providers.claudeAgent.launchArgs` into the live file. T3 rewrites this file from its UI, so the guard preserves UI state through `lib/drift-gate.sh` with `lib/t3-settings-ignore.txt`. |
 | `dot_t3/userdata/claude-settings.json` | `~/.t3/userdata/claude-settings.json` | Passed via `--settings`. Sets `disableClaudeAiConnectors: true` for T3 sessions only, so the connectors never push tilth into the deferred tool list. |
+| `dot_config/systemd/user/t3code.service.d/telemetry.conf` (Linux only) | `~/.config/systemd/user/t3code.service.d/telemetry.conf` | Sets `T3CODE_TELEMETRY_ENABLED=false` for the background service. A drop-in, because `t3 service install` and `t3 update` rewrite the unit file. `run_onchange_after_reload-t3-service.sh.tmpl` runs `daemon-reload` only; the setting applies at the next service restart. |
+| `zsh/core.zsh` | shell profile | Exports `T3CODE_TELEMETRY_ENABLED=false` for the macOS desktop app, which reads the shell profile, and for foreground `t3 serve`. |
 
 The registry string uses a literal `$HOME`; the modify script expands it
 because chezmoi data files are not templated. `--settings` in Claude Code
@@ -131,6 +133,38 @@ install` from the new version rewrites the state as protocol 3, after
 mise hides fresh `npm:t3` releases behind its `minimum_release_age`, so
 `mise upgrade --bump` can trail Renovate's 4-hour soak by days.
 
+## T3 Connect push notifications
+
+T3 Connect sends agent activity to the T3 mobile app as push notifications and Live Activities.
+This setup uses publish-only mode because Tailscale Serve already gives remote access.
+Publish-only mode adds no managed tunnel.[^connect]
+
+On a headless server, run these commands in this order:
+
+```bash
+t3 connect link --headless --publish-only   # prints a device URL and code
+systemctl --user restart t3code.service     # the link applies at server start
+t3 connect status
+```
+
+Approve the device code in a browser before it expires (10 minutes).
+The restart stops running T3 threads, so do it when no thread is busy.
+A good result shows a stored credential, a provisioned environment link, a relay URL, and publishing enabled.
+Use `t3 connect publish` or `t3 connect publish --disable` to change only the publish flag.
+Sign in to the T3 mobile app with the same account to receive the notifications.
+
+The link survives restarts and reboots.
+T3 keeps the link state in `~/.t3/userdata/secrets/cloud-*.bin` with directory mode 700.
+The service is enabled with `Restart=always`, and user linger starts it at boot.
+Chezmoi does not manage `secrets/`, so `dots sync` does not change the link.
+`t3 update` replaces `~/.t3/runtime/`, not `userdata/`.
+`t3 connect unlink`, `t3 connect logout`, a deleted `~/.t3`, or a revoked account authorization removes the link.
+If notifications stop, run `t3 connect status` first.
+
+Keep the device code, OAuth token, and `secrets/` files out of Git.
+
+[^connect]: Local `t3 connect --help` and `t3 connect link --help` in t3 0.0.45; setup on crabbot verified with `t3 connect status` on 2026-10-10.
+
 ## Gotchas
 
 - T3 reads `settings.json` at thread start. Restart T3 or open a new thread
@@ -141,3 +175,7 @@ mise hides fresh `npm:t3` releases behind its `minimum_release_age`, so
   T3 UI keys to `lib/t3-settings-ignore.txt`, not to the registry.
 - Tests: `tests/t3-config.bats` (settings) and `tests/lib-t3-service.bats`
   (service upgrade).
+- T3 themes are not chezmoi-managed. The theme library (upstream PR #5226)
+  keeps custom themes in app storage, not in `settings.json`. Import
+  `theme/t3/chocolate-donut-2-color-theme.json` (VS Code format) through
+  Settings → Appearance → import, then pick it for dark mode.

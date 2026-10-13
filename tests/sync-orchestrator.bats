@@ -183,6 +183,85 @@ MOCK
     [[ "$ts" =~ ^[0-9]+$ ]]
 }
 
+# Mock git that reports a fixed 40-hex HEAD, with or without "-C <dir>".
+mock_git_head() {
+    rm -f "$MOCK_BIN/git"
+    cat > "$MOCK_BIN/git" <<'MOCK'
+#!/bin/bash
+[[ "$1" == "-C" ]] && shift 2
+case "$1" in
+    rev-parse) echo "0123456789abcdef0123456789abcdef01234567" ;;
+    *) exit 0 ;;
+esac
+MOCK
+    chmod +x "$MOCK_BIN/git"
+}
+
+@test "sync history appends one line with epoch and 40-hex sha" {
+    mock_git_head
+    run call-sync-fn record_sync_history
+    assert_success
+    local log="$TEST_HOME/.local/state/dotfiles/sync-history.log"
+    assert_file_exists "$log"
+    [[ "$(wc -l < "$log" | tr -d ' ')" == "1" ]]
+    [[ "$(cat "$log")" =~ ^[0-9]+\ [0-9a-f]{40}$ ]]
+}
+
+@test "sync history repeated calls append and never truncate" {
+    mock_git_head
+    local log="$TEST_HOME/.local/state/dotfiles/sync-history.log"
+    mkdir -p "${log%/*}"
+    printf '1 %s\n' "$(printf 'f%.0s' {1..40})" > "$log"
+    run call-sync-fn record_sync_history
+    assert_success
+    run call-sync-fn record_sync_history
+    assert_success
+    [[ "$(wc -l < "$log" | tr -d ' ')" == "3" ]]
+    [[ "$(head -n1 "$log")" == "1 $(printf 'f%.0s' {1..40})" ]]
+}
+
+@test "sync history skips with a warning when HEAD is unreadable" {
+    rm -f "$MOCK_BIN/git"
+    printf '#!/bin/bash\nexit 128\n' > "$MOCK_BIN/git"
+    chmod +x "$MOCK_BIN/git"
+    run call-sync-fn record_sync_history
+    assert_success
+    assert_output_contains "skipping sync history entry"
+    [[ ! -e "$TEST_HOME/.local/state/dotfiles/sync-history.log" ]]
+}
+
+@test "sync history: successful sync run appends one line" {
+    mock_git_head
+    cd "$FAKE_DOTFILES"
+    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
+    run bash "$SYNC_SCRIPT"
+    assert_success
+    local log="$TEST_HOME/.local/state/dotfiles/sync-history.log"
+    [[ "$(wc -l < "$log" | tr -d ' ')" == "1" ]]
+    [[ "$(cat "$log")" =~ ^[0-9]+\ [0-9a-f]{40}$ ]]
+    assert_file_exists "$TEST_HOME/.local/state/dotfiles/last_sync"
+}
+
+@test "sync history: run with SYNC_FAILURES appends no line" {
+    mock_git_head
+    cd "$FAKE_DOTFILES"
+    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
+    rm -f "$MOCK_BIN/pi"
+    cat > "$MOCK_BIN/pi" <<'MOCK'
+#!/bin/bash
+case "$1" in
+    --version) printf '%s\n' "$PI_VER" ;;
+    update) exit 1 ;;
+esac
+MOCK
+    chmod +x "$MOCK_BIN/pi"
+    run bash "$SYNC_SCRIPT"
+    assert_failure
+    assert_output_contains "Sync completed with FAILURES in: pi-packages"
+    [[ ! -e "$TEST_HOME/.local/state/dotfiles/sync-history.log" ]]
+    assert_file_exists "$TEST_HOME/.local/state/dotfiles/last_sync"
+}
+
 
 @test "Pi package reconcile updates configured extensions" {
     rm -f "$MOCK_BIN/pi"
@@ -1067,4 +1146,153 @@ SCRIPT
     assert_failure
     run cat "$SYNC_EVENTS"
     [ "$output" = $'chezmoi-prepare\npackages-failed' ]
+}
+
+# --- press: record_sync_history attacks ---
+
+# Run record_sync_history with an explicit state dir and dotfiles dir.
+press_history() {
+    HOME="$TEST_HOME" bash -c '
+        set -euo pipefail
+        eval "$(awk "/^########## Main\$/{exit} {print}" "$SYNC_SCRIPT")"
+        DOTFILES_STATE_DIR="$1"
+        dir="$2"
+        record_sync_history
+    ' _ "$1" "$2"
+}
+
+press_real_repo() {
+    local repo="$1"
+    rm -f "$MOCK_BIN/git"
+    mkdir -p "$repo"
+    git init -q "$repo"
+    git -C "$repo" -c user.email=a@b.c -c user.name=n -c commit.gpgsign=false commit -q --allow-empty -m one
+}
+
+@test "press: sync history writes under a state dir that contains spaces" {
+    local repo="$TEST_HOME/my dotfiles"
+    press_real_repo "$repo"
+    run press_history "$TEST_HOME/state dir/with space" "$repo"
+    assert_success
+    [[ "$(cat "$TEST_HOME/state dir/with space/sync-history.log")" == "$(date +%s | cut -c1-6)"*" $(git -C "$repo" rev-parse HEAD)" ]]
+}
+
+@test "press: sync history records the commit of a detached HEAD" {
+    local repo="$TEST_HOME/repo"
+    press_real_repo "$repo"
+    git -C "$repo" -c user.email=a@b.c -c user.name=n commit -q --allow-empty -m two
+    git -C "$repo" checkout -q --detach HEAD~1
+    run press_history "$TEST_HOME/state" "$repo"
+    assert_success
+    [[ "$(cut -d' ' -f2 "$TEST_HOME/state/sync-history.log")" == "$(git -C "$repo" rev-parse HEAD)" ]]
+}
+
+@test "press: sync history marks a dirty working tree" {
+    local repo="$TEST_HOME/repo"
+    press_real_repo "$repo"
+    echo change > "$repo/untracked"
+    run press_history "$TEST_HOME/state" "$repo"
+    assert_success
+    [[ "$(cat "$TEST_HOME/state/sync-history.log")" =~ ^[0-9]+\ [0-9a-f]{40}\ dirty$ ]]
+}
+
+@test "press: sync history leaves a clean working tree unmarked" {
+    local repo="$TEST_HOME/repo"
+    press_real_repo "$repo"
+    run press_history "$TEST_HOME/state" "$repo"
+    assert_success
+    [[ "$(cat "$TEST_HOME/state/sync-history.log")" =~ ^[0-9]+\ [0-9a-f]{40}$ ]]
+}
+
+# Print DOTFILES_STATE_DIR as .sync resolves it under the given environment.
+sync_state_dir() {
+    # shellcheck disable=SC2016  # the inner bash expands these, not this shell
+    env -u DOTFILES_STATE_DIR "$@" bash -c '
+        eval "$(awk "/^########## Main\$/{exit} {print}" "$SYNC_SCRIPT")"
+        printf "%s" "$DOTFILES_STATE_DIR"
+    '
+}
+
+@test "sync state dir honours an exported DOTFILES_STATE_DIR" {
+    run sync_state_dir HOME="$TEST_HOME" DOTFILES_STATE_DIR="$TEST_HOME/custom"
+    assert_success
+    [[ "$output" == "$TEST_HOME/custom" ]]
+}
+
+@test "sync default state dir matches the harness-climb history default" {
+    run sync_state_dir HOME="$TEST_HOME"
+    assert_success
+    local sync_dir="$output"
+    run env -u DOTFILES_STATE_DIR HOME="$TEST_HOME" python3 -I -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+import hc_git
+print(hc_git.default_history_path())
+' "$REAL_DOTFILES_DIR/skills/harness-climb/scripts"
+    assert_success
+    [[ "$output" == "$sync_dir/sync-history.log" ]]
+}
+
+@test "press: sync history skips with a warning when the dotfiles dir is not a git repo" {
+    rm -f "$MOCK_BIN/git"
+    mkdir -p "$TEST_HOME/plain"
+    run press_history "$TEST_HOME/state" "$TEST_HOME/plain"
+    assert_success
+    assert_output_contains "skipping sync history entry"
+    [[ ! -e "$TEST_HOME/state/sync-history.log" ]]
+}
+
+@test "press: sync history skips cleanly for a repo with no commits" {
+    rm -f "$MOCK_BIN/git"
+    git init -q "$TEST_HOME/unborn"
+    run press_history "$TEST_HOME/state" "$TEST_HOME/unborn"
+    assert_success
+    assert_output_contains "skipping sync history entry"
+    [[ ! -s "$TEST_HOME/state/sync-history.log" ]]
+}
+
+@test "press: sync history never fails the sync when the state dir is a file" {
+    press_real_repo "$TEST_HOME/repo"
+    : > "$TEST_HOME/state-is-a-file"
+    run press_history "$TEST_HOME/state-is-a-file" "$TEST_HOME/repo"
+    assert_success
+}
+
+@test "press: sync history never fails the sync when the log is unwritable" {
+    press_real_repo "$TEST_HOME/repo"
+    mkdir -p "$TEST_HOME/state/sync-history.log"
+    run press_history "$TEST_HOME/state" "$TEST_HOME/repo"
+    assert_success
+    assert_output_contains "Cannot write sync history entry"
+}
+
+@test "press: sync history keeps every line intact under parallel appends" {
+    press_real_repo "$TEST_HOME/repo"
+    local _
+    for _ in $(seq 1 20); do
+        press_history "$TEST_HOME/state" "$TEST_HOME/repo" >/dev/null 2>&1 &
+    done
+    wait
+    [[ "$(wc -l < "$TEST_HOME/state/sync-history.log" | tr -d ' ')" == "20" ]]
+    run grep -cvE '^[0-9]+ [0-9a-f]{40}$' "$TEST_HOME/state/sync-history.log"
+    [[ "$output" == "0" ]]
+}
+
+@test "press: sync history sha is the checked-out HEAD even when the tree is dirty" {
+    press_real_repo "$TEST_HOME/repo"
+    printf 'dirty\n' > "$TEST_HOME/repo/untracked.txt"
+    run press_history "$TEST_HOME/state" "$TEST_HOME/repo"
+    assert_success
+    [[ "$(cut -d' ' -f2 "$TEST_HOME/state/sync-history.log")" == "$(git -C "$TEST_HOME/repo" rev-parse HEAD)" ]]
+}
+
+@test "press: sync history epoch is a plain integer that tracks the clock" {
+    press_real_repo "$TEST_HOME/repo"
+    local before after got
+    before=$(date +%s)
+    run press_history "$TEST_HOME/state" "$TEST_HOME/repo"
+    after=$(date +%s)
+    got=$(cut -d' ' -f1 "$TEST_HOME/state/sync-history.log")
+    [[ "$got" =~ ^[0-9]+$ ]]
+    (( got >= before && got <= after ))
 }

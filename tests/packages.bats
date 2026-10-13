@@ -1686,10 +1686,9 @@ curl_log_has_codex_download() {
     PATH="$MOCK_BIN:${clean_path%:}" run bash "$SYNC_SCRIPT"
     assert_success
 
-    if [ -f "$CURL_LOG" ]; then
-        run curl_log_has_codex_download
-        [ "$status" -eq 1 ]
-    fi
+    printf 'curl -L -o %s https://example.invalid/omp\n' "$TEST_HOME/codex-download" >> "$CURL_LOG"
+    run curl_log_has_codex_download
+    [ "$status" -eq 1 ]
 }
 
 @test "migration: lingering brew claude-code cask and omp formula are uninstalled" {
@@ -2330,16 +2329,32 @@ MOCKCARGO
 
 @test "retired harness cleanup removes brew, mise, and native installs" {
     write_test_yaml
-    write_mock_brew $'opencode\ncrush'
+    write_mock_brew $'crush'
     mkdir -p "$TEST_HOME/.local/bin"
-    touch "$TEST_HOME/.local/bin/opencode" "$TEST_HOME/.local/bin/crush"
+    touch "$TEST_HOME/.local/bin/crush"
 
     run_sync
     assert_success
 
-    grep -qx "brew uninstall opencode" "$BREW_LOG"
     grep -qx "brew uninstall crush" "$BREW_LOG"
-    grep -q "mise uninstall --yes --all aqua:anomalyco/opencode aqua:charmbracelet/crush" "$MISE_LOG"
-    [[ ! -e "$TEST_HOME/.local/bin/opencode" ]]
+    grep -q "^mise uninstall --yes --all aqua:charmbracelet/crush config=" "$MISE_LOG"
+    # OpenCode v2 moved from the aqua backend to npm:@opencode/cli; the old aqua install is retired.
+    grep -q "^mise uninstall --yes --all aqua:anomalyco/opencode config=" "$MISE_LOG"
     [[ ! -e "$TEST_HOME/.local/bin/crush" ]]
+}
+
+@test "opencode migrates off brew and native installs onto the mise pin" {
+    write_test_yaml
+    write_mock_brew $'opencode'
+    mkdir -p "$TEST_HOME/.local/bin"
+    touch "$TEST_HOME/.local/bin/opencode"
+
+    run_sync
+    assert_success
+    assert_output_contains "Removing Homebrew opencode (now native-managed)"
+
+    grep -qx "brew uninstall opencode" "$BREW_LOG"
+    run grep -q "uninstall.*npm:@opencode/cli" "$MISE_LOG"
+    assert_failure
+    [[ ! -e "$TEST_HOME/.local/bin/opencode" ]]
 }

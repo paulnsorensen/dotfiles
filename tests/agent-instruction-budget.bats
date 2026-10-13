@@ -5,15 +5,14 @@ load test_helper
 
 setup() {
     setup_test_env
-    HELPER="$REAL_DOTFILES_DIR/tests/helpers/agent_instruction_budget.py"
+    BUDGET_BIN="$REAL_DOTFILES_DIR/bin/agent-instruction-budget"
     CONFIG="$REAL_DOTFILES_DIR/agents/instruction-budgets.toml"
 }
 
 teardown() { teardown_test_env; }
 
 run_budget_check() {
-    run uv run --project "$REAL_DOTFILES_DIR/agent-profile" --frozen \
-        python "$HELPER" "$@"
+    run "$BUDGET_BIN" "$@"
 }
 
 write_family_config() {

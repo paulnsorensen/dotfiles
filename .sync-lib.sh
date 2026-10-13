@@ -28,6 +28,23 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Append "<epoch> <dotfiles HEAD sha>" to the sync history log.
+# Append " dirty" to the line when the working tree has uncommitted changes.
+# Skip with a warning when HEAD cannot be read. Never fail the sync.
+record_sync_history() {
+    local sha mark=""
+    sha=$(git -C "$dir" rev-parse HEAD 2>/dev/null) || sha=""
+    if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+        log_warning "Cannot read dotfiles HEAD; skipping sync history entry"
+        return 0
+    fi
+    [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]] && mark=" dirty"
+    mkdir -p "${DOTFILES_STATE_DIR}" || return 0
+    printf '%s %s%s\n' "$(date +%s)" "$sha" "$mark" >> "${DOTFILES_STATE_DIR}/sync-history.log" ||
+        log_warning "Cannot write sync history entry"
+    return 0
+}
+
 bootstrap_chezmoi_linux() {
     [[ "$(uname -s)" == "Linux" ]] || return 0
     command -v chezmoi &>/dev/null && return 0
@@ -735,6 +752,76 @@ _cz_render_codex_agent() {
         return 1
     fi
     return 0
+}
+
+# Render shared role bodies into OpenCode's native agent map.
+#   _cz_opencode_agents_json <registry_yaml> <dotfiles_root>
+_cz_opencode_agents_json() {
+    local registry="$1" root="$2" roles bash_rules name body_path model body entry agents='{}'
+    roles=$(yq -o=json '.agents' "$registry") || return 1
+    bash_rules=$(yq -o=json '.opencode.config.permission.bash' "$root/chezmoi/.chezmoidata/opencode.yaml") || return 1
+    if ! jq -e 'type == "object" and length > 0' <<<"$roles" >/dev/null; then
+        printf 'opencode agents: registry must contain roles\n' >&2
+        return 1
+    fi
+    if ! jq -e 'type == "object" and .["*"] == "allow"' <<<"$bash_rules" >/dev/null; then
+        printf 'opencode agents: global bash permission map missing\n' >&2
+        return 1
+    fi
+    while IFS=$'\t' read -r name body_path model; do
+        if [[ ! "$name" =~ ^[a-z][a-z0-9-]*$ || ! "$body_path" =~ ^agents/agent_definitions/[a-z0-9-]+\.md$ || ! -f "$root/$body_path" ]]; then
+            printf "opencode agent '%s': invalid or missing body_path\n" "$name" >&2
+            return 1
+        fi
+        if [[ ! "$model" =~ ^gpt-6-(luna|astra)$|^gpt-6\.1-sol$ ]]; then
+            printf "opencode agent '%s': models.opencode missing or invalid\n" "$name" >&2
+            return 1
+        fi
+        body=$(<"$root/$body_path") || return 1
+        entry=$(jq -c --arg name "$name" --arg body "$body" --arg model "$model" --argjson bash_rules "$bash_rules" '
+            .[$name] | (.tools // []) as $tools | (.disallowedTools // []) as $dis |
+            def covers($entry; $tool):
+                $entry == $tool or
+                ($entry == "mcp__tilth" and ($tool | startswith("mcp__tilth__"))) or
+                (($entry | endswith("*")) and ($tool | startswith($entry[0:-1])));
+            def available($tool):
+                ($dis | any(covers(.; $tool)) | not) and
+                (($tools | length) == 0 or ($tools | any(covers(.; $tool))));
+            def mcp_key($tool):
+                ($tool | split("__")) as $parts |
+                if ($parts | length) == 2 then $parts[1] + "_*"
+                else $parts[1] + "_" + ($parts[2:] | join("__")) end;
+            def denied_tools:
+                reduce $dis[] as $tool ({};
+                    . + (if $tool == "Skill" then {skill: "deny"}
+                         elif $tool == "AskUserQuestion" then {question: "deny"}
+                         elif $tool == "WebSearch" then {websearch: "deny"}
+                         elif $tool == "WebFetch" then {webfetch: "deny"}
+                         elif $tool == "Bash" then {bash: "deny"}
+                         elif ($tool | startswith("mcp__")) then {(mcp_key($tool)): "deny"}
+                         else {} end));
+            def grants:
+                (if available("Bash") then {bash: $bash_rules} else {} end) +
+                (if available("WebFetch") then {webfetch: "allow"} else {} end) +
+                (if available("WebSearch") then {websearch: "allow"} else {} end) +
+                (if available("mcp__tilth__tilth_read") then {tilth_tilth_read: "allow"} else {} end) +
+                (if available("mcp__tilth__tilth_search") then {tilth_tilth_search: "allow"} else {} end) +
+                (if available("mcp__tilth__tilth_write") then {tilth_tilth_write: "allow"} else {} end);
+            {
+                ($name): {
+                    description: .description,
+                    mode: "subagent",
+                    model: ("openai/" + $model),
+                    steps: .maxTurns,
+                    prompt: $body,
+                    permission: (if ($tools | length) > 0 then {"*": "deny", task: "deny"} + grants
+                                 else {task: "deny"} + denied_tools end)
+                }
+            }
+        ' <<<"$roles") || return 1
+        agents=$(jq -cn --argjson current "$agents" --argjson entry "$entry" '$current + $entry') || return 1
+    done <<<"$(jq -r 'to_entries[] | [.key, (.value.body_path // ""), (.value.models.opencode // "")] | @tsv' <<<"$roles")"
+    printf '%s\n' "$agents"
 }
 
 # Build ~/.codex/hooks.json from the codex-harness entries of the hook

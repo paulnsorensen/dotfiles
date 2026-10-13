@@ -20,6 +20,9 @@ iterm2/com.googlecode.iterm2.plist
 /reference/
 !claude/reference/
 
+# harness-climb local thread state (STOP, ledger, round verdicts)
+.harness-climb/
+
 # Local-only authored artifacts (not yet promoted to tracked source).
 # .ignore = ripgrep/hallouminate ignore-crate file (re-includes .cheese/
 # scratch for local semantic indexing); ROADMAP.md = strategic direction doc.

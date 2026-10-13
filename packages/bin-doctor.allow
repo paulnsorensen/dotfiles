@@ -29,3 +29,16 @@ brew:poppler
 brew:yamlfmt
 brew:yamllint
 brew:yabai
+brew:helm
+brew:opa
+brew:opentofu
+brew:signadot-cli
+shadow:node                              # the multiplier overlay loads nvm for work projects; mise node wins PATH
+shadow:npm                               # nvm's node ships npm too; mise node wins PATH
+shadow:yarn                              # nvm's node ships yarn beside the allowlisted brew yarn
+shadow:yarnpkg                           # same pair as yarn
+
+# Copies that another install requires and cannot drop.
+shadow:claude                            # cmux.app bundles its own claude; the mise pin wins PATH
+shadow:protoc                            # brew protobuf is a mosh dependency; the mise pin wins PATH
+shadow:rust-analyzer                     # brew rustup always ships a proxy; the mise pin wins PATH

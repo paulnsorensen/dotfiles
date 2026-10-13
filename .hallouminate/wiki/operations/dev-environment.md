@@ -16,6 +16,22 @@ Managed by [prek](https://prek.j178.dev/) via `prek.toml`. Hooks run on commit: 
 
 **Always `dots sync` before committing** — the sync check blocks the commit if `~/.claude/` (settings, agents, commands, hooks, skills) is out of sync with the repo. `git commit --no-verify` overrides, but only for rare temporary cases; fix the underlying issue (e.g. a detected secret) instead. Run `prek install` after cloning to set up the hooks.
 
+### CI ruff pin and local ruff drift (2026-10-09)
+
+The CI lint job pins ruff in `.github/workflows/test.yml` (`version:` on `astral-sh/ruff-action`, tracked by a Renovate custom manager). Without a pin, the action installs the latest ruff, and a ruff release turned lint red with no code change (PR #1224, ruff 0.17.0). `packages/packages.yaml` pins the local ruff separately, so the two versions can differ. Ruff 0.16 and 0.17 sort `tomllib` differently, so `soak_check.py` imports it inside `_pin_values`. Ruff 0.17 PLR0402 rejects `import unittest.mock as mock`; use `import unittest.mock` or from-imports.
+
+*Source: PR #1224 lint failure and cure · Updated: 2026-10-09*
+
+### Health-check test isolation
+
+The `dots doctor` drift-count test compares two real health checks.
+Host broker processes can change between checks, even when the test isolates `HOME`.
+A test-local `ps` stub fixes the broker inventory and preserves the exact two-issue drift assertion.
+A controlled process fixture reproduces this failure mode.
+The original failing host process is not captured.
+
+*Source: tests/dots.bats:236-263; bin/dots:340-372; controlled fixture and parallel Bats verification · Updated: 2026-10-10*
+
 ## Claude marketplace plugins
 
 Distinct from the `agents/` registry system (see [[../architecture/agents-dir]]) and from the `global@local` plugin that `ap` wires (see [[../architecture/agent-profile]]): these are third-party plugins from external marketplaces, managed declaratively via `claude/plugins/registry.yaml`.
@@ -26,7 +42,7 @@ Distinct from the `agents/` registry system (see [[../architecture/agents-dir]])
 - Unlike MCP, the plugins directory is **not** symlinked to `~/.claude` — Claude Code uses that location for plugin cache storage.
 - If a plugin provides MCP tools, add `mcp__plugin_<name>__*` to `permissions.allow`.
 - **A local/unpublished plugin's bundled MCP must run from its source, not PyPI.** When a `path:` entry points at an out-of-repo clone (e.g. `milknado@milknado` → `~/Dev/milknado`), the plugin's own `.mcp.json` cannot use a bare `uvx <pkg>` — that resolves against PyPI and fails to connect for an unpublished package (`× <pkg> was not found in the package registry`). Point it at the clone: `uvx --from <abs-path> <script>` (or `uv run --project <abs-path> <script>`). Verify with `claude mcp list` (look for `✗ Failed to connect`). Tradeoff: the absolute path is machine-specific, so the marketplace isn't portable until the package is published — then revert to bare `uvx <pkg>`.
-- **A local marketplace must be registered with the CLI, not just jq-written into settings.** `claude/plugins/sync.sh`'s `sync_local_marketplaces` keeps `extraKnownMarketplaces` in the **live `~/.claude/settings.json`** (the committed `claude/settings.json` is retired — see `claude/.sync`; the `CLAUDE_SETTINGS_FILE` env var is the test seam for that hardcoded path). But writing that JSON entry is **not sufficient** — `claude plugin install <name>@<mp>` can only resolve a marketplace the CLI has actually fetched/registered. The entry won't show in `claude plugin marketplace list` and has no `~/.claude/plugins/marketplaces/<name>/` cache dir until you run `claude plugin marketplace add <abs-path>` (idempotent: fetches when missing, "already on disk" no-op when present). So sync runs `marketplace add` per auto-managed local marketplace (`mp_name == plugin_name`); without it a freshly-added local plugin like milknado fails to install on first sync, and the failure is swallowed by the install step's `2>/dev/null`. Symptom: sync prints `Installing <plugin>... failed` but the plugin never lands in `claude plugin list`.
+- **A local marketplace must be registered with the CLI, not just jq-written into settings.** `claude/plugins/sync.sh`'s `sync_local_marketplaces` keeps `extraKnownMarketplaces` in the **live `~/.claude/settings.json`** (the committed `claude/settings.json` is retired — see `claude/.sync`; the `CLAUDE_SETTINGS_FILE` env var is the test seam for that hardcoded path). But writing that JSON entry is **not sufficient** — `claude plugin install <name>@<mp>` can only resolve a marketplace the CLI has actually fetched/registered. The entry won't show in `claude plugin marketplace list` and has no `~/.claude/plugins/marketplaces/<name>/` cache dir until you run `claude plugin marketplace add <abs-path>` (idempotent: fetches when missing, "already on disk" no-op when present). So sync runs `marketplace add` per auto-managed local marketplace. An entry owns its marketplace when `mp_name == plugin_name`, or when `<path>/.claude-plugin/marketplace.json` `.name` equals `mp_name` (for example `vaudeville@paulnsorensen`, because vaudeville's manifest names its marketplace `paulnsorensen`). `modify_settings.json` applies the same rule. A shared name such as `@local` has no manifest that names it, so sync skips it. The old `sync_vaudeville_cache` symlink hack built an unregistered `local` marketplace with no `marketplace.json`, so `vaudeville@local` always failed to install; without it a freshly-added local plugin like milknado fails to install on first sync, and the failure is swallowed by the install step's `2>/dev/null`. Symptom: sync prints `Installing <plugin>... failed` but the plugin never lands in `claude plugin list`.
 
 ## skhd (removed 2026-08)
 

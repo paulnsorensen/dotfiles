@@ -78,7 +78,7 @@ This removes mandatory delegation, fixed grounding-call quotas, and duplicated m
 These removals follow ownership and simplicity, not a measured causal effect on failures.
 
 The existing budget helper measures both tokenizers and rejects undeclared instruction sources.[^1]
-Run `uv run --project agent-profile --frozen python tests/helpers/agent_instruction_budget.py agents/instruction-budgets.toml`.
+Run `bin/agent-instruction-budget agents/instruction-budgets.toml`.
 The following counts cover concatenated repository-owned source text only.
 They exclude native prompts, tool schemas, loaded skills, agent bodies, user messages, and external instructions.
 

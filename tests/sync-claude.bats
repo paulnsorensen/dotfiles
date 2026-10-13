@@ -377,6 +377,41 @@ JSON
     [ ! -f "$CLAUDE_LOG" ] || ! grep -q "plugin marketplace add" "$CLAUDE_LOG"
 }
 
+@test "plugin sync: registers a path marketplace whose marketplace.json names it" {
+    # Regression: vaudeville@paulnsorensen — the plugin and marketplace names
+    # differ, but the source dir's marketplace.json names the marketplace.
+    # A path entry with no matching marketplace.json (a shared name such as
+    # `local`) stays unregistered.
+    local dotfiles_root
+    dotfiles_root="$(mkdir -p "$TEST_HOME/dotfiles" && cd "$TEST_HOME/dotfiles" && pwd -P)"
+    local claude_dir="$dotfiles_root/claude"
+    local mock_dir="$claude_dir/plugins"
+    mkdir -p "$mock_dir" "$claude_dir/lib"
+    cp "$SYNC_COMMON" "$claude_dir/lib/sync-common.sh"
+    cp "$PLUGIN_SYNC" "$mock_dir/sync.sh"
+
+    local named="$dotfiles_root/src/widget" shared="$dotfiles_root/src/shared"
+    mkdir -p "$named/.claude-plugin" "$shared/.claude-plugin"
+    echo '{"name": "acme", "plugins": [{"name": "widget"}]}' > "$named/.claude-plugin/marketplace.json"
+    cat > "$mock_dir/registry.yaml" << 'YAML'
+plugins:
+  widget@acme:
+    scope: user
+    load: true
+    path: src/widget
+  gadget@local:
+    scope: user
+    load: true
+    path: src/shared
+YAML
+
+    run bash "$mock_dir/sync.sh"
+    assert_success
+
+    grep -qF "plugin marketplace add $named" "$CLAUDE_LOG"
+    ! grep -qF "plugin marketplace add $shared" "$CLAUDE_LOG"
+}
+
 
 @test "plugin sync: missing registry file exits with error" {
     local mock_dir
