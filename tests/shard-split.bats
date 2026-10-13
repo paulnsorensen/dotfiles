@@ -114,3 +114,12 @@ union_of_shards() {
     [ "$status" -eq 0 ]
     [ "$output" = a.bats ]
 }
+
+@test "CI shard weight rows name current Bats files only" {
+    local name seconds
+    while IFS=$'\t' read -r name seconds; do
+        [[ "$name" == \#* ]] && continue
+        [ -f "$REAL_DOTFILES_DIR/tests/$name" ] || return 1
+        [[ "$seconds" =~ ^[0-9]+\.[0-9][0-9]$ ]] || return 1
+    done < "$REAL_DOTFILES_DIR/tests/shard-weights.tsv"
+}

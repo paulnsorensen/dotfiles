@@ -5,6 +5,7 @@ default:
     @just --list
 
 # run all linters
+[parallel]
 lint: lint-shell lint-python lint-js lint-markdown
 
 # shellcheck on shell scripts: one process per file, fanned across all cores

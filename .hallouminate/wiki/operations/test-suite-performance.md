@@ -75,7 +75,11 @@ Caveat: the test host had severe ambient syspolicyd noise (~128,600 log lines in
 
 ## Gate layout and env leak (2026-07-31)
 
-`check` now runs `lint-fix` serially first (it mutates files, and the fixable linters gate through it — `ruff check --fix`, `eslint --fix`, and `markdownlint-cli2 --fix` all exit non-zero on unfixable findings), then fans out `lint-shell`, `test-python`, `smoke`, and `test` via GNU parallel. Plain `lint` stays out of the gate as redundant with `lint-fix` + `lint-shell`. `just check` fell from 291 s serial to 157 s wall.[^13]
+The July 2026 gate included `lint-fix`; that mutating layout is historical, not the current verification command.[^13]
+`just check` now selects affected read-only legs and dispatches them concurrently through GNU parallel.
+`just check --all` runs all seven legs; `lint-fix` remains an explicit, separate command.[^gate-20261013]
+`just lint` also runs its four independent read-only dependencies concurrently through `[parallel]`.
+This removes serial lint execution in CI without adding jobs or changing test-worker defaults.[^lint-20261013]
 
 `packages.bats` `setup()` now unsets `DOTFILES_DEV`: leaked as `true` from the invoking shell, `heal_missing_cask_apps` (#569) runs `brew list --cask` on the cache-hit path on Darwin, failing the two cache-skip tests on dev machines while Linux CI stays green (the heal is Darwin-only). Tests opt in explicitly.
 
@@ -122,3 +126,21 @@ Use at least three warm runs and report the median. Bats supports `-T/--timing`;
 [^8]: tests/test_helper.bash:44-58
 [^9]: agent-profile/tests/test_canonical_permissions.py:93-118; local `uv run pytest -q --durations=20`, 2026-07-25.
 [^10]: justfile:51-68; .github/workflows/test.yml:40-77; tests/workflows/all-parse.test.mjs:102-114
+
+### Parallel-check verification (2026-10-13)
+
+The refreshed shard table uses Ubuntu run 38008877100 and filters out files absent from this checkout.
+It includes `hill-climb.bats` and the other Python unittest wrappers; all current files have measured hints.[^weights-20261013]
+The shard table changes assignment, not coverage. Missing future entries still use the median fallback.
+Retain the CPU-count Bats default and pytest `-n auto`; this change does not establish benefits from more workers.[^gate-20261013]
+
+A failed baseline cannot establish a speed gain, even when the repaired gate passes.
+Recent historical CI runs also include a soak check absent from this checkout.
+Do not compare these runs as equivalent validation workloads.[^comparison-20261013]
+
+[^gate-20261013]: justfile:62-96; tests/check-affected.sh:40-64; tests/run-tests.sh:134-157.
+[^lint-20261013]: justfile:7-9; tests/just-check.bats, lint concurrency and failure regression.
+[^weights-20261013]: tests/shard-weights.tsv; <https://github.com/paulnsorensen/dotfiles/actions/runs/38008877100>.
+[^comparison-20261013]: operations/ci-optimization.md, Comparison limits; failed baseline on revision 58643403315d3d2332bde03671c0f5b1651b2271, 2026-10-10.
+
+*Source: approved parallel-check plan and CI timing artifacts · Updated: 2026-10-13 · Supersedes: current-tense July mutating-gate description*

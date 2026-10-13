@@ -93,3 +93,5 @@
 
 2026-10-08 · 1e3c11d2eab700a0 · merged · architecture/agents-dir.md · Records executable skill assets, reference separation, and recursive deployment for PR #1209.
 2026-10-08 · pr-1217-progressive-disclosure · merged · architecture/agents-dir.md · Credits the progressive-disclosure decisions to PR #1217. Adds the button-group and SVG group roles and the stricter check-widget stub from the review fix.
+
+2026-10-13 · build-ci-parallelization-20261013 · merged · operations/test-suite-performance.md · Record read-only lint fan-out and Ubuntu shard hints. Supersede the stale mutating-gate description. Preserve worker defaults and failed-baseline comparison limits.
