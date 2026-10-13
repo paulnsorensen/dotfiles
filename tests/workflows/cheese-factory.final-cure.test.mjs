@@ -1,4 +1,4 @@
-// Final-cure tests: a review that omits an outcome key is redone, and a run with no plated curd is partial.
+// Final-cure tests: the producer redoes a review that omits an outcome key or whose repair rewrites an outcome, and a run with no plated curd is partial.
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import test from 'node:test'
@@ -116,6 +116,36 @@ test('checkTaste_missingIssues_stillUsesFormatterRepairAndNoRedo', async () => {
 
   assert.ok(labels.includes('taste:parent:repair1'))
   assert.equal(labels.includes('taste:parent:redo1'), false)
+})
+
+// A formatter repair that rewrites a decision field changes the review, so the reviewer redoes the call.
+test('checkTaste_repairChangesLensVerdict_redoesTheReview', async () => {
+  const revise = { ...tasteOk, lenses: [{ lens: 'drift', verdict: 'revise', note: 'n' }] }
+  const { labels } = await run({
+    'taste:parent': (call) => {
+      const { issues, ...rest } = tasteOk
+      if (/:repair1$/.test(call.opts.label)) return revise
+      return /:redo2$/.test(call.opts.label) ? tasteOk : rest
+    },
+  })
+
+  assert.ok(labels.includes('taste:parent:repair1'))
+  assert.ok(labels.includes('taste:parent:redo2'), 'a rewritten lens verdict must make the reviewer redo')
+})
+
+// The age shapes have no form-only error that the runtime schema lets through, so this test drives the shared list rule through the taste lenses.
+test('checkTaste_repairDropsLens_redoesTheReview', async () => {
+  const two = { ...tasteOk, lenses: [{ lens: 'drift', verdict: 'pass', note: '' }, { lens: 'scope', verdict: 'pass', note: '' }] }
+  const { labels } = await run({
+    'taste:parent': (call) => {
+      const { issues, ...rest } = two
+      if (/:repair1$/.test(call.opts.label)) return { ...two, lenses: [two.lenses[0]] }
+      return /:redo2$/.test(call.opts.label) ? two : rest
+    },
+  })
+
+  assert.ok(labels.includes('taste:parent:repair1'))
+  assert.ok(labels.includes('taste:parent:redo2'), 'a dropped lens must make the reviewer redo')
 })
 
 // ---- finding 2: top-level status ----

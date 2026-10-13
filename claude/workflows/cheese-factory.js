@@ -1,7 +1,7 @@
 export const meta = {
   name: 'cheese-factory',
   description:
-    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial.',
+    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial. The run is ok only when every curd is clean and plated; otherwise it is partial, with reason set only for a budget or gate block.',
   phases: [
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
     { title: 'Criteria', detail: 'one read-only explorer maps each spec AC line to one check; code rejects unsafe or vacuous checks' },
@@ -17,7 +17,7 @@ export const meta = {
     { title: 'Verify', detail: 'one judge per criterion runs its check serially at the integration head; ci criteria are deferred' },
     { title: 'Done', detail: 'a judge advisor signs off on the verified work before Plate; no sign-off blocks Plate' },
     { title: 'Plate', detail: 'one opus barrier stacks clean curd branches into (stacked) PRs; never merges' },
-    { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, excluded-curd reasons, the verification record, and the plan and done advice; a plan-blocked run returns status blocked with its concerns and advice' },
+    { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, excluded-curd reasons, the verification record, and the plan and done advice; ok only when every curd is clean and plated; otherwise partial, with reason set only for a budget or gate block; a plan-blocked run returns status blocked with its concerns and advice' },
   ],
 }
 
@@ -414,15 +414,13 @@ const enumErrors = (path, value, allowed, kind = form) => (allowed.includes(valu
 // Cook is the exception; see checkCook.
 const statusErrors = (v, allowed) => enumErrors('$.status', v.status, allowed, substance)
 
-// A finding field is a review fact. A formatter cannot know it, so an error under $.findings[i] is substance and the reviewer redoes.
-// A missing findings list is a review outcome too; see decisionPathRe.
-const FINDINGS_PATH_RE = /^\$\.findings\[/
-// A decision field is the producer's judgment: a verdict, a pass flag, or a check. A formatter must not choose it, so a shape error there also makes the producer redo.
+// A decision field is the producer's judgment: a verdict, a pass flag, a check, or a review outcome. A formatter must not choose it, so a shape error there also makes the producer redo.
 // The criteria-gate schemas and the three review shapes have decision paths. Every other schema keeps its classification.
-// A review that omits its outcome keys has not reviewed. A formatter would invent a pass, so the reviewer redoes the review.
+// A review without its outcome keys is not a review. A formatter can only invent a pass, so the reviewer does the review again.
 const decisionPathRe = (schema) => {
-  if (schema === AGE_BARRIER_SHAPE || schema === REAGE_SHAPE) return /^\$\.(has_medium_plus_findings|findings|reviewed_slugs)\b/
-  if (schema === TASTE_SHAPE) return /^\$\.(verdict|lenses)\b/
+  // A finding field is a review fact. A formatter cannot know it, so an error under $.findings[i] is substance and the reviewer redoes.
+  if (schema === AGE_BARRIER_SCHEMA || schema === AGE_BARRIER_SHAPE || schema === REAGE_SHAPE) return /^\$\.(has_medium_plus_findings|findings|reviewed_slugs)\b/
+  if (schema === TASTE_SCHEMA || schema === TASTE_SHAPE) return /^\$\.(verdict|lenses)\b/
   if (schema === VERDICT_SCHEMA) return /^\$\.(passes|tree_clean|missing_paths)\b/
   if (schema === ADVICE_SCHEMA) return /^\$\.verdict\b/
   if (schema === CRITERIA_SCHEMA) return /^\$\.criteria\[\d+\]\.(check_kind|check)\b/
@@ -430,7 +428,22 @@ const decisionPathRe = (schema) => {
 }
 const shapeError = (msg, schema) => {
   const decision = decisionPathRe(schema)
-  return FINDINGS_PATH_RE.test(msg) || (decision && decision.test(msg)) ? substance(msg) : form(msg)
+  return decision && decision.test(msg) ? substance(msg) : form(msg)
+}
+// Maps every leaf of a value to its JSON text, keyed by a $-path. An empty container is a leaf.
+const leafPaths = (value, path = '$', out = new Map()) => {
+  const kids = value !== null && typeof value === 'object' ? Object.entries(value) : []
+  if (!kids.length) out.set(path, JSON.stringify(value))
+  for (const [k, v] of kids) leafPaths(v, Array.isArray(value) ? `${path}[${k}]` : `${path}.${k}`, out)
+  return out
+}
+// Returns the first decision path whose value differs between a pre-repair and a repaired answer, or null.
+const decisionDrift = (before, after, schema) => {
+  const decision = decisionPathRe(schema)
+  if (!decision) return null
+  const a = leafPaths(before)
+  const b = leafPaths(after)
+  return [...new Set([...a.keys(), ...b.keys()])].find((p) => decision.test(p) && a.get(p) !== b.get(p)) ?? null
 }
 // Builds a check: the schema shape first, then the extra checks only when the shape holds.
 const checkWith = (schema, ...extra) => (value) => {
@@ -640,6 +653,7 @@ async function typed(text, opts, check, nullIsFinal = false) {
   let sent = { text, opts }
   let { value, threw } = await attempt(sent.text, sent.opts)
   let expanded = false
+  let repairedFrom = null
   for (let round = 1; ; round++) {
     if (threw != null) {
       if (isWriter(sent.opts) || round > LIMITS.fixRounds) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw' }
@@ -664,9 +678,17 @@ async function typed(text, opts, check, nullIsFinal = false) {
         errors = check(value)
       }
     }
+    // A formatter repairs form only. A repair that rewrites a decision field changes the review, so the producer redoes the call.
+    if (repairedFrom && value != null) {
+      const changed = decisionDrift(repairedFrom, value, opts.schema)
+      if (changed) errors = [substance(`a repair changed ${changed}`), ...errors]
+    }
+    repairedFrom = null
     if (!errors.length) return { value, errors, lost: null }
     if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null }
-    sent = errors.every((e) => e.kind === 'form')
+    const formOnly = errors.every((e) => e.kind === 'form')
+    repairedFrom = formOnly ? value : null
+    sent = formOnly
       ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' } }
       : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
     ;({ value, threw } = await attempt(sent.text, sent.opts))
