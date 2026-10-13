@@ -1,7 +1,7 @@
 export const meta = {
   name: 'cheese-factory',
   description:
-    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial. The run is ok only when every curd is clean and plated; otherwise it is partial, with reason set only for a budget or gate block.',
+    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial. A run that reaches Report is ok only when every curd is clean and plated. Otherwise it is partial. Only a budget or gate block sets reason.',
   phases: [
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
     { title: 'Criteria', detail: 'one read-only explorer maps each spec AC line to one check; code rejects unsafe or vacuous checks' },
@@ -17,7 +17,7 @@ export const meta = {
     { title: 'Verify', detail: 'one judge per criterion runs its check serially at the integration head; ci criteria are deferred' },
     { title: 'Done', detail: 'a judge advisor signs off on the verified work before Plate; no sign-off blocks Plate' },
     { title: 'Plate', detail: 'one opus barrier stacks clean curd branches into (stacked) PRs; never merges' },
-    { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, excluded-curd reasons, the verification record, and the plan and done advice; ok only when every curd is clean and plated; otherwise partial, with reason set only for a budget or gate block; a plan-blocked run returns status blocked with its concerns and advice' },
+    { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, excluded-curd reasons, the verification record, and the plan and done advice; a run that reaches Report is ok only when every curd is clean and plated. Otherwise it is partial. Only a budget or gate block sets reason. A plan-blocked run returns status blocked with its concerns and advice' },
   ],
 }
 
@@ -619,6 +619,7 @@ const normalizeEnums = (v) => {
   const out = { ...v }
   if (typeof out.status === 'string') out.status = normStatus(out.status)
   if (typeof out.verdict === 'string') out.verdict = norm(out.verdict)
+  if (Array.isArray(out.lenses)) out.lenses = out.lenses.map((l) => (l && typeof l.verdict === 'string' ? { ...l, verdict: norm(l.verdict) } : l))
   if (Array.isArray(out.results)) out.results = out.results.map((r) => (r && typeof r.status === 'string' ? { ...r, status: norm(r.status) } : r))
   for (const field of TRIM_FIELDS) if (typeof out[field] === 'string') out[field] = out[field].trim().toLowerCase()
   return out
@@ -654,6 +655,7 @@ async function typed(text, opts, check, nullIsFinal = false) {
   let { value, threw } = await attempt(sent.text, sent.opts)
   let expanded = false
   let repairedFrom = null
+  let repairErrors = []
   for (let round = 1; ; round++) {
     if (threw != null) {
       if (isWriter(sent.opts) || round > LIMITS.fixRounds) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw' }
@@ -681,13 +683,14 @@ async function typed(text, opts, check, nullIsFinal = false) {
     // A formatter repairs form only. A repair that rewrites a decision field changes the review, so the producer redoes the call.
     if (repairedFrom && value != null) {
       const changed = decisionDrift(repairedFrom, value, opts.schema)
-      if (changed) errors = [substance(`a repair changed ${changed}`), ...errors]
+      if (changed) errors = [substance(`a formatter repair changed ${changed}; fix the original errors yourself`), ...repairErrors.map((e) => substance(e.msg)), ...errors]
     }
     repairedFrom = null
     if (!errors.length) return { value, errors, lost: null }
     if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null }
     const formOnly = errors.every((e) => e.kind === 'form')
     repairedFrom = formOnly ? value : null
+    repairErrors = formOnly ? errors : []
     sent = formOnly
       ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' } }
       : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
