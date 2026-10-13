@@ -766,7 +766,7 @@ test('verify_noCleanEntries_skipsVerifyAndDoneAndReportsNotRun', async () => {
   assert.equal(starting(trace, 'verify:').length, 0)
   assert.equal(calls(trace, 'advise:done').length, 0)
   assert.equal(result.advice.done, null)
-  assert.equal(result.status, 'ok')
+  assert.equal(result.status, 'partial')
 })
 
 test('verify_integrateNull_skipsVerifyAndDoneAndReportsNotRun', async () => {

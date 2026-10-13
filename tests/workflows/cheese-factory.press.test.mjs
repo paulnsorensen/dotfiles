@@ -217,10 +217,11 @@ test('checkAge_blockedAnswerWithOnlyStatusAndReason_isBlockedWithoutRepair', asy
   assert.equal(callsOf(trace, 'plate').length, 0)
 })
 
-test('checkAge_okStatusWithoutRequiredKeys_stillFailsTheShapeCheck', async () => {
-  const { trace } = await runParent({ 'age:barrier': () => ({ status: 'ok' }) })
+test('checkAge_okStatusWithoutRequiredKeys_failsAsSubstanceAndRedoesWithoutRepair', async () => {
+  const { trace } = await runParent({ 'age:barrier': (call) => (call.opts.label === 'age:barrier' ? { status: 'ok' } : ageResult({ reviewed: ['parent'] })) })
 
-  assert.ok(labelsOf(trace).includes('age:barrier:repair1'), 'an ok answer must still carry the review keys')
+  assert.ok(labelsOf(trace).includes('age:barrier:redo1'), 'an ok answer without the review keys must make the reviewer redo')
+  assert.equal(labelsOf(trace).includes('age:barrier:repair1'), false, 'a formatter must not invent the review outcome')
 })
 
 test('checkReage_blockedCombinedStatus_keepsReasonAndRunsNoRedoOrRepair', async () => {

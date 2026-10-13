@@ -415,12 +415,15 @@ const enumErrors = (path, value, allowed, kind = form) => (allowed.includes(valu
 const statusErrors = (v, allowed) => enumErrors('$.status', v.status, allowed, substance)
 
 // A finding field is a review fact. A formatter cannot know it, so an error under $.findings[i] is substance and the reviewer redoes.
-// A missing or mistyped findings list stays form: the formatter only restores the key.
+// A missing findings list is a review outcome too; see decisionPathRe.
 const FINDINGS_PATH_RE = /^\$\.findings\[/
 // A decision field is the producer's judgment: a verdict, a pass flag, or a check. A formatter must not choose it, so a shape error there also makes the producer redo.
-// Only the three criteria-gate schemas have decision paths. Every other schema keeps its classification.
+// The criteria-gate schemas and the three review shapes have decision paths. Every other schema keeps its classification.
+// A review that omits its outcome keys has not reviewed. A formatter would invent a pass, so the reviewer redoes the review.
 const decisionPathRe = (schema) =>
-  schema === VERDICT_SCHEMA ? /^\$\.(passes|tree_clean|missing_paths)\b/
+  schema === AGE_BARRIER_SHAPE || schema === REAGE_SHAPE ? /^\$\.(has_medium_plus_findings|findings|reviewed_slugs)\b/
+    : schema === TASTE_SHAPE ? /^\$\.(verdict|lenses)\b/
+      : schema === VERDICT_SCHEMA ? /^\$\.(passes|tree_clean|missing_paths)\b/
     : schema === ADVICE_SCHEMA ? /^\$\.verdict\b/
       : schema === CRITERIA_SCHEMA ? /^\$\.criteria\[\d+\]\.(check_kind|check)\b/
         : null
@@ -2041,8 +2044,10 @@ if (curdsOut.length && curdsOut.every((c) => c.status === 'clean' && platedBySlu
   if (!cleaned.value) log(`Worktree cleanup returned no valid result (${errorText(cleaned.errors)}).`)
 }
 
+// A run is ok only when a curd plated and every curd is clean.
+const runStatus = budgetReason || blockReason || !platedBySlug.size || curdsOut.some((c) => c.status !== 'clean') ? 'partial' : 'ok'
 return {
-  status: budgetReason || blockReason ? 'partial' : 'ok',
+  status: runStatus,
   reason: budgetReason || blockReason || undefined,
   concerns: doneConcerns || undefined,
   curds: curdsOut,
