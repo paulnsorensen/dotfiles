@@ -116,10 +116,23 @@ union_of_shards() {
 }
 
 @test "CI shard weight rows name current Bats files only" {
-    local name seconds
+    local name seconds bats_file matched
     while IFS=$'\t' read -r name seconds; do
         [[ "$name" == \#* ]] && continue
         [ -f "$REAL_DOTFILES_DIR/tests/$name" ] || return 1
+        matched=0
+        for bats_file in "$REAL_DOTFILES_DIR"/tests/*.bats; do
+            if [[ "$REAL_DOTFILES_DIR/tests/$name" == "$bats_file" ]]; then
+                matched=1
+                break
+            fi
+        done
+        [ "$matched" -eq 1 ] || return 1
         [[ "$seconds" =~ ^[0-9]+\.[0-9][0-9]$ ]] || return 1
     done < "$REAL_DOTFILES_DIR/tests/shard-weights.tsv"
+
+    printf 'a.bats\t6\nb.bats\t5\nc.bats\t1\nd.bats\t1\n' > "$WEIGHTS"
+    run shard_files 1 2 "$WEIGHTS" a.bats b.bats c.bats d.bats
+    [ "$status" -eq 0 ]
+    [ "$output" = $'a.bats\nd.bats' ]
 }

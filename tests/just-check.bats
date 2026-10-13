@@ -69,8 +69,9 @@ NPROC
     chmod +x "$FIXTURE_DIR/bin/bats" "$FIXTURE_DIR/bin/nproc"
     export BATS_ARGS="$FIXTURE_DIR/bats.args"
 
-    run env HOME="$FIXTURE_DIR/home" PATH="$FIXTURE_DIR/bin:$PATH" bash "$DOTFILES_DIR/tests/run-tests.sh"
+    run env HOME="$FIXTURE_DIR/home" PATH="$FIXTURE_DIR/bin:$PATH" bash "$DOTFILES_DIR/tests/run-tests.sh" --verbose
     [ "$status" -eq 0 ]
+    [[ "$output" == *"ok 1 fixture"* ]] || return 1
     local args
     args="$(<"$BATS_ARGS")"
     [[ "$args" == *"--jobs 7"* ]] || return 1
@@ -101,6 +102,7 @@ if [[ "$lane" == "$FAIL_LANE" ]]; then
     printf 'injected lint failure: %s\n' "$lane" >&2
     exit 23
 fi
+printf 'lint lane complete: %s\n' "$lane"
 STUB
     chmod +x "$FIXTURE_DIR/$name"
 }
@@ -119,6 +121,7 @@ STUB
     [ "$status" -eq 0 ]
     for lane in shellcheck ruff eslint markdownlint-cli2; do
         [ -f "$LINT_SYNC/$lane" ] || return 1
+        [[ "$output" == *"lint lane complete: $lane"* ]] || return 1
     done
 
     for FAIL_LANE in shellcheck ruff eslint markdownlint-cli2; do
