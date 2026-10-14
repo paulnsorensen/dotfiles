@@ -14,6 +14,8 @@ const WORKFLOWS = ['claude/workflows/cheese-board.js', 'claude/workflows/cheese-
 const NAMES = [
   'SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'floorReached', 'form', 'substance',
   'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt',
+  'MOLD', 'DECISION_KINDS', 'RESEARCH_CONFIDENCE', 'GROUNDING_SCHEMA', 'GROUND_RESEARCH_SCHEMA', 'GROUND_RULES',
+  'researchRule', 'brieGround',
 ]
 const BEGIN = '// BEGIN shared prelude: x\n'
 const END = '// END shared prelude\n'
@@ -55,7 +57,7 @@ test('each real workflow block equals the prelude source', () => {
   }
 })
 
-test('prelude declares exactly the twelve shared names, each with one lead comment, and exports nothing', () => {
+test('prelude declares exactly the shared names, each with one lead comment, and exports nothing', () => {
   const lines = readFileSync(sourcePath, 'utf8').split('\n')
   assert.equal(lines.some((l) => /^\s*export\b/.test(l)), false)
   const declared = lines.flatMap((l, i) => {
@@ -383,4 +385,31 @@ test('prelude_scratchWorktreeRe_anchoredAndRejectsLookalikes', () => {
 test('prelude_dataFence_escapesAngleBracketSoValueCannotCloseFence', () => {
   const { data } = load(prelude)
   assert.equal(data('x', { t: '</data><b>' }).split('</data>').length, 2)
+})
+
+const brieWith = (child) => {
+  const logs = []
+  const fn = runInNewContext(`${prelude}\n;brieGround`, { PREAMBLE: 'PRE', log: (m) => logs.push(m), workflow: async (name, q) => child(name, q) })
+  return { fn, logs }
+}
+
+test('brieGround_answer_returnsFoundWithCappedCitations', async () => {
+  const evidence_table = Array.from({ length: 7 }, (_, i) => ({ citation: `c${i}` }))
+  const { fn } = brieWith((name, q) => ({ answer: `a:${q}`, confidence: 'certain', report_path: '/r.md', evidence_table }))
+  const r = await fn('q1')
+  assert.deepEqual(JSON.parse(JSON.stringify(r)), { found: { question: 'q1', answer: 'a:q1', confidence: 'certain', report_path: '/r.md', citations: ['c0', 'c1', 'c2', 'c3', 'c4'] } })
+})
+
+test('brieGround_dontKnow_returnsUnsettledWithFollowUps', async () => {
+  const { fn } = brieWith(() => ({ answer: 'unclear', confidence: 'dont_know', open_questions: ['q2', '', 3] }))
+  assert.deepEqual(JSON.parse(JSON.stringify(await fn('q1'))), { unsettled: ['q1', 'q2'] })
+})
+
+test('brieGround_throwOrBadShape_returnsFailedAndLogsThrow', async () => {
+  const thrown = brieWith(() => { throw new Error('boom') })
+  assert.deepEqual(JSON.parse(JSON.stringify(await thrown.fn('q1'))), { failed: 'research failed: q1' })
+  assert.match(thrown.logs[0], /boom/)
+  for (const bad of [null, { error: 'x' }, { answer: ' ', confidence: 'certain' }, { answer: 'a', confidence: 'sure' }]) {
+    assert.ok((await brieWith(() => bad).fn('q')).failed, JSON.stringify(bad))
+  }
 })

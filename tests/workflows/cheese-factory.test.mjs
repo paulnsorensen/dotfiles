@@ -136,7 +136,7 @@ test('single-pass chain runs when candidate_curds < 2, no decompose call', async
   assert.equal(result.curds[0].slug, 'parent')
   assert.equal(result.curds[0].status, 'clean')
   assert.equal(result.curds[0].branch, 'curd/parent')
-  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['resolve', 'advise:plan', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'advise:done', 'plate', 'cleanup'])
+  assert.deepEqual(trace.agents.map(({ opts }) => opts.label), ['resolve', 'ground', 'advise:plan', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'advise:done', 'plate', 'cleanup'])
 })
 
 test('decompose merges file-overlapping curds, writes mini-specs, and fans out only disjoint curds', async () => {
@@ -192,7 +192,7 @@ test('decompose merges file-overlapping curds, writes mini-specs, and fans out o
   const labelSet = new Set(trace.agents.map(({ opts }) => opts.label))
   assert.deepEqual([...labelSet].sort(), [
     'advise:done', 'advise:plan', 'age:barrier', 'cleanup', 'cook:a', 'cook:c', 'decompose:plan', 'decompose:write-minispecs',
-    'integrate', 'plate', 'press:a', 'press:c', 'resolve', 'taste:a', 'taste:c',
+    'ground', 'integrate', 'plate', 'press:a', 'press:c', 'resolve', 'taste:a', 'taste:c',
   ])
 })
 
@@ -232,8 +232,8 @@ test('phase order and per-phase model/agentType/isolation assertions', async () 
   await workflow.run({ ...globals, args: { spec: 'parent' } })
 
   const labels = trace.agents.map(({ opts }) => opts.label)
-  assert.deepEqual(labels, ['resolve', 'advise:plan', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'advise:done', 'plate', 'cleanup'])
-  assert.deepEqual(trace.phases, ['Resolve', 'Advise', 'Cook', 'Integrate', 'Age', 'Verify', 'Done', 'Plate', 'Report'])
+  assert.deepEqual(labels, ['resolve', 'ground', 'advise:plan', 'cook:parent', 'taste:parent', 'press:parent', 'integrate', 'age:barrier', 'advise:done', 'plate', 'cleanup'])
+  assert.deepEqual(trace.phases, ['Resolve', 'Ground', 'Advise', 'Cook', 'Integrate', 'Age', 'Verify', 'Done', 'Plate', 'Report'])
 
   const byLabel = Object.fromEntries(trace.agents.map((call) => [call.opts.label, call.opts]))
   assert.equal(byLabel['cook:parent'].model, 'sonnet')
@@ -348,7 +348,7 @@ test('bounded corrective taste loop caps at correctiveRounds and excludes the cu
 
   const labels = trace.agents.map(({ opts }) => opts.label)
   assert.deepEqual(labels, [
-    'resolve', 'advise:plan', 'cook:parent', 'taste:parent', 'correct:parent:r1', 'taste:parent:r1', 'correct:parent:r2', 'taste:parent:r2',
+    'resolve', 'ground', 'advise:plan', 'cook:parent', 'taste:parent', 'correct:parent:r1', 'taste:parent:r1', 'correct:parent:r2', 'taste:parent:r2',
   ])
   assert.equal(labels.some((l) => l.startsWith('press:')), false)
   assert.equal(result.curds[0].status, 'failed')
@@ -564,7 +564,7 @@ test('an uncommitted correction stops the taste loop and the curd fails', async 
   const result = await workflow.run({ ...globals, args: { spec: 'parent', correctiveRounds: 2 } })
 
   const labels = trace.agents.map(({ opts }) => opts.label)
-  assert.deepEqual(labels, ['resolve', 'advise:plan', 'cook:parent', 'taste:parent', 'correct:parent:r1'])
+  assert.deepEqual(labels, ['resolve', 'ground', 'advise:plan', 'cook:parent', 'taste:parent', 'correct:parent:r1'])
   assert.match(trace.logs.join('\n'), /uncommitted correction/)
   assert.equal(result.curds[0].status, 'failed')
 })
@@ -1156,7 +1156,7 @@ test('AC-12: a partial cook gets a fresh isolated continuation at its checkpoint
   const labels = labelsOf(trace)
   const next = trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1')
 
-  assert.deepEqual(labels.slice(0, 4), ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
+  assert.deepEqual(labels.slice(0, 5), ['resolve', 'ground', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
   assert.equal(next.opts.isolation, 'worktree')
   assert.equal(next.opts.agentType, 'coder')
   assert.ok(next.prompt.includes(`git checkout --detach ${checkpoint}`))
@@ -1179,7 +1179,7 @@ test('F-8: a partial cook with a valid checkpoint is never redone; invalid sourc
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const next = trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1')
 
-  assert.deepEqual(labelsOf(trace).slice(0, 4), ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
+  assert.deepEqual(labelsOf(trace).slice(0, 5), ['resolve', 'ground', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
   assert.equal(labelsOf(trace).some((l) => /^cook:parent:redo/.test(l)), false)
   assert.ok(next.prompt.includes(`git checkout --detach ${checkpoint}`))
   assert.deepEqual(JSON.parse(fence(next.prompt, 'source_ranges')), ['src/one.js#7-7'])
@@ -1219,7 +1219,7 @@ test('F-8: a partial cook with an invalid checkpoint is final: salvage reads the
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const labels = labelsOf(trace)
 
-  assert.deepEqual(labels.slice(0, 5), ['resolve', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
+  assert.deepEqual(labels.slice(0, 6), ['resolve', 'ground', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
   assert.equal(labels.some((l) => /redo|repair/.test(l)), false)
   assert.ok(trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1').prompt.includes(`git checkout --detach ${found}`))
   assert.equal(result.curds[0].status, 'clean')
@@ -1276,7 +1276,7 @@ test('AC-12: a null cook result runs one haiku salvage from the curd ref and res
   const salvage = trace.agents.find(({ opts }) => opts.label === 'salvage:parent')
   const next = trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1')
 
-  assert.deepEqual(labels.slice(0, 5), ['resolve', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
+  assert.deepEqual(labels.slice(0, 6), ['resolve', 'ground', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
   assert.equal(labels.filter((l) => l.startsWith('salvage')).length, 1)
   assert.equal(salvage.opts.model, 'haiku')
   assert.ok(salvage.prompt.includes('refs/heads/curd/parent'))
@@ -1326,7 +1326,7 @@ test('AC-12: a repeated checkpoint SHA stops the curd as stalled', async () => {
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const labels = labelsOf(trace)
 
-  assert.deepEqual(labels, ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
+  assert.deepEqual(labels, ['resolve', 'ground', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, new RegExp(`^cook: cook stalled: no new commit since ${same}`))
 })
@@ -1341,7 +1341,7 @@ test('cfh-shared-prelude AC-12: a checkpoint that differs only by case stops the
 
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
 
-  assert.deepEqual(labelsOf(trace), ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
+  assert.deepEqual(labelsOf(trace), ['resolve', 'ground', 'advise:plan', 'cook:parent', 'cook:parent:c1'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /cook stalled: no new commit since/)
 })
@@ -1371,7 +1371,7 @@ test('AC-13: partial cooks with new SHAs stop after 3 continuations and no check
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const labels = labelsOf(trace)
 
-  assert.deepEqual(labels, ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1', 'cook:parent:c2', 'cook:parent:c3'])
+  assert.deepEqual(labels, ['resolve', 'ground', 'advise:plan', 'cook:parent', 'cook:parent:c1', 'cook:parent:c2', 'cook:parent:c3'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /after 3 continuations/)
   assert.equal(labels.some((l) => /checkpoint/.test(l)), false)
@@ -1611,7 +1611,7 @@ test('AC-3: a null cook result is salvaged once and never redone, then the curd 
 
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
 
-  assert.deepEqual(labelsOf(trace), ['resolve', 'advise:plan', 'cook:parent', 'salvage:parent'])
+  assert.deepEqual(labelsOf(trace), ['resolve', 'ground', 'advise:plan', 'cook:parent', 'salvage:parent'])
   assert.equal(result.curds.length, 1)
   assert.ok(result.curds.every((c) => c !== null))
   assert.equal(result.curds[0].status, 'failed')
@@ -1749,7 +1749,7 @@ test('AC-4: an out-of-enum cook status goes to salvage, never to a redo that res
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
   const labels = labelsOf(trace)
 
-  assert.deepEqual(labels.slice(0, 5), ['resolve', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
+  assert.deepEqual(labels.slice(0, 6), ['resolve', 'ground', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'])
   assert.equal(labels.some((l) => /redo|repair/.test(l)), false)
   assert.ok(trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1').prompt.includes(`git checkout --detach ${found}`))
   assert.equal(labels.filter((l) => l.startsWith('cook:parent')).length, 2)
@@ -2767,7 +2767,7 @@ test('F-2: a needs-context cook goes to salvage, not repair or redo, and resumes
     const labels = labelsOf(trace)
     const next = trace.agents.find(({ opts }) => opts.label === 'cook:parent:c1')
 
-    assert.deepEqual(labels.slice(0, 5), ['resolve', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'], status)
+    assert.deepEqual(labels.slice(0, 6), ['resolve', 'ground', 'advise:plan', 'cook:parent', 'salvage:parent', 'cook:parent:c1'], status)
     assert.equal(labels.some((l) => /redo|repair/.test(l)), false, status)
     assert.ok(next.prompt.includes(`git checkout --detach ${found}`), status)
     assert.equal(result.curds[0].status, 'clean', status)
@@ -3518,7 +3518,7 @@ test(`${CG} AC-7: the return carries verification and advice, and meta.phases li
 test(`${CG} AC-7: the new phases run in order`, async () => {
   const { trace } = await cgRun(cgSingle)
 
-  assert.deepEqual(trace.phases, ['Resolve', 'Criteria', 'Advise', 'Cook', 'Integrate', 'Age', 'Verify', 'Done', 'Plate', 'Report'])
+  assert.deepEqual(trace.phases, ['Resolve', 'Ground', 'Criteria', 'Advise', 'Cook', 'Integrate', 'Age', 'Verify', 'Done', 'Plate', 'Report'])
 })
 
 test(`${CG} AC-8: more than LIMITS.maxCriteria spec ACs returns an error before any criteria agent`, async () => {

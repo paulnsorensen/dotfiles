@@ -173,15 +173,18 @@ export const curedReviewRoutes = (cure) => [
 ]
 export const pushedCure = { status: 'ok', committed: true, pushed: true, head_sha: sha(1, 5), worktree_path: wt('cure'), artifact: '.cheese/cure/pr-1.md', note: '' }
 
-// Fallbacks after each test's own routes: every executing run ends with stamp and cleanup agents,
-// and the done advisor approves unless a test routes it first.
-const DEFAULT_ROUTES = [['stamp', { results: [] }], ['cleanup', { removed: [], note: '' }], ['advise:done', approveDone]]
+export const grounded = (overrides = {}) => ({ decisions: [], prior_research: [], research_questions: [], ...overrides })
+
+// Fallbacks after each test's own routes: every planning run grounds in the wiki, every executing run ends
+// with stamp and cleanup agents, and the done advisor approves unless a test routes it first.
+const DEFAULT_ROUTES = [['ground', grounded()], ['stamp', { results: [] }], ['cleanup', { removed: [], note: '' }], ['advise:done', approveDone]]
 
 // A test may pass its own budget object; the harness default has no total, so the floor never applies.
-export async function run(args, routes, budget = null) {
+// child stands in for workflow(): brie-ground research and the age-fanout child.
+export async function run(args, routes, budget = null, child = null) {
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({ respond: router([...routes, ...DEFAULT_ROUTES]) })
-  const result = await workflow.run({ ...globals, ...(budget ? { budget } : {}), args })
+  const result = await workflow.run({ ...globals, ...(budget ? { budget } : {}), ...(child ? { workflow: child } : {}), args })
   const labels = trace.agents.map(({ opts }) => opts.label)
   const call = (label) => trace.agents.find(({ opts }) => opts.label === label)
   return { result, trace, labels, call }

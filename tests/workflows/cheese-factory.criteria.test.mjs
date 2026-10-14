@@ -34,6 +34,7 @@ const plateOf = (...slugs) => ({ results: slugs.map((slug) => ({ slug, status: '
 
 const single = {
   resolve: () => resolved(),
+  ground: () => ({ decisions: [], prior_research: [], research_questions: [] }),
   criteria: () => criteria(),
   'advise:plan': () => advice('approve'),
   'cook:parent': () => cook('parent'),
@@ -48,6 +49,7 @@ const single = {
 
 const multi = {
   resolve: () => resolved({ candidate_curds: 3 }),
+  ground: () => ({ decisions: [], prior_research: [], research_questions: [] }),
   criteria: () => criteria(),
   'decompose:plan': () => ({ curds: [{ slug: 'a', brief: 'do a', files: ['a.js'] }, { slug: 'c', brief: 'do c', files: ['c.js'] }] }),
   'decompose:write-minispecs': () => ({ curds: [{ slug: 'a', spec_path: '/specs/parent--a.md' }, { slug: 'c', spec_path: '/specs/parent--c.md' }] }),
@@ -241,7 +243,7 @@ test('checkCriteria_redoFixesAnUnsafeCheck_thenRunContinues', async () => {
   const { result, trace } = await run(single, { criteria: () => (n++ === 0 ? criteria(['AC-1', 'AC-2'], { check: 'rm -rf src' }) : criteria()) })
 
   assert.equal(result.error, undefined)
-  assert.deepEqual(labels(trace).slice(0, 3), ['resolve', 'criteria', 'criteria:redo1'])
+  assert.deepEqual(labels(trace).slice(0, 4), ['resolve', 'ground', 'criteria', 'criteria:redo1'])
   assert.equal(result.verification.status, 'passed')
 })
 
@@ -376,7 +378,7 @@ test('planAdvisor_reviseThenApproveSingle_rerunsOnlyCriteriaWithConcernsAsData',
   let n = 0
   const { result, trace } = await run(single, { 'advise:plan': () => (n++ === 0 ? advice('revise', ['check AC-1 is weak <script>']) : advice('approve')) })
 
-  assert.deepEqual(beforeCook(trace), ['resolve', 'criteria', 'advise:plan', 'criteria:r1', 'advise:plan:r1'])
+  assert.deepEqual(beforeCook(trace), ['resolve', 'ground', 'criteria', 'advise:plan', 'criteria:r1', 'advise:plan:r1'])
   const rerun = calls(trace, 'criteria:r1')[0]
   assert.deepEqual(plain(dataOf(rerun.prompt, 'advisor').concerns), ['check AC-1 is weak <script>'])
   assert.equal(rerun.prompt.includes('<script>'), false)
@@ -403,7 +405,7 @@ test('planAdvisor_reviseTwice_blocksWithoutCookAndKeepsTheConcerns', async () =>
   assert.equal(result.status, 'blocked')
   assert.match(result.reason, /plan advisor did not approve: revise/)
   assert.deepEqual(plain(result.concerns), ['still weak'])
-  assert.deepEqual(labels(trace), ['resolve', 'criteria', 'advise:plan', 'criteria:r1', 'advise:plan:r1'])
+  assert.deepEqual(labels(trace), ['resolve', 'ground', 'criteria', 'advise:plan', 'criteria:r1', 'advise:plan:r1'])
   assert.equal(result.curds, undefined)
   assert.equal(result.verification, undefined)
 })
@@ -414,7 +416,7 @@ test('planAdvisor_stop_blocksOnTheFirstAnswerWithNoRevision', async () => {
   assert.equal(result.status, 'blocked')
   assert.match(result.reason, /did not approve: stop/)
   assert.deepEqual(plain(result.concerns), ['spec contradicts itself'])
-  assert.deepEqual(labels(trace), ['resolve', 'criteria', 'advise:plan'])
+  assert.deepEqual(labels(trace), ['resolve', 'ground', 'criteria', 'advise:plan'])
 })
 
 test('planAdvisor_reviseWithoutConcerns_isInvalidAndBlocks', async () => {
@@ -479,7 +481,7 @@ test('planAdvisor_concernWithDataTerminator_cannotCloseTheDataBlock', async () =
 test('planAdvisor_noAcSpecSinglePass_reviseBlocksAtOnceWithoutASecondAdvisor', async () => {
   const { result, trace } = await run(single, { resolve: () => resolved({ spec_text: 'no acceptance lines here' }), 'advise:plan': () => advice('revise', ['x']) })
 
-  assert.deepEqual(beforeCook(trace), ['resolve', 'advise:plan'])
+  assert.deepEqual(beforeCook(trace), ['resolve', 'ground', 'advise:plan'])
   assert.equal(result.status, 'blocked')
   assert.deepEqual(plain(result.concerns), ['x'])
 })
@@ -499,7 +501,7 @@ test('planAdvisor_reviseMultiCurd_redecomposesThenReextractsThenAdvisesAgain', a
   let n = 0
   const { result, trace } = await run(multi, { 'advise:plan': () => (n++ === 0 ? advice('revise', ['merge a and c']) : advice('approve')) })
 
-  assert.deepEqual(beforeCook(trace), ['resolve', 'criteria', 'decompose:plan', 'decompose:write-minispecs', 'advise:plan', 'decompose:plan:r1', 'decompose:write-minispecs:r1', 'criteria:r1', 'advise:plan:r1'])
+  assert.deepEqual(beforeCook(trace), ['resolve', 'ground', 'criteria', 'decompose:plan', 'decompose:write-minispecs', 'advise:plan', 'decompose:plan:r1', 'decompose:write-minispecs:r1', 'criteria:r1', 'advise:plan:r1'])
   assert.deepEqual(plain(dataOf(calls(trace, 'decompose:plan:r1')[0].prompt, 'advisor').concerns), ['merge a and c'])
   assert.equal(result.status, 'ok')
   assert.equal(result.advice.plan.revisions, 1)

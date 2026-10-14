@@ -22,6 +22,7 @@ const approve = { verdict: 'approve', concerns: [], guidance: '' }
 
 const defaults = {
   resolve: { mode: 'resolved', base_sha: BASE_SHA, spec_path: '/specs/parent.md', spec_text: 'spec body', curd_count: { slug: 'parent', candidate_curds: 1, blast_radius: 'medium' } },
+  ground: { decisions: [], prior_research: [], research_questions: [] },
   'advise:plan': approve,
   'advise:done': approve,
   'cook:parent': { status: 'ok', head_sha: sha(1), worktree_path: SCRATCH('cook'), artifact: '.cheese/cook/parent.md', orientation: 'done' },
