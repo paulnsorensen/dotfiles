@@ -3338,7 +3338,7 @@ test(`${CG} AC-4: verify judges run one at a time, pinned at the integration hea
     assert.equal(call.opts.phase, 'Verify')
     assert.ok(call.prompt.includes(INTEGRATE_HEAD))
     assert.ok(call.prompt.includes('/repo/.claude/worktrees/integration'))
-    assert.ok(call.prompt.includes("bash -c 'test -e src/parent.js'"))
+    assert.ok(call.prompt.includes("cd /repo/.claude/worktrees/integration && bash -c 'test -e src/parent.js'"))
   }
   assert.equal(labels.indexOf('verify:AC-2'), labels.indexOf('verify:AC-1') + 1)
   assert.ok(labels.indexOf('age:barrier') < labels.indexOf('verify:AC-1'))
