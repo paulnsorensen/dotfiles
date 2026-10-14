@@ -15,7 +15,7 @@ const NAMES = [
   'SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'floorReached', 'form', 'substance',
   'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt',
   'MOLD', 'DECISION_KINDS', 'RESEARCH_CONFIDENCE', 'GROUNDING_SCHEMA', 'GROUND_RESEARCH_SCHEMA', 'GROUND_RULES',
-  'researchRule', 'BRIE_GROUND_MAX_AGENTS', 'brieGround',
+  'researchRule', 'BRIE_GROUND_MAX_AGENTS', 'brieGround', 'stable', 'fnv1a', 'digestOf', 'matchAnswers',
 ]
 const BEGIN = '// BEGIN shared prelude: x\n'
 const END = '// END shared prelude\n'
