@@ -922,7 +922,8 @@ if (resumeArgs.length) {
     }
   }
   if (errors.length) return { status: 'blocked', error: `resume rejected: ${errors[0]}`, errors }
-  resume = { state: st, answered, lanes }
+  // The run mutates its outcomes, so it works on a copy of the caller's state.
+  resume = { state: JSON.parse(JSON.stringify(st)), answered, lanes }
 }
 const resumedStrategy = Boolean(resume) && resume.state.checkpoint === 'strategy'
 const resumedSpec = Boolean(resume) && resume.state.checkpoint === 'spec'
