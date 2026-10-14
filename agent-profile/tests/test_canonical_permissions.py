@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 
 import pytest
+import yaml
 from agent_profile.parse import parse_manifest
 
 from tests.conftest import write_profile
@@ -92,21 +93,36 @@ def test_settings_allow_and_deny_both_union_merge(env):
 # ── shipped _permissions fragment + global wiring ────────────────────
 
 
-@pytest.fixture(scope="module")
-def global_manifest():
-    """Resolve the real shipped ``global`` profile (which now includes
-    ``_permissions``) from the checkout under test. ``DOTFILES_DIR`` also
-    drives include resolution, so pin it to that checkout. Skips if the repo
-    profiles aren't where we expect."""
-    repo = Path(
+def _checkout() -> Path:
+    """The dotfiles checkout under test. Profiles resolve from here, not
+    from ``~/Dev/dotfiles``."""
+    return Path(
         os.environ.get("DOTFILES_DIR") or Path(__file__).resolve().parents[2]
     )
-    gdir = repo / "profiles" / "global"
-    if not gdir.is_file() and not (gdir / "profile.yaml").is_file():
-        pytest.skip(f"global profile not found at {gdir}")
+
+
+@pytest.fixture(scope="module")
+def global_manifest():
+    """Parse the shipped ``_permissions`` fragment that ``global`` includes.
+    The fragment has no plugins, so it parses offline in CI; the full
+    ``global`` profile needs git-hosted plugin caches. Skips if the repo
+    profiles aren't where we expect."""
+    repo = _checkout()
+    pdir = repo / "profiles" / "_permissions"
+    if not (pdir / "profile.yaml").is_file():
+        pytest.skip(f"_permissions fragment not found at {pdir}")
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("DOTFILES_DIR", str(repo))
-        return parse_manifest(gdir)
+        return parse_manifest(pdir)
+
+
+def test_global_includes_permissions_fragment():
+    """``global`` wires the canonical fragment through ``include``."""
+    gfile = _checkout() / "profiles" / "global" / "profile.yaml"
+    if not gfile.is_file():
+        pytest.skip(f"global profile not found at {gfile}")
+    include = yaml.safe_load(gfile.read_text()).get("include") or []
+    assert "_permissions" in include
 
 
 

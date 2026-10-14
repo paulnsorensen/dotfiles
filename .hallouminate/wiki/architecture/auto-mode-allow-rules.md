@@ -16,7 +16,7 @@ _Source: session-analytics mining, 2026-10-14 · Docs: code.claude.com/docs/en/p
 
 - A deny rule matches each part of a compound command. Thus `Bash(rm -rf:*)` blocked every `rm -rf /tmp/x && mkdir ... && git init ...` scratch setup. That was 207 denials in 45 days, which is almost all of the prompt denials.
 - Precedence is deny, then ask, then allow. An `ask` for `rm -rf:*` would also override a narrower allow. So the coarse rule is gone, not moved to `ask`.
-- Claude: `Bash(rm -rf /tmp/*)` is allowed. The `ask` rules catch `..` traversal and the `/`, `/home/*`, `/Users/*`, and `~*` targets. The classifier reviews all other targets. It runs `git status` before `rm -rf`, and the built-in critical-path protection still applies.
+- Claude: `Bash(rm -rf /tmp/*)` is allowed. Exact `deny` rules block `rm -rf /`, `rm -rf / ...`, `rm -rf ~`, and `rm -rf ~/`. A wildcard deny such as `/*` would also match `/tmp`. The `ask` rules catch `..` traversal and the `/home/*`, `/Users/*`, and `~*` targets. The classifier reviews all other targets. It runs `git status` before `rm -rf`, and the built-in critical-path protection still applies.
 - Codex: the canonical floor in `profiles/_permissions/profile.yaml` no longer renders `rm -rf` as `forbidden`. The `workspace-write` sandbox confines writes, and the guardian reviewer reviews escalations.
 - `Bash(sudo:*)` stays denied in every harness.
 

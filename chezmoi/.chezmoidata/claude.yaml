@@ -262,8 +262,9 @@ claude:
       - "Bash(python3:*)"
       - "Bash(pwd:*)"
       - "Bash(realpath:*)"
-      # Scratch cleanup under /tmp runs without review. The ask rules below
-      # catch `..` traversal and home or root targets; ask wins over allow.
+      # Scratch cleanup under /tmp runs without review. Deny blocks root and
+      # home. Ask catches `..` traversal and paths under home; ask wins over
+      # allow.
       # Other rm -rf targets go to the auto mode classifier.
       - "Bash(rm -rf /tmp/*)"
       # Exact path only: a crashed Codex sandbox can leave an empty /tmp/.git,
@@ -313,6 +314,12 @@ claude:
       # the Keychain item (service bws_access_token) holds the operator token.
       - "Bash(/usr/bin/security:*)"
       - "Bash(bws:*)"
+      # Exact catastrophic rm targets only. A wildcard such as `/*` would
+      # also match /tmp cleanup, because deny wins over allow.
+      - "Bash(rm -rf / *)"
+      - "Bash(rm -rf /)"
+      - "Bash(rm -rf ~)"
+      - "Bash(rm -rf ~/)"
       - "Bash(security:*)"
       - "Bash(sudo:*)"
       - "Read(**/*.key)"
@@ -335,7 +342,6 @@ claude:
       - "Read(.env)"
     ask:
       - "Bash(rm -rf *..*)"
-      - "Bash(rm -rf /)"
       - "Bash(rm -rf /Users/*)"
       - "Bash(rm -rf /home/*)"
       - "Bash(rm -rf ~*)"
