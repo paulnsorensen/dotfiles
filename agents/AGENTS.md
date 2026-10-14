@@ -15,39 +15,61 @@ Exclude code identifiers and quoted material from these style rules.
 State uncertainty when it affects a decision, not on obvious facts.
 Challenge a material risk once; follow the user's decision without repeated debate.
 
-## Scope
+## Authority
 
-Define observable success before editing.
 Resolve questions from project instructions, code, and available evidence before asking the user.
 Ask before destructive actions, force-pushing, or scope, risk, and contract changes.
+Guard changes require separate, explicit user approval.
 Complete authorized work without adding features, shrinking scope, or stopping at a phase boundary.
 Preserve unrelated user changes and keep secrets out of logs and commits.
-Guard changes require separate, explicit user approval.
+A requested PR or CI fix includes commit and push to its branch unless the user limits publication.
 
-## Code
+## Before editing
 
-Read the affected implementation, exports, callers, and shared helpers before editing.
+The goal is working behavior, not passing tests or a PR.
+Pick one representative user task.
+State its exact input, real entrypoint, and expected observable result.
+Name the live boundaries that can invalidate an offline test.
+Define an acceptance check that rejects the current broken behavior.
+Read-only analysis and prose-only edits skip the acceptance check.
+Read the affected implementation, exports, callers, and shared helpers.
+
+## While editing
+
+Build the smallest complete path first.
 Follow `~/.agents/reference/sliced-bread.md` unless project instructions override it.
 Reuse local patterns, project helpers, the standard library, and maintained dependencies.
 Validate untrusted input at trust boundaries.
 Keep interfaces small and internals private.
 Add abstractions only for demonstrated needs.
-Read workspace configuration before changing child build files.
-Preserve inherited settings; check version compatibility before restructuring a failed build.
 Fix the cause rather than suppressing the symptom.
-Test observable behavior and real failure modes; do not mock the system under test.
+Before changing child build files, read workspace configuration and preserve inherited settings.
+Check version compatibility before restructuring a failed build.
+Test observable behavior and real failure modes.
+Keep real boundaries in the acceptance check; put mocks only in separate offline tests.
+Never mock the system under test or weaken the acceptance check to fit the implementation.
+Run focused checks while editing.
+Stay within the authorized live-call budget; ask before you exceed it.
 
-## Evidence and completion
+## Evidence
 
 Compute counts, comparisons, and other deterministic results with tools.
 Bound reads and output to the next decision.
 Treat conflicting sources explicitly; use current evidence for behavior and explain any changed decision.
 Limit absence claims to the scope checked.
 Update conclusions when contrary evidence appears.
-Map outcomes to evidence. Green tests do not prove completion. For simplification, compare net diff and remaining complexity.
-Run focused checks while editing. Skip code tests for read-only analysis and unchanged handoffs. Parent owns integrated final gates.
 Reuse successful evidence only when code, config, dependencies, and environment are unchanged. Carry command, tree or revision, and result.
 Revalidate changed inputs and failed or incomplete runs.
-Report exact results, skips, and blockers. Never present an unrun check as passing.
-A requested PR or CI fix includes commit and push to its branch unless the user limits publication.
-Checkpoint for a handoff or context risk, not after every step.
+
+## Before claiming completion
+
+Run the acceptance check against the final artifact.
+Verify the resulting behavior, not only exit status or artifact existence.
+Show that the check rejects a relevant broken case.
+For simplification, compare net diff and remaining complexity.
+Report exact results, skips, blockers, and untested boundaries.
+An unrun or skipped check, unexpected error, or infrastructure failure is not a pass.
+Do not dismiss a failing test as flaky; reproduce it and find the cause.
+If the cause is outside your change's critical path, have an isolated sub-agent fix it in a separate PR.
+End implementation and prototype work by opening a PR with the `plate` skill.
+End every turn with the `wheypoint` skill.
