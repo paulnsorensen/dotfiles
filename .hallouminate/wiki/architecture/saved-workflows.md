@@ -24,6 +24,8 @@ Source of truth is `claude/workflows/*.js`. `dots sync` copies the whole dir int
 
 **vm-realm test gotcha** (PR #486): `tests/workflows/harness.mjs` runs workflow scripts in a `node:vm` context, so objects/arrays the workflow returns carry foreign prototypes — `assert.deepEqual` from `node:assert/strict` fails with "Values have same structure but are not reference-equal" even when contents match. Convention: spread-clone (`{ ...obj }`), `Array.from(arr)`, or JSON round-trip before `deepEqual`. Fixture objects built in the *test* realm and passed through mocks compare fine; only workflow-realm-constructed values trip it.
 
-Related: [[architecture/agents-dir]], [[operations/sync-and-chezmoi]], [[adr/cheese-factory-workflow]], [[architecture/move-my-cheese-workflow]].
+**Strategy layer (2026-10-14):** `cheese-board.js` sits above `cheese-factory`. It runs `triage-sweep` as a child, then synthesizes a strategy and mints resolver-path mini-specs that form a `factory_queue`. See [[architecture/cheese-board-workflow]].
+
+Related: [[architecture/cheese-board-workflow]], [[architecture/agents-dir]], [[operations/sync-and-chezmoi]], [[adr/cheese-factory-workflow]], [[architecture/move-my-cheese-workflow]].
 
 *Source: main-clone wiki page (untracked) + cheese-factory-workflow implementation session (PR #486) + barrier-age restructure session (2026-07-21) · Updated: 2026-07-21 · Supersedes: untracked main-clone copy of this page*

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = resolve(here, '..', '..')
-const DEFAULT_FILES = ['claude/workflows/cheese-factory.js', 'claude/workflows/move-my-cheese.js']
+const DEFAULT_FILES = ['claude/workflows/cheese-board.js', 'claude/workflows/cheese-factory.js', 'claude/workflows/move-my-cheese.js']
 const BEGIN = '// BEGIN shared prelude'
 const END = '// END shared prelude'
 
