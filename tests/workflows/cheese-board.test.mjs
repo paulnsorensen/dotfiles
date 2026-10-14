@@ -47,8 +47,17 @@ const IDEAS = { ideas: [
 
 const initiative = (id, overrides = {}) => ({
   id, theme: 'TH-1', title: `title ${id}`, outcome: `outcome ${id}`, items: [], depends_on: [], lane: 'spec', slug: '',
-  priority: 1, leverage_triggers: [], open_questions: [], rationale: `why ${id}`, ...overrides,
+  priority: 1, leverage_triggers: [], open_questions: [], overrides: [], research_questions: [], rationale: `why ${id}`, ...overrides,
 })
+
+// D-1 constrains #1; D-2 is repo-wide.
+const GROUNDING = {
+  decisions: [
+    { statement: 'Specs live in the durable corpus.', kind: 'adr', citation: 'adr/specs.md:3', items: ['#1'] },
+    { statement: 'Every shell change needs Bats coverage.', kind: 'locked', citation: 'conventions.md:9', items: [] },
+  ],
+  prior_research: [],
+}
 
 // Strategy items are #1, #4, and IDEA-2. IDEA-1 merges into #1; IDEA-3 is already specced.
 const STRATEGY = {
@@ -102,11 +111,19 @@ function responder(overrides = {}) {
       const report = JSON.parse(/<data name="report">\n([\s\S]*?)\n<\/data>/.exec(prompt)[1])
       return { path: REPORT, chars: chars(report) }
     }
+    if (label === 'ground') return GROUNDING
+    if (label === 'record:strategy') return { corpus: 'repo:dotfiles:wiki', path: `strategy/cheese-board-${STAMP}.md` }
     throw new Error(`unexpected agent ${label}`)
   }
 }
 
-async function runBoard({ args = STAMP, overrides = {}, triage = TRIAGE } = {}) {
+const RESEARCH = {
+  question: 'q', answer: 'Upstream prints the version on stdout.', confidence: 'certain', confidence_justification: '',
+  evidence_table: [{ claim: 'prints on stdout', confidence: 'certain', citation: 'https://example.com/docs' }],
+  conflicts: [], open_questions: [], report_path: '/data/cheese/repo/research/banner.md', recommended_next_step: '', prototype: null,
+}
+
+async function runBoard({ args = STAMP, overrides = {}, triage = TRIAGE, research = () => RESEARCH } = {}) {
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({ respond: responder(overrides) })
   const children = []
@@ -115,6 +132,7 @@ async function runBoard({ args = STAMP, overrides = {}, triage = TRIAGE } = {}) 
     args,
     workflow: async (name, childArgs) => {
       children.push({ name, childArgs })
+      if (name === 'brie-ground') return research(childArgs)
       if (triage instanceof Error) throw triage
       return triage
     },
@@ -155,11 +173,25 @@ test('cheese-board turns triage and ideas into a strategy, one verified spec wav
   const context = JSON.parse(/<data name="context">\n([\s\S]*?)\n<\/data>/.exec(strategist.prompt)[1])
   assert.deepEqual(context.items.map((i) => i.id), ['#1', '#4', 'IDEA-2'])
   assert.deepEqual(context.items[0].merged_ideas, ['same as #1'])
+  // Code assigns decision ids and normalizes item refs before the strategists see them.
+  assert.deepEqual(context.decisions.map((d) => [d.id, d.items]), [['D-1', ['#1']], ['D-2', []]])
+  assert.deepEqual(result.coverage.decisions, 2)
+
+  // Each drafter sees the decisions that touch its items plus the repo-wide ones.
+  const decisionsIn = (label) => JSON.parse(/<data name="decisions">\n([\s\S]*?)\n<\/data>/.exec(trace.agents.find(({ opts }) => opts.label === label).prompt)[1]).map((d) => d.id)
+  assert.deepEqual(decisionsIn('draft:version-banner:r0'), ['D-1', 'D-2'])
+  assert.deepEqual(decisionsIn('draft:sync-cache:r0'), ['D-2'])
+
+  // The approved strategy lands in the repo wiki.
+  assert.deepEqual(result.recorded, { corpus: 'repo:dotfiles:wiki', path: `strategy/cheese-board-${STAMP}.md` })
+  const record = trace.agents.find(({ opts }) => opts.label === 'record:strategy')
+  assert.match(record.prompt, /# cheese-board strategy 2026-10-14/)
+  assert.match(record.prompt, /D-1 \(adr\): Specs live in the durable corpus\. \(adr\/specs\.md:3\)/)
 
   assert.deepEqual(labels, [
-    'ideas', 'strategist:leverage', 'strategist:risk', 'strategist:architecture', 'synthesize:r0', 'advise:strategy:0', 'resolve',
+    'ideas', 'ground', 'strategist:leverage', 'strategist:risk', 'strategist:architecture', 'synthesize:r0', 'advise:strategy:0', 'resolve',
     'draft:version-banner:r0', 'draft:sync-cache:r0', 'taste:version-banner:r0', 'taste:sync-cache:r0',
-    'install:version-banner:r0', 'install:sync-cache:r0', 'verify:specs', 'write:report', 'advise:done',
+    'install:version-banner:r0', 'install:sync-cache:r0', 'verify:specs', 'write:report', 'advise:done', 'record:strategy',
   ])
 
   // The two highest-leverage judgments run on Opus; the strategists keep their agent-type default.
@@ -263,9 +295,94 @@ test('cheese-board stops at the advisor and never drafts a spec', async () => {
 
 test('cheese-board reports a partial run when the triage child fails', async () => {
   const strategy = { ...STRATEGY, initiatives: [initiative('IN-1', { items: ['IDEA-1', 'IDEA-2'], slug: 'sync-cache' })] }
-  const { result } = await runBoard({ triage: new Error('child failed'), overrides: { 'strategist:leverage': strategy, 'strategist:risk': strategy, 'strategist:architecture': strategy, 'synthesize:r0': strategy } })
+  // Without triage, #1 does not exist, so the grounding cites only repo-wide decisions.
+  const ground = { decisions: [GROUNDING.decisions[1]], prior_research: [] }
+  const { result } = await runBoard({ triage: new Error('child failed'), overrides: { ground, 'strategist:leverage': strategy, 'strategist:risk': strategy, 'strategist:architecture': strategy, 'synthesize:r0': strategy } })
 
   assert.equal(result.status, 'partial')
   assert.deepEqual(result.gaps, ['triage-sweep failed; no issue was triaged'])
   assert.deepEqual(result.factory_queue.map((wave) => wave.map((q) => q.slug)), [['sync-cache']])
+})
+
+test('cheese-board researches a spec initiative through brie-ground and records it in Provenance', async () => {
+  const strategy = { ...STRATEGY, initiatives: STRATEGY.initiatives.map((i) => (i.id === 'IN-1' ? { ...i, research_questions: ['Does upstream print the version on stdout?'] } : i)) }
+  const { result, children, trace } = await runBoard({ overrides: { 'synthesize:r0': strategy } })
+
+  assert.deepEqual(children.filter((c) => c.name === 'brie-ground'), [{ name: 'brie-ground', childArgs: 'Does upstream print the version on stdout?' }])
+  const draft = trace.agents.find(({ opts }) => opts.label === 'draft:version-banner:r0')
+  assert.match(draft.prompt, /Treat the research answers below as settled facts/)
+  assert.match(draft.prompt, /<data name="research">/)
+  const text = specText(trace.agents.find(({ opts }) => opts.label === 'install:version-banner:r0').prompt)
+  assert.match(text, /^## Provenance\n- briesearch: Upstream prints the version on stdout\. \(certain\); artifact: \/data\/cheese\/repo\/research\/banner\.md$/m)
+  // A spec without research carries no Provenance section.
+  assert.doesNotMatch(specText(trace.agents.find(({ opts }) => opts.label === 'install:sync-cache:r0').prompt), /## Provenance/)
+  assert.deepEqual(result.research.map((r) => r.confidence), ['certain'])
+  assert.equal(result.status, 'ok')
+})
+
+test('cheese-board routes a spec to mold when research cannot settle its question', async () => {
+  const strategy = { ...STRATEGY, initiatives: STRATEGY.initiatives.map((i) => (i.id === 'IN-1' ? { ...i, research_questions: ['Unknowable?'] } : i)) }
+  const { result, labels } = await runBoard({ overrides: { 'synthesize:r0': strategy }, research: () => ({ ...RESEARCH, confidence: 'dont_know', open_questions: ['Which version?'] }) })
+
+  assert.equal(labels.includes('draft:version-banner:r0'), false)
+  const mold = result.mold.find((m) => m.initiative === 'IN-1')
+  assert.match(mold.reason, /research could not settle: Unknowable\?/)
+  assert.deepEqual(mold.open_questions, ['Unknowable?', 'Which version?'])
+})
+
+test('cheese-board fails a spec whose research child throws, without drafting it', async () => {
+  const strategy = { ...STRATEGY, initiatives: STRATEGY.initiatives.map((i) => (i.id === 'IN-1' ? { ...i, research_questions: ['Flaky?'] } : i)) }
+  const { result, labels } = await runBoard({ overrides: { 'synthesize:r0': strategy }, research: () => { throw new Error('tavily down') } })
+
+  assert.equal(labels.includes('draft:version-banner:r0'), false)
+  assert.deepEqual(result.spec_failures.map((f) => [f.slug, f.status, f.reason]), [['version-banner', 'failed', 'research failed: Flaky?']])
+  assert.equal(result.status, 'partial')
+})
+
+test('cheese-board caps research runs in priority order and moves the overflow to mold', async () => {
+  const strategy = { ...STRATEGY, initiatives: [
+    ...STRATEGY.initiatives.map((i) => (i.id === 'IN-3' ? i : { ...i, research_questions: ['a?', 'b?'] })),
+    initiative('IN-4', { slug: 'gap-fill', priority: 3, research_questions: ['c?'] }),
+  ] }
+  const { result, children } = await runBoard({ overrides: { 'synthesize:r0': strategy } })
+
+  assert.equal(children.filter((c) => c.name === 'brie-ground').length, 4)
+  const mold = result.mold.find((m) => m.initiative === 'IN-4')
+  assert.match(mold.reason, /research cap of 4 reached; unresearched: c\?/)
+})
+
+test('cheese-board moves an initiative that overrides a recorded decision to mold', async () => {
+  const strategy = { ...STRATEGY, initiatives: STRATEGY.initiatives.map((i) => (i.id === 'IN-1' ? { ...i, overrides: ['D-1'] } : i)) }
+  const { result, labels } = await runBoard({ overrides: { 'synthesize:r0': strategy } })
+
+  assert.equal(labels.includes('draft:version-banner:r0'), false)
+  assert.match(result.mold.find((m) => m.initiative === 'IN-1').reason, /overrides D-1/)
+  assert.deepEqual(result.blocked.map((b) => b.blocked_by), [['IN-1 is in lane mold']])
+})
+
+test('cheese-board redoes a strategy that overrides an unknown decision', async () => {
+  const strategy = { ...STRATEGY, initiatives: STRATEGY.initiatives.map((i) => (i.id === 'IN-1' ? { ...i, overrides: ['D-9'] } : i)) }
+  const { labels, trace } = await runBoard({ overrides: { 'synthesize:r0': strategy } })
+
+  const redo = trace.agents.find(({ opts }) => opts.label === 'synthesize:r0:redo1')
+  assert.ok(redo, labels.join(', '))
+  assert.match(redo.prompt, /IN-1\.overrides: unknown id 'D-9'/)
+})
+
+test('cheese-board continues without decisions when wiki grounding fails, and reports the gap', async () => {
+  const { result, labels } = await runBoard({ overrides: { ground: null, 'ground:redo1': null, 'ground:redo2': null } })
+
+  assert.ok(labels.includes('ground:redo2'))
+  assert.deepEqual(result.decisions, [])
+  assert.deepEqual(result.gaps, ['wiki grounding failed; the strategy ran without recorded decisions'])
+  assert.equal(result.status, 'partial')
+  assert.ok(labels.includes('synthesize:r0'))
+})
+
+test('cheese-board records nothing in the wiki when the done advisor does not approve', async () => {
+  const { result, labels } = await runBoard({ overrides: { 'advise:done': { verdict: 'revise', concerns: ['queue order is wrong'], guidance: 'reorder' } } })
+
+  assert.equal(result.status, 'needs-review')
+  assert.equal(result.recorded, null)
+  assert.equal(labels.includes('record:strategy'), false)
 })
