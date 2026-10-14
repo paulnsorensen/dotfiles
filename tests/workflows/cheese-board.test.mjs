@@ -553,7 +553,7 @@ test('cheese-board rejects a resolved path with a parent segment', async () => {
 
 test('cheese-board returns dropped seeds and ideas over the cap in the result', async () => {
   const many = { ideas: Array.from({ length: 41 }, (_, n) => ({ title: `idea ${n + 1}`, summary: 's', source: 'wiki/roadmap.md', existing_spec: '', duplicate_of: '' })) }
-  const { result } = await runBoard({ args: { stamp: STAMP, ideas: ['keep me', 3, '  '] }, overrides: { ideas: many } })
+  const { result } = await runBoard({ args: { stamp: STAMP, auto: true, ideas: ['keep me', 3, '  '] }, overrides: { ideas: many } })
 
   assert.deepEqual(result.dropped.filter((d) => d.kind !== 'theme'), [
     { kind: 'seed', count: 2, reason: 'not a non-empty string' },

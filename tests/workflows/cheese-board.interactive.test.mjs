@@ -109,7 +109,14 @@ test('AC-1: an unsettled strategy advisor returns needs-input at the revision ca
   assert.equal(result.status, 'needs-input')
   assert.equal(result.checkpoint, 'strategy')
   assert.equal(result.questions.length, 1)
-  assert.equal(result.questions[0].id, 'S-1')
+  const q = result.questions[0]
+  assert.equal(q.id, 'S-1')
+  for (const field of ['initiative', 'question', 'options', 'recommended', 'evidence']) assert.ok(Object.hasOwn(q, field), `question has ${field}`)
+  assert.ok(q.question.length > 0)
+  assert.ok(Array.isArray(q.options))
+  assert.equal(result.state.checkpoint, 'strategy')
+  assert.deepEqual(result.state.questions, result.questions)
+  assert.match(result.usage, /Re-run cheese-board with/)
   assert.match(result.digest, /^[0-9a-f]{16}$/)
   assert.ok(labels.includes('synthesize:r1'))
   assert.ok(!labels.some((l) => l.startsWith('draft:')))
@@ -139,12 +146,38 @@ test('AC-3: a tampered state or a bad answer blocks before any agent runs', asyn
     resumeWith(first, { 1: '' }),
     { ...resumeWith(first, { 1: 'x' }), digest: 'nope' },
     { ...resumeWith(first, { 1: 'x' }), auto: true },
+    { ...resumeWith(first, { 1: 'x' }), lanes: { 'IN-9': 'spec' } },
+    { ...resumeWith(first, { 1: 'x' }), lanes: { 'IN-1': 'archive' } },
   ]
   for (const args of cases) {
     const { result, labels } = await runBoard({ args })
     assert.equal(result.status, 'blocked')
     assert.deepEqual(labels, [])
   }
+})
+
+test('AC-3: a multi-error resume returns every error, and a closed question rejects a free answer', async () => {
+  const first = (await runBoard({ overrides: PAUSED_STRATEGY })).result
+  const multi = (await runBoard({ args: { ...resumeWith(first, { 9: 'x' }), digest: 'nope', lanes: { 'IN-9': 'spec' } } })).result
+  assert.equal(multi.status, 'blocked')
+  assert.ok(multi.errors.length >= 2, multi.errors.join('; '))
+
+  const strategy = strategyOf({ overrides: ['D-1'] })
+  const override = (await runBoard({ strategy })).result
+  const closed = await runBoard({ args: resumeWith(override, { 1: 'maybe' }), strategy })
+  assert.equal(closed.result.status, 'blocked')
+  assert.match(closed.result.error, /must be one of spec, mold/)
+  assert.deepEqual(closed.labels, [])
+
+  const spec = (await runBoard({ overrides: { 'draft:version-banner:r0': { ...DRAFT, open_questions: ['Which banner format?'] } } })).result
+  const late = await runBoard({ args: resumeWith(spec, { 1: 'x' }, { lanes: { 'IN-1': 'mold' } }) })
+  assert.equal(late.result.status, 'blocked')
+  assert.match(late.result.error, /lanes applies only at the strategy checkpoint/)
+})
+
+test('a bare stamp string parses as an interactive run', async () => {
+  const { result } = await runBoard({ args: STAMP })
+  assert.equal(result.status, 'ok', result.error)
 })
 
 test('AC-4: a drafter open question gives a spec needs-input, and a resume redrafts only that initiative', async () => {
@@ -160,9 +193,26 @@ test('AC-4: a drafter open question gives a spec needs-input, and a resume redra
   assert.deepEqual(second.labels.filter((l) => l.startsWith('draft:')), ['draft:version-banner:r0'])
   assert.ok(second.prompts.some((p) => p.includes('Plain text banner.')))
   assert.ok(!second.labels.includes('resolve'))
+  assert.ok(!second.result.mold.some((m) => m.initiative === 'IN-1'))
 })
 
-test('AC-5: an override asks, and the answer spec keeps the lane and records the decision in the spec', async () => {
+test('AC-4: a redraft with a new open question asks again with only the unanswered question', async () => {
+  const first = await runBoard({ overrides: { 'draft:version-banner:r0': { ...DRAFT, open_questions: ['Which banner format?'] } } })
+  const again = await runBoard({
+    args: resumeWith(first.result, { 1: 'Plain text banner.' }),
+    overrides: { 'draft:version-banner:r0': { ...DRAFT, open_questions: ['Which stream?'] } },
+  })
+  assert.equal(again.result.status, 'needs-input')
+  assert.equal(again.result.checkpoint, 'spec')
+  assert.equal(again.result.questions.length, 1)
+  assert.match(again.result.questions[0].question, /Which stream\?/)
+
+  const done = await runBoard({ args: resumeWith(again.result, { 1: 'stdout' }) })
+  assert.equal(done.result.status, 'ok')
+  assert.ok(done.prompts.some((p) => p.includes('Plain text banner.') && p.includes('stdout')))
+})
+
+test('AC-6: an override asks, and the answer spec keeps the lane and records the decision in the spec', async () => {
   const strategy = strategyOf({ overrides: ['D-1'] })
   const first = await runBoard({ strategy })
   assert.equal(first.result.status, 'needs-input')
@@ -175,13 +225,14 @@ test('AC-5: an override asks, and the answer spec keeps the lane and records the
   const second = await runBoard({ args: resumeWith(first.result, { [q.id]: 'spec' }), strategy })
   assert.equal(second.result.status, 'ok')
   assert.equal(second.result.strategy.initiatives.find((i) => i.id === 'IN-1').lane, 'spec')
+  assert.ok(second.labels.includes('install:version-banner:r0'))
   const install = second.prompts[second.labels.indexOf('install:version-banner:r0')]
   assert.match(specText(install), /## Decision overrides/)
   const report = second.prompts[second.labels.indexOf('write:report')]
   assert.match(report, /kept in the spec lane by the user/)
 })
 
-test('AC-5: the answer mold routes the overriding initiative to mold', async () => {
+test('AC-6: the answer mold routes the overriding initiative to mold', async () => {
   const strategy = strategyOf({ overrides: ['D-1'] })
   const first = await runBoard({ strategy })
   const second = await runBoard({ args: resumeWith(first.result, { 1: 'mold' }), strategy })
@@ -190,7 +241,7 @@ test('AC-5: the answer mold routes the overriding initiative to mold', async () 
   assert.ok(!second.labels.includes('draft:version-banner:r0'))
 })
 
-test('AC-6: a leverage trigger asks mold or spec anyway, with mold recommended', async () => {
+test('AC-7: a leverage trigger asks mold or spec anyway, with mold recommended', async () => {
   const strategy = strategyOf({ leverage_triggers: ['auth'] })
   const first = await runBoard({ strategy })
   assert.equal(first.result.status, 'needs-input')
@@ -203,6 +254,8 @@ test('AC-6: a leverage trigger asks mold or spec anyway, with mold recommended',
   const anyway = await runBoard({ args: resumeWith(first.result, { [q.id]: 'spec anyway' }), strategy })
   assert.equal(anyway.result.status, 'ok')
   assert.ok(anyway.labels.includes('draft:version-banner:r0'))
+  assert.ok(anyway.labels.includes('install:version-banner:r0'))
+  assert.ok(anyway.result.factory_queue.flat().some((e) => e.slug === 'version-banner'))
 
   const mold = await runBoard({ args: resumeWith(first.result, { [q.id]: 'mold' }), strategy })
   assert.ok(!mold.labels.includes('draft:version-banner:r0'))

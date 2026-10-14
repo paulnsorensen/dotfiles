@@ -837,8 +837,8 @@ function renderSpec(init, d, items, theme, research, overrides = []) {
     ...(overrides.length ? [
       '## Decision overrides',
       ...overrides.map((o) => `- ${o.id} (${o.kind}): ${oneLine(o.statement)} (${oneLine(o.citation)}); the user kept this spec in the spec lane. Record the change in an ADR follow-up.`),
+      '',
     ] : []),
-    '',
     ...(research.length ? [
       '## Provenance',
       `- briesearch: ${research.map((r) => `${clip(r.answer)} (${r.confidence})`).join('; ')}; artifact: ${research.map((r) => r.report_path).filter(Boolean).join(', ') || 'none'}`,
@@ -900,6 +900,9 @@ if (resumeArgs.length) {
     if (!shape.length) {
       const matched = matchAnswers(st.questions, input.answers)
       errors.push(...matched.errors)
+      if (st.checkpoint === 'done') {
+        for (const q of st.questions) if (!matched.answers.some((a) => a.id === q.id)) errors.push(`the done checkpoint needs an answer to ${q.id}`)
+      }
       answered = matched.answers.map((a) => {
         const q = st.questions.find((x) => x.id === a.id)
         if (!q.closed) return a
@@ -1138,20 +1141,30 @@ if (!resumedSpec && !resumedDone) {
     const { state, answered } = resume
     const byId = new Map(state.questions.map((q) => [q.id, q]))
     const userAnswers = []
+    let approvedByUser = false
     for (const a of answered) {
       const q = byId.get(a.id)
       if (q.initiative) overrideDecisions[q.initiative] = a.answer
+      else if (q.options.length === 1 && q.options[0] === 'approve' && a.answer.toLowerCase() === 'approve') approvedByUser = true
       else userAnswers.push({ question: a.question, answer: a.answer })
     }
+    const overLimit = (s) => {
+      const specCount = s.initiatives.filter((i) => i.lane === 'spec').length
+      if (specCount <= maxSpecs) return null
+      const error = `the lane moves give ${specCount} spec initiatives; the limit is ${maxSpecs}`
+      return { status: 'blocked', error, errors: [error] }
+    }
     strategy = applyUser(strategy, userLanes)
-    const specCount = strategy.initiatives.filter((i) => i.lane === 'spec').length
-    if (specCount > maxSpecs) return { status: 'blocked', error: `the lane moves give ${specCount} spec initiatives; the limit is ${maxSpecs}` }
-    if (state.approved && !userAnswers.length) settled = true
+    const tooMany = overLimit(strategy)
+    if (tooMany) return tooMany
+    if ((state.approved || approvedByUser) && !userAnswers.length) settled = true
     else {
       const last = adviceLog[adviceLog.length - 1]
       const revised = await synthesize({ concerns: last ? last.concerns : [], guidance: last ? last.guidance : '', answers: userAnswers, user_lanes: userLanes || {} }, strategy, 1)
       if (!revised.value) return { status: 'blocked', reason: `revised synthesis failed: ${errorText(revised.errors)}`, strategy, advice: adviceLog, gaps, ...lists }
       strategy = applyUser(revised.value, userLanes)
+      const revisedTooMany = overLimit(strategy)
+      if (revisedTooMany) return revisedTooMany
       round = 1
     }
   }
@@ -1272,8 +1285,14 @@ async function mintSpec(init, prior = null, user = null) {
     // A user who chose spec anyway has already weighed the leverage triggers.
     const triggers = user && user.anyway ? [] : d.leverage_triggers
     if (triggers.length || d.open_questions.length) {
-      if (INTERACTIVE && !user) return { ...base, status: 'asking', questions: pendingQuestions(init, triggers, d.open_questions) }
-      return { ...base, status: 'mold', reason: triggers.length ? `leverage triggers: ${triggers.join(', ')}` : 'open questions', open_questions: d.open_questions }
+      if (INTERACTIVE) {
+        // A resumed redraft asks only what the user has not answered; one revision per checkpoint.
+        const held = user || { answers: [], anyway: false }
+        const fresh = d.open_questions.filter((t) => !held.answers.some((a) => a.question === oneLine(`${init.id} ${init.title}: ${t}`)))
+        if (triggers.length || fresh.length) return { ...base, status: 'asking', questions: pendingQuestions(init, triggers, fresh), held }
+      } else {
+        return { ...base, status: 'mold', reason: triggers.length ? `leverage triggers: ${triggers.join(', ')}` : 'open questions', open_questions: d.open_questions }
+      }
     }
     const text = renderSpec(init, d, items, themeById.get(init.theme), base.research, decisions.filter((x) => init.overrides.map(normRef).includes(x.id)))
     const critique = await typed(critiquePrompt(init, text), { label: `taste:${init.slug}:r${round}`, phase: 'Spec', agentType: 'taste-tester', schema: CRITIQUE_SCHEMA }, checkCritique)
@@ -1306,13 +1325,17 @@ for (const init of specInits) {
     results.set(init.id, prior)
     continue
   }
-  const ids = prior.questions.map((q) => q.id)
-  const got = resume.answered.filter((a) => ids.includes(a.id))
+  const got = resume.answered.filter((a) => prior.questions.some((q) => q.id === a.id))
   const trigger = prior.questions.find((q) => q.options.includes('spec anyway'))
   const call = trigger ? got.find((a) => a.id === trigger.id) : null
-  if (!got.length) results.set(init.id, prior)
-  else if (call && call.answer === 'mold') results.set(init.id, { initiative: init.id, slug: init.slug, path: prior.path, status: 'mold', reason: `leverage triggers: ${trigger.evidence}; the user chose mold`, open_questions: [] })
-  else jobs.push({ init, prior, user: { answers: got.map(({ question: q, answer }) => ({ question: q, answer })), anyway: Boolean(call && call.answer === 'spec anyway') } })
+  // An asking outcome holds the answers of earlier checkpoints, so a later ask keeps them.
+  const held = prior.held || { answers: [], anyway: false }
+  const answers = [...held.answers, ...got.map(({ question: q, answer }) => ({ question: q, answer }))]
+  const anyway = held.anyway || Boolean(call && call.answer === 'spec anyway')
+  const unanswered = prior.questions.filter((q) => !got.some((a) => a.id === q.id))
+  if (call && call.answer === 'mold') results.set(init.id, { initiative: init.id, slug: init.slug, path: prior.path, status: 'mold', reason: `leverage triggers: ${trigger.evidence}; the user chose mold`, open_questions: [] })
+  else if (unanswered.length) results.set(init.id, { ...prior, questions: unanswered, held: { answers, anyway } })
+  else jobs.push({ init, prior, user: { answers, anyway } })
 }
 // Code caps brie-ground child runs across the jobs, in priority order.
 let researchLeft = LIMITS.maxResearch
@@ -1527,6 +1550,7 @@ if (!approved) {
   if (fixes.length) {
     const fixed = await typed(reportFixPrompt(reportPath, reportText, fixes), { label: 'write:report:fix', phase: 'Report', agentType: 'coder', model: 'haiku', effort: 'low', schema: WRITE_SCHEMA }, checkWrite)
     if (!fixed.value) log(`Report fix failed: ${errorText(fixed.errors)}`)
+    else if (!written.value) written = { value: { path: reportPath, chars: fixed.value.chars } }
   }
   final = await advise('done', fixes.length ? 'advise:done:r1' : 'advise:done', donePayload(fixes.length ? { fixes_applied: fixes } : {}))
   if (final) adviceLog.push(final)
