@@ -34,7 +34,8 @@ Gather → Ground → Strategy → Advise → Resolve → Spec → Verify → Re
 - **Never overwrite.** A slug whose path already exists becomes `exists`, and its dependents block.
 - **Opus on the two judgment calls.** The synthesizer and the spec drafter set `model: 'opus'`. The other agents keep their agent-type models.
 - **Code assigns IDs and numbering.** Code assigns `IDEA-n`, `D-n`, and AC numbers. A spec-lane initiative moves to mold in code when it has a leverage trigger, an open question, an override, or too many research questions.
-- **Args need a stamp.** Scripts cannot read the clock, so `args.stamp` (YYYY-MM-DD) dates each spec and names the report and the wiki page.
+- **Args need a stamp.** Scripts cannot read the clock (`Date.now()` and argless `new Date()` throw), so `args.stamp` (YYYY-MM-DD) dates each spec and names the report and the wiki page. A missing stamp returns `blocked` with the exact call shape.
+- **Bare strings and `focus`.** A bare `YYYY-MM-DD` string is the stamp. Any other bare string, or `args.focus`, is a free-text focus. The idea explorer, the lens strategists, and the synthesizer limit their work to it. `triage-sweep` has no free-text scope arg, so issue triage stays repo-wide.
 
 ## Gotchas
 

@@ -20,9 +20,12 @@ export const meta = {
 // resolver-owned spec paths, a curd-count gate, explicit triage-sweep route
 // mapping, idea dedup against existing specs, and code-assigned slugs.
 //
-// Args: { stamp: 'YYYY-MM-DD', repo?: 'owner/name', limit? = 30, ideas?: string[], maxSpecs? = 8 }
-//   or a bare 'YYYY-MM-DD' string. The stamp is required because workflow
-//   scripts cannot read the clock; it dates each spec and names the report.
+// Args: { stamp: 'YYYY-MM-DD', focus?: string, repo?: 'owner/name', limit? = 30, ideas?: string[], maxSpecs? = 8 }
+//   or a bare 'YYYY-MM-DD' string (the stamp), or any other bare string (the focus).
+//   The stamp is required because workflow scripts cannot read the clock; it dates
+//   each spec and names the report. A focus is a free-text scope: the idea explorer
+//   and the strategists limit their work to it. triage-sweep has no free-text
+//   scope arg, so the issue triage stays repo-wide.
 //
 // Output: specs land at `mold.pyz artifact-path specs <slug>`, the durable
 // corpus that cheese-factory resolves. factory_queue lists them in dependency
@@ -165,19 +168,24 @@ const validSlug = (slug) => typeof slug === 'string' && slug.length <= 64 && SLU
 // An agent-copied path reaches shell commands, so it holds only safe characters and no '..' segment.
 const SAFE_PATH_RE = /^[A-Za-z0-9._@+\/-]+$/
 const safePath = (p) => SAFE_PATH_RE.test(p) && !p.split('/').includes('..')
-const USAGE = 'usage: /cheese-board YYYY-MM-DD, or args {stamp, repo?, limit?, ideas?, maxSpecs?}'
+const USAGE = 'call shape: /cheese-board YYYY-MM-DD, or args {stamp: "YYYY-MM-DD", focus?: "free-text scope", repo?, limit?, ideas?, maxSpecs?}. A bare string that is not a date is the focus; the stamp is still required.'
+const MAX_FOCUS = 500
 const input = typeof args === 'string'
   ? (() => {
       try {
         const parsed = JSON.parse(args)
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
-      } catch { /* not JSON: a bare stamp */ }
-      return { stamp: args.trim() }
+      } catch { /* not JSON: a bare stamp or a bare focus */ }
+      const text = args.trim()
+      return STAMP_RE.test(text) ? { stamp: text } : { focus: text }
     })()
   : (args && typeof args === 'object' && !Array.isArray(args) ? args : {})
-if (typeof input.stamp !== 'string' || !STAMP_RE.test(input.stamp)) return { status: 'blocked', error: `args.stamp must be YYYY-MM-DD; ${USAGE}` }
+const focus = typeof input.focus === 'string' && input.focus.trim() ? input.focus.trim().slice(0, MAX_FOCUS) : null
+if (typeof input.stamp !== 'string' || !STAMP_RE.test(input.stamp)) return { status: 'blocked', error: `args.stamp must be YYYY-MM-DD (workflow scripts cannot read the clock); ${USAGE}`, ...(focus ? { focus } : {}) }
 if (input.repo != null && (typeof input.repo !== 'string' || !REPO_RE.test(input.repo))) return { status: 'blocked', error: `args.repo must be owner/name; ${USAGE}` }
 const stamp = input.stamp
+const focusRule = focus ? 'Limit the strategy to this focus. Drop or deprioritize work that does not serve it.' : null
+const focusData = (name = 'focus') => (focus ? data(name, focus) : null)
 const repo = input.repo || null
 const repoFlag = repo ? ` --repo ${repo}` : ''
 let limit = Number.isInteger(input.limit) && input.limit > 0 ? input.limit : LIMITS.triageLimit
@@ -585,6 +593,8 @@ const ideasPrompt = () => prompt(
   `4. Open issues, for dedup only: \`gh issue list${repoFlag} --state open --limit ${limit} --json number,title\`. When an open issue covers an idea, set duplicate_of to its ref, such as #12.`,
   'Every idea needs a title, a one-sentence summary, and a source citation. Use empty strings for existing_spec and duplicate_of when they do not apply.',
   `Return at most ${LIMITS.maxIdeas} ideas. Prefer ideas with strategic weight over small chores.`,
+  focus && 'Limit the ideas to this focus. Skip candidate work that does not serve it.',
+  focusData(),
   data('seed_ideas', seedIdeas),
 )
 
@@ -617,6 +627,8 @@ const LENSES = [
 const strategistPrompt = (lens, context) => prompt(
   `You are a strategist. Read only: write no file and change no state. Propose a strategy through one lens: ${lens.key}, meaning ${lens.brief}`,
   STRATEGY_RULES,
+  focusRule,
+  focusData(),
   data('context', context),
 )
 
@@ -624,6 +636,8 @@ const synthesisPrompt = (proposals, context, advice, previous) => prompt(
   'You are the strategy lead. Read only: write no file and change no state. Merge the lens proposals into one strategy.',
   'Keep the strongest theme structure. Graft better initiatives from the other proposals. Resolve conflicts with the evidence in the item data, and record the tie-break in the rationale.',
   STRATEGY_RULES,
+  focusRule,
+  focusData(),
   data('context', context),
   data('proposals', proposals),
   previous && data('previous_strategy', previous),
