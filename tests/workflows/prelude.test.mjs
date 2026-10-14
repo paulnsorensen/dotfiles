@@ -10,7 +10,7 @@ import { runInNewContext } from 'node:vm'
 const repo = fileURLToPath(new URL('../../', import.meta.url))
 const syncScript = join(repo, 'claude/workflow-prelude/sync.mjs')
 const sourcePath = join(repo, 'claude/workflow-prelude/prelude.js')
-const WORKFLOWS = ['claude/workflows/cheese-factory.js', 'claude/workflows/move-my-cheese.js']
+const WORKFLOWS = ['claude/workflows/cheese-board.js', 'claude/workflows/cheese-factory.js', 'claude/workflows/move-my-cheese.js']
 const NAMES = [
   'SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'floorReached', 'form', 'substance',
   'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt',
@@ -85,8 +85,8 @@ test('each workflow declares every prelude name once, inside the block, after me
 })
 
 test('cheese-factory has no SHA_RE and move-my-cheese keeps its 7-to-40-hex SHA_RE', () => {
-  assert.doesNotMatch(read(WORKFLOWS[0]), /^const SHA_RE\b/m)
-  assert.match(read(WORKFLOWS[1]), /^const SHA_RE = \/\^\[0-9a-f\]\{7,40\}\$\/i$/m)
+  assert.doesNotMatch(read('claude/workflows/cheese-factory.js'), /^const SHA_RE\b/m)
+  assert.match(read('claude/workflows/move-my-cheese.js'), /^const SHA_RE = \/\^\[0-9a-f\]\{7,40\}\$\/i$/m)
 })
 
 test('the workflow files with a BEGIN marker equal the sync DEFAULT_FILES', () => {
