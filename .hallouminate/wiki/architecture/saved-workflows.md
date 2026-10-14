@@ -18,7 +18,7 @@ Source of truth is `claude/workflows/*.js`. `dots sync` copies the whole dir int
 
 **Child workflows (`workflow()`, first used 2026-07-21):** `workflow('name', args)` runs a saved workflow inline as a sub-step (one nesting level only; shares budget/concurrency). The offline harness's default `workflow` global throws — tests override it via `run()`'s overrides object (`workflow` is in `GLOBALS`, `tests/workflows/harness.mjs`). Parents must try/catch the call and fall back gracefully (age-fanout callers fall back to a single-reviewer age).
 
-**Backtick gotcha** (PR #463): the sandbox-guard test (`tests/workflows/all-parse.test.mjs`, "no workflow reaches for a global outside the Workflow runtime surface") blanks string literals with a character state machine that does **not** understand regex literals. A backtick inside a regex literal (e.g. `match(/`+/g)` written with a literal backtick) flips the stripper into template-string state, wrecking quote parity for the rest of the file — later prompt prose leaks into the identifier scan and the test fails on an unrelated word (e.g. "process") far from the real cause, which reads as a pre-existing failure. In workflow scripts, spell backticks as the escape \u0060 whenever they appear in code position (regex literals, char comparisons); backticks *inside* quoted strings are fine.
+**Backtick gotcha** (PR #463): the sandbox-guard test (`tests/workflows/all-parse.test.mjs`, "no workflow reaches for a global outside the Workflow runtime surface") blanks string literals with a character state machine that does **not** understand regex literals. A backtick inside a regex literal (e.g. `match(/`+/g)` written with a literal backtick) flips the stripper into template-string state, wrecking quote parity for the rest of the file — later prompt prose leaks into the identifier scan and the test fails on an unrelated word (e.g. "process") far from the real cause, which reads as a pre-existing failure. In workflow scripts, spell backticks as the escape ` whenever they appear in code position (regex literals, char comparisons); backticks *inside* quoted strings are fine.
 
 **Worktree gotcha** (PR #436 review): a follow-up agent must never pair `isolation: 'worktree'` with `git checkout <branch>` of a branch another agent's worktree still holds — git refuses a second checkout of an already-checked-out branch. Hand the first agent's worktree path back through its schema (e.g. `worktree_path` via `git rev-parse --show-toplevel`) and have the follow-up agent run *without* isolation and `cd` there instead.
 
@@ -26,6 +26,16 @@ Source of truth is `claude/workflows/*.js`. `dots sync` copies the whole dir int
 
 **Strategy layer (2026-10-14):** `cheese-board.js` sits above `cheese-factory`. It runs `triage-sweep` as a child, then synthesizes a strategy and mints resolver-path mini-specs that form a `factory_queue`. See [[architecture/cheese-board-workflow]].
 
+**Host-fit failures (session analytics, 2026-10-11 to 2026-10-14):** 54 runs of cheese-board, cheese-factory, and move-my-cheese used about 23.5M tokens, and none returned `ok`. The causes were the host setup, not model quality:
+
+- Workflow agents run under the same PreToolUse hooks as the parent. The tool-reroute hook denies shell `grep`/`cat`/`sed` on a file over 16 KiB, so `grep -Fq` criteria checks never ran and clean curds ended `partial` (PR #1324: checks run marked tests; a guard denial is `unrun`).
+- The plan advisor blocked 8 of 22 cheese-factory runs on its own payload: the single-pass curd sent `brief: null` and `files: []`. Round two also reversed round-one concerns (PR #1322: single-pass brief, round-two resolve-only rule).
+- 7 runs died on argument parsing (PR #1323). The runtime bans `Date`, so cheese-board still needs an explicit stamp.
+- 19 of 28 move-my-cheese runs were gate hops with no build, because a Workflow cannot pause and the caller round-trips the plan.
+- The auto-mode classifier denies a relaunch of an edited `scriptPath` copy as `[Self-Modification]`. Edit the source, `dots sync`, and relaunch by name.
+
+The design rules live in `skills/claude-workflows/references/environment.md`; the cases are eval data in `skills/claude-workflows/evals/`. Run records for counting: `~/.claude/projects/*/<session>/workflows/wf_*.json`.
+
 Related: [[architecture/cheese-board-workflow]], [[architecture/agents-dir]], [[operations/sync-and-chezmoi]], [[adr/cheese-factory-workflow]], [[architecture/move-my-cheese-workflow]].
 
-*Source: main-clone wiki page (untracked) + cheese-factory-workflow implementation session (PR #486) + barrier-age restructure session (2026-07-21) · Updated: 2026-07-21 · Supersedes: untracked main-clone copy of this page*
+*Source: main-clone wiki page (untracked) + cheese-factory-workflow implementation session (PR #486) + barrier-age restructure session (2026-07-21) + cheese workflow session-analytics review (2026-10-14) · Updated: 2026-10-14 · Supersedes: untracked main-clone copy of this page*
