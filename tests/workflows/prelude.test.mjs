@@ -15,7 +15,7 @@ const NAMES = [
   'SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'floorReached', 'form', 'substance',
   'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt',
   'MOLD', 'DECISION_KINDS', 'RESEARCH_CONFIDENCE', 'GROUNDING_SCHEMA', 'GROUND_RESEARCH_SCHEMA', 'GROUND_RULES',
-  'researchRule', 'brieGround',
+  'researchRule', 'BRIE_GROUND_MAX_AGENTS', 'brieGround',
 ]
 const BEGIN = '// BEGIN shared prelude: x\n'
 const END = '// END shared prelude\n'
@@ -398,6 +398,21 @@ test('brieGround_answer_returnsFoundWithCappedCitations', async () => {
   const { fn } = brieWith((name, q) => ({ answer: `a:${q}`, confidence: 'certain', report_path: '/r.md', evidence_table }))
   const r = await fn('q1')
   assert.deepEqual(JSON.parse(JSON.stringify(r)), { found: { question: 'q1', answer: 'a:q1', confidence: 'certain', report_path: '/r.md', citations: ['c0', 'c1', 'c2', 'c3', 'c4'] } })
+})
+
+test('brieGround_blankDontKnow_isUnsettledNotFailed', async () => {
+  const { fn } = brieWith(() => ({ answer: '', confidence: 'dont_know', open_questions: [] }))
+  assert.deepEqual(JSON.parse(JSON.stringify(await fn('q1'))), { unsettled: ['q1'] })
+})
+
+test('brieGround_dontKnow_keepsAtMostTwoFollowUps', async () => {
+  const { fn } = brieWith(() => ({ answer: 'unclear', confidence: 'dont_know', open_questions: ['a', 'b', 'c', 'd'] }))
+  assert.deepEqual(JSON.parse(JSON.stringify(await fn('q1'))), { unsettled: ['q1', 'a', 'b'] })
+})
+
+test('brieGround_blankSettledAnswer_stillFails', async () => {
+  const { fn } = brieWith(() => ({ answer: '  ', confidence: 'certain' }))
+  assert.deepEqual(JSON.parse(JSON.stringify(await fn('q1'))), { failed: 'research failed: q1' })
 })
 
 test('brieGround_dontKnow_returnsUnsettledWithFollowUps', async () => {

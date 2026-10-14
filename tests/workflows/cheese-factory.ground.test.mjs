@@ -67,7 +67,7 @@ test('ground_decision_reachesAdvisorsCookAndTaste_andTheReport', async () => {
   assert.deepEqual(dataOf(promptOf('advise:plan'), 'payload').grounding.decisions, expected)
   assert.deepEqual(dataOf(promptOf('advise:done'), 'payload').grounding.decisions, expected)
   assert.deepEqual(dataOf(promptOf('cook:parent'), 'grounding').decisions, expected)
-  assert.deepEqual(dataOf(promptOf('taste:parent'), 'grounding').decisions, expected)
+  assert.deepEqual(dataOf(promptOf('taste:parent'), 'locked_decisions'), expected)
   assert.deepEqual(result.grounding.decisions, expected)
   assert.equal(result.status, 'ok')
 })
@@ -153,4 +153,59 @@ test('research_budgetFloor_blocksBeforeTheChild', async () => {
   assert.equal(result.status, 'blocked')
   assert.equal(result.reason, 'budget floor reached before research')
   assert.equal(called, false)
+})
+
+test('taste_roadmapDecision_isContextOnly_notLocked', async () => {
+  const roadmap = { ...decision, kind: 'roadmap', statement: 'Prefer workflows over skills.' }
+  const { promptOf } = await run({ ground: () => ground({ decisions: [decision, roadmap] }) })
+
+  const prompt = promptOf('taste:parent')
+  assert.deepEqual(dataOf(prompt, 'locked_decisions').map((d) => d.id), ['D-1'])
+  assert.deepEqual(dataOf(prompt, 'context_decisions').map((d) => d.id), ['D-2'])
+  assert.match(prompt, /never halt on them/)
+})
+
+test('cookContinuation_carriesTheGroundingBlock', async () => {
+  const checkpoint = sha(0x77)
+  const { promptOf } = await run({
+    ground: () => ground({ decisions: [decision] }),
+    'cook:parent': () => ({ status: 'partial', head_sha: checkpoint, checkpoint, completed: 'half', remaining: 'rest', source_ranges: ['src/parent.js#1-2'], orientation: 'low context' }),
+    'cook:parent:c1': table['cook:parent'],
+  })
+
+  assert.deepEqual(dataOf(promptOf('cook:parent:c1'), 'grounding').decisions, [{ id: 'D-1', ...decision }])
+})
+
+const multi = {
+  resolve: () => ({ ...table.resolve(), curd_count: { slug: 'parent', candidate_curds: 3, blast_radius: 'medium' } }),
+  'decompose:plan': () => ({ curds: [{ slug: 'a', brief: 'do a', files: ['a.js'] }, { slug: 'c', brief: 'do c', files: ['c.js'] }] }),
+  'decompose:write-minispecs': () => ({ curds: [{ slug: 'a', spec_path: '/specs/parent--a.md' }, { slug: 'c', spec_path: '/specs/parent--c.md' }] }),
+  ...Object.fromEntries(['a', 'c'].flatMap((s) => [
+    [`cook:${s}`, () => ({ status: 'ok', head_sha: sha(1), worktree_path: `/tmp/worktrees/${s}`, artifact: `.cheese/cook/${s}.md`, orientation: 'x' })],
+    [`taste:${s}`, table['taste:parent']],
+    [`press:${s}`, () => ({ status: 'ok', head_sha: sha(2), artifact: `.cheese/press/${s}.md`, orientation: 'x' })],
+  ])),
+  integrate: () => ({ ...table.integrate(), merged: ['a', 'c'], files_by_slug: { a: ['a.js'], c: ['c.js'] } }),
+  'age:barrier': () => ({ ...table['age:barrier'](), reviewed_slugs: ['a', 'c'] }),
+  plate: () => ({ results: ['a', 'c'].map((slug) => ({ slug, status: 'ok', pr_url: `https://example.test/pr/${slug}` })) }),
+}
+
+test('decompose_getsTheGroundingBlock', async () => {
+  const { promptOf } = await run({ ...multi, ground: () => ground({ decisions: [decision] }) })
+
+  assert.deepEqual(dataOf(promptOf('decompose:plan'), 'grounding').decisions, [{ id: 'D-1', ...decision }])
+  assert.match(promptOf('decompose:plan'), /Return at most 12 curds/)
+})
+
+test('research_threeChildren_lowerTheCurdCapUnderTheAgentCap', async () => {
+  const { promptOf, trace } = await run({ ...multi, ground: () => ground({ research_questions: ['q1', 'q2', 'q3'] }) }, (q) => answer(q))
+
+  assert.match(promptOf('decompose:plan'), /Return at most 9 curds/)
+  assert.ok(trace.logs.some((l) => /3 research child\(ren\) leave room for 9 curds/.test(l)))
+})
+
+test('research_oneChild_keepsTheFullCurdCap', async () => {
+  const { promptOf } = await run({ ...multi, ground: () => ground({ research_questions: ['q1'] }) }, (q) => answer(q))
+
+  assert.match(promptOf('decompose:plan'), /Return at most 12 curds/)
 })

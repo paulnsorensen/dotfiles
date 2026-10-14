@@ -116,6 +116,8 @@ const GROUND_RULES = [
 ].join('\n')
 // The rule for research_questions. max resolves at call time.
 const researchRule = (max) => `research_questions: at most ${max} questions about external facts (a library, an API, upstream behavior) that the work needs settled. Ask a question only when the item text, the code, the wiki, and prior research all leave it open. Leave it empty otherwise.`
+// Upper bound for one brie-ground child: plan, recall, and synthesis, plus up to 3 deep sub-questions of scope, 6 angles, 12 fetches, and verify votes.
+const BRIE_GROUND_MAX_AGENTS = 100
 // Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. workflow and log resolve at call time.
 const brieGround = async (question) => {
   let r = null
@@ -124,8 +126,10 @@ const brieGround = async (question) => {
   } catch (e) {
     log(`brie-ground failed for "${question}": ${e && e.message}`)
   }
-  if (!r || r.error || typeof r.answer !== 'string' || !r.answer.trim() || !RESEARCH_CONFIDENCE.includes(r.confidence)) return { failed: `research failed: ${question}` }
-  if (r.confidence === 'dont_know') return { unsettled: [question, ...(Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()) : [])] }
+  if (!r || r.error || typeof r.answer !== 'string' || !RESEARCH_CONFIDENCE.includes(r.confidence)) return { failed: `research failed: ${question}` }
+  // A dont_know answer may be blank. It keeps at most 2 follow-ups, so one child cannot flood the open questions.
+  if (r.confidence === 'dont_know') return { unsettled: [question, ...(Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()).slice(0, 2) : [])] }
+  if (!r.answer.trim()) return { failed: `research failed: ${question}` }
   const citations = (Array.isArray(r.evidence_table) ? r.evidence_table : []).slice(0, 5).map((e) => e && e.citation).filter(Boolean)
   return { found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }
 }
@@ -190,8 +194,6 @@ const brieGround = async (question) => {
 const LIMITS = { maxPrs: 12, maxTargets: 12, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000, maxResearch: 2 }
 // Worst case for one age-fanout child: packet, two attempts for each of about 12 dimensions, reconcile.
 const AGE_FANOUT_MAX_AGENTS = 27
-// Upper bound for one brie-ground child: plan, recall, and synthesis, plus up to 3 deep sub-questions of scope, 6 angles, 12 fetches, and verify votes.
-const BRIE_GROUND_MAX_AGENTS = 100
 const MARKER_PREFIX = 'move-my-cheese:aged'
 const MERGE_METHODS = ['squash', 'merge', 'rebase']
 const BLAST_RADII = ['low', 'medium', 'high']
@@ -1849,8 +1851,11 @@ if (APPROVED) {
   }
   const grounding = decisions.length || research.length ? { decisions, research } : null
   // Code guarantees that every unsettled question reaches the plan, even when a planner drops it.
+  // A planner copy that differs only in spacing or case counts as present.
+  const questionKey = (q) => q.replace(/\s+/g, ' ').trim().toLowerCase()
   const withUnsettled = (p) => {
-    const missing = unsettled.filter((q) => !p.open_questions.includes(q))
+    const present = new Set(p.open_questions.map(questionKey))
+    const missing = unsettled.filter((q) => !present.has(questionKey(q)))
     return missing.length ? { ...p, open_questions: [...p.open_questions, ...missing] } : p
   }
   const landingOf = (p) => ({ inputs: prNumbers, recon: { base_sha: idx.base_sha.trim(), heads: Object.fromEntries(active.map((x) => [String(x.number), x.head_sha])) }, tensions, plan: withUnsettled(p), ...(grounding ? { grounding } : {}) })

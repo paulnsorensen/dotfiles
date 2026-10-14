@@ -140,3 +140,18 @@ test('a fold planner gets the landing grounding in its context', async () => {
   assert.equal(dataOf(call(second.trace, 'plan:revise').prompt, 'context').decisions[0].id, 'D-1')
   assert.deepEqual(plain(second.result.landing.grounding), plain(first.result.landing.grounding))
 })
+
+test('when the advisor cannot settle, each candidate landing still carries the unsettled question', async () => {
+  const { child } = childFor(() => answer('x', { confidence: 'dont_know', open_questions: [] }))
+  const { result } = await run({ prs: [1, 2] }, planRoutes([researching(['Is gh 2.60 current?']), ['advise:plan:0', null]]), null, child)
+  assert.equal(result.status, 'needs-input')
+  assert.ok(result.candidates.length >= 1)
+  for (const c of plain(result.candidates)) assert.deepEqual(c.landing.plan.open_questions, ['Is gh 2.60 current?'])
+})
+
+test('a planner copy that differs only in case or spacing is not added twice', async () => {
+  const { child } = childFor(() => answer('x', { confidence: 'dont_know', open_questions: [] }))
+  const { result } = await run({ prs: [1, 2] }, planRoutes([researching(['Is gh 2.60 current?']), ['plan:minimal', consolidatePlan({ open_questions: ['  is GH 2.60   current? '] })]]), null, child)
+  assert.equal(result.status, 'needs-input')
+  assert.deepEqual(plain(result.questions), ['  is GH 2.60   current? '])
+})
