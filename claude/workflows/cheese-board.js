@@ -1196,16 +1196,50 @@ const reportText = [
   '',
 ].join('\n')
 
-const written = await typed(reportWritePrompt(reportPath, reportText), { label: 'write:report', phase: 'Report', agentType: 'coder', model: 'haiku', effort: 'low', schema: WRITE_SCHEMA },
-  (w) => [
-    ...(w.path.trim() === reportPath ? [] : [substance(`path must be ${reportPath}`)]),
-    ...(w.chars === charCount(reportText) ? [] : [substance(`the file has ${w.chars} characters; the report has ${charCount(reportText)}. Write it verbatim`)]),
-  ])
-if (!written.value) log(`Report write failed: ${errorText(written.errors)}`)
+// A resumed done checkpoint wrote the report in the earlier run; only a user fix rewrites it.
+const reportFixPrompt = (path, text, fixes) => prompt(
+  `Apply the user fixes below to the report at ${path}. Edit only that file. Do not commit.`,
+  'Change only what each fix asks. Keep the structure and every other line. Overwrite the file; this run owns it.',
+  `Then set chars from \`python3 -c 'import sys; print(len(open(sys.argv[1], encoding="utf-8").read()))' ${path}\`, and set path to ${path}.`,
+  data('fixes', fixes),
+  data('report', text),
+)
+const checkWrite = (w) => (w.path.trim() === reportPath ? [] : [substance(`path must be ${reportPath}`)])
+let written
+if (resumedDone) {
+  written = { value: resume.state.report_written ? { path: reportPath, chars: charCount(reportText) } : null }
+} else {
+  written = await typed(reportWritePrompt(reportPath, reportText), { label: 'write:report', phase: 'Report', agentType: 'coder', model: 'haiku', effort: 'low', schema: WRITE_SCHEMA },
+    (w) => [
+      ...checkWrite(w),
+      ...(w.chars === charCount(reportText) ? [] : [substance(`the file has ${w.chars} characters; the report has ${charCount(reportText)}. Write it verbatim`)]),
+    ])
+  if (!written.value) log(`Report write failed: ${errorText(written.errors)}`)
+}
 
-const final = await advise('done', 'advise:done', { strategy_summary: strategy.summary, coverage, decisions: decisions.length, factory_queue: factoryQueue, blocked, mold: moldList, spec_failures: specFailures, gaps })
-if (final) adviceLog.push(final)
-const approved = Boolean(final && final.verdict === 'approve')
+const donePayload = (extra = {}) => ({ strategy_summary: strategy.summary, coverage, decisions: decisions.length, factory_queue: factoryQueue, blocked, mold: moldList, deferred, spec_failures: specFailures, gaps, ...extra })
+let final = null
+let approved = false
+let fixes = []
+if (resumedDone) {
+  // The answer approve records the strategy; any other answer is a fix that the report writer applies once.
+  fixes = resume.answered.filter((a) => a.answer.toLowerCase() !== 'approve').map(({ question: q, answer }) => ({ question: q, answer }))
+  approved = !fixes.length
+}
+if (!approved) {
+  if (fixes.length) {
+    const fixed = await typed(reportFixPrompt(reportPath, reportText, fixes), { label: 'write:report:fix', phase: 'Report', agentType: 'coder', model: 'haiku', effort: 'low', schema: WRITE_SCHEMA }, checkWrite)
+    if (!fixed.value) log(`Report fix failed: ${errorText(fixed.errors)}`)
+  }
+  final = await advise('done', fixes.length ? 'advise:done:r1' : 'advise:done', donePayload(fixes.length ? { fixes_applied: fixes } : {}))
+  if (final) adviceLog.push(final)
+  approved = Boolean(final && final.verdict === 'approve')
+}
+if (!approved && INTERACTIVE) {
+  const rows = final ? adviceRows(final) : [{ text: 'The done advisor returned no valid advice. Answer approve to record the strategy, or describe a fix to the report.', options: [], recommended: '', evidence: '' }]
+  const questions = rows.map((r, k) => question(`D-${k + 1}`, '', r.text, { options: ['approve', ...r.options], recommended: r.recommended || 'approve', evidence: r.evidence }))
+  return ask('done', questions, { ...baseState(), resolved: resolvedValue, outcomes: [...specById.values()], report_written: Boolean(written.value) }, { report_path: written.value ? reportPath : null, advice: adviceLog, mold: moldList, deferred, gaps })
+}
 
 // ---- Record: only an approved strategy enters the wiki, where the next Ground reads it ----
 let recorded = null
@@ -1235,7 +1269,7 @@ if (approved) {
     '',
     '## Decisions it would change',
     '',
-    ...bullets(overriding, (i) => `- ${i.id} ${oneLine(i.title)} overrides ${i.overrides.join(', ')}; routed to /mold`),
+    ...bullets(overriding, (i) => `- ${i.id} ${oneLine(i.title)} overrides ${i.overrides.join(', ')}; ${i.lane === 'spec' ? 'kept in the spec lane by the user' : 'routed to /mold'}`),
     '',
     '## Research',
     '',
