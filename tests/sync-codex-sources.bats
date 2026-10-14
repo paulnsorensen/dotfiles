@@ -84,6 +84,9 @@ EOF
 [projects."/home/u/Dev/thing"]
 trust_level = "trusted"
 
+[shell_environment_policy.set]
+UV_CACHE_DIR = "/stale/cache"
+
 [hooks.state."/home/u/.codex/hooks.json:pre_tool_use:0:0"]
 trusted_hash = "sha256:deadbeef"
 EOF
@@ -97,6 +100,7 @@ EOF
     [ "$(yq -p=toml -oy -r '.sandbox_workspace_write.writable_roots | length' "$out")" = "1" ]
     [ "$(yq -p=toml -oy -r '.sandbox_workspace_write.writable_roots[0]' "$out")" = "$HOME/.cache/codex-tmp" ]
     [ "$(yq -p=toml -oy -r '.shell_environment_policy.set.TMPDIR' "$out")" = "$HOME/.cache/codex-tmp" ]
+    [ "$(yq -p=toml -oy -r '.shell_environment_policy.set.UV_CACHE_DIR' "$out")" = "$HOME/.cache/codex-tmp/uv-cache" ]
     # TOML cannot expand `~`; no tilde may reach the live file.
     run ! grep -q '"~' "$out"
     # network_access and unrelated runtime state survive.

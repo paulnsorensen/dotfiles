@@ -112,3 +112,5 @@
 2026-10-11 · pr-1267 · merged · architecture/move-my-cheese-workflow.md · claude-workflows assessment: land survives a spent budget, every stage result passes a code check, mechanical reads are exact commands, the done advisor gates every success, and stage branches survive a failed run.
 
 2026-10-13 · build-ci-parallelization-20261013 · merged · operations/test-suite-performance.md · Record read-only lint fan-out and Ubuntu shard hints. Supersede the stale mutating-gate description. Preserve worker defaults and failed-baseline comparison limits.
+
+2026-10-14 · 8d50142076b0af8d · merged · harnesses/codex.md · Record the dedicated Codex uv cache inside the existing writable root.
