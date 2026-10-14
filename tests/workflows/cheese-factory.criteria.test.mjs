@@ -295,7 +295,8 @@ for (const kind of ['command', 'test', 'inspection']) {
 test('checkCriteria_safeRedirectsToDevNullAndFd_areAccepted', async () => {
   const { result } = await run(single, { criteria: () => criteria(['AC-1', 'AC-2'], { check: 'test -e src/a.js 2>/dev/null && grep -q x src/a.js >/dev/null 2>&1' }) })
 
-  assert.equal(result.error, undefined)
+  // The grep on a file fails the PreToolUse guard rule; the rules under test here must not fire.
+  assert.doesNotMatch(result.error ?? '', /check is unsafe|can pass without testing anything/)
 })
 
 // ---- checkCriteria: negated-search gate ----
@@ -342,7 +343,8 @@ for (const [name, check] of TESTED) {
   test(`checkCriteria_tested_${name.replaceAll(' ', '_')}_isAccepted`, async () => {
     const { result } = await run(single, { criteria: () => criteria(['AC-1', 'AC-2'], { check }) })
 
-    assert.equal(result.error, undefined)
+    // Most of these read a file, which the PreToolUse guard rule rejects; the vacuity rule under test must not fire.
+    assert.doesNotMatch(result.error ?? '', /check is unsafe|can pass without testing anything/)
   })
 }
 
@@ -693,12 +695,12 @@ test('verify_promptAndOpts_modeVerifyJudgePinnedAtIntegrateHead', async () => {
 })
 
 test('verify_checkWithSingleQuotes_isShellQuotedSoItCannotBreakOut', async () => {
-  const check = 'test -e a && ! grep -q "it\'s" a'
+  const check = 'test -e a && git log --oneline | grep -q "it\'s"'
   const { trace } = await run(single, { criteria: () => criteria(['AC-1', 'AC-2'], { check }) })
   const prompt = calls(trace, 'verify:AC-1')[0].prompt
   const q = "'\\''"
 
-  assert.ok(prompt.includes(`bash -c 'test -e a && ! grep -q "it${q}s" a'`))
+  assert.ok(prompt.includes(`bash -c 'test -e a && git log --oneline | grep -q "it${q}s"'`))
 })
 
 test('verify_headPinnedToRemergeWhenPresent_withTheRemergeWorktree', async () => {
@@ -966,6 +968,26 @@ test('returnShape_failedVerification_listsEveryVerdictWithEvidence', async () =>
   assert.equal(result.verification.head, INTEGRATE_HEAD)
   assert.equal(result.verification.criteria[0].evidence, 'grep exited 1')
   assert.equal(result.verification.criteria[1].verdict, 'pass')
+})
+
+test('verify_guardBlockedJudge_givesAnUnrunVerdictThatStillBlocksPlate', async () => {
+  const { result, trace } = await run(single, { 'verify:AC-1': () => verdict('AC-1', { passes: false, guard_blocked: true, evidence: 'A PreToolUse hook blocked it' }) })
+
+  assert.equal(result.verification.status, 'unrun')
+  assert.equal(result.verification.criteria[0].verdict, 'unrun')
+  assert.equal(result.verification.criteria[0].evidence, 'check blocked by a PreToolUse guard')
+  assert.equal(result.verification.criteria[1].verdict, 'pass')
+  assert.match(result.reason, /criteria verification unrun \(guard\): AC-1/)
+  assert.doesNotMatch(result.reason, /verification failed/)
+  assert.equal(starting(trace, 'plate').length, 0)
+  assert.ok(calls(trace, 'verify:AC-1')[0].prompt.includes('Set guard_blocked to true'))
+})
+
+test('verify_failedAndGuardBlockedCriteria_areNamedSeparately', async () => {
+  const { result } = await run(single, { 'verify:AC-1': () => verdict('AC-1', { passes: false }), 'verify:AC-2': () => verdict('AC-2', { passes: false, guard_blocked: true }) })
+
+  assert.equal(result.verification.status, 'failed')
+  assert.match(result.reason, /criteria verification failed: AC-1; criteria verification unrun \(guard\): AC-2/)
 })
 
 test('returnShape_planBlockedReturn_isNotAFullReport', async () => {

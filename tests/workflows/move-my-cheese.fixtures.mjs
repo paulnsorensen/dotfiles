@@ -48,7 +48,7 @@ export const finalized = { marker_updated: true }
 // Isolated worktrees live under <main>/.claude/worktrees/<id>.
 export const wt = (name) => `/repo/.claude/worktrees/wf_test-${name}`
 
-const AC_1 = { id: 'AC-1', statement: 'the helper exists once', check_kind: 'command', check: 'grep -c helper src/1.js' }
+const AC_1 = { id: 'AC-1', statement: 'the helper exists once', check_kind: 'command', check: 'node --test --test-name-pattern helper tests/helper.test.mjs' }
 
 // Fold #1 and #2 into one new PR.
 export function consolidatePlan(overrides = {}) {
@@ -91,7 +91,7 @@ export function keepPlan() {
       { id: 'T-1', kind: 'existing', pr: 1, branch: 'feat/pr-1', base: 'main', title: 'pr 1', sources: [], brief: 'keep', resolves: [], satisfies: ['AC-1'], depends_on: [] },
       { id: 'T-2', kind: 'existing', pr: 2, branch: 'feat/pr-2', base: 'main', title: 'pr 2', sources: [], brief: 'keep', resolves: ['TN-1'], satisfies: ['AC-1'], depends_on: ['T-1'] },
     ],
-    criteria: [{ id: 'AC-1', statement: 'both helpers load', check_kind: 'command', check: 'grep -c helper src/1.js src/2.js' }],
+    criteria: [{ id: 'AC-1', statement: 'both helpers load', check_kind: 'command', check: 'node --test --test-name-pattern helpers tests/helper.test.mjs' }],
     open_questions: [],
   }
 }

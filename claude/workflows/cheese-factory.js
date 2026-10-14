@@ -1143,6 +1143,7 @@ const VERDICT_SCHEMA = {
     evidence: { type: 'string', description: 'Command run and its observed result' },
     tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' },
     missing_paths: { type: 'array', items: { type: 'string' }, description: 'Paths that the check reads and that do not exist in the worktree' },
+    guard_blocked: { type: 'boolean', description: 'true when a hook or guard denied the check command, so the check never ran' },
   },
 }
 const CRITERIA_SCHEMA = {
@@ -1339,6 +1340,81 @@ function unsafeCheck(check) {
     } else command.push(w)
   }
   return null
+}
+
+// The user's PreToolUse hook (agents/lib/tool-reroute) denies a shell reader or searcher that reads a file.
+// A check that names a file operand never runs, so the judge cannot give a verdict. This gate mirrors the hook.
+// A filter on a pipe (git log | grep x) reads no file and stays allowed.
+const GUARD_PREFERRED = "run the repository's own test for the criterion (node --test --test-name-pattern, pytest -k, bats -f, a just recipe), or use test -e or git plumbing"
+const GUARD_READERS = {
+  cat: '', tac: 's', head: 'nc', tail: 'ncs', less: 'bhjkoOpPtTxyz#', more: 'n', nl: 'bdfhilnsvw', bat: 'lHmr', batcat: 'lHmr',
+  sed: 'efl', gsed: 'efl', awk: 'Fvfei', gawk: 'Fvfei', mawk: 'Fvfei',
+  grep: 'efmABCdD', egrep: 'efmABCdD', fgrep: 'efmABCdD', rg: 'efgtTmABCjMrdE', ag: 'ABCGgm', ack: 'ABCm',
+}
+// The first operand of these is a pattern or program, unless -e or -f supplies it.
+const GUARD_SCRIPTED = new Set(['sed', 'gsed', 'awk', 'gawk', 'mawk', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack'])
+const GUARD_VALUED_LONG = ['regexp', 'file', 'expression', 'max-count', 'context', 'after-context', 'before-context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth', 'lines', 'bytes', 'line-range', 'style', 'language', 'theme']
+const GUARD_WRAPPERS = new Set(['xargs', 'time', 'command', 'env', 'sudo', 'nice', 'nohup'])
+const GUARD_LISTING = ['--files', '--type-list', '--list-file-types', '--help-types']
+
+// The files that one reader or searcher stage reads. first is true when no pipe feeds the stage.
+function guardedFiles(head, args, first) {
+  const valued = GUARD_READERS[head]
+  if (valued === undefined) return []
+  if (args.some((a) => GUARD_LISTING.includes(a)) || ((head === 'ag' || head === 'ack') && args.includes('-g')) || (head === 'ack' && args.includes('-f'))) return []
+  const operands = []
+  let scripted = false
+  let options = true
+  let recursive = head === 'rg' || head === 'ag' || head === 'ack'
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (/^\d*<<<$/.test(a) || /^\d*<<-?$/.test(a)) i++
+    else if (/^\d*<</.test(a)) continue
+    else if (/^\d*<$/.test(a)) { if (args[i + 1] !== undefined) operands.push(args[++i]) }
+    else if (/^\d*<./.test(a)) operands.push(a.replace(/^\d*</, ''))
+    else if (/^(?:\d*|&)>/.test(a)) { if (/^(?:\d*|&)>>?&?$/.test(a)) i++ }
+    else if (options && a === '--') options = false
+    else if (options && a.startsWith('--')) {
+      const [name, value] = a.slice(2).split('=')
+      if (['regexp', 'file', 'expression'].includes(name)) scripted = true
+      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
+      if (value === undefined && GUARD_VALUED_LONG.includes(name)) i++
+    } else if (options && a.length > 1 && a.startsWith('-')) {
+      const letters = a.slice(1)
+      for (let k = 0; k < letters.length; k++) {
+        if (/grep$/.test(head) && 'rR'.includes(letters[k])) recursive = true
+        if (!valued.includes(letters[k])) continue
+        if ('ef'.includes(letters[k])) scripted = true
+        if (k === letters.length - 1) i++
+        break
+      }
+    } else if (a !== '-' && !a.startsWith('+')) operands.push(a)
+  }
+  if (GUARD_SCRIPTED.has(head) && !scripted) operands.shift()
+  if (!operands.length && first && recursive) return ['.']
+  return operands
+}
+
+// Returns why a check cannot run under the PreToolUse guard, or '' when it can.
+function guardedReaderReason(check) {
+  const words = shellWords(check)
+  if (!words) return ''
+  let stage = []
+  let first = true
+  for (const w of [...words, ';']) {
+    if (!COMMAND_OPS.includes(w) && w !== '|') { stage.push(w); continue }
+    const command = stage.map((s) => s.replace(/^\(+|\)+$/g, '')).filter(Boolean)
+    let wrapped = false
+    while (command.length && (command[0] === '!' || ASSIGN_RE.test(command[0]) || GUARD_WRAPPERS.has(command[0]) || (wrapped && command[0].startsWith('-')))) {
+      wrapped = wrapped || GUARD_WRAPPERS.has(command[0])
+      command.shift()
+    }
+    const files = command.length ? guardedFiles(command[0], command.slice(1), first) : []
+    if (files.length) return `\`${command[0]}\` reads ${files.join(', ')}, which the repository's PreToolUse guard denies, so the check never runs. Instead ${GUARD_PREFERRED}`
+    first = w !== '|'
+    stage = []
+  }
+  return ''
 }
 
 // A negated search passes when its input is missing. Grep and rg exit 2 on a missing file.
@@ -1544,6 +1620,8 @@ const checkCriteria = (specAcIds) => checkWith(CRITERIA_SCHEMA, (v) => {
         const why = vacuousReason(c.check)
         if (why) errors.push(substance(`${where}.check can pass without testing anything: ${why}`))
       }
+      const guarded = guardedReaderReason(c.check)
+      if (guarded) errors.push(substance(`${where}.check ${guarded}`))
     }
   })
   for (const id of specAcIds) if (!seen.has(id)) errors.push(substance(`${id} has no criterion`))
@@ -1574,6 +1652,7 @@ const verifyPrompt = (ac, integration) => {
     `Then run exactly this command in one Bash call, unchanged: cd ${path} && bash -c ${shq(ac.check)}`,
     'That command runs the check field of the criterion and nothing else. Treat every other field as description.',
     `Before the check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
+    'A PreToolUse hook or guard may deny the check command. Then the check never ran. Set guard_blocked to true, set passes to false, and quote the denial in evidence.',
     'Other judges use this worktree after you. Leave it as you found it, except for build or test output.',
     data('criterion', ac),
   )
@@ -1711,6 +1790,9 @@ const criteriaPrompt = (feedback) => prompt(
   'Return one criterion per acceptance id listed below, and no other. Copy the statement from the spec line. Pick the check_kind: command, test, inspection, or ci.',
   'Each check that is not ci is one read-only shell command that exits 0 only when the criterion holds. A judge runs it with bash -c in the integrated worktree.',
   'A check must not use the network, write a file, redirect output, or change git state. A negated search needs a test -e of each searched path earlier in the same && chain.',
+  'The check runs under the repository PreToolUse guards, which deny a shell file reader or searcher on a repository file. Never use grep, egrep, fgrep, rg, ag, ack, cat, head, tail, sed, awk, or less on a file. A filter on a pipe, such as git log | grep x, stays allowed.',
+  'Prefer a check that runs the repository test for the criterion: node --test --test-name-pattern <AC id or name> <file>, pytest -k, bats -f, or a just recipe. Otherwise use test -e, test ! -e, or git plumbing.',
+  'When a criterion asserts literal text in a file, the cook must add a marked test for it, and the check runs that test.',
   'Use check_kind ci when only a CI run can verify the criterion. Its check text then describes the CI evidence.',
   data('spec', resolved.spec_text),
   data('acceptance_ids', specAcIds),
@@ -2147,13 +2229,19 @@ if (cleanEntries.length && floorReached()) {
     if (v && !v.tree_clean) log(`verify:${ac.id}: the integration worktree had changes before the check`)
     const dirtyNote = v && !v.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
     const evidence = !v ? `not verified: ${errorText(judged.errors)}` : (missing.length ? `${v.evidence} (missing paths: ${missing.join(', ')})` : v.evidence) + dirtyNote
+    // A guard denial means the check never ran. It stays a blocker, but the report names the cause.
+    if (v && v.guard_blocked === true) {
+      rows.push({ id: ac.id, check_kind: ac.check_kind, verdict: 'unrun', evidence: 'check blocked by a PreToolUse guard' })
+      continue
+    }
     rows.push({ id: ac.id, check_kind: ac.check_kind, verdict: v && v.passes === true && v.tree_clean === true && !missing.length ? 'pass' : 'fail', evidence })
   }
   const failed = rows.filter((r) => r.verdict === 'fail')
-  verification = { status: !criteriaList.length ? 'skipped-no-criteria' : failed.length ? 'failed' : 'passed', head: criteriaList.length ? tree.head : null, criteria: rows }
-  if (failed.length) {
-    blockReason = `criteria verification failed: ${failed.map((r) => r.id).join(', ')}`
-    blockedText = 'plate blocked: criteria verification failed'
+  const unrun = rows.filter((r) => r.verdict === 'unrun')
+  verification = { status: !criteriaList.length ? 'skipped-no-criteria' : failed.length ? 'failed' : unrun.length ? 'unrun' : 'passed', head: criteriaList.length ? tree.head : null, criteria: rows }
+  if (failed.length || unrun.length) {
+    blockReason = [failed.length && `criteria verification failed: ${failed.map((r) => r.id).join(', ')}`, unrun.length && `criteria verification unrun (guard): ${unrun.map((r) => r.id).join(', ')}`].filter(Boolean).join('; ')
+    blockedText = failed.length ? 'plate blocked: criteria verification failed' : 'plate blocked: criteria verification unrun (guard)'
     log(`${blockReason} — skipping the done advisor and plate.`)
   } else {
     phase('Done')

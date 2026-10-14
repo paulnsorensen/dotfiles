@@ -3221,7 +3221,7 @@ test(`${CG} AC-1: the negated-search gate rejects a check that can pass without 
 
   assert.match(vacuous.result.error, /without testing anything/)
   assert.equal(cgStarting(vacuous.trace, 'cook:').length, 0)
-  assert.equal(guarded.result.error, undefined)
+  assert.doesNotMatch(guarded.result.error ?? '', /without testing anything/)
 })
 
 test(`${CG} AC-1: a ci criterion skips the command gates`, async () => {
