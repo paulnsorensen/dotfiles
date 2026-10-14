@@ -1,12 +1,14 @@
 export const meta = {
   name: 'move-my-cheese',
-  description: 'Land a set of PRs or stacks: digest each PR intent, find tensions, plan the landing with fresh opus planners and an advisor, gate on user approval, assemble the final PRs, age and affinage them until ready, and merge when land is set.',
+  description: 'Land a set of PRs or stacks: digest each PR intent, find tensions, ground the PRs in recorded wiki decisions and brie-ground research, plan the landing with fresh opus planners and an advisor, gate on user approval, assemble the final PRs, age and affinage them until ready, and merge when land is set.',
   whenToUse: 'Several open PRs or stacks that should land, where some may overlap, conflict, or replace each other. The first run returns a landing plan and an approve digest. Re-run with { prs, plan, approve } to execute it, or add revise:"<change>" to change the plan first. Pass auto:true to skip the user gate and land:true to merge.',
   phases: [
     { title: 'Recon', detail: 'haiku indexes open PRs; code expands stacks; haiku collects per-PR detail' },
     { title: 'Survey', detail: 'one read-only sonnet explorer per PR writes an intent digest' },
     { title: 'Tensions', detail: 'one sonnet cross-reader types tensions across all digests and the code-found overlaps' },
-    { title: 'Plan', detail: 'zero tensions: code keep-all plan; else 1-3 fresh opus planners, one angle each' },
+    { title: 'Ground', detail: 'beside Tensions: one read-only explorer reads the hallouminate wiki for recorded decisions and prior research that bear on the PRs, plus external questions that nothing settles; a failure is a gap' },
+    { title: 'Research', detail: 'only when Ground asks: one brie-ground child per question (capped); a failed child blocks the run, and an unsettled or over-cap question becomes an open question of the plan' },
+    { title: 'Plan', detail: 'zero tensions, no decision on a PR, and no research: code keep-all plan; else 1-3 fresh opus planners, one angle each, given the decisions and the research' },
     { title: 'Advise', detail: 'read-only opus judge picks a plan, then approves, revises once, or stops' },
     { title: 'Assemble', detail: 'one sonnet coder per target branch in dependency waves; local commits only' },
     { title: 'Verify', detail: 'targets merged on a detached HEAD; one judge per criterion' },
@@ -64,6 +66,73 @@ const repairPrompt = (value, errors) => prompt(
   data('errors', errors.map((e) => e.msg)),
   data('object', value),
 )
+
+// mold resolves the spec, research, and notes artifact paths.
+const MOLD = 'python3 ~/.claude/skills/mold/scripts/mold.pyz'
+// A Ground explorer sorts each recorded wiki decision into one of these kinds.
+const DECISION_KINDS = ['adr', 'locked', 'roadmap', 'gotcha', 'strategy']
+// brie-ground returns one of these confidence values.
+const RESEARCH_CONFIDENCE = ['certain', 'speculating', 'dont_know']
+// The Ground contract: wiki decisions and prior research, each tied to the item refs it constrains.
+const GROUNDING_SCHEMA = {
+  type: 'object',
+  required: ['decisions', 'prior_research'],
+  properties: {
+    decisions: { type: 'array', items: {
+      type: 'object',
+      required: ['statement', 'kind', 'citation', 'items'],
+      properties: {
+        statement: { type: 'string', description: 'The recorded decision or constraint, in one sentence' },
+        kind: { type: 'string', enum: DECISION_KINDS },
+        citation: { type: 'string', description: 'wiki path:line' },
+        items: { type: 'array', items: { type: 'string' }, description: 'refs of the items it constrains; empty when it is repo-wide' },
+      },
+    } },
+    prior_research: { type: 'array', items: {
+      type: 'object',
+      required: ['path', 'topic', 'items'],
+      properties: {
+        path: { type: 'string', description: 'absolute path of the research document' },
+        topic: { type: 'string' },
+        items: { type: 'array', items: { type: 'string' } },
+      },
+    } },
+  },
+}
+// A Ground stage that also collects open external questions for brie-ground.
+const GROUND_RESEARCH_SCHEMA = {
+  ...GROUNDING_SCHEMA,
+  required: [...GROUNDING_SCHEMA.required, 'research_questions'],
+  properties: {
+    ...GROUNDING_SCHEMA.properties,
+    research_questions: { type: 'array', items: { type: 'string' }, description: 'external-fact questions that the inputs, the code, the wiki, and prior research leave open; empty when they settle the work' },
+  },
+}
+// The Ground explorer rules. Each workflow adds its subject line and its item data.
+const GROUND_RULES = [
+  'Use hallouminate with cwd set to your checkout. Run ground queries for the topics the items share, then read the hits. Cover ADRs and recorded decisions (kind adr), locked contracts and conventions (kind locked), roadmap direction (kind roadmap), gotchas that constrain a fix (kind gotcha), and earlier cheese-board pages under strategy/ (kind strategy).',
+  'Return a decision only when a wiki page states it. Cite it as wiki path:line. List the refs of the items it constrains; use an empty list when it is repo-wide. Do not restate an item as a decision.',
+  `List prior research: run \`${MOLD} artifact-path research probe\` and list the *.md files in the directory of the returned path, plus any legacy .cheese/research/*.md. Return each document that bears on an item, with its absolute path, its topic, and the item refs.`,
+].join('\n')
+// The rule for research_questions. max resolves at call time.
+const researchRule = (max) => `research_questions: at most ${max} questions about external facts (a library, an API, upstream behavior) that the work needs settled. Ask a question only when the item text, the code, the wiki, and prior research all leave it open. Leave it empty otherwise.`
+// Upper bound for one brie-ground child: plan, recall, and synthesis, plus up to 3 deep sub-questions of scope, 6 angles, 12 fetches, and verify votes.
+const BRIE_GROUND_MAX_AGENTS = 100
+// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. workflow and log resolve at call time.
+const brieGround = async (question) => {
+  let r = null
+  try {
+    r = await workflow('brie-ground', question)
+  } catch (e) {
+    log(`brie-ground failed for "${question}": ${e && e.message}`)
+  }
+  if (!r || r.error || typeof r.answer !== 'string' || !RESEARCH_CONFIDENCE.includes(r.confidence)) return { failed: `research failed: ${question}` }
+  // A dont_know answer may be blank. It keeps at most 2 follow-ups, so one child cannot flood the open questions.
+  if (r.confidence === 'dont_know') return { unsettled: [question, ...(Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()).slice(0, 2) : [])] }
+  if (!r.answer.trim()) return { failed: `research failed: ${question}` }
+  const citations = (Array.isArray(r.evidence_table) ? r.evidence_table : []).slice(0, 5).map((e) => e && e.citation).filter(Boolean)
+  return { found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }
+}
 // END shared prelude
 
 // Tracked source: claude/workflows/move-my-cheese.js in the dotfiles repo.
@@ -110,6 +179,11 @@ const repairPrompt = (value, errors) => prompt(
 // bounds). Agents make every judgment. The age fan-out threshold is inherited
 // from the previous version and predates ADR-5's age-route.
 //
+// Ground and Research follow cheese-board: recorded wiki decisions and settled
+// brie-ground answers reach the planners and the advisors. The landing keeps them
+// in an optional grounding field, so a fold and the done advisor read them without
+// a new Ground run, and an approval made before Ground keeps its digest.
+//
 // Aged marker: each reviewed PR carries one comment by the viewer
 //   <!-- move-my-cheese:aged sha=<head-sha> patch=<patch-id> dirty=<0|1> -->
 // A rerun skips review when the patch-id is unchanged and reviews only
@@ -117,7 +191,7 @@ const repairPrompt = (value, errors) => prompt(
 // viewer's comments, and a marker without full 40-hex values reads as none.
 
 // ---- Limits and closed sets: every loop has a bound in code ----
-const LIMITS = { maxPrs: 12, maxTargets: 12, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000 }
+const LIMITS = { maxPrs: 12, maxTargets: 12, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000, maxResearch: 2 }
 // Worst case for one age-fanout child: packet, two attempts for each of about 12 dimensions, reconcile.
 const AGE_FANOUT_MAX_AGENTS = 27
 const MARKER_PREFIX = 'move-my-cheese:aged'
@@ -236,7 +310,13 @@ const PLAN_SCHEMA = obj({
   open_questions: strs,
 })
 
-const LANDING_SCHEMA = obj({ inputs: ints, recon: obj({ base_sha: str, heads: { type: 'object' } }), tensions: TENSION_LIST, plan: PLAN_SCHEMA })
+const LANDING_FIELDS = { inputs: ints, recon: obj({ base_sha: str, heads: { type: 'object' } }), tensions: TENSION_LIST, plan: PLAN_SCHEMA }
+const LANDING_GROUNDING = obj({
+  decisions: list(obj({ id: str, statement: str, kind: oneOf(DECISION_KINDS), citation: str, items: strs })),
+  research: list(obj({ question: str, answer: str, confidence: oneOf(RESEARCH_CONFIDENCE), report_path: str, citations: strs })),
+})
+// grounding is optional, so a landing from before Ground still validates and keeps its digest.
+const LANDING_SCHEMA = { ...obj(LANDING_FIELDS), properties: { ...LANDING_FIELDS, grounding: LANDING_GROUNDING } }
 
 const PLAN_ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), chosen: { type: 'string', pattern: '^P-[0-9]+$' }, concerns: strs, guidance: text('Under 80 words') })
 const ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), concerns: strs, guidance: text('Under 80 words') })
@@ -860,6 +940,36 @@ const tensionsPrompt = (digests, overlaps, edges, pairs) => prompt(
   data('pairs', pairs),
 )
 
+// Ground items are the PRs, cited as #<number>.
+const prRef = (n) => `#${n}`
+const groundPrompt = (digests) => prompt(
+  'You ground a landing plan in recorded knowledge. You are read-only: do not edit, commit, push, or comment.',
+  GROUND_RULES,
+  'The items are the PRs in this run. Cite each one as #<number>, such as #12.',
+  researchRule(LIMITS.maxResearch),
+  data('items', digests.map((d) => ({ id: prRef(d.pr), goal: d.goal, approach: d.approach, contracts_touched: d.contracts_touched, assumptions: d.assumptions }))),
+)
+
+function checkGrounding(g, numbers) {
+  const refs = numbers.map(prRef)
+  const refCheck = (ref, where) => {
+    if (refs.includes(ref)) return null
+    const bare = String(ref).trim().replace(/^#?/, '#')
+    return refs.includes(bare) ? form(`${where}: '${ref}' should be '${bare}'`) : substance(`${where}: unknown PR '${ref}'`)
+  }
+  const errors = []
+  g.decisions.forEach((d, n) => {
+    if (blank(d.statement) || blank(d.citation)) errors.push(substance(`decisions[${n}] needs a statement and a wiki path:line citation`))
+    for (const ref of d.items) errors.push(refCheck(ref, `decisions[${n}].items`))
+  })
+  g.prior_research.forEach((r, n) => {
+    if (!absolute(r.path)) errors.push(substance(`prior_research[${n}].path must be absolute`))
+    for (const ref of r.items) errors.push(refCheck(ref, `prior_research[${n}].items`))
+  })
+  if (g.research_questions.some(blank)) errors.push(form('research_questions must not hold empty entries'))
+  return errors.filter(Boolean)
+}
+
 const ANSWER_ANGLE = { id: 'answers', text: 'Revise previous_plan with the user answers. Change only what an answer requires.' }
 const REVISE_ANGLE = { id: 'revise', text: 'Revise previous_plan with the user change request. Change only what the request requires.' }
 const ANSWER_REVISE_ANGLE = { id: 'answers+revise', text: 'Revise previous_plan with the user answers and the user change request. Change only what they require.' }
@@ -879,6 +989,8 @@ const planPrompt = (angle, context, fold = {}) => prompt(
   'A check must be able to fail. Every path that it reads must exist on the default branch or come from a target.',
   'grep exits 2 on a missing file, and a leading ! turns that into a pass. Put test -e <path> && before a negated search, once for each path.',
   `Use at most ${LIMITS.maxTargets} targets. Put each unresolved question in open_questions. Do not guess.`,
+  'context.decisions are recorded constraints from the wiki. Keep the landing within them. When a PR contradicts one, resolve it in a target brief, or ask in open_questions.',
+  'context.research holds settled facts; do not contradict them. Copy each context.unsettled_research question into open_questions.',
   fold.answers?.length && 'The user answered open questions of previous_plan. Apply each answer and remove its question from open_questions. Settle an unanswered question from repository evidence, or keep it in open_questions.',
   fold.revision && 'The user asks for the change in user_change. Apply it to previous_plan. Keep the open questions of previous_plan unless the change settles them.',
   fold.advice && 'The advisor asked for revisions of previous_plan. Resolve each concern in advisor. When the guidance names a fix, apply that fix.',
@@ -907,6 +1019,7 @@ const planAdvicePrompt = (pool, context, user) => judgePrompt('advise',
 const advisorPrompt = (stage, payload) => judgePrompt('advise',
   'You are the advisor: a read-only judge one level above the implementers. Do not edit files or change state.',
   `Stage: ${stage}. Judge whether the landing is safe to merge now: every target is ready, each criterion is verified or covered by CI, and no superseded intent is lost. Return approve, revise with concrete concerns, or stop.`,
+  'payload.grounding, when present, holds recorded wiki decisions and settled research answers. Ask for a revision when the landing contradicts one.',
   'Keep guidance under 80 words.',
   data('payload', payload),
 )
@@ -1449,7 +1562,7 @@ function report(status, note) {
     const mark = marks.find((m) => m.pr === n)
     return { number: n, action: d.action, target: d.target, reason: d.reason, mark: mark ? mark.action : '' }
   })
-  return { status, note: note || '', digest, plan_source: planSource, plan_summary: plan.summary, inputs, targets, tensions: landing.tensions, verification, skipped, advice: adviceLog }
+  return { status, note: note || '', digest, plan_source: planSource, plan_summary: plan.summary, inputs, targets, tensions: landing.tensions, verification, skipped, advice: adviceLog, ...gapField() }
 }
 
 // The action an approved plan gives a PR, or '' on a planning run.
@@ -1590,14 +1703,26 @@ let landing
 let digest
 let planSource = 'approved'
 const adviceLog = []
+// Every Ground gap goes to log() and to each later result.
+const gaps = []
+const gapField = () => (gaps.length ? { gaps } : {})
+// Agents that this run spent on brie-ground children; the runtime cap counts them.
+let researchAgents = 0
+// Ground output enters a planner context only when it holds something, so a run without it keeps the old context.
+const groundingContext = (g) => (g ? {
+  ...(g.decisions.length ? { decisions: g.decisions } : {}),
+  ...(g.prior_research?.length ? { prior_research: g.prior_research } : {}),
+  ...(g.research.length ? { research: g.research } : {}),
+  ...(g.unsettled?.length ? { unsettled_research: g.unsettled } : {}),
+} : {})
 const APPROVE_USAGE = 'To execute, re-run with { prs: landing.inputs, plan: landing, approve: digest }. Add land:true to merge. To change the plan first, re-run with the same fields and revise: "<change>".'
 const needsInput = (questions) => ({
-  status: 'needs-input', questions, plan_source: planSource, digest, landing, advice: adviceLog, skipped,
+  status: 'needs-input', questions, plan_source: planSource, digest, landing, advice: adviceLog, skipped, ...gapField(),
   usage: 'Answer with { prs: landing.inputs, plan: landing, approve: digest, answers: { "<question text or 1-based number>": "<answer>" } }. Add revise: "<change>" to change the plan in the same run. One planner folds the input in, and the run returns needs-approval.',
 })
 // When the advisor cannot settle, the user picks: each candidate carries its own landing and digest.
 const choose = (reason, pool, landingOf) => ({
-  status: 'needs-input', reason, advice: adviceLog, skipped,
+  status: 'needs-input', reason, advice: adviceLog, skipped, ...gapField(),
   candidates: pool.map((c) => { const l = landingOf(c.plan); return { id: c.id, angle: c.angle, digest: digestOf(l), landing: l } }),
   usage: 'Pick one candidate. To execute it, re-run with { prs: landing.inputs, plan: <candidate>.landing, approve: <candidate>.digest }. To change it first, add revise: "<change>". A candidate with open questions takes args.answers first.',
 })
@@ -1653,6 +1778,7 @@ if (APPROVED) {
       default_branch: idx.default_branch,
       prs: active.map((p) => ({ number: p.number, title: p.title, branch: p.branch, base: p.base, author: p.author, ci: p.ci, merge_state: p.merge_state, changed_files: p.changed_files })),
       tensions: APPROVED.tensions, overlaps: fileOverlaps(active), stack_edges: stackEdges(active),
+      ...groundingContext(APPROVED.grounding),
     }
     const folded = await typed(planPrompt(fold, context, { previous: APPROVED.plan, answers: answered, revision: REVISION, flaws }),
       { label: `plan:${fold.id}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))
@@ -1688,17 +1814,57 @@ if (APPROVED) {
   const overlaps = fileOverlaps(active)
   const edges = stackEdges(active)
   const pairs = prNumbers.flatMap((a, i) => prNumbers.slice(i + 1).map((b) => [a, b]))
-  const found = await typed(tensionsPrompt(digests, overlaps, edges, pairs),
-    { label: 'tensions', phase: 'Tensions', agentType: 'explorer', model: 'sonnet', effort: 'medium', schema: TENSIONS_SCHEMA }, (r) => checkTensions(r, prNumbers))
-  if (!found.value) return { status: 'blocked', error: `tension analysis failed, so the run fails closed: ${errorText(found.errors)}`, skipped }
+  // Ground needs only the digests, so it runs beside Tensions.
+  const [found, grounded] = await parallel([
+    () => typed(tensionsPrompt(digests, overlaps, edges, pairs),
+      { label: 'tensions', phase: 'Tensions', agentType: 'explorer', model: 'sonnet', effort: 'medium', schema: TENSIONS_SCHEMA }, (r) => checkTensions(r, prNumbers)),
+    () => typed(groundPrompt(digests),
+      { label: 'ground', phase: 'Ground', agentType: 'explorer', model: 'sonnet', effort: 'medium', schema: GROUND_RESEARCH_SCHEMA }, (g) => checkGrounding(g, prNumbers)),
+  ])
+  if (!found || !found.value) return { status: 'blocked', error: `tension analysis failed, so the run fails closed: ${found ? errorText(found.errors) : 'no output'}`, skipped }
+  if (!grounded || !grounded.value) {
+    log(`Wiki grounding failed (${grounded ? errorText(grounded.errors) : 'no output'}): the plan runs without recorded decisions.`)
+    gaps.push('wiki grounding failed; the plan ran without recorded decisions')
+  }
   const tensions = found.value.tensions
   const ctx = planCtx(tensions.map((t) => t.id))
-  const landingOf = (p) => ({ inputs: prNumbers, recon: { base_sha: idx.base_sha.trim(), heads: Object.fromEntries(active.map((x) => [String(x.number), x.head_sha])) }, tensions, plan: p })
+  const ground = grounded && grounded.value
+  const decisions = ground ? ground.decisions.map((d, n) => ({ id: `D-${n + 1}`, ...d })) : []
+  const priorResearch = ground ? ground.prior_research.map((r) => ({ ...r, path: r.path.trim() })) : []
+  // Code removes repeats, so a reworded copy is the only duplicate that reaches brie-ground.
+  const questions = ground ? [...new Set(ground.research_questions.map((q) => q.replace(/\s+/g, ' ').trim()))] : []
+  const research = []
+  // An over-cap or unsettled question becomes an open question of the plan, so the user answers it.
+  const unsettled = questions.slice(LIMITS.maxResearch)
+  if (unsettled.length) log(`${unsettled.length} research question(s) over the cap of ${LIMITS.maxResearch} go to open_questions: ${unsettled.join(' / ')}`)
+  if (questions.length) {
+    phase('Research')
+    for (const question of questions.slice(0, LIMITS.maxResearch)) {
+      if (floorReached()) return { status: 'blocked', error: 'budget floor reached before research', skipped, ...gapField() }
+      researchAgents += BRIE_GROUND_MAX_AGENTS
+      const r = await brieGround(question)
+      // Fail closed: a landing never plans on research that failed.
+      if (r.failed) return { status: 'blocked', error: r.failed, skipped, ...gapField() }
+      if (r.unsettled) unsettled.push(...r.unsettled.filter((q) => !unsettled.includes(q)))
+      else research.push(r.found)
+    }
+  }
+  const grounding = decisions.length || research.length ? { decisions, research } : null
+  // Code guarantees that every unsettled question reaches the plan, even when a planner drops it.
+  // A planner copy that differs only in spacing or case counts as present.
+  const questionKey = (q) => q.replace(/\s+/g, ' ').trim().toLowerCase()
+  const withUnsettled = (p) => {
+    const present = new Set(p.open_questions.map(questionKey))
+    const missing = unsettled.filter((q) => !present.has(questionKey(q)))
+    return missing.length ? { ...p, open_questions: [...p.open_questions, ...missing] } : p
+  }
+  const landingOf = (p) => ({ inputs: prNumbers, recon: { base_sha: idx.base_sha.trim(), heads: Object.fromEntries(active.map((x) => [String(x.number), x.head_sha])) }, tensions, plan: withUnsettled(p), ...(grounding ? { grounding } : {}) })
 
   phase('Plan')
   let chosenPlan = null
   const incomplete = digests.filter((d) => d.completeness !== 'complete').map((d) => d.pr)
-  if (!tensions.length && !incomplete.length) {
+  const constrained = decisions.filter((d) => d.items.length).map((d) => d.id)
+  if (!tensions.length && !incomplete.length && !constrained.length && !questions.length) {
     chosenPlan = defaultPlan(active, idx.default_branch)
     planSource = 'default'
     log('No tensions and every PR is complete: using the keep-all plan without planners.')
@@ -1709,9 +1875,11 @@ if (APPROVED) {
       default_branch: idx.default_branch,
       prs: active.map((p) => ({ number: p.number, title: p.title, branch: p.branch, base: p.base, author: p.author, ci: p.ci, merge_state: p.merge_state, changed_files: p.changed_files })),
       digests, tensions, overlaps, stack_edges: edges,
+      ...groundingContext({ decisions, prior_research: priorResearch, research, unsettled }),
     }
     const angles = PLAN_ANGLES.slice(0, PLANNER_COUNT[found.value.blast_radius])
     log(`${tensions.length} tension(s), ${incomplete.length} incomplete PR(s), blast radius ${found.value.blast_radius}: ${angles.length} planner(s).`)
+    if (constrained.length || questions.length) log(`Planners also weigh ${constrained.length} decision(s) on a PR in this run, ${research.length} research answer(s), and ${unsettled.length} unsettled question(s).`)
     const drafted = await parallel(angles.map((angle) => () => typed(planPrompt(angle, context),
       { label: `plan:${angle.id}`, phase: 'Plan', agentType: 'Plan', model: 'opus', schema: PLAN_SCHEMA }, (p) => checkPlan(p, ctx))))
     let pool = []
@@ -1719,11 +1887,11 @@ if (APPROVED) {
       if (drafted[i] && drafted[i].value) pool.push({ id: `P-${pool.length + 1}`, angle: angle.id, plan: drafted[i].value })
       else log(`plan:${angle.id} dropped: ${drafted[i] ? errorText(drafted[i].errors) : 'no output'}`)
     })
-    if (!pool.length) return { status: 'blocked', error: 'no planner produced a valid plan', tensions, skipped }
+    if (!pool.length) return { status: 'blocked', error: 'no planner produced a valid plan', tensions, skipped, ...gapField() }
 
     phase('Advise')
     const settled = await advisePlans(pool, context, ctx, 'advise:plan', null)
-    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped }
+    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped, ...gapField() }
     if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
     chosenPlan = settled.pool[0].plan
     planSource = settled.pool[0].angle
@@ -1731,7 +1899,7 @@ if (APPROVED) {
 
   landing = landingOf(chosenPlan)
   digest = digestOf(landing)
-  if (chosenPlan.open_questions.length) return needsInput(chosenPlan.open_questions)
+  if (landing.plan.open_questions.length) return needsInput(landing.plan.open_questions)
 
   // Auto mode acts without a human only on the viewer's own PRs: later stages push to and merge every PR in the run.
   const othersTouched = active.filter((p) => p.author !== idx.viewer).map((p) => p.number)
@@ -1739,7 +1907,7 @@ if (APPROVED) {
     return {
       status: 'needs-approval',
       reason: AUTO ? `auto does not push to or merge PRs by other authors without approval: #${othersTouched.join(', #')}` : 'review the landing plan',
-      plan_source: planSource, digest, landing, estimate: estimateOf(chosenPlan), advice: adviceLog, skipped,
+      plan_source: planSource, digest, landing, estimate: estimateOf(chosenPlan), advice: adviceLog, skipped, ...gapField(),
       usage: APPROVE_USAGE,
     }
   }
@@ -1769,7 +1937,7 @@ const marks = []
 let verification = { ok: true, reason: 'not run', verdicts: [] }
 const lastHead = new Map()
 const rebuilt = (id) => outcomes.get(id)?.local === true
-const worstCase = agentsMax(plan)
+const worstCase = agentsMax(plan) + researchAgents
 if (worstCase > LIMITS.agentCap * 0.8) log(`worst case ${worstCase} agents before repairs, near the runtime cap of ${LIMITS.agentCap}; a run that hits the cap stops early`)
 
 // ---- Assemble: one barrier per dependency wave ----
@@ -1891,6 +2059,7 @@ const donePayload = () => ({
   targets: order.map((id) => ({ id, pr: published.get(id).pr_number, review: verdictOf(id) })),
   verdicts: verification.verdicts,
   dispositions: plan.dispositions,
+  ...(landing.grounding ? { grounding: landing.grounding } : {}),
 })
 let doneApproved = false
 let doneNote = ''

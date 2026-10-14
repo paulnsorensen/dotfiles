@@ -31,6 +31,7 @@ const plateOf = (...slugs) => ({ results: slugs.map((slug) => ({ slug, status: '
 
 const single = {
   resolve: () => resolved(),
+  ground: () => ({ decisions: [], prior_research: [], research_questions: [] }),
   criteria: () => criteria(),
   'advise:plan': () => advice('approve'),
   'cook:parent': () => cook('parent'),

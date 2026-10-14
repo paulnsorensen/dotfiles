@@ -271,7 +271,7 @@ test('cookCurd_salvageReturnsLastCheckpoint_stopsAsStalled', async () => {
     'salvage:parent': () => ({ found: true, checkpoint: cp, completed: 'x', remaining: '' }),
   })
 
-  assert.deepEqual(labelsOf(trace), ['resolve', 'advise:plan', 'cook:parent', 'cook:parent:c1', 'salvage:parent'])
+  assert.deepEqual(labelsOf(trace), ['resolve', 'ground', 'advise:plan', 'cook:parent', 'cook:parent:c1', 'salvage:parent'])
   assert.equal(result.curds[0].status, 'failed')
   assert.match(result.curds[0].excluded_reason, /stalled/)
 })

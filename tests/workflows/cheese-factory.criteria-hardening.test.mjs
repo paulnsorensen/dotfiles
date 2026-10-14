@@ -17,6 +17,7 @@ const approve = () => ({ verdict: 'approve', concerns: [], guidance: '' })
 function table(over) {
   const base = {
     resolve: () => resolved('- AC-1: THE SYSTEM SHALL y.\n'),
+    ground: () => ({ decisions: [], prior_research: [], research_questions: [] }),
     criteria: () => ({ criteria: [crit('AC-1')] }),
     'advise:plan': approve,
     'advise:plan:r1': approve,
