@@ -342,7 +342,7 @@ cz_apply() {
     # legitimate key-paths (no halt) — and are wiped like allow/deny drift.
     run_modify '{"permissions":{"ask":["Bash(rm:*)"],"additionalDirectories":["/tmp"]}}'
     [ "$status" -eq 0 ]
-    [ "$(jq -r '.permissions.ask | length' "$OUT")" = "0" ]
+    [ "$(jq -r '.permissions.ask | any(. == "Bash(rm:*)")' "$OUT")" = "false" ]
     [ "$(jq -r '.permissions.additionalDirectories | length' "$OUT")" = "0" ]
     # class-a still authoritative
     [ "$(jq -r '.permissions.defaultMode' "$OUT")" = "auto" ]

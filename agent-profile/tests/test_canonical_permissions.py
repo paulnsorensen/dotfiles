@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 
 import pytest
+import yaml
 from agent_profile.parse import parse_manifest
 
 from tests.conftest import write_profile
@@ -92,15 +93,36 @@ def test_settings_allow_and_deny_both_union_merge(env):
 # ── shipped _permissions fragment + global wiring ────────────────────
 
 
+def _checkout() -> Path:
+    """The dotfiles checkout under test. Profiles resolve from here, not
+    from ``~/Dev/dotfiles``."""
+    return Path(
+        os.environ.get("DOTFILES_DIR") or Path(__file__).resolve().parents[2]
+    )
+
+
 @pytest.fixture(scope="module")
 def global_manifest():
-    """Resolve the real shipped ``global`` profile (which now includes
-    ``_permissions``). Skips if the repo profiles aren't where we expect."""
-    repo = Path(os.environ.get("DOTFILES_DIR") or Path.home() / "Dev/dotfiles")
-    gdir = repo / "profiles" / "global"
-    if not gdir.is_file() and not (gdir / "profile.yaml").is_file():
-        pytest.skip(f"global profile not found at {gdir}")
-    return parse_manifest(gdir)
+    """Parse the shipped ``_permissions`` fragment that ``global`` includes.
+    The fragment has no plugins, so it parses offline in CI; the full
+    ``global`` profile needs git-hosted plugin caches. Skips if the repo
+    profiles aren't where we expect."""
+    repo = _checkout()
+    pdir = repo / "profiles" / "_permissions"
+    if not (pdir / "profile.yaml").is_file():
+        pytest.skip(f"_permissions fragment not found at {pdir}")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("DOTFILES_DIR", str(repo))
+        return parse_manifest(pdir)
+
+
+def test_global_includes_permissions_fragment():
+    """``global`` wires the canonical fragment through ``include``."""
+    gfile = _checkout() / "profiles" / "global" / "profile.yaml"
+    if not gfile.is_file():
+        pytest.skip(f"global profile not found at {gfile}")
+    include = yaml.safe_load(gfile.read_text()).get("include") or []
+    assert "_permissions" in include
 
 
 
@@ -113,11 +135,7 @@ def test_global_resolves_canonical_allow_and_deny(global_manifest):
     """
     allow = global_manifest.settings.get("permissions_allow", [])
     deny = global_manifest.settings.get("permissions_deny", [])
-    for rule in (
-        "Bash(rm -rf:*)",
-        "Bash(sudo:*)",
-    ):
-        assert rule in deny
+    assert "Bash(sudo:*)" in deny
     for rule in (
         "Read(**/*.pem)",
         "Read(**/id_rsa)",
@@ -125,7 +143,7 @@ def test_global_resolves_canonical_allow_and_deny(global_manifest):
         "Read(.env)",
     ):
         assert rule in deny
-    assert len(deny) >= 20
+    assert len(deny) >= 19
     assert len(allow) >= 50
 
 
@@ -160,10 +178,12 @@ def test_global_deny_seed_leaves_search_routing_to_hooks(global_manifest):
 
 
 def test_global_deny_seed_safety_floor(global_manifest):
-    """The cross-harness safety floor (sudo + coarse rm -rf) is denied."""
+    """The cross-harness safety floor denies sudo. A coarse rm -rf deny also
+    matched each part of a compound command and blocked scratch cleanup, so
+    the floor leaves rm -rf to the Codex sandbox and Claude's own rules."""
     deny = set(global_manifest.settings.get("permissions_deny", []))
     assert "Bash(sudo:*)" in deny
-    assert "Bash(rm -rf:*)" in deny
+    assert "Bash(rm -rf:*)" not in deny
 
 
 def test_global_deny_seed_protects_secrets(global_manifest):

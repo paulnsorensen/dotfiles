@@ -85,12 +85,13 @@ settings:
   #      The Bash(rg:*) allow stays removed. A stray rg then prompts instead
   #      of running unfiltered.
   #   2. Cross-harness safety floor (porting the retired bash-guard hook's
-  #      spirit to every harness). `Bash(rm -rf:*)` is COARSER than bash-guard
-  #      was (it blocks even safe relative `rm -rf node_modules`); with the
-  #      hook removed, this coarse deny is the floor for Claude too.
+  #      spirit to every harness). `rm -rf` is not denied here: a deny rule
+  #      also matches each part of a compound command, so it blocked routine
+  #      scratch cleanup. Codex confines rm to its workspace-write sandbox.
+  #      Claude allows /tmp targets and asks for home and root targets in
+  #      chezmoi/.chezmoidata/claude.yaml.
   permissions_deny:
     - Bash(sudo:*)
-    - Bash(rm -rf:*)
     # Secret-protection floor. `.env.*` is intentionally not denied because it
     # would also block safe fixtures such as `.env.example`. Claude and Codex
     # additionally enforce the sensitive-file PreToolUse hook.
