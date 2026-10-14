@@ -93,7 +93,12 @@ const judgePrompt = (mode, ...parts) => `Judge mode: ${mode}\n\n${prompt(...part
 // ---- Args: parse and validate before the first agent() call ----
 const STAMP_RE = /^\d{4}-\d{2}-\d{2}$/
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
-const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/
+// mold artifact-path accepts 1 to 64 kebab-case characters with no leading, trailing, or double hyphen.
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const validSlug = (slug) => typeof slug === 'string' && slug.length <= 64 && SLUG_RE.test(slug)
+// An agent-copied path reaches shell commands, so it holds only safe characters and no '..' segment.
+const SAFE_PATH_RE = /^[A-Za-z0-9._@+\/-]+$/
+const safePath = (p) => SAFE_PATH_RE.test(p) && !p.split('/').includes('..')
 const USAGE = 'usage: /cheese-board YYYY-MM-DD, or args {stamp, repo?, limit?, ideas?, maxSpecs?}'
 const input = typeof args === 'string'
   ? (() => {
@@ -117,7 +122,12 @@ if (limit > LIMITS.maxTriageLimit) {
 const maxSpecs = Number.isInteger(input.maxSpecs) && input.maxSpecs > 0 ? Math.min(input.maxSpecs, LIMITS.maxSpecsCap) : LIMITS.maxSpecs
 const rawSeeds = Array.isArray(input.ideas) ? input.ideas : []
 const seedIdeas = rawSeeds.filter((s) => typeof s === 'string' && s.trim()).map((s) => s.trim())
-if (seedIdeas.length < rawSeeds.length) log(`Dropped ${rawSeeds.length - seedIdeas.length} seed idea(s) that were not non-empty strings.`)
+// Every item the run drops goes to log() and to this list, which the result returns.
+const dropped = []
+if (seedIdeas.length < rawSeeds.length) {
+  log(`Dropped ${rawSeeds.length - seedIdeas.length} seed idea(s) that were not non-empty strings.`)
+  dropped.push({ kind: 'seed', count: rawSeeds.length - seedIdeas.length, reason: 'not a non-empty string' })
+}
 
 // ---- Schemas: one constant per contract; enums for closed sets ----
 // CLOSE_VERDICTS mirrors claude/workflows/triage-sweep.js; ROUTE_LANE maps its route enum.
@@ -360,15 +370,25 @@ function waves(nodes) {
 }
 
 // ---- Typed call: validate, then repair (form) or redo (substance), bounded ----
+// An agent call can throw, for example at the budget ceiling. A throw counts as no output.
+async function attempt(text, opts) {
+  try {
+    return await agent(text, opts)
+  } catch (e) {
+    log(`${opts.label}: agent threw: ${e && e.message}`)
+    return null
+  }
+}
+
 async function typed(text, opts, check) {
-  let value = await agent(text, opts)
+  let value = await attempt(text, opts)
   for (let round = 1; ; round++) {
     const errors = value == null ? [substance('agent returned no output')] : check(value)
     if (!errors.length) return { value, errors }
     if (round > LIMITS.fixRounds) return { value: null, errors }
     value = errors.every((e) => e.kind === 'form')
-      ? await agent(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' })
-      : await agent(redoPrompt(text, errors), { ...opts, label: `${opts.label}:redo${round}` })
+      ? await attempt(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' })
+      : await attempt(redoPrompt(text, errors), { ...opts, label: `${opts.label}:redo${round}` })
   }
 }
 
@@ -395,10 +415,12 @@ async function advise(stage, label, payload) {
 // ---- Triage mapping: triage-sweep result to strategy items ----
 // triage-sweep returns {items, grounded, lenses, routing}. routing can be null when its Route agent fails.
 function mapTriage(triage) {
-  if (!triage) return { issues: [], domains: [], links: [], ungrounded: [] }
+  if (!triage) return { issues: [], domains: [], links: [], ungrounded: [], unrouted: false }
   const grounded = Array.isArray(triage.grounded) ? triage.grounded.filter((g) => g && g.item && g.item.kind === 'issue' && g.ground) : []
   const routing = triage.routing && typeof triage.routing === 'object' ? triage.routing : null
-  if (!routing) log('triage-sweep returned no routing: close verdicts go to needs-human, and other issues enter the strategy unrouted.')
+  // triage-sweep returns routing null on purpose for an empty backlog, so only grounded issues make it a gap.
+  const unrouted = !routing && grounded.length > 0
+  if (unrouted) log('triage-sweep returned no routing: close verdicts go to needs-human, and other issues enter the strategy unrouted.')
   const routed = new Map((routing && Array.isArray(routing.routed) ? routing.routed : []).map((r) => [r.number, r]))
   const groundedNumbers = new Set(grounded.map((g) => g.item.number))
   const ungrounded = (Array.isArray(triage.items) ? triage.items : [])
@@ -428,6 +450,7 @@ function mapTriage(triage) {
     domains: routing && Array.isArray(routing.domains) ? routing.domains : [],
     links: routing && Array.isArray(routing.links) ? routing.links : [],
     ungrounded,
+    unrouted,
   }
 }
 
@@ -449,9 +472,9 @@ function checkStrategy(s, itemIds, decisionIds) {
     for (const ref of i.depends_on) errors.push(refError(ref, initIds, `${i.id}.depends_on`))
     for (const ref of i.overrides) errors.push(refError(ref, decisionIds, `${i.id}.overrides`))
     if (i.depends_on.includes(i.id)) errors.push(substance(`${i.id} depends on itself`))
-    if (i.lane === 'spec' && !SLUG_RE.test(i.slug)) {
-      const fix = oneLine(i.slug).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-      errors.push(SLUG_RE.test(fix) ? form(`${i.id}.slug: '${i.slug}' should be '${fix}'`) : substance(`${i.id} is in the spec lane and needs a kebab-case slug`))
+    if (i.lane === 'spec' && !validSlug(i.slug)) {
+      const fix = oneLine(i.slug).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 64).replace(/^-+|-+$/g, '')
+      errors.push(validSlug(fix) ? form(`${i.id}.slug: '${i.slug}' should be '${fix}'`) : substance(`${i.id} is in the spec lane and needs a kebab-case slug`))
     }
     if (!Number.isInteger(i.priority) || i.priority < 1) errors.push(form(`${i.id}.priority must be an integer of 1 or more`))
   }
@@ -483,8 +506,9 @@ const moldReasons = (i) => [
 ]
 function normalizeStrategy(s) {
   const usedThemes = new Set(s.initiatives.map((i) => i.theme))
-  const dropped = s.themes.filter((t) => !usedThemes.has(t.id)).map((t) => t.id)
-  if (dropped.length) log(`Dropped unused theme(s): ${dropped.join(', ')}`)
+  const unused = s.themes.filter((t) => !usedThemes.has(t.id)).map((t) => t.id)
+  if (unused.length) log(`Dropped unused theme(s): ${unused.join(', ')}`)
+  for (const id of unused) dropped.push({ kind: 'theme', ref: id, reason: 'no initiative uses it' })
   return {
     ...s,
     themes: s.themes.filter((t) => usedThemes.has(t.id)),
@@ -560,14 +584,14 @@ const strategistPrompt = (lens, context) => prompt(
   data('context', context),
 )
 
-const synthesisPrompt = (proposals, context, concerns, previous) => prompt(
+const synthesisPrompt = (proposals, context, advice, previous) => prompt(
   'You are the strategy lead. Read only: write no file and change no state. Merge the lens proposals into one strategy.',
   'Keep the strongest theme structure. Graft better initiatives from the other proposals. Resolve conflicts with the evidence in the item data, and record the tie-break in the rationale.',
   STRATEGY_RULES,
   data('context', context),
   data('proposals', proposals),
   previous && data('previous_strategy', previous),
-  concerns && data('advisor_concerns', concerns),
+  advice && data('advisor_feedback', advice),
 )
 
 const resolvePrompt = (slugs) => prompt(
@@ -728,7 +752,7 @@ function checkInstall(w, path, text) {
 
 // ---- Gather ----
 phase('Gather')
-const ideaCheck = () => []
+const ideaCheck = (r) => r.ideas.flatMap((i, n) => (blank(i.title) || blank(i.source) ? [substance(`ideas[${n}] needs a title and a source citation`)] : []))
 const [triage, ideaResult] = await parallel([
   () => workflow('triage-sweep', { scope: 'issues', limit, ...(repo ? { repo } : {}) }),
   () => typed(ideasPrompt(), { label: 'ideas', phase: 'Gather', agentType: 'explorer', schema: IDEAS_SCHEMA }, ideaCheck),
@@ -738,20 +762,28 @@ if (!triage) {
   log('triage-sweep failed: the strategy covers ideas only.')
   gaps.push('triage-sweep failed; no issue was triaged')
 }
-const { issues, domains, links, ungrounded } = mapTriage(triage)
-if (ungrounded.length) log(`${ungrounded.length} issue(s) were not grounded: ${ungrounded.map((u) => u.id).join(', ')}`)
+const { issues, domains, links, ungrounded, unrouted } = mapTriage(triage)
+if (ungrounded.length) {
+  log(`${ungrounded.length} issue(s) were not grounded: ${ungrounded.map((u) => u.id).join(', ')}`)
+  gaps.push(`triage-sweep could not ground ${ungrounded.length} issue(s): ${ungrounded.map((u) => u.id).join(', ')}`)
+}
+if (unrouted) gaps.push('triage-sweep returned no routing; close verdicts went to needs-human')
 if (!ideaResult || !ideaResult.value) {
   log('The idea explorer failed: the strategy covers issues only.')
   gaps.push('the idea explorer failed; no idea was gathered')
 }
 
-const issueIds = new Set(issues.map((i) => i.id))
+const closeBatch = issues.filter((i) => i.lane === 'close')
+const needsHuman = issues.filter((i) => i.lane === 'human')
+const strategyIssues = issues.filter((i) => !['close', 'human'].includes(i.lane))
+// Only a strategy issue can absorb an idea; an idea that duplicates a close or human issue stays live.
+const issueIds = new Set(strategyIssues.map((i) => i.id))
 const rawIdeas = ideaResult && ideaResult.value ? ideaResult.value.ideas : []
-const invalidIdeas = rawIdeas.filter((i) => blank(i.title) || blank(i.source))
-if (invalidIdeas.length) log(`Dropped ${invalidIdeas.length} idea(s) without a title or a source.`)
-let keptIdeas = rawIdeas.filter((i) => !blank(i.title) && !blank(i.source))
+// ideaCheck rejects a blank title or source, so every returned idea is complete.
+let keptIdeas = rawIdeas
 if (keptIdeas.length > LIMITS.maxIdeas) {
   log(`Kept the first ${LIMITS.maxIdeas} of ${keptIdeas.length} ideas; dropped: ${keptIdeas.slice(LIMITS.maxIdeas).map((i) => oneLine(i.title)).join('; ')}`)
+  for (const i of keptIdeas.slice(LIMITS.maxIdeas)) dropped.push({ kind: 'idea', ref: oneLine(i.title), reason: `over the cap of ${LIMITS.maxIdeas} ideas` })
   keptIdeas = keptIdeas.slice(0, LIMITS.maxIdeas)
 }
 // Code assigns idea ids, so the agent cannot collide or skip.
@@ -762,9 +794,6 @@ for (const i of ideas) if (i.duplicate_of && !issueIds.has(i.duplicate_of)) log(
 if (mergedIdeas.length) log(`Merged ${mergedIdeas.length} idea(s) into their issues: ${mergedIdeas.map((i) => `${i.id}->${i.duplicate_of}`).join(', ')}`)
 const liveIdeas = ideas.filter((i) => blank(i.existing_spec) && !(i.duplicate_of && issueIds.has(i.duplicate_of)))
 
-const closeBatch = issues.filter((i) => i.lane === 'close')
-const needsHuman = issues.filter((i) => i.lane === 'human')
-const strategyIssues = issues.filter((i) => !['close', 'human'].includes(i.lane))
 const strategyItems = [
   ...strategyIssues.map((i) => ({ id: i.id, kind: 'issue', title: i.title, lane: i.lane, verdict: i.verdict, summary: i.summary, why: i.why, citations: i.citations,
     merged_ideas: mergedIdeas.filter((m) => m.duplicate_of === i.id).map((m) => m.summary) })),
@@ -772,7 +801,7 @@ const strategyItems = [
 ]
 const itemIds = strategyItems.map((i) => i.id)
 const itemById = new Map(strategyItems.map((i) => [i.id, i]))
-const lists = { close_batch: closeBatch, needs_human: needsHuman, already_specced: alreadySpecced, ungrounded }
+const lists = { close_batch: closeBatch, needs_human: needsHuman, already_specced: alreadySpecced, ungrounded, dropped }
 
 if (!strategyItems.length) {
   log('No live issue or idea remains for a strategy.')
@@ -799,11 +828,16 @@ const context = { items: strategyItems, decisions, prior_research: priorResearch
 const check = (s) => checkStrategy(s, itemIds, decisionIds)
 const proposals = (await parallel(LENSES.map((lens) => () =>
   typed(strategistPrompt(lens, context), { label: `strategist:${lens.key}`, phase: 'Strategy', agentType: 'explorer', effort: 'high', schema: STRATEGY_SCHEMA }, check)
-    .then((r) => (r.value ? { lens: lens.key, strategy: r.value } : (log(`strategist:${lens.key} failed: ${errorText(r.errors)}`), null))))))
+    .then((r) => {
+      if (r.value) return { lens: lens.key, strategy: r.value }
+      log(`strategist:${lens.key} failed: ${errorText(r.errors)}`)
+      gaps.push(`the ${lens.key} strategist failed; the synthesis ran without its lens`)
+      return null
+    }))))
   .filter(Boolean)
 if (!proposals.length) return { status: 'blocked', reason: 'every strategist failed', gaps, ...lists }
 
-const synthesize = (concerns, previous, round) => typed(synthesisPrompt(proposals, context, concerns, previous),
+const synthesize = (advice, previous, round) => typed(synthesisPrompt(proposals, context, advice, previous),
   { label: `synthesize:r${round}`, phase: 'Strategy', agentType: 'explorer', model: 'opus', effort: 'high', schema: STRATEGY_SCHEMA }, check)
 let synthesized = await synthesize(null, null, 0)
 if (!synthesized.value) return { status: 'blocked', reason: `synthesis failed: ${errorText(synthesized.errors)}`, proposals, gaps, ...lists }
@@ -820,7 +854,7 @@ for (let round = 0; ; round++) {
   if (advice.verdict === 'approve') break
   if (advice.verdict === 'stop') return { status: 'stopped', strategy, advice: adviceLog, gaps, ...lists }
   if (round >= LIMITS.advisorRevisions) return { status: 'needs-input', strategy, advice: adviceLog, gaps, ...lists }
-  synthesized = await synthesize(advice.concerns, strategy, round + 1)
+  synthesized = await synthesize({ concerns: advice.concerns, guidance: advice.guidance }, strategy, round + 1)
   if (!synthesized.value) return { status: 'blocked', reason: `revised synthesis failed: ${errorText(synthesized.errors)}`, strategy, advice: adviceLog, gaps, ...lists }
   strategy = synthesized.value
 }
@@ -839,9 +873,13 @@ const checkResolve = (r) => {
   for (const slug of duplicates(seen)) errors.push(form(`slug ${slug} appears twice; keep one entry`))
   for (const s of r.specs) {
     if (!slugs.includes(s.slug)) errors.push(form(`remove unknown slug ${s.slug}`))
-    else if (!s.path.startsWith('/') || !s.path.endsWith(`/specs/${s.slug}.md`)) errors.push(substance(`${s.slug}: path must be the absolute artifact-path result ending in /specs/${s.slug}.md`))
+    else if (!s.path.startsWith('/') || !s.path.endsWith(`/specs/${s.slug}.md`) || !safePath(s.path)) errors.push(substance(`${s.slug}: path must be the absolute artifact-path result ending in /specs/${s.slug}.md`))
   }
-  if (!r.report_path.startsWith('/') || !r.report_path.endsWith(`/notes/cheese-board-${stamp}.md`)) errors.push(substance(`report_path must be the absolute artifact-path result ending in /notes/cheese-board-${stamp}.md`))
+  // artifact-path notes prints a checkout-relative path; specs and research print absolute paths.
+  const reportName = `notes/cheese-board-${stamp}.md`
+  if (!(r.report_path === `.cheese/${reportName}` || (r.report_path.startsWith('/') && r.report_path.endsWith(`/${reportName}`))) || !safePath(r.report_path)) {
+    errors.push(substance(`report_path must be the artifact-path result: .cheese/${reportName} or an absolute path ending in /${reportName}`))
+  }
   return errors
 }
 const resolved = await typed(resolvePrompt(slugs), { label: 'resolve', phase: 'Resolve', agentType: 'explorer', model: 'haiku', effort: 'low', schema: RESOLVE_SCHEMA }, checkResolve)
@@ -852,13 +890,15 @@ const reportPath = resolved.value.report_path
 // ---- Research plan: code caps brie-ground child runs across specs, in priority order ----
 let researchLeft = LIMITS.maxResearch
 const researchPlan = new Map(specInits.map((init) => {
-  const planned = pathBySlug.get(init.slug).exists ? [] : init.research_questions.slice(0, researchLeft)
+  // All or nothing: a partial plan sends the initiative to mold and wastes its slots.
+  const qs = init.research_questions
+  const planned = pathBySlug.get(init.slug).exists || qs.length > researchLeft ? [] : qs
   researchLeft -= planned.length
   return [init.id, planned]
 }))
 
 // brie-ground nests no workflow, so it can run as a child here.
-async function research(init, base, questions) {
+async function research(base, questions) {
   const found = []
   for (const question of questions) {
     if (floorReached()) return { result: { ...base, status: 'skipped', reason: 'budget floor reached before research' } }
@@ -866,7 +906,7 @@ async function research(init, base, questions) {
     try {
       r = await workflow('brie-ground', question)
     } catch (e) {
-      log(`brie-ground failed for ${init.slug}: ${e && e.message}`)
+      log(`brie-ground failed for ${base.slug}: ${e && e.message}`)
     }
     if (!r || r.error || blank(r.answer) || !RESEARCH_CONFIDENCE.includes(r.confidence)) return { result: { ...base, status: 'failed', reason: `research failed: ${question}` } }
     if (r.confidence === 'dont_know') return { result: { ...base, status: 'mold', reason: `research could not settle: ${question}`, open_questions: [question, ...(Array.isArray(r.open_questions) ? r.open_questions : [])] } }
@@ -887,10 +927,10 @@ async function mintSpec(init) {
   }
   const questions = researchPlan.get(init.id)
   if (questions.length < init.research_questions.length) {
-    const dropped = init.research_questions.slice(questions.length)
-    return { ...base, status: 'mold', reason: `research cap of ${LIMITS.maxResearch} reached; unresearched: ${dropped.join(' / ')}`, open_questions: dropped }
+    const unresearched = init.research_questions.slice(questions.length)
+    return { ...base, status: 'mold', reason: `research cap of ${LIMITS.maxResearch} reached; unresearched: ${unresearched.join(' / ')}`, open_questions: unresearched }
   }
-  const researched = await research(init, base, questions)
+  const researched = await research(base, questions)
   if (researched.result) return researched.result
   base.research = researched.found
   const items = init.items.map((ref) => itemById.get(normRef(ref)) || itemById.get(ref)).filter(Boolean)
@@ -986,6 +1026,7 @@ const researchDone = [...specById.values()].flatMap((r) => r.research || [])
 const overriding = strategy.initiatives.filter((i) => i.overrides.length)
 const coverage = {
   issues: issues.length,
+  ungrounded: ungrounded.length,
   ideas: ideas.length,
   strategy_items: strategyItems.length,
   decisions: decisions.length,
@@ -1065,6 +1106,10 @@ const reportText = [
   '## Close batch (certain; not closed by this run)',
   '',
   ...bullets(closeBatch, (c) => `- ${c.id} ${oneLine(c.title)}: ${c.close.reason}${c.close.duplicate_of ? ` of #${c.close.duplicate_of}` : ''}. ${oneLine(c.close.comment)}`),
+  '',
+  '## Ungrounded issues',
+  '',
+  ...bullets(ungrounded, (u) => `- ${u.id} ${oneLine(u.title)}: ${u.reason}`),
   '',
   '## Needs a human',
   '',

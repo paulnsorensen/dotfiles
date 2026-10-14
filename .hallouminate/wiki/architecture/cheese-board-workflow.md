@@ -25,7 +25,7 @@ Gather → Ground → Strategy → Advise → Resolve → Spec → Verify → Re
 
 - **Grounding comes before the strategy, not inside the drafter.** The drafter's wiki row comes after the strategy is already fixed. Recorded decisions must constrain the themes and the lanes, so the strategists, the synthesizer, and the advisor all see them.
 - **Overriding a decision means /mold.** An initiative that lists a `D-n` in `overrides` changes a recorded decision. That needs a design dialogue, so `normalizeStrategy()` moves it to mold. Its dependents block.
-- **Research uses the brie-ground child, with a cap.** brie-ground nests no workflow, so the one-level nesting rule allows it as a child. `LIMITS.maxResearch` (4) caps the runs across specs in priority order. `LIMITS.maxQuestionsPerInitiative` (2) caps each initiative. Overflow goes to mold with the questions that were not researched. A `dont_know` answer goes to mold. A failed child fails the spec, and the spec is never drafted blind.
+- **Research uses the brie-ground child, with a cap.** brie-ground nests no workflow, so the one-level nesting rule allows it as a child. `LIMITS.maxResearch` (4) caps the runs across specs in priority order. The plan is all or nothing per initiative, because a partial plan sends the initiative to mold and wastes its slots. `LIMITS.maxQuestionsPerInitiative` (2) caps each initiative. Overflow goes to mold with the questions that were not researched. A `dont_know` answer goes to mold. A failed child fails the spec, and the spec is never drafted blind.
 - **Provenance carries the research.** The mold mini-spec template reserves `## Provenance` with a `briesearch:` line for tier-2 synthesis. `validate-spec --strict` accepts it. A spec without research has no Provenance section.
 - **/culture is not invoked.** Inside a workflow, the lens panel and the advisor do /culture's trade-off work. Record covers its durable-knowledge role.
 - **Resolver-owned paths.** Specs go to `mold.pyz artifact-path specs <slug>`, the durable corpus that `cheese-factory` resolves. The report goes to `artifact-path notes cheese-board-<stamp>`. `strategy` is not a valid artifact phase.
@@ -40,6 +40,9 @@ Gather → Ground → Strategy → Advise → Resolve → Spec → Verify → Re
 - `curd-count` counts the bullets under `## Goals`. A spec with no Goals section has 0 curds, and `cheese-factory` rejects it.
 - mold's grounding-table parser splits on every `|`, even an escaped `\|`. `cell()` replaces `|` with `/`.
 - `validate-spec --strict` accepts `## Sources`, `## Provenance`, and JSON-quoted YAML scalars.
+- `artifact-path notes` prints a checkout-relative path (`.cheese/notes/<slug>.md`). `artifact-path specs` and `research` print absolute paths. `checkResolve()` accepts both forms for the report.
+- `artifact-path` rejects a slug with a leading, trailing, or double hyphen, or more than 64 characters. `SLUG_RE` and `validSlug()` match that rule, so Resolve cannot block on a slug that `checkStrategy()` passed.
+- Every gap ends the run `partial`: a failed strategist lens, an ungrounded issue, and missing routing when issues were grounded. Dropped seeds, ideas over the cap, and unused themes go to `log()` and to the `dropped` result list.
 
 Tests: `tests/workflows/cheese-board.test.mjs` stubs both the `triage-sweep` and the `brie-ground` children through the `workflow` override.
 
