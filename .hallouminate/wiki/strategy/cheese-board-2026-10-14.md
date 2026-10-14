@@ -18,7 +18,7 @@ This run used a session-only scoped copy of cheese-board. The copy filtered tria
 | Initiative | Theme | Lane | Depends on | Items | Outcome |
 | --- | --- | --- | --- | --- | --- |
 | IN-1 Cheese-factory intake signals and continuation tests | TH-2 | mold (moved from spec) | - | references #1279 | A bad free-text spec arg stops with a message that lists the accepted forms; the 0-Goals behavior is decided; tests cover the #1281 continuation paths that existing tests miss. |
-| IN-2 Shared advisor resume contract for cheese-board | TH-1 | mold | - | #1305 | At the advisor cap, cheese-board returns a digest with blocking questions, and a rerun with an answers arg resumes it. advisor.md and ADR-017 state the shared rule; move-my-cheese still conforms. |
+| IN-2 Shared advisor resume contract and interactive checkpoints for cheese-board | TH-1 | mold | - | #1305, #1306 | At the advisor cap and at the strategy, spec, and done checkpoints, cheese-board returns needs-input with typed questions and a digest. A rerun with an answers arg resumes it, replays cached agents, and runs only the affected agents. A user answer to a drafter open question or an override keeps the item in the spec lane. The cheese-board skill drives the ask loop; auto: true keeps today's behavior. The shared question, answer, and digest shape lives in claude/workflow-prelude/prelude.js; advisor.md and ADR-017 state it; move-my-cheese still conforms. |
 | IN-3 Decide stacked fan-out versus merged curds | TH-2 | mold | IN-1 | #1279 | A superseding ADR settles ownership of cheese-factory.js (D-20), merged-with-size-cap versus stacked depends_on curds, and free-text spec arg routing. |
 | IN-4 Regression guards for Review mode lines and check execution | TH-4 | spec | - | IDEA-5, IDEA-6 | Tests fail if a reviewer or age-fanout prompt builder omits the Review mode line, or if a check runs outside the repository root or not under bash -c. |
 | IN-5 Cheese-board scope argument | TH-3 | mold | IN-2 | IDEA-1 | cheese-board triages and strategizes only a given subset (issue numbers, labels, or a focus query) and still requires args.stamp. |
@@ -28,6 +28,8 @@ IN-1 moved from spec to mold after Spec. Its draft warned on a spec with 0 Goals
 Factory queue, wave 1: `/cheese-factory ~/.local/share/cheese/paulnsorensen-dotfiles/specs/prompt-contract-guards.md` (IN-4, 1 curd).
 
 Parked: IDEA-4 (move-my-cheese answers path) is already shipped by #1267. It is the design precedent for IN-2.
+
+Added after the run: #1306 (interactive cheese-board mode, filed after triage) joins IN-2. It is a superset of the #1305 resume path and needs the same contract, so one /mold design covers both. #1306 also explains the IN-1 demotion: a spec-lane initiative with any open question or override goes to mold, even when one user answer would settle it.
 
 ## Decisions it relied on
 
