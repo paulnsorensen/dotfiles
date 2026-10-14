@@ -28,6 +28,7 @@ Do not send raw transcripts.
 2. Bound revision rounds in code, for example `LIMITS.advisorRevisions = 1`.
 3. After the limit, return `needs-input` to the user. Do not loop.
 4. Ask for guidance under 80 words. Advisor output is its main cost driver [s15].
+5. On a revision round, send the prior concerns. The advisor judges only whether each one is resolved. It raises a new concern only for a blocker, and it never reverses a prior concern.
 
 ## Workflow tool implementation
 
