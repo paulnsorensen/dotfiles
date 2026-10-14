@@ -20,9 +20,17 @@ export const meta = {
 // resolver-owned spec paths, a curd-count gate, explicit triage-sweep route
 // mapping, idea dedup against existing specs, and code-assigned slugs.
 //
-// Args: { stamp: 'YYYY-MM-DD', repo?: 'owner/name', limit? = 30, ideas?: string[], maxSpecs? = 8 }
+// Args: { stamp: 'YYYY-MM-DD', repo?: 'owner/name', limit? = 30, ideas?: string[], maxSpecs? = 8, auto? }
 //   or a bare 'YYYY-MM-DD' string. The stamp is required because workflow
 //   scripts cannot read the clock; it dates each spec and names the report.
+//   Interactive is the default. A run pauses at the strategy, spec, and done
+//   checkpoints and returns { status: 'needs-input', checkpoint, questions,
+//   state, digest, usage }. Resume with a fresh run: { stamp, state, digest,
+//   answers: { <question id, exact text, or 1-based number>: <answer> }, lanes? }.
+//   lanes { <IN-n>: 'spec'|'mold'|'defer' } moves an initiative at the strategy
+//   checkpoint. The digest covers { stamp, checkpoint, state } and detects an edit.
+//   auto: true never pauses: it keeps the old routing, and an override, an open
+//   question, or a leverage trigger sends the initiative to /mold.
 //
 // Output: specs land at `mold.pyz artifact-path specs <slug>`, the durable
 // corpus that cheese-factory resolves. factory_queue lists them in dependency
@@ -206,7 +214,7 @@ const validSlug = (slug) => typeof slug === 'string' && slug.length <= 64 && SLU
 // An agent-copied path reaches shell commands, so it holds only safe characters and no '..' segment.
 const SAFE_PATH_RE = /^[A-Za-z0-9._@+\/-]+$/
 const safePath = (p) => SAFE_PATH_RE.test(p) && !p.split('/').includes('..')
-const USAGE = 'usage: /cheese-board YYYY-MM-DD, or args {stamp, repo?, limit?, ideas?, maxSpecs?}'
+const USAGE = 'usage: /cheese-board YYYY-MM-DD, or args {stamp, repo?, limit?, ideas?, maxSpecs?, auto?, state?, digest?, answers?, lanes?}'
 const input = typeof args === 'string'
   ? (() => {
       try {
@@ -218,6 +226,8 @@ const input = typeof args === 'string'
   : (args && typeof args === 'object' && !Array.isArray(args) ? args : {})
 if (typeof input.stamp !== 'string' || !STAMP_RE.test(input.stamp)) return { status: 'blocked', error: `args.stamp must be YYYY-MM-DD; ${USAGE}` }
 if (input.repo != null && (typeof input.repo !== 'string' || !REPO_RE.test(input.repo))) return { status: 'blocked', error: `args.repo must be owner/name; ${USAGE}` }
+const AUTO = input.auto === true
+const INTERACTIVE = !AUTO
 const stamp = input.stamp
 const repo = input.repo || null
 const repoFlag = repo ? ` --repo ${repo}` : ''
@@ -311,6 +321,16 @@ const ADVICE_SCHEMA = {
     verdict: { type: 'string', enum: ADVICE_VERDICTS },
     concerns: { type: 'array', items: { type: 'string' } },
     guidance: { type: 'string', description: 'Under 80 words' },
+    blocking_questions: { type: 'array', description: 'Questions only the user can settle; leave empty when none', items: {
+      type: 'object',
+      required: ['question'],
+      properties: {
+        question: { type: 'string' },
+        options: { type: 'array', items: { type: 'string' } },
+        recommended: { type: 'string' },
+        evidence: { type: 'string' },
+      },
+    } },
   },
 }
 
@@ -485,6 +505,7 @@ async function advise(stage, label, payload) {
       ? 'Judge the strategy: altitude (themes state directions, not lists), coverage, lane choice, initiative size, sequencing, and hidden coupling. Return approve, revise with concrete concerns, or stop when the strategy is unsafe or wrong.'
       : 'Judge the finished run: do the factory queue, the mold list, and the parked items carry out the approved strategy? Return approve, revise with concrete concerns, or stop.',
     'Keep guidance under 80 words.',
+    INTERACTIVE ? 'blocking_questions: list a question only when the user must decide something that the data cannot settle. Each has a question, optional options, a recommended option, and the evidence. Put design feedback for the writers in concerns instead.' : '',
     data('payload', payload),
   ), { label, phase: stage === 'strategy' ? 'Advise' : 'Report', agentType: 'judge', schema: ADVICE_SCHEMA }, checkAdvice)
   if (!value) log(`${label}: no valid advice (${errorText(errors)})`)
@@ -575,13 +596,14 @@ function checkStrategy(s, itemIds, decisionIds) {
   return cycle.length ? [substance(`dependency cycle among ${cycle.join(', ')}`)] : []
 }
 
-// A spec-lane initiative needs /mold, not a mini-spec, when it fires a leverage trigger,
-// holds an open question, overrides a recorded decision, or asks more research questions than the cap.
+// A spec-lane initiative needs /mold, not a mini-spec, when it asks more research questions than the cap.
+// An auto run also moves it on a leverage trigger, an open question, or an override; an interactive run asks the user instead.
+const researchReason = (i) => (i.research_questions.length > LIMITS.maxQuestionsPerInitiative ? [`${i.research_questions.length} research questions exceed ${LIMITS.maxQuestionsPerInitiative}`] : [])
 const moldReasons = (i) => [
   ...(i.leverage_triggers.length ? [`leverage triggers: ${i.leverage_triggers.join(', ')}`] : []),
   ...(i.open_questions.length ? ['open questions'] : []),
   ...(i.overrides.length ? [`overrides ${i.overrides.join(', ')}`] : []),
-  ...(i.research_questions.length > LIMITS.maxQuestionsPerInitiative ? [`${i.research_questions.length} research questions exceed ${LIMITS.maxQuestionsPerInitiative}`] : []),
+  ...researchReason(i),
 ]
 function normalizeStrategy(s) {
   const usedThemes = new Set(s.initiatives.map((i) => i.theme))
@@ -594,7 +616,7 @@ function normalizeStrategy(s) {
     initiatives: s.initiatives.map((raw) => {
       const i = { ...raw, overrides: raw.overrides.map(normRef), research_questions: raw.research_questions.map(oneLine).filter(Boolean) }
       if (i.lane !== 'spec') return { ...i, slug: '' }
-      const reasons = moldReasons(i)
+      const reasons = INTERACTIVE ? researchReason(i) : moldReasons(i)
       if (!reasons.length) return i
       log(`${i.id} moves from spec to mold: ${reasons.join('; ')}`)
       return { ...i, lane: 'mold', slug: '' }
@@ -644,7 +666,9 @@ const STRATEGY_RULES = [
   'Place every item exactly once: in one initiative, or in parked with a reason. Items in lane human or close are not in the data; do not invent refs.',
   'depends_on lists initiatives that must land first. Make no cycle. priority 1 is the most important.',
   'List each fired leverage trigger in leverage_triggers and each unresolved decision in open_questions. Do not guess.',
-  'Decisions (D-n) in the context are recorded constraints from the wiki. Plan within them. When an initiative would change one, list its id in overrides; that initiative goes to /mold.',
+  INTERACTIVE
+    ? 'Decisions (D-n) in the context are recorded constraints from the wiki. Plan within them. When an initiative would change one, list its id in overrides; the run asks the user whether to keep it in the spec lane.'
+    : 'Decisions (D-n) in the context are recorded constraints from the wiki. Plan within them. When an initiative would change one, list its id in overrides; that initiative goes to /mold.',
   researchRule(LIMITS.maxQuestionsPerInitiative),
   'Triage hints: an issue lane of spec, mold, or defer is the triage lead\'s routing; open means unrouted. Override a hint only with evidence and say why in the rationale.',
 ].join('\n')
@@ -664,6 +688,7 @@ const strategistPrompt = (lens, context) => prompt(
 const synthesisPrompt = (proposals, context, advice, previous) => prompt(
   'You are the strategy lead. Read only: write no file and change no state. Merge the lens proposals into one strategy.',
   'Keep the strongest theme structure. Graft better initiatives from the other proposals. Resolve conflicts with the evidence in the item data, and record the tie-break in the rationale.',
+  advice && advice.answers ? 'Apply the user answers in advisor_feedback.answers to the previous strategy. Keep every lane in advisor_feedback.user_lanes exactly as the user set it.' : '',
   STRATEGY_RULES,
   data('context', context),
   data('proposals', proposals),
@@ -679,19 +704,24 @@ const resolvePrompt = (slugs) => prompt(
   data('slugs', slugs),
 )
 
-const draftPrompt = (init, items, feedback, decisions, research) => prompt(
+const draftPrompt = (init, items, feedback, decisions, research, user = null) => prompt(
   `Draft the mini-spec for initiative ${init.id} (${init.slug}). Read only: write no file and change no state.`,
   'Ground it first. Search the repository wiki once and record the real result as the wiki grounding row. Read the code the work touches and record the real result as the explorer row. Never invent a row.',
   'Respect each recorded decision below. When one applies, cite it in the wiki grounding row.',
   research.length ? 'Treat the research answers below as settled facts. Do not contradict them.' : '',
+  user ? 'Treat the user answers below as settled decisions. Apply them, and do not list them again in open_questions.' : '',
+  user && user.anyway ? 'The user chose to write this spec despite its leverage triggers. Leave leverage_triggers empty.' : '',
   `goals: 1 to ${LIMITS.maxCurds} entries. Each goal is one file-coherent unit of work and becomes one cheese-factory curd.`,
   `criteria: 1 to ${LIMITS.maxCriteria} statements. Each one is checkable by a read-only shell command that exits 0 only when it holds, or by a named test.`,
-  'Every distinguishing noun must come from the initiative, the item data, the decisions, or the research. Add no scope of your own. non_goals names at least one boundary.',
-  'List fired leverage triggers in leverage_triggers and unresolved decisions in open_questions. When either is non-empty, the initiative goes to /mold instead.',
+  'Every distinguishing noun must come from the initiative, the item data, the decisions, the research, or the user answers. Add no scope of your own. non_goals names at least one boundary.',
+  INTERACTIVE
+    ? 'List fired leverage triggers in leverage_triggers and unresolved decisions in open_questions. The run asks the user about each before it writes the spec.'
+    : 'List fired leverage triggers in leverage_triggers and unresolved decisions in open_questions. When either is non-empty, the initiative goes to /mold instead.',
   data('initiative', init),
   data('items', items),
   data('decisions', decisions),
   research.length && data('research', research),
+  user && data('user_answers', user.answers),
   feedback && data('feedback', feedback),
 )
 
@@ -755,7 +785,7 @@ const clip = (text, max = 280) => {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t
 }
 
-function renderSpec(init, d, items, theme, research) {
+function renderSpec(init, d, items, theme, research, overrides = []) {
   const lines = [
     '---',
     `slug: ${init.slug}`,
@@ -804,6 +834,11 @@ function renderSpec(init, d, items, theme, research) {
     '## Non-goals',
     ...d.non_goals.map((g) => `- ${oneLine(g)}`),
     '',
+    ...(overrides.length ? [
+      '## Decision overrides',
+      ...overrides.map((o) => `- ${o.id} (${o.kind}): ${oneLine(o.statement)} (${oneLine(o.citation)}); the user kept this spec in the spec lane. Record the change in an ADR follow-up.`),
+    ] : []),
+    '',
     ...(research.length ? [
       '## Provenance',
       `- briesearch: ${research.map((r) => `${clip(r.answer)} (${r.confidence})`).join('; ')}; artifact: ${research.map((r) => r.report_path).filter(Boolean).join(', ') || 'none'}`,
@@ -827,115 +862,316 @@ function checkInstall(w, path, text) {
   return errors
 }
 
-// ---- Gather ----
-phase('Gather')
-const ideaCheck = (r) => r.ideas.flatMap((i, n) => (blank(i.title) || blank(i.source) ? [substance(`ideas[${n}] needs a title and a source citation`)] : []))
-const [triage, ideaResult] = await parallel([
-  () => workflow('triage-sweep', { scope: 'issues', limit, ...(repo ? { repo } : {}) }),
-  () => typed(ideasPrompt(), { label: 'ideas', phase: 'Gather', agentType: 'explorer', schema: IDEAS_SCHEMA }, ideaCheck),
-])
+// ---- Resume: code checks the state, the digest, and the answers before the first agent ----
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+const CHECKPOINTS = ['strategy', 'spec', 'done']
+function stateErrors(s) {
+  if (!CHECKPOINTS.includes(s.checkpoint)) return [`args.state.checkpoint must be one of ${CHECKPOINTS.join(', ')}`]
+  const errors = []
+  for (const key of ['questions', 'issues', 'ungrounded', 'already_specced', 'strategy_items', 'decisions', 'prior_research', 'domains', 'links', 'gaps', 'dropped', 'advice']) {
+    if (!Array.isArray(s[key])) errors.push(`args.state.${key} must be an array`)
+  }
+  if (!Number.isInteger(s.idea_count)) errors.push('args.state.idea_count must be an integer')
+  if (!isObject(s.override_decisions)) errors.push('args.state.override_decisions must be an object')
+  const st = s.strategy
+  if (!isObject(st) || !Array.isArray(st.themes) || !Array.isArray(st.initiatives) || !Array.isArray(st.parked)) errors.push('args.state.strategy must be a strategy object')
+  if (s.checkpoint === 'strategy' && (!Array.isArray(s.proposals) || typeof s.approved !== 'boolean')) errors.push('args.state.proposals must be an array and args.state.approved a boolean')
+  if (s.checkpoint !== 'strategy') {
+    if (!isObject(s.resolved) || !Array.isArray(s.resolved.specs) || typeof s.resolved.report_path !== 'string') errors.push('args.state.resolved must hold specs and report_path')
+    if (!Array.isArray(s.outcomes)) errors.push('args.state.outcomes must be an array')
+  }
+  if (Array.isArray(s.questions) && s.questions.some((q) => !isObject(q) || typeof q.id !== 'string' || typeof q.question !== 'string' || !Array.isArray(q.options))) errors.push('args.state.questions holds a malformed question')
+  return errors
+}
+const resumeArgs = ['state', 'digest', 'answers', 'lanes'].filter((k) => input[k] != null)
+let resume = null
+if (resumeArgs.length) {
+  const errors = []
+  const st = input.state
+  let answered = []
+  let lanes = null
+  if (AUTO) errors.push(`args.auto cannot combine with ${resumeArgs.map((k) => `args.${k}`).join(', ')}; an auto run never pauses`)
+  if (!isObject(st)) errors.push('args.state must be the state of a needs-input result')
+  else {
+    const shape = stateErrors(st)
+    errors.push(...shape)
+    if (typeof input.digest !== 'string' || !input.digest) errors.push('args.digest must be the digest of the same needs-input result')
+    else if (input.digest !== digestOf({ stamp, checkpoint: st.checkpoint, state: st })) errors.push('args.digest does not match args.state; pass both back unchanged')
+    if (!shape.length) {
+      const matched = matchAnswers(st.questions, input.answers)
+      errors.push(...matched.errors)
+      answered = matched.answers.map((a) => {
+        const q = st.questions.find((x) => x.id === a.id)
+        if (!q.closed) return a
+        const option = q.options.find((o) => o.toLowerCase() === a.answer.toLowerCase())
+        if (!option) errors.push(`the answer to ${q.id} must be one of ${q.options.join(', ')}`)
+        return { ...a, answer: option || a.answer }
+      })
+      if (input.lanes != null) {
+        const ids = st.strategy.initiatives.map((i) => i.id)
+        if (st.checkpoint !== 'strategy') errors.push('args.lanes applies only at the strategy checkpoint')
+        else if (!isObject(input.lanes)) errors.push('args.lanes must map an initiative id to spec, mold, or defer')
+        else {
+          for (const [id, lane] of Object.entries(input.lanes)) {
+            if (!ids.includes(id)) errors.push(`args.lanes names no initiative: ${id}`)
+            else if (!LANES.includes(lane)) errors.push(`args.lanes.${id} must be one of ${LANES.join(', ')}`)
+          }
+          lanes = input.lanes
+        }
+      }
+    }
+  }
+  if (errors.length) return { status: 'blocked', error: `resume rejected: ${errors[0]}`, errors }
+  resume = { state: st, answered, lanes }
+}
+const resumedStrategy = Boolean(resume) && resume.state.checkpoint === 'strategy'
+const resumedSpec = Boolean(resume) && resume.state.checkpoint === 'spec'
+const resumedDone = Boolean(resume) && resume.state.checkpoint === 'done'
+
+// ---- Checkpoints: a pause returns typed questions, its state, and a digest; the next run resumes from them ----
+const plain = (v) => JSON.parse(JSON.stringify(v))
+const question = (id, initiative, text, { options = [], recommended = '', evidence = '', closed = false } = {}) => ({ id, initiative, question: oneLine(text), options, recommended, evidence: oneLine(evidence), closed })
+const CHECKPOINT_USAGE = AUTO
+  ? 'An auto run cannot resume. Run cheese-board again without auto to answer these questions.'
+  : 'Ask the user each question. Re-run cheese-board with { stamp, state, digest, answers: { "<question id, exact text, or 1-based number>": "<answer>" } }, and pass state and digest back unchanged. At the strategy checkpoint, add lanes: { "IN-n": "spec|mold|defer" } to move an initiative.'
+function ask(checkpoint, questions, state, extra = {}) {
+  const full = plain({ ...state, checkpoint, questions })
+  return { status: 'needs-input', checkpoint, questions: full.questions, state: full, digest: digestOf({ stamp, checkpoint, state: full }), usage: CHECKPOINT_USAGE, ...extra }
+}
+// The question rows of an advisor that is not satisfied: its blocking questions, or else one row for each concern.
+function adviceRows(advice) {
+  const blocking = (Array.isArray(advice.blocking_questions) ? advice.blocking_questions : []).filter((b) => b && typeof b.question === 'string' && b.question.trim())
+  if (blocking.length) {
+    return blocking.map((b) => ({ text: b.question, options: Array.isArray(b.options) ? b.options : [], recommended: typeof b.recommended === 'string' ? b.recommended : '', evidence: typeof b.evidence === 'string' ? b.evidence : advice.guidance }))
+  }
+  return advice.concerns.map((c) => ({ text: `Advisor concern: ${c} What should change?`, options: [], recommended: '', evidence: advice.guidance }))
+}
+
+// ---- Run state: a fresh run builds it, and a resumed run restores it from the checkpoint ----
 const gaps = []
-if (!triage) {
-  log('triage-sweep failed: the strategy covers ideas only.')
-  gaps.push('triage-sweep failed; no issue was triaged')
-}
-const { issues, domains, links, ungrounded, unrouted } = mapTriage(triage)
-if (ungrounded.length) {
-  log(`${ungrounded.length} issue(s) were not grounded: ${ungrounded.map((u) => u.id).join(', ')}`)
-  gaps.push(`triage-sweep could not ground ${ungrounded.length} issue(s): ${ungrounded.map((u) => u.id).join(', ')}`)
-}
-if (unrouted) gaps.push('triage-sweep returned no routing; close verdicts went to needs-human')
-if (!ideaResult || !ideaResult.value) {
-  log('The idea explorer failed: the strategy covers issues only.')
-  gaps.push('the idea explorer failed; no idea was gathered')
-}
-
-const closeBatch = issues.filter((i) => i.lane === 'close')
-const needsHuman = issues.filter((i) => i.lane === 'human')
-const strategyIssues = issues.filter((i) => !['close', 'human'].includes(i.lane))
-// Only a strategy issue can absorb an idea; an idea that duplicates a close or human issue stays live.
-const issueIds = new Set(strategyIssues.map((i) => i.id))
-const rawIdeas = ideaResult && ideaResult.value ? ideaResult.value.ideas : []
-// ideaCheck rejects a blank title or source, so every returned idea is complete.
-let keptIdeas = rawIdeas
-if (keptIdeas.length > LIMITS.maxIdeas) {
-  log(`Kept the first ${LIMITS.maxIdeas} of ${keptIdeas.length} ideas; dropped: ${keptIdeas.slice(LIMITS.maxIdeas).map((i) => oneLine(i.title)).join('; ')}`)
-  for (const i of keptIdeas.slice(LIMITS.maxIdeas)) dropped.push({ kind: 'idea', ref: oneLine(i.title), reason: `over the cap of ${LIMITS.maxIdeas} ideas` })
-  keptIdeas = keptIdeas.slice(0, LIMITS.maxIdeas)
-}
-// Code assigns idea ids, so the agent cannot collide or skip.
-const ideas = keptIdeas.map((i, n) => ({ ...i, id: `IDEA-${n + 1}`, duplicate_of: blank(i.duplicate_of) ? '' : normRef(i.duplicate_of) }))
-const alreadySpecced = ideas.filter((i) => !blank(i.existing_spec)).map((i) => ({ id: i.id, title: i.title, path: i.existing_spec.trim() }))
-const mergedIdeas = ideas.filter((i) => blank(i.existing_spec) && i.duplicate_of && issueIds.has(i.duplicate_of))
-for (const i of ideas) if (i.duplicate_of && !issueIds.has(i.duplicate_of)) log(`${i.id} names ${i.duplicate_of} as a duplicate, but that issue is not in the strategy set; keeping the idea.`)
-if (mergedIdeas.length) log(`Merged ${mergedIdeas.length} idea(s) into their issues: ${mergedIdeas.map((i) => `${i.id}->${i.duplicate_of}`).join(', ')}`)
-const liveIdeas = ideas.filter((i) => blank(i.existing_spec) && !(i.duplicate_of && issueIds.has(i.duplicate_of)))
-
-const strategyItems = [
-  ...strategyIssues.map((i) => ({ id: i.id, kind: 'issue', title: i.title, lane: i.lane, verdict: i.verdict, summary: i.summary, why: i.why, citations: i.citations,
-    merged_ideas: mergedIdeas.filter((m) => m.duplicate_of === i.id).map((m) => m.summary) })),
-  ...liveIdeas.map((i) => ({ id: i.id, kind: 'idea', title: i.title, summary: i.summary, source: i.source })),
-]
-const itemIds = strategyItems.map((i) => i.id)
-const itemById = new Map(strategyItems.map((i) => [i.id, i]))
-const lists = { close_batch: closeBatch, needs_human: needsHuman, already_specced: alreadySpecced, ungrounded, dropped }
-
-if (!strategyItems.length) {
-  log('No live issue or idea remains for a strategy.')
-  return { status: gaps.length ? 'partial' : 'empty', gaps, ...lists }
-}
-if (floorReached()) return { status: 'blocked', reason: 'budget floor reached before Ground', gaps, ...lists }
-
-// ---- Ground: recorded decisions constrain the strategy, so they arrive before it ----
-phase('Ground')
-const grounded = await typed(groundPrompt(strategyItems), { label: 'ground', phase: 'Ground', agentType: 'explorer', schema: GROUNDING_SCHEMA }, (g) => checkGrounding(g, itemIds))
-if (!grounded.value) {
-  log(`Wiki grounding failed (${errorText(grounded.errors)}): the strategy runs without recorded decisions.`)
-  gaps.push('wiki grounding failed; the strategy ran without recorded decisions')
-}
-const decisions = grounded.value ? grounded.value.decisions.map((d, n) => ({ ...d, id: `D-${n + 1}`, items: d.items.map(normRef) })) : []
-const priorResearch = grounded.value ? grounded.value.prior_research.map((r) => ({ ...r, path: r.path.trim(), items: r.items.map(normRef) })) : []
-const decisionIds = decisions.map((d) => d.id)
-log(`Grounded in ${decisions.length} recorded decision(s) and ${priorResearch.length} prior research document(s).`)
-if (floorReached()) return { status: 'blocked', reason: 'budget floor reached before Strategy', gaps, ...lists }
-
-// ---- Strategy: a barrier is correct; every strategist needs every item ----
-phase('Strategy')
-const context = { items: strategyItems, decisions, prior_research: priorResearch, domains, links }
-const check = (s) => checkStrategy(s, itemIds, decisionIds)
-const proposals = (await parallel(LENSES.map((lens) => () =>
-  typed(strategistPrompt(lens, context), { label: `strategist:${lens.key}`, phase: 'Strategy', agentType: 'explorer', effort: 'high', schema: STRATEGY_SCHEMA }, check)
-    .then((r) => {
-      if (r.value) return { lens: lens.key, strategy: r.value }
-      log(`strategist:${lens.key} failed: ${errorText(r.errors)}`)
-      gaps.push(`the ${lens.key} strategist failed; the synthesis ran without its lens`)
-      return null
-    }))))
-  .filter(Boolean)
-if (!proposals.length) return { status: 'blocked', reason: 'every strategist failed', gaps, ...lists }
-
-const synthesize = (advice, previous, round) => typed(synthesisPrompt(proposals, context, advice, previous),
-  { label: `synthesize:r${round}`, phase: 'Strategy', agentType: 'explorer', model: 'opus', effort: 'high', schema: STRATEGY_SCHEMA }, check)
-let synthesized = await synthesize(null, null, 0)
-if (!synthesized.value) return { status: 'blocked', reason: `synthesis failed: ${errorText(synthesized.errors)}`, proposals, gaps, ...lists }
-let strategy = synthesized.value
-
-// ---- Advise: approve the strategy before any spec is drafted ----
-phase('Advise')
 const adviceLog = []
-const advisorPayload = () => ({ strategy, decisions: decisions.map(({ id, kind, statement, citation }) => ({ id, kind, statement, citation })), items: strategyItems.map((i) => ({ id: i.id, kind: i.kind, title: i.title, lane: i.lane || null })), needs_human: needsHuman.length, close_batch: closeBatch.length })
-for (let round = 0; ; round++) {
-  const advice = await advise('strategy', `advise:strategy:${round}`, advisorPayload())
-  if (!advice) return { status: 'needs-input', reason: 'advisor returned no valid advice', strategy, advice: adviceLog, gaps, ...lists }
-  adviceLog.push(advice)
-  if (advice.verdict === 'approve') break
-  if (advice.verdict === 'stop') return { status: 'stopped', strategy, advice: adviceLog, gaps, ...lists }
-  if (round >= LIMITS.advisorRevisions) return { status: 'needs-input', strategy, advice: adviceLog, gaps, ...lists }
-  synthesized = await synthesize({ concerns: advice.concerns, guidance: advice.guidance }, strategy, round + 1)
-  if (!synthesized.value) return { status: 'blocked', reason: `revised synthesis failed: ${errorText(synthesized.errors)}`, strategy, advice: adviceLog, gaps, ...lists }
+const overrideDecisions = {}
+let issues = []
+let domains = []
+let links = []
+let ungrounded = []
+let alreadySpecced = []
+let strategyItems = []
+let ideaCount = 0
+let decisions = []
+let priorResearch = []
+let proposals = []
+let strategy = null
+let itemIds = []
+let closeBatch = []
+let needsHuman = []
+let lists = {}
+const setLists = () => {
+  closeBatch = issues.filter((i) => i.lane === 'close')
+  needsHuman = issues.filter((i) => i.lane === 'human')
+  lists = { close_batch: closeBatch, needs_human: needsHuman, already_specced: alreadySpecced, ungrounded, dropped }
+}
+const baseState = () => ({ issues, ungrounded, idea_count: ideaCount, already_specced: alreadySpecced, strategy_items: strategyItems, decisions, prior_research: priorResearch, domains, links, gaps, dropped, advice: adviceLog, strategy, override_decisions: overrideDecisions })
+const contextNow = () => ({ items: strategyItems, decisions, prior_research: priorResearch, domains, links })
+const check = (s) => checkStrategy(s, itemIds, decisions.map((d) => d.id))
+const synthesize = (advice, previous, round) => typed(synthesisPrompt(proposals, contextNow(), advice, previous),
+  { label: `synthesize:r${round}`, phase: 'Strategy', agentType: 'explorer', model: 'opus', effort: 'high', schema: STRATEGY_SCHEMA }, check)
+
+if (resume) {
+  const s = resume.state
+  issues = s.issues
+  ungrounded = s.ungrounded
+  alreadySpecced = s.already_specced
+  strategyItems = s.strategy_items
+  ideaCount = s.idea_count
+  decisions = s.decisions
+  priorResearch = s.prior_research
+  domains = s.domains
+  links = s.links
+  proposals = s.proposals || []
+  strategy = s.strategy
+  gaps.push(...s.gaps)
+  dropped.length = 0
+  dropped.push(...s.dropped)
+  adviceLog.push(...s.advice)
+  Object.assign(overrideDecisions, s.override_decisions)
+  itemIds = strategyItems.map((i) => i.id)
+  setLists()
+} else {
+  // ---- Gather ----
+  phase('Gather')
+  const ideaCheck = (r) => r.ideas.flatMap((i, n) => (blank(i.title) || blank(i.source) ? [substance(`ideas[${n}] needs a title and a source citation`)] : []))
+  const [triage, ideaResult] = await parallel([
+    () => workflow('triage-sweep', { scope: 'issues', limit, ...(repo ? { repo } : {}) }),
+    () => typed(ideasPrompt(), { label: 'ideas', phase: 'Gather', agentType: 'explorer', schema: IDEAS_SCHEMA }, ideaCheck),
+  ])
+  if (!triage) {
+    log('triage-sweep failed: the strategy covers ideas only.')
+    gaps.push('triage-sweep failed; no issue was triaged')
+  }
+  const mapped = mapTriage(triage)
+  issues = mapped.issues
+  domains = mapped.domains
+  links = mapped.links
+  ungrounded = mapped.ungrounded
+  if (ungrounded.length) {
+    log(`${ungrounded.length} issue(s) were not grounded: ${ungrounded.map((u) => u.id).join(', ')}`)
+    gaps.push(`triage-sweep could not ground ${ungrounded.length} issue(s): ${ungrounded.map((u) => u.id).join(', ')}`)
+  }
+  if (mapped.unrouted) gaps.push('triage-sweep returned no routing; close verdicts went to needs-human')
+  if (!ideaResult || !ideaResult.value) {
+    log('The idea explorer failed: the strategy covers issues only.')
+    gaps.push('the idea explorer failed; no idea was gathered')
+  }
+
+  const strategyIssues = issues.filter((i) => !['close', 'human'].includes(i.lane))
+  // Only a strategy issue can absorb an idea; an idea that duplicates a close or human issue stays live.
+  const issueIds = new Set(strategyIssues.map((i) => i.id))
+  const rawIdeas = ideaResult && ideaResult.value ? ideaResult.value.ideas : []
+  // ideaCheck rejects a blank title or source, so every returned idea is complete.
+  let keptIdeas = rawIdeas
+  if (keptIdeas.length > LIMITS.maxIdeas) {
+    log(`Kept the first ${LIMITS.maxIdeas} of ${keptIdeas.length} ideas; dropped: ${keptIdeas.slice(LIMITS.maxIdeas).map((i) => oneLine(i.title)).join('; ')}`)
+    for (const i of keptIdeas.slice(LIMITS.maxIdeas)) dropped.push({ kind: 'idea', ref: oneLine(i.title), reason: `over the cap of ${LIMITS.maxIdeas} ideas` })
+    keptIdeas = keptIdeas.slice(0, LIMITS.maxIdeas)
+  }
+  // Code assigns idea ids, so the agent cannot collide or skip.
+  const ideas = keptIdeas.map((i, n) => ({ ...i, id: `IDEA-${n + 1}`, duplicate_of: blank(i.duplicate_of) ? '' : normRef(i.duplicate_of) }))
+  ideaCount = ideas.length
+  alreadySpecced = ideas.filter((i) => !blank(i.existing_spec)).map((i) => ({ id: i.id, title: i.title, path: i.existing_spec.trim() }))
+  const mergedIdeas = ideas.filter((i) => blank(i.existing_spec) && i.duplicate_of && issueIds.has(i.duplicate_of))
+  for (const i of ideas) if (i.duplicate_of && !issueIds.has(i.duplicate_of)) log(`${i.id} names ${i.duplicate_of} as a duplicate, but that issue is not in the strategy set; keeping the idea.`)
+  if (mergedIdeas.length) log(`Merged ${mergedIdeas.length} idea(s) into their issues: ${mergedIdeas.map((i) => `${i.id}->${i.duplicate_of}`).join(', ')}`)
+  const liveIdeas = ideas.filter((i) => blank(i.existing_spec) && !(i.duplicate_of && issueIds.has(i.duplicate_of)))
+
+  strategyItems = [
+    ...strategyIssues.map((i) => ({ id: i.id, kind: 'issue', title: i.title, lane: i.lane, verdict: i.verdict, summary: i.summary, why: i.why, citations: i.citations,
+      merged_ideas: mergedIdeas.filter((m) => m.duplicate_of === i.id).map((m) => m.summary) })),
+    ...liveIdeas.map((i) => ({ id: i.id, kind: 'idea', title: i.title, summary: i.summary, source: i.source })),
+  ]
+  itemIds = strategyItems.map((i) => i.id)
+  setLists()
+
+  if (!strategyItems.length) {
+    log('No live issue or idea remains for a strategy.')
+    return { status: gaps.length ? 'partial' : 'empty', gaps, ...lists }
+  }
+  if (floorReached()) return { status: 'blocked', reason: 'budget floor reached before Ground', gaps, ...lists }
+
+  // ---- Ground: recorded decisions constrain the strategy, so they arrive before it ----
+  phase('Ground')
+  const grounded = await typed(groundPrompt(strategyItems), { label: 'ground', phase: 'Ground', agentType: 'explorer', schema: GROUNDING_SCHEMA }, (g) => checkGrounding(g, itemIds))
+  if (!grounded.value) {
+    log(`Wiki grounding failed (${errorText(grounded.errors)}): the strategy runs without recorded decisions.`)
+    gaps.push('wiki grounding failed; the strategy ran without recorded decisions')
+  }
+  decisions = grounded.value ? grounded.value.decisions.map((d, n) => ({ ...d, id: `D-${n + 1}`, items: d.items.map(normRef) })) : []
+  priorResearch = grounded.value ? grounded.value.prior_research.map((r) => ({ ...r, path: r.path.trim(), items: r.items.map(normRef) })) : []
+  log(`Grounded in ${decisions.length} recorded decision(s) and ${priorResearch.length} prior research document(s).`)
+  if (floorReached()) return { status: 'blocked', reason: 'budget floor reached before Strategy', gaps, ...lists }
+
+  // ---- Strategy: a barrier is correct; every strategist needs every item ----
+  phase('Strategy')
+  proposals = (await parallel(LENSES.map((lens) => () =>
+    typed(strategistPrompt(lens, contextNow()), { label: `strategist:${lens.key}`, phase: 'Strategy', agentType: 'explorer', effort: 'high', schema: STRATEGY_SCHEMA }, check)
+      .then((r) => {
+        if (r.value) return { lens: lens.key, strategy: r.value }
+        log(`strategist:${lens.key} failed: ${errorText(r.errors)}`)
+        gaps.push(`the ${lens.key} strategist failed; the synthesis ran without its lens`)
+        return null
+      }))))
+    .filter(Boolean)
+  if (!proposals.length) return { status: 'blocked', reason: 'every strategist failed', gaps, ...lists }
+
+  const synthesized = await synthesize(null, null, 0)
+  if (!synthesized.value) return { status: 'blocked', reason: `synthesis failed: ${errorText(synthesized.errors)}`, proposals, gaps, ...lists }
   strategy = synthesized.value
 }
-strategy = normalizeStrategy(strategy)
+const itemById = new Map(strategyItems.map((i) => [i.id, i]))
+
+// ---- Advise: approve the strategy before any spec is drafted ----
+const advisorPayload = () => ({ strategy, decisions: decisions.map(({ id, kind, statement, citation }) => ({ id, kind, statement, citation })), items: strategyItems.map((i) => ({ id: i.id, kind: i.kind, title: i.title, lane: i.lane || null })), needs_human: needsHuman.length, close_batch: closeBatch.length })
+// In interactive mode, an initiative that overrides a recorded decision needs the user's call.
+const overrideRows = (s) => s.initiatives.filter((i) => i.lane === 'spec' && i.overrides.length && !overrideDecisions[i.id]).map((i) => {
+  const ids = i.overrides.map(normRef)
+  const hit = decisions.filter((d) => ids.includes(d.id))
+  return {
+    initiative: i.id,
+    text: `${i.id} ${i.title} would change ${ids.join(', ')}. Keep it in the spec lane and record the override, or route it to /mold?`,
+    options: ['spec', 'mold'],
+    recommended: 'mold',
+    closed: true,
+    evidence: hit.map((d) => `${d.id}: ${d.statement} (${d.citation})`).join('; ') || ids.join(', '),
+  }
+})
+const askStrategy = (rows, approved, extra = {}) => ask('strategy', rows.map((r, k) => question(`S-${k + 1}`, r.initiative || '', r.text, r)), { ...baseState(), proposals, approved }, { strategy, advice: adviceLog, gaps, ...extra, ...lists })
+const slugFrom = (title) => oneLine(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 64).replace(/^-+|-+$/g, '')
+// Code applies the user's lane moves and override calls after every synthesis, so a revision cannot undo them.
+function applyUser(s, lanes) {
+  const moved = s.initiatives.map((i) => {
+    const lane = (lanes && lanes[i.id]) || (overrideDecisions[i.id] === 'mold' && i.lane === 'spec' ? 'mold' : i.lane)
+    return lane === i.lane ? i : { ...i, lane, slug: lane === 'spec' ? i.slug : '' }
+  })
+  const taken = new Set()
+  return {
+    ...s,
+    initiatives: moved.map((i) => {
+      if (i.lane !== 'spec') return i
+      let slug = validSlug(i.slug) && !taken.has(i.slug) ? i.slug : slugFrom(i.title) || i.id.toLowerCase()
+      if (taken.has(slug)) slug = `${slug}-${i.id.toLowerCase()}`
+      taken.add(slug)
+      return slug === i.slug ? i : { ...i, slug }
+    }),
+  }
+}
+if (!resumedSpec && !resumedDone) {
+  phase('Advise')
+  const userLanes = resumedStrategy ? resume.lanes : null
+  let settled = false
+  let round = 0
+  if (resumedStrategy) {
+    const { state, answered } = resume
+    const byId = new Map(state.questions.map((q) => [q.id, q]))
+    const userAnswers = []
+    for (const a of answered) {
+      const q = byId.get(a.id)
+      if (q.initiative) overrideDecisions[q.initiative] = a.answer
+      else userAnswers.push({ question: a.question, answer: a.answer })
+    }
+    strategy = applyUser(strategy, userLanes)
+    const specCount = strategy.initiatives.filter((i) => i.lane === 'spec').length
+    if (specCount > maxSpecs) return { status: 'blocked', error: `the lane moves give ${specCount} spec initiatives; the limit is ${maxSpecs}` }
+    if (state.approved && !userAnswers.length) settled = true
+    else {
+      const last = adviceLog[adviceLog.length - 1]
+      const revised = await synthesize({ concerns: last ? last.concerns : [], guidance: last ? last.guidance : '', answers: userAnswers, user_lanes: userLanes || {} }, strategy, 1)
+      if (!revised.value) return { status: 'blocked', reason: `revised synthesis failed: ${errorText(revised.errors)}`, strategy, advice: adviceLog, gaps, ...lists }
+      strategy = applyUser(revised.value, userLanes)
+      round = 1
+    }
+  }
+  while (!settled) {
+    const advice = await advise('strategy', `advise:strategy:${round}`, advisorPayload())
+    if (!advice) {
+      const row = { text: 'The strategy advisor returned no valid advice. Answer approve to keep this strategy, or describe a change.', options: ['approve'], recommended: 'approve', evidence: '' }
+      return askStrategy(INTERACTIVE ? [row, ...overrideRows(strategy)] : [], false, { reason: 'advisor returned no valid advice' })
+    }
+    adviceLog.push(advice)
+    if (advice.verdict === 'stop') return { status: 'stopped', strategy, advice: adviceLog, gaps, ...lists }
+    const blocking = INTERACTIVE ? blockingOf(advice) : []
+    if (advice.verdict === 'approve' && !blocking.length) break
+    if (blocking.length || round >= LIMITS.advisorRevisions) return askStrategy([...adviceRows(advice), ...(INTERACTIVE ? overrideRows(strategy) : [])], false)
+    const revised = await synthesize({ concerns: advice.concerns, guidance: advice.guidance }, strategy, round + 1)
+    if (!revised.value) return { status: 'blocked', reason: `revised synthesis failed: ${errorText(revised.errors)}`, strategy, advice: adviceLog, gaps, ...lists }
+    strategy = applyUser(revised.value, userLanes)
+    round++
+  }
+  if (INTERACTIVE) {
+    const rows = overrideRows(strategy)
+    if (rows.length) return askStrategy(rows, true)
+  }
+  strategy = normalizeStrategy(strategy)
+}
 const initById = new Map(strategy.initiatives.map((i) => [i.id, i]))
 const themeById = new Map(strategy.themes.map((t) => [t.id, t]))
 const specInits = strategy.initiatives.filter((i) => i.lane === 'spec').sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id))
@@ -959,20 +1195,15 @@ const checkResolve = (r) => {
   }
   return errors
 }
-const resolved = await typed(resolvePrompt(slugs), { label: 'resolve', phase: 'Resolve', agentType: 'explorer', model: 'haiku', effort: 'low', schema: RESOLVE_SCHEMA }, checkResolve)
-if (!resolved.value) return { status: 'blocked', reason: `path resolution failed: ${errorText(resolved.errors)}`, strategy, advice: adviceLog, gaps, ...lists }
-const pathBySlug = new Map(resolved.value.specs.map((s) => [s.slug, s]))
-const reportPath = resolved.value.report_path
+let resolvedValue = resume && !resumedStrategy ? resume.state.resolved : null
+if (!resolvedValue) {
+  const resolved = await typed(resolvePrompt(slugs), { label: 'resolve', phase: 'Resolve', agentType: 'explorer', model: 'haiku', effort: 'low', schema: RESOLVE_SCHEMA }, checkResolve)
+  if (!resolved.value) return { status: 'blocked', reason: `path resolution failed: ${errorText(resolved.errors)}`, strategy, advice: adviceLog, gaps, ...lists }
+  resolvedValue = resolved.value
+}
+const pathBySlug = new Map(resolvedValue.specs.map((s) => [s.slug, s]))
+const reportPath = resolvedValue.report_path
 
-// ---- Research plan: code caps brie-ground child runs across specs, in priority order ----
-let researchLeft = LIMITS.maxResearch
-const researchPlan = new Map(specInits.map((init) => {
-  // All or nothing: a partial plan sends the initiative to mold and wastes its slots.
-  const qs = init.research_questions
-  const planned = pathBySlug.get(init.slug).exists || qs.length > researchLeft ? [] : qs
-  researchLeft -= planned.length
-  return [init.id, planned]
-}))
 
 // brieGround (shared prelude) runs one brie-ground child per question.
 async function research(base, questions) {
@@ -989,34 +1220,57 @@ async function research(base, questions) {
 
 // ---- Spec: each initiative runs its own chain; no barrier between specs ----
 phase('Spec')
-async function mintSpec(init) {
+// A leverage trigger asks mold or spec anyway; each open question takes a free answer.
+const pendingQuestions = (init, triggers, opens) => [
+  ...(triggers.length ? [{
+    text: `${init.id} ${init.title} fires leverage triggers: ${triggers.join(', ')}. Route it to /mold, or write the spec anyway?`,
+    options: ['mold', 'spec anyway'],
+    recommended: 'mold',
+    closed: true,
+    evidence: triggers.join('; '),
+  }] : []),
+  ...opens.map((text) => ({ text: `${init.id} ${init.title}: ${text}`, evidence: `${init.id} open question` })),
+].map((row, k) => question(`${init.id}.Q${k + 1}`, init.id, row.text, row))
+
+// prior is the earlier outcome of a resumed initiative; user holds its answers.
+async function mintSpec(init, prior = null, user = null) {
   const { path, exists } = pathBySlug.get(init.slug)
   const base = { initiative: init.id, slug: init.slug, path }
   if (exists) {
     log(`${init.slug}: a spec already exists at ${path}; not overwritten.`)
     return { ...base, status: 'exists' }
   }
-  const questions = researchPlan.get(init.id)
-  if (questions.length < init.research_questions.length) {
-    const unresearched = init.research_questions.slice(questions.length)
-    return { ...base, status: 'mold', reason: `research cap of ${LIMITS.maxResearch} reached; unresearched: ${unresearched.join(' / ')}`, open_questions: unresearched }
-  }
-  const researched = await research(base, questions)
-  if (researched.result) return researched.result
-  base.research = researched.found
   const items = init.items.map((ref) => itemById.get(normRef(ref)) || itemById.get(ref)).filter(Boolean)
   const itemRefs = items.map((item) => item.id)
   const relevant = decisions.filter((d) => !d.items.length || d.items.some((ref) => itemRefs.includes(ref)))
+  // In interactive mode the initiative asks before it spends a draft.
+  if (INTERACTIVE && !prior && (init.leverage_triggers.length || init.open_questions.length)) {
+    return { ...base, status: 'asking', questions: pendingQuestions(init, init.leverage_triggers, init.open_questions) }
+  }
+  if (prior && Array.isArray(prior.research)) base.research = prior.research
+  else {
+    const questions = researchPlan.get(init.id)
+    if (questions.length < init.research_questions.length) {
+      const unresearched = init.research_questions.slice(questions.length)
+      return { ...base, status: 'mold', reason: `research cap of ${LIMITS.maxResearch} reached; unresearched: ${unresearched.join(' / ')}`, open_questions: unresearched }
+    }
+    const researched = await research(base, questions)
+    if (researched.result) return researched.result
+    base.research = researched.found
+  }
   let feedback = null
   for (let round = 0; round <= LIMITS.specRounds; round++) {
     if (floorReached()) return { ...base, status: 'skipped', reason: 'budget floor reached' }
-    const drafted = await typed(draftPrompt(init, items, feedback, relevant, base.research), { label: `draft:${init.slug}:r${round}`, phase: 'Spec', agentType: 'explorer', model: 'opus', schema: DRAFT_SCHEMA }, checkDraft)
+    const drafted = await typed(draftPrompt(init, items, feedback, relevant, base.research, user), { label: `draft:${init.slug}:r${round}`, phase: 'Spec', agentType: 'explorer', model: 'opus', schema: DRAFT_SCHEMA }, checkDraft)
     if (!drafted.value) return { ...base, status: 'failed', reason: `draft: ${errorText(drafted.errors)}` }
     const d = drafted.value
-    if (d.leverage_triggers.length || d.open_questions.length) {
-      return { ...base, status: 'mold', reason: d.leverage_triggers.length ? `leverage triggers: ${d.leverage_triggers.join(', ')}` : 'open questions', open_questions: d.open_questions }
+    // A user who chose spec anyway has already weighed the leverage triggers.
+    const triggers = user && user.anyway ? [] : d.leverage_triggers
+    if (triggers.length || d.open_questions.length) {
+      if (INTERACTIVE && !user) return { ...base, status: 'asking', questions: pendingQuestions(init, triggers, d.open_questions) }
+      return { ...base, status: 'mold', reason: triggers.length ? `leverage triggers: ${triggers.join(', ')}` : 'open questions', open_questions: d.open_questions }
     }
-    const text = renderSpec(init, d, items, themeById.get(init.theme), base.research)
+    const text = renderSpec(init, d, items, themeById.get(init.theme), base.research, decisions.filter((x) => init.overrides.map(normRef).includes(x.id)))
     const critique = await typed(critiquePrompt(init, text), { label: `taste:${init.slug}:r${round}`, phase: 'Spec', agentType: 'taste-tester', schema: CRITIQUE_SCHEMA }, checkCritique)
     if (!critique.value) return { ...base, status: 'failed', reason: `taste: ${errorText(critique.errors)}` }
     if (critique.value.verdict === 'revise') {
@@ -1033,14 +1287,52 @@ async function mintSpec(init) {
   }
   return { ...base, status: 'mold', reason: `no spec passed taste and the gates in ${LIMITS.specRounds + 1} rounds`, feedback }
 }
-const specOutcomes = await parallel(specInits.map((init) => () => mintSpec(init)))
-const specById = new Map(specInits.map((init, i) => [init.id, specOutcomes[i] || { initiative: init.id, slug: init.slug, path: pathBySlug.get(init.slug).path, status: 'failed', reason: 'spec chain returned no result' }]))
+// A resumed initiative redrafts only when the user answered it; every other outcome comes from the state.
+const priorOutcomes = new Map(resume && !resumedStrategy ? resume.state.outcomes.map((o) => [o.initiative, o]) : [])
+const results = new Map()
+const jobs = []
+for (const init of specInits) {
+  const prior = priorOutcomes.get(init.id)
+  if (!prior) {
+    jobs.push({ init, prior: null, user: null })
+    continue
+  }
+  if (prior.status !== 'asking') {
+    results.set(init.id, prior)
+    continue
+  }
+  const ids = prior.questions.map((q) => q.id)
+  const got = resume.answered.filter((a) => ids.includes(a.id))
+  const trigger = prior.questions.find((q) => q.options.includes('spec anyway'))
+  const call = trigger ? got.find((a) => a.id === trigger.id) : null
+  if (!got.length) results.set(init.id, prior)
+  else if (call && call.answer === 'mold') results.set(init.id, { initiative: init.id, slug: init.slug, path: prior.path, status: 'mold', reason: `leverage triggers: ${trigger.evidence}; the user chose mold`, open_questions: [] })
+  else jobs.push({ init, prior, user: { answers: got.map(({ question: q, answer }) => ({ question: q, answer })), anyway: Boolean(call && call.answer === 'spec anyway') } })
+}
+// Code caps brie-ground child runs across the jobs, in priority order.
+let researchLeft = LIMITS.maxResearch
+const researchPlan = new Map(jobs.map(({ init, prior }) => {
+  if (prior && Array.isArray(prior.research)) return [init.id, []]
+  // All or nothing: a partial plan sends the initiative to mold and wastes its slots.
+  const qs = init.research_questions
+  const asksFirst = INTERACTIVE && !prior && (init.leverage_triggers.length || init.open_questions.length)
+  const planned = asksFirst || pathBySlug.get(init.slug).exists || qs.length > researchLeft ? [] : qs
+  researchLeft -= planned.length
+  return [init.id, planned]
+}))
+const minted = jobs.length ? await parallel(jobs.map(({ init, prior, user }) => () => mintSpec(init, prior, user))) : []
+jobs.forEach(({ init }, i) => results.set(init.id, minted[i] || { initiative: init.id, slug: init.slug, path: pathBySlug.get(init.slug).path, status: 'failed', reason: 'spec chain returned no result' }))
+const specById = new Map(specInits.map((init) => [init.id, results.get(init.id)]))
 for (const r of specById.values()) if (r.status !== 'written') log(`${r.slug}: ${r.status}${r.reason ? ` (${r.reason})` : ''}`)
+const asking = [...specById.values()].filter((r) => r.status === 'asking')
+if (INTERACTIVE && asking.length) {
+  return ask('spec', asking.flatMap((r) => r.questions), { ...baseState(), resolved: resolvedValue, outcomes: [...specById.values()] }, { advice: adviceLog, gaps, ...lists })
+}
 
 // ---- Verify: an independent judge re-runs the gates on every installed spec ----
 phase('Verify')
 const writtenPaths = [...specById.values()].filter((r) => r.status === 'written').map((r) => r.path)
-if (writtenPaths.length) {
+if (writtenPaths.length && !resumedDone) {
   const checkVerdicts = (v) => {
     const seen = v.results.map((r) => r.path)
     const errors = writtenPaths.filter((p) => !seen.includes(p)).map((p) => substance(`missing result for ${p}`))
@@ -1098,7 +1390,7 @@ const overriding = strategy.initiatives.filter((i) => i.overrides.length)
 const coverage = {
   issues: issues.length,
   ungrounded: ungrounded.length,
-  ideas: ideas.length,
+  ideas: ideaCount,
   strategy_items: strategyItems.length,
   decisions: decisions.length,
   prior_research: priorResearch.length,
@@ -1134,7 +1426,7 @@ const reportText = [
   '## Recorded decisions',
   '',
   ...bullets(decisions, (d) => `- ${d.id} (${d.kind}): ${oneLine(d.statement)} (${oneLine(d.citation)})`),
-  ...overriding.map((i) => `- ${i.id} ${oneLine(i.title)} would change ${i.overrides.join(', ')}; routed to /mold`),
+  ...overriding.map((i) => `- ${i.id} ${oneLine(i.title)} would change ${i.overrides.join(', ')}; ${i.lane === 'spec' ? 'kept in the spec lane by the user' : 'routed to /mold'}`),
   '',
   '## Research',
   '',
