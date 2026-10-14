@@ -939,8 +939,12 @@ function ask(checkpoint, questions, state, extra = {}) {
   return { status: 'needs-input', checkpoint, questions: full.questions, state: full, digest: digestOf({ stamp, checkpoint, state: full }), usage: CHECKPOINT_USAGE, ...extra }
 }
 // The question rows of an advisor that is not satisfied: its blocking questions, or else one row for each concern.
+function blockingOf(advice) {
+  return (Array.isArray(advice.blocking_questions) ? advice.blocking_questions : []).filter((b) => b && typeof b.question === 'string' && b.question.trim())
+}
+
 function adviceRows(advice) {
-  const blocking = (Array.isArray(advice.blocking_questions) ? advice.blocking_questions : []).filter((b) => b && typeof b.question === 'string' && b.question.trim())
+  const blocking = blockingOf(advice)
   if (blocking.length) {
     return blocking.map((b) => ({ text: b.question, options: Array.isArray(b.options) ? b.options : [], recommended: typeof b.recommended === 'string' ? b.recommended : '', evidence: typeof b.evidence === 'string' ? b.evidence : advice.guidance }))
   }
