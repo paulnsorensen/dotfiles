@@ -33,7 +33,7 @@ Gather → Ground → Strategy → Advise → Resolve → Spec → Verify → Re
 - **No chaining into cheese-factory.** `cheese-factory` calls `workflow('age-fanout')`, and nesting allows one level only. The result returns `factory_queue` waves of `/cheese-factory <path>` commands.
 - **Never overwrite.** A slug whose path already exists becomes `exists`, and its dependents block.
 - **Opus on the two judgment calls.** The synthesizer and the spec drafter set `model: 'opus'`. The other agents keep their agent-type models.
-- **Code assigns IDs and numbering.** Code assigns `IDEA-n`, `D-n`, and AC numbers. A spec-lane initiative moves to mold in code when it has a leverage trigger, an open question, an override, or too many research questions.
+- **Code assigns IDs and numbering.** Code assigns `IDEA-n`, `D-n`, and AC numbers. With `auto: true`, a spec-lane initiative moves to mold in code when it has a leverage trigger, an open question, an override, or too many research questions. Interactive mode asks instead (F-4).
 - **Args need a stamp.** Scripts cannot read the clock, so `args.stamp` (YYYY-MM-DD) dates each spec and names the report and the wiki page.
 
 ## Interactive mode
@@ -45,7 +45,7 @@ The Workflow runtime cannot pause, so approval takes two runs bound by a digest.
 - **Code validates a resume before the first agent.** It checks the state shape, the digest, the answers, closed options, `lanes`, and the auto flag, and it returns every error in one `blocked` result. The digest detects edits, not a hostile caller.
 - **A resume restores state.** It does not rerun Gather, Ground, or the first-round Strategy. A strategy resume applies the answers and `lanes`, runs one synthesizer revision, and advises again. A spec resume redrafts only the answered initiatives. A done resume skips Verify and either records (`approve`) or applies one fix to the report.
 - **A leverage trigger asks "mold or spec anyway"**, with mold recommended.
-- **The `cheese-board` skill drives the loop** with AskUserQuestion, recommended option first. See `skills/cheese-board/SKILL.md`. It stops on any other status.
+- **The `cheese-board-loop` skill drives the loop** with AskUserQuestion, recommended option first. See `skills/cheese-board-loop/SKILL.md`. It stops on any other status. The skill name differs from the workflow name `cheese-board`, so the two do not collide.
 
 ## Gotchas
 
@@ -56,7 +56,7 @@ The Workflow runtime cannot pause, so approval takes two runs bound by a digest.
 - `artifact-path` rejects a slug with a leading, trailing, or double hyphen, or more than 64 characters. `SLUG_RE` and `validSlug()` match that rule, so Resolve cannot block on a slug that `checkStrategy()` passed.
 - Every gap ends the run `partial`: a failed strategist lens, an ungrounded issue, and missing routing when issues were grounded. Dropped seeds, ideas over the cap, and unused themes go to `log()` and to the `dropped` result list.
 
-Tests: `tests/workflows/cheese-board.test.mjs` runs with `auto: true` and stubs both the `triage-sweep` and the `brie-ground` children through the `workflow` override. `tests/workflows/cheese-board.interactive.test.mjs` covers the checkpoints and resume. `tests/workflows/cheese-board-skill-contract.test.mjs` pins the skill file.
+Tests: `tests/workflows/cheese-board.test.mjs` runs with `auto: true` and stubs both the `triage-sweep` and the `brie-ground` children through the `workflow` override. `tests/workflows/cheese-board.interactive.test.mjs` covers the checkpoints and resume. `tests/workflows/cheese-board-loop-skill-contract.test.mjs` pins the skill file.
 
 Related: [[architecture/saved-workflows]], [[adr/cheese-factory-workflow]].
 
