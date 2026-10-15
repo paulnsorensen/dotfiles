@@ -19,7 +19,12 @@ const finding = (over = {}) => ({
   recommendation: 'introduce a port',
   ...over,
 })
-const citeOk = (n) => ({ results: Array.from({ length: n }, (_, i) => ({ index: i, ok: true })) })
+// Citation and refuter agents take numbered batches; these mocks answer every item in the batch prompt.
+const batchItems = (prompt) => prompt.split(/^\d+\. \[/m).slice(1)
+const citeAll = (prompt) => ({ results: batchItems(prompt).map((_, index) => ({ index, ok: true })) })
+const verdicts = (prompt, verdict) => ({
+  verdicts: batchItems(prompt).map((item, index) => ({ index, ...(typeof verdict === 'function' ? verdict(item) : verdict) })),
+})
 
 // Wraps the map/gh-setup/cross-slice boilerplate every run dispatches, and
 // delegates slice-eval / cite / refute / issues-batch agents to `on`.
@@ -82,9 +87,9 @@ test('a medium finding ships on a confirmed citation alone — no adversarial re
   const { globals, trace } = build({
     slices: [slice('x')],
     ghOk: false,
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -101,11 +106,11 @@ test('a medium finding ships on a confirmed citation alone — no adversarial re
 test('a below-floor (low) finding is never citation-checked and never confirmed', async () => {
   const { globals, trace } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') {
         return { slice: 'x', findings: [finding({ severity: 'low', file: 'domains/x/low.py', line: 5 }), finding()] }
       }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       if (opts.label.startsWith('issues:batch')) return { results: [{ index: 0, created: true, url: 'https://gh/1' }] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -113,7 +118,7 @@ test('a below-floor (low) finding is never citation-checked and never confirmed'
 
   const result = await workflow.run({ ...globals, args: {} })
 
-  const citePrompt = trace.agents.find((a) => a.opts.label === 'cite:x').prompt
+  const citePrompt = trace.agents.find((a) => a.opts.label.startsWith('cite:')).prompt
   assert.match(citePrompt, /a\.py:40/)
   assert.doesNotMatch(citePrompt, /low\.py/)
   assert.equal(result.confirmed.length, 1)
@@ -124,10 +129,10 @@ test('a below-floor (low) finding is never citation-checked and never confirmed'
 test('a blocker/high finding is refuted when the adversarial refuter refutes it', async () => {
   const { globals, trace } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding({ severity: 'high', dimension: 'import-direction' })] }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
-      if (opts.label.startsWith('refute:')) return { refuted: true, reasoning: 'rule misapplied' }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      if (opts.label.startsWith('refute:')) return verdicts(prompt, { refuted: true, reason: 'rule misapplied' })
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -148,9 +153,9 @@ test('a blocker/high finding is refuted when the adversarial refuter refutes it'
 test('a crashed refuter counts as a refutation — an unconfirmed high finding must never ship', async () => {
   const { globals, trace } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding({ severity: 'blocker', dimension: 'import-direction' })] }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       if (opts.label.startsWith('refute:')) throw new Error('refuter crashed')
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -172,10 +177,10 @@ test('a crashed refuter counts as a refutation — an unconfirmed high finding m
 test('a high finding the refuter fails to refute is confirmed and filed as a GitHub issue', async () => {
   const { globals, trace } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding({ severity: 'high', dimension: 'import-direction' })] }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
-      if (opts.label.startsWith('refute:')) return { refuted: false, reasoning: 'rule genuinely applies' }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      if (opts.label.startsWith('refute:')) return verdicts(prompt, { refuted: false, reason: 'rule genuinely applies' })
       if (opts.label.startsWith('issues:batch')) return { results: [{ index: 0, created: true, url: 'https://gh/1' }] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -198,9 +203,9 @@ test('a confirmed finding matching an existing audit issue fingerprint is not re
   const { globals, trace } = build({
     slices: [slice('x')],
     existing: ['sba:domains/x/a.py:model-purity:4'],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -216,11 +221,11 @@ test('a confirmed finding matching an existing audit issue fingerprint is not re
 test('max_issues caps how many confirmed findings are filed, and the rest stay in the report', async () => {
   const { globals, trace } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') {
         return { slice: 'x', findings: [finding({ file: 'domains/x/a.py' }), finding({ file: 'domains/x/b.py' })] }
       }
-      if (opts.label.startsWith('cite:')) return citeOk(2)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       if (opts.label.startsWith('issues:batch')) return { results: [{ index: 0, created: true, url: 'https://gh/1' }] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -236,9 +241,9 @@ test('max_issues caps how many confirmed findings are filed, and the rest stay i
 test('a dry run tells gh setup not to mutate labels and files no issues', async () => {
   const { globals, trace } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -258,7 +263,7 @@ test('paginates setup context and gives only the cross-slice evaluator the full 
       slice('x', { key_files: ['domains/x/index.py'] }),
       slice('unrelated-secret-name'),
     ],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label.startsWith('eval:')) return { slice: 'ignored', findings: [] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -279,9 +284,9 @@ test('paginates setup context and gives only the cross-slice evaluator the full 
 test('uses the pipeline item as canonical slice identity', async () => {
   const { globals } = build({
     slices: [slice('canonical')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:canonical') return { slice: 'spoofed', findings: [finding()] }
-      if (opts.label === 'cite:canonical') return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -295,15 +300,15 @@ test('uses the pipeline item as canonical slice identity', async () => {
 test('verifies duplicate candidates before deduplication', async () => {
   const duplicate = { file: 'domains/x/a.py', line: 40, dimension: 'model-purity' }
   const { globals } = createRuntime({
-    respond: ({ opts }) => {
+    respond: ({ opts, prompt }) => {
       if (opts.label === 'map:slices') return { layout: 'flat', slices: [slice('x')] }
       if (opts.label === 'map:gh-setup') return { gh_ok: true, repo: 'o/n', existing_fingerprints: [], error: '' }
       if (opts.label === 'eval:x') return { slice: 'wrong', findings: [finding({ ...duplicate, severity: 'high' })] }
       if (opts.label === 'eval:cross-slice') {
         return { slice: 'wrong', findings: [finding({ ...duplicate, claim: 'valid graph-level duplicate' })] }
       }
-      if (opts.label === 'cite:x' || opts.label === 'cite:cross-slice') return citeOk(1)
-      if (opts.label.startsWith('refute:')) return { refuted: true, reasoning: 'slice-local interpretation was invalid' }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      if (opts.label.startsWith('refute:')) return verdicts(prompt, { refuted: true, reason: 'slice-local interpretation was invalid' })
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -319,13 +324,13 @@ test('verifies duplicate candidates before deduplication', async () => {
 
 test('retains evaluator, cross-slice, and verification failures with their error details', async () => {
   const { globals } = createRuntime({
-    respond: ({ opts }) => {
+    respond: ({ opts, prompt }) => {
       if (opts.label === 'map:slices') return { layout: 'flat', slices: [slice('eval-fails'), slice('cite-fails')] }
       if (opts.label === 'map:gh-setup') return { gh_ok: false, repo: '', existing_fingerprints: [], error: 'auth refused' }
       if (opts.label === 'eval:eval-fails') throw new Error('evaluator exploded')
       if (opts.label === 'eval:cross-slice') throw new Error('graph exploded')
       if (opts.label === 'eval:cite-fails') return { slice: 'ignored', findings: [finding()] }
-      if (opts.label === 'cite:cite-fails') throw new Error('citation service unavailable')
+      if (opts.label.startsWith('cite:')) throw new Error('citation service unavailable')
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -338,17 +343,19 @@ test('retains evaluator, cross-slice, and verification failures with their error
     { stage: 'verify', slice: 'cite-fails', error: 'citation service unavailable' },
   ])
   assert.equal(result.setup.error, 'auth refused')
-  assert.deepEqual(Array.from(result.floor_unverified), ['[medium] domains/x/a.py:40 — imports an ORM directly'])
+  assert.deepEqual(Array.from(result.floor_unverified), [
+    '[medium] domains/x/a.py:40 — imports an ORM directly (citation check failed: citation service unavailable)',
+  ])
 })
 
 test('requires complete GitHub setup context before filing', async () => {
   const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
+    respond: ({ opts, prompt }) => {
       if (opts.label === 'map:slices') return { layout: 'flat', slices: [slice('x')] }
       if (opts.label === 'map:gh-setup') return { gh_ok: true, repo: 'o/n', error: '' }
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
       if (opts.label === 'eval:cross-slice') return { slice: 'cross-slice', findings: [] }
-      if (opts.label === 'cite:x') return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -364,7 +371,7 @@ test('dry-run issue payload is complete and redacts credential-like evidence', a
   const secret = 'ghp_1234567890abcdefghijklmnopqrstuvwxyz'
   const { globals } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') {
         return {
           slice: 'x',
@@ -377,7 +384,7 @@ test('dry-run issue payload is complete and redacts credential-like evidence', a
           })],
         }
       }
-      if (opts.label === 'cite:x') return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -398,9 +405,9 @@ test('dry-run issue payload is complete and redacts credential-like evidence', a
 test('reports only fully audited dimensions as clean', async () => {
   const { globals } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
-      if (opts.label === 'cite:x') return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -423,7 +430,7 @@ test('reports only fully audited dimensions as clean', async () => {
 test('max_issues preserves the exact capped identity and complete proposed issue', async () => {
   const { globals } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') {
         return {
           slice: 'x',
@@ -433,8 +440,8 @@ test('max_issues preserves the exact capped identity and complete proposed issue
           ],
         }
       }
-      if (opts.label === 'cite:x') return citeOk(2)
-      if (opts.label.startsWith('refute:')) return { refuted: false, reasoning: 'valid' }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      if (opts.label.startsWith('refute:')) return verdicts(prompt, { refuted: false, reason: 'valid' })
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -453,8 +460,8 @@ test('bounds evaluator and refuter dispatch by the requested worker limit', asyn
   let peak = 0
   let refuters = 0
   const { globals } = build({
-    slices: [slice('a'), slice('b'), slice('c')],
-    on: async ({ opts }) => {
+    slices: ['a', 'b', 'c', 'd', 'e'].map((name) => slice(name)),
+    on: async ({ opts, prompt }) => {
       if (opts.label.startsWith('eval:')) {
         active++
         peak = Math.max(peak, active)
@@ -462,14 +469,14 @@ test('bounds evaluator and refuter dispatch by the requested worker limit', asyn
         active--
         return { slice: 'untrusted', findings: [finding({ severity: 'high', file: `${opts.label}.py` })] }
       }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       if (opts.label.startsWith('refute:')) {
         refuters++
         active++
         peak = Math.max(peak, active)
         await new Promise((resolve) => setTimeout(resolve, 10))
         active--
-        return { refuted: false, reasoning: 'valid' }
+        return verdicts(prompt, { refuted: false, reason: 'valid' })
       }
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -478,16 +485,17 @@ test('bounds evaluator and refuter dispatch by the requested worker limit', asyn
   const result = await workflow.run({ ...globals, args: { dry_run: true, workers: 2 } })
 
   assert.equal(peak, 2)
-  assert.equal(refuters, 3)
+  // Five high findings need two refuters: one batch of four and one batch of one.
+  assert.equal(refuters, 2)
   assert.equal(result.failures.length, 0)
 })
 
 test('retains a filing batch exception as an actionable issue outcome', async () => {
   const { globals } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
-      if (opts.label === 'cite:x') return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       if (opts.label.startsWith('issues:batch')) throw new Error('gh API rate limited')
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -503,9 +511,9 @@ test('retains a filing batch exception as an actionable issue outcome', async ()
 test('does not count a URL-less filing response as created', async () => {
   const { globals } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
-      if (opts.label === 'cite:x') return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       if (opts.label.startsWith('issues:batch')) return { results: [{ index: 0, created: true }] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -521,7 +529,7 @@ test('does not count a URL-less filing response as created', async () => {
 test('dedupes confirmed findings by line bucket (floor(line/10)) — same bucket collapses, adjacent bucket does not', async () => {
   const { globals } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') {
         return {
           slice: 'x',
@@ -532,7 +540,7 @@ test('dedupes confirmed findings by line bucket (floor(line/10)) — same bucket
           ],
         }
       }
-      if (opts.label.startsWith('cite:')) return citeOk(3)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       if (opts.label.startsWith('issues:batch')) {
         return { results: [{ index: 0, created: true, url: 'https://gh/1' }, { index: 1, created: true, url: 'https://gh/2' }] }
       }
@@ -556,9 +564,9 @@ test('a triple-backtick run in evidence stays inside the issue body code fence',
   const evidence = 'before\n```js\nsomeCode()\n```\nafter'
   const { globals } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding({ evidence })] }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -602,20 +610,22 @@ test('a triple-backtick run in evidence stays inside the issue body code fence',
 test('dispatches each audit stage on its selected model and effort tier', async () => {
   const { globals, trace } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding({ severity: 'high' })] }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
-      if (opts.label.startsWith('refute:')) return { refuted: false, reasoning: 'confirmed' }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      if (opts.label.startsWith('refute:')) return verdicts(prompt, { refuted: false, reason: 'confirmed' })
       if (opts.label.startsWith('issues:batch')) return { results: [{ index: 0, created: true, url: 'https://gh/1' }] }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
   await workflow.run({ ...globals, args: {} })
-  const byLabel = new Map(trace.agents.map(({ opts }) => [opts.label, opts]))
+  const byLabel = new Map(trace.agents.map(({ opts, prompt }) => [opts.label, opts]))
   assert.deepEqual([byLabel.get('map:slices').model, byLabel.get('map:slices').effort], ['sonnet', 'medium'])
   assert.deepEqual([byLabel.get('map:gh-setup').model, byLabel.get('map:gh-setup').effort], ['haiku', 'low'])
   assert.deepEqual([byLabel.get('eval:x').model, byLabel.get('eval:x').effort], ['opus', 'high'])
-  assert.deepEqual([byLabel.get('cite:x').model, byLabel.get('cite:x').effort], ['sonnet', 'low'])
+  assert.deepEqual([byLabel.get('cite:batch-1').model, byLabel.get('cite:batch-1').effort], ['sonnet', 'low'])
+  assert.equal(byLabel.get('cite:batch-1').agentType, 'explorer')
+  assert.equal(byLabel.get('map:slices').agentType, 'explorer')
   const refuter = [...byLabel.entries()].find(([label]) => label.startsWith('refute:'))[1]
   assert.deepEqual([refuter.model, refuter.effort], ['opus', 'high'])
   assert.deepEqual([byLabel.get('issues:batch-1').model, byLabel.get('issues:batch-1').effort], ['haiku', 'low'])
@@ -631,11 +641,13 @@ test('one refuter runs per distinct finding, across slices, and reused votes car
     on: ({ opts, prompt }) => {
       if (opts.label === 'eval:a') return { slice: 'a', findings: [same, { ...same, line: 11 }, other] }
       if (opts.label === 'eval:b') return { slice: 'b', findings: [same] }
-      if (opts.label.startsWith('cite:')) return citeOk(3)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       if (opts.label.startsWith('refute:')) {
-        const isOther = prompt.includes(other.claim)
-        refuted.push(isOther ? 'other' : 'same')
-        return isOther ? { refuted: false, reasoning: 'rule applies' } : { refuted: true, reasoning: 'rule misapplied' }
+        return verdicts(prompt, (item) => {
+          const isOther = item.includes(other.claim)
+          refuted.push(isOther ? 'other' : 'same')
+          return isOther ? { refuted: false, reason: 'rule applies' } : { refuted: true, reason: 'rule misapplied' }
+        })
       }
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -653,10 +665,10 @@ test('code caps opus evaluators at 20 slices and refuters at 12 per run', async 
   const slices = Array.from({ length: 25 }, (_, i) => slice(`s${i}`))
   const { globals, trace } = build({
     slices,
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label.startsWith('eval:s')) return { slice: 'x', findings: [finding({ severity: 'high', file: `${opts.label}.py` })] }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
-      if (opts.label.startsWith('refute:')) { refuters++; return { refuted: false, reasoning: 'valid' } }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      if (opts.label.startsWith('refute:')) { refuters++; return verdicts(prompt, { refuted: false, reason: 'valid' }) }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -665,10 +677,13 @@ test('code caps opus evaluators at 20 slices and refuters at 12 per run', async 
 
   assert.equal(labels(trace).filter((l) => /^eval:s\d+$/.test(l)).length, 20)
   assert.equal(result.failures.filter((f) => /over the 20-slice cap/.test(f.error)).length, 5)
-  assert.equal(refuters, 12)
+  // Twelve refuted findings in batches of four need three refuters; twenty findings need one citation check.
+  assert.equal(refuters, 3)
+  assert.equal(labels(trace).filter((l) => l.startsWith('cite:')).length, 1)
   assert.equal(result.confirmed.length, 12)
   assert.equal(result.floor_unverified.length, 8)
-  assert.ok(trace.logs.some((l) => /8 high\+ finding\(s\) past the 12-refuter cap/.test(l)))
+  assert.match(result.floor_unverified[0], /\(past the 12-finding refuter cap\)$/)
+  assert.ok(trace.logs.some((l) => /8 high\+ finding\(s\) past the 12-finding refuter cap/.test(l)))
 })
 
 for (const [name, args, pattern] of [
@@ -699,7 +714,7 @@ test('JSON-string object args parse into options instead of becoming the scope',
 
 test('a null gh-setup result is a setup failure, not a crash', async () => {
   const { globals } = createRuntime({
-    respond: ({ opts }) => {
+    respond: ({ opts, prompt }) => {
       if (opts.label === 'map:slices') return { layout: 'flat', slices: [slice('x')] }
       if (opts.label === 'map:gh-setup') return null
       if (opts.label.startsWith('eval:')) return { slice: opts.label.slice(5), findings: [] }
@@ -716,7 +731,7 @@ test('a null gh-setup result is a setup failure, not a crash', async () => {
 test('a null evaluator result records an evaluate failure and the run still completes', async () => {
   const { globals } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return null
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -733,9 +748,9 @@ test('a null evaluator result records an evaluate failure and the run still comp
 test('a null filing-batch result marks each issue unfiled instead of crashing', async () => {
   const { globals } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
       if (opts.label.startsWith('issues:batch')) return null
       throw new Error(`unexpected agent ${opts.label}`)
     },
@@ -751,10 +766,10 @@ test('a null filing-batch result marks each issue unfiled instead of crashing', 
 test('the refuter sees the rubric and severity guide, and no evaluator prompt asks for shell grep', async () => {
   const { globals, trace } = build({
     slices: [slice('x')],
-    on: ({ opts }) => {
+    on: ({ opts, prompt }) => {
       if (opts.label === 'eval:x') return { slice: 'x', findings: [finding({ severity: 'high' })] }
-      if (opts.label.startsWith('cite:')) return citeOk(1)
-      if (opts.label.startsWith('refute:')) return { refuted: true, reason: 'misapplied' }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      if (opts.label.startsWith('refute:')) return verdicts(prompt, { refuted: true, reason: 'misapplied' })
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
@@ -771,4 +786,52 @@ test('the refuter sees the rubric and severity guide, and no evaluator prompt as
     assert.match(evaluator.prompt, /tilth_search/)
     assert.doesNotMatch(evaluator.prompt, /grep\/read|by grepping/)
   }
+})
+
+test('citation checks batch floor findings across slices after the Evaluate barrier', async () => {
+  const citeSizes = []
+  const { globals, trace } = build({
+    slices: [slice('a'), slice('b'), slice('c')],
+    on: ({ opts, prompt }) => {
+      if (opts.label === 'eval:a') {
+        return { slice: 'a', findings: Array.from({ length: 19 }, (_, i) => finding({ file: `domains/a/f${i}.py` })) }
+      }
+      if (opts.label.startsWith('eval:')) return { slice: 'x', findings: [finding({ file: `${opts.label}.py` })] }
+      if (opts.label.startsWith('cite:')) { citeSizes.push(batchItems(prompt).length); return citeAll(prompt) }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { dry_run: true } })
+
+  assert.deepEqual(labels(trace).filter((l) => l.startsWith('cite:')), ['cite:batch-1', 'cite:batch-2'])
+  assert.deepEqual(citeSizes, [20, 1])
+  assert.equal(result.confirmed.length, 21)
+})
+
+test('the refuter cap keeps the highest-severity findings, not the earliest slices', async () => {
+  const refuted = []
+  const slices = Array.from({ length: 14 }, (_, i) => slice(`s${i}`))
+  const { globals } = build({
+    slices,
+    on: ({ opts, prompt }) => {
+      if (opts.label === 'eval:s13') return { slice: 's13', findings: [finding({ severity: 'blocker', file: 'domains/s13/late.py' })] }
+      if (opts.label.startsWith('eval:s')) return { slice: 'x', findings: [finding({ severity: 'high', file: `${opts.label}.py` })] }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      if (opts.label.startsWith('refute:')) {
+        return verdicts(prompt, (item) => { refuted.push(item.split('\n')[0]); return { refuted: false, reason: 'valid' } })
+      }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { dry_run: true } })
+
+  assert.equal(refuted.length, 12)
+  assert.ok(refuted.some((line) => line.includes('domains/s13/late.py')), 'the blocker must reach a refuter')
+  assert.equal(result.confirmed[0].location, 'domains/s13/late.py:40')
+  assert.equal(result.confirmed[0].verification, 'citation-checked + refuter-tested')
+  // Thirteen highs plus one blocker: the blocker and eleven highs fill the 12-finding cap.
+  assert.equal(result.floor_unverified.length, 2)
+  for (const entry of result.floor_unverified) assert.match(entry, /^\[high\].*\(past the 12-finding refuter cap\)$/)
 })
