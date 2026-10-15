@@ -32,6 +32,9 @@ const MAX_ISSUES = opts.max_issues === undefined ? 25 : opts.max_issues
 const WORKERS = opts.workers === undefined ? 4 : opts.workers
 
 const SEV_RANK = { blocker: 3, high: 2, medium: 1, low: 0 }
+// Each slice and each refuter is one opus agent, so code caps both counts for the whole run.
+const MAX_SLICES = 20
+const MAX_REFUTES = 12
 if (!Object.hasOwn(SEV_RANK, MIN_SEVERITY)) {
   return { error: `min_severity must be one of blocker|high|medium|low, got: ${MIN_SEVERITY}` }
 }
@@ -431,6 +434,8 @@ if (budgetExhausted()) {
 
 const sortDesc = (fs) => [...fs].sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity])
 const refuterOutcomes = []
+const refuteVotes = new Map()
+let refuteCapHits = 0
 const failures = []
 let skippedSlices = 0
 
@@ -474,10 +479,13 @@ async function verifyFindings(findings, label) {
   )
 
   const contested = cited.filter((f) => SEV_RANK[f.severity] >= SEV_RANK.high)
+  // One refuter per distinct fingerprint for the whole run; a repeat reuses the earlier vote.
   const reserved = []
   for (const finding of contested) {
-    if (budgetExhausted()) out.unverified.push(finding)
-    else reserved.push(finding)
+    const fingerprint = issueFingerprint(finding)
+    if (refuteVotes.has(fingerprint) || reserved.some((f) => issueFingerprint(f) === fingerprint)) continue
+    if (budgetExhausted() || refuteVotes.size + reserved.length >= MAX_REFUTES) continue
+    reserved.push(finding)
   }
   const votes = await runBounded(reserved, (finding) =>
     safeAgent(verifyPrompt(finding), {
@@ -488,10 +496,14 @@ async function verifyFindings(findings, label) {
       effort: 'high',
     })
   )
-  reserved.forEach((finding, index) => {
-    const vote = votes[index]
+  reserved.forEach((finding, index) => refuteVotes.set(issueFingerprint(finding), votes[index]))
+  for (const finding of contested) {
+    const vote = refuteVotes.get(issueFingerprint(finding))
     const location = `${finding.file}:${finding.line}`
-    if (!vote.ok) {
+    if (!vote) {
+      out.unverified.push(finding)
+      if (!budgetExhausted()) refuteCapHits++
+    } else if (!vote.ok) {
       const reason = `refuter failed: ${vote.error}`
       out.refuted.push({ ...finding, refute_reason: reason })
       refuterOutcomes.push({ location, outcome: 'failed', reason: vote.error })
@@ -504,12 +516,15 @@ async function verifyFindings(findings, label) {
       out.confirmed.push({ ...finding, verification: 'citation-checked + refuter-tested' })
       refuterOutcomes.push({ location, outcome: 'confirmed', reason: (vote.value.reasoning || '').slice(0, 140) })
     }
-  })
+  }
   return out
 }
 
 const crossItem = { name: 'cross-slice', path: SCOPE, kind: 'cross-slice' }
-const evaluationItems = [...sliceMap.slices, crossItem]
+const auditedSlices = sliceMap.slices.slice(0, MAX_SLICES)
+for (const s of sliceMap.slices.slice(MAX_SLICES)) failures.push({ stage: 'evaluate', slice: s.name, error: `over the ${MAX_SLICES}-slice cap` })
+if (sliceMap.slices.length > MAX_SLICES) log(`Slice cap: evaluating ${MAX_SLICES} of ${sliceMap.slices.length} slices.`)
+const evaluationItems = [...auditedSlices, crossItem]
 const evaluationResults = await runBounded(evaluationItems, async (item) => {
   if (budgetExhausted()) {
     skippedSlices++
@@ -549,6 +564,7 @@ const refutedAll = verifiedResults.flatMap((result) => result.refuted)
 const belowAll = verifiedResults.flatMap((result) => result.below)
 const unverifiedAll = verifiedResults.flatMap((result) => result.unverified)
 if (skippedSlices) log(`Budget exhausted mid-Evaluate — ${skippedSlices} evaluator passes not audited.`)
+if (refuteCapHits) log(`Refuter cap: ${refuteCapHits} high+ finding(s) past the ${MAX_REFUTES}-refuter cap stay unverified.`)
 log(
   `${rawAll.length} raw findings → ${confirmedAll.length} confirmed, ${refutedAll.length} refuted, ${unverifiedAll.length} unverified, ${belowAll.length} below floor`
 )

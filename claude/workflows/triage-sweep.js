@@ -352,7 +352,18 @@ function routePrompt(grounded, lenses) {
 phase('Gather')
 log(`Gathering open ${scope} (limit ${limit} each)${repo ? ` for ${repo}` : ''}...`)
 const gathered = await agent(gatherPrompt(), { schema: GATHER_SCHEMA, phase: 'Gather', label: 'gather', agentType: 'explorer' })
-const items = (gathered && Array.isArray(gathered.items)) ? gathered.items : []
+// The gather agent reads the limit only as a prompt hint, so code drops repeats and caps each kind.
+const rawItems = (gathered && Array.isArray(gathered.items)) ? gathered.items : []
+const seenItems = new Set()
+const perKind = new Map()
+const items = rawItems.filter((item) => {
+  const key = `${item.kind}#${item.number}`
+  if (seenItems.has(key)) return false
+  seenItems.add(key)
+  perKind.set(item.kind, (perKind.get(item.kind) || 0) + 1)
+  return perKind.get(item.kind) <= limit
+})
+if (items.length < rawItems.length) log(`Dropped ${rawItems.length - items.length} repeated or over-limit item(s); triaging ${items.length}.`)
 
 if (!items.length) {
   log('No open items found — nothing to triage.')
@@ -403,6 +414,6 @@ if (mapDomains && survivors.length >= 2) {
 }
 
 phase('Route')
-const routing = await agent(routePrompt(grounded, lenses), { schema: ROUTE_SCHEMA, phase: 'Route', label: 'route', effort: 'high' })
+const routing = await agent(routePrompt(grounded, lenses), { schema: ROUTE_SCHEMA, phase: 'Route', label: 'route', model: 'opus', effort: 'high' })
 
 return { items, grounded, lenses, routing }

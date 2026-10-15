@@ -252,7 +252,14 @@ if (invalidDimensions.length) {
   return { status: 'blocked', error: `invalid dimension slug(s): ${invalidDimensions.join(', ')}` }
 }
 
-const dimensions = packet.dimensions
+// Each dimension is one opus reviewer, so code drops repeats and blocks a list past the /age dimension count.
+const MAX_DIMENSIONS = 12
+const dimensions = [...new Set(packet.dimensions)]
+if (dimensions.length < packet.dimensions.length) log(`Dropped ${packet.dimensions.length - dimensions.length} repeated dimension(s).`)
+if (dimensions.length > MAX_DIMENSIONS) {
+  log(`Packet phase returned ${dimensions.length} dimensions; the cap is ${MAX_DIMENSIONS}.`)
+  return { status: 'blocked', error: `too many dimensions: ${dimensions.length} (cap ${MAX_DIMENSIONS})` }
+}
 
 // ---- Review (fanned out, one worker per dimension) ----
 phase('Review')

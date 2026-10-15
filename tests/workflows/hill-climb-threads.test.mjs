@@ -43,6 +43,8 @@ test('a bare string goal runs Survey, climbs each thread, and verifies only clai
   assert.equal(sidebar.gains, 1)
   assert.equal(sidebar.outcome, 'stopped: needs-human')
   assert.equal(result.threads.find((t) => t.slug === 'composer').outcome, 'blocked')
+  // An unset model inherits the parent model, so every fan-out agent names one; survey gets it from the explorer type.
+  assert.deepEqual(trace.agents.filter(({ opts }) => !opts.model && !opts.agentType).map(({ opts }) => opts.label), [])
 })
 
 test('round 1 isolates a worktree and later rounds reuse its path without isolation', async () => {

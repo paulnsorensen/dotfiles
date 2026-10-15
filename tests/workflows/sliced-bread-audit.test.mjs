@@ -620,3 +620,47 @@ test('dispatches each audit stage on its selected model and effort tier', async 
   assert.deepEqual([refuter.model, refuter.effort], ['opus', 'high'])
   assert.deepEqual([byLabel.get('issues:batch-1').model, byLabel.get('issues:batch-1').effort], ['haiku', 'low'])
 })
+
+test('one refuter runs per distinct fingerprint, across slices, and reused votes carry over', async () => {
+  let refuters = 0
+  const same = finding({ severity: 'high', file: 'domains/x/shared.py', line: 10 })
+  const { globals } = build({
+    slices: [slice('a'), slice('b')],
+    on: ({ opts }) => {
+      if (opts.label === 'eval:a') return { slice: 'a', findings: [same, { ...same, line: 11 }] }
+      if (opts.label === 'eval:b') return { slice: 'b', findings: [same] }
+      if (opts.label.startsWith('cite:')) return citeOk(2)
+      if (opts.label.startsWith('refute:')) { refuters++; return { refuted: true, reasoning: 'rule misapplied' } }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { dry_run: true } })
+
+  assert.equal(refuters, 1)
+  assert.equal(result.refuted.length, 3)
+  assert.equal(result.confirmed.length, 0)
+})
+
+test('code caps opus evaluators at 20 slices and refuters at 12 per run', async () => {
+  let refuters = 0
+  const slices = Array.from({ length: 25 }, (_, i) => slice(`s${i}`))
+  const { globals, trace } = build({
+    slices,
+    on: ({ opts }) => {
+      if (opts.label.startsWith('eval:s')) return { slice: 'x', findings: [finding({ severity: 'high', file: `${opts.label}.py` })] }
+      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('refute:')) { refuters++; return { refuted: false, reasoning: 'valid' } }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { dry_run: true } })
+
+  assert.equal(labels(trace).filter((l) => /^eval:s\d+$/.test(l)).length, 20)
+  assert.equal(result.failures.filter((f) => /over the 20-slice cap/.test(f.error)).length, 5)
+  assert.equal(refuters, 12)
+  assert.equal(result.confirmed.length, 12)
+  assert.equal(result.floor_unverified.length, 8)
+  assert.ok(trace.logs.some((l) => /8 high\+ finding\(s\) past the 12-refuter cap/.test(l)))
+})

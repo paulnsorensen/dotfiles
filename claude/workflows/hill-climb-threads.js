@@ -297,7 +297,9 @@ if (!threads.length) {
 log(`Climbing ${threads.length} thread(s), up to ${rounds} round(s) each, stop after ${dryLimit} dry round(s).`)
 
 phase('Adopt')
-const adopt = (await agent(adoptPrompt(), { label: 'adopt', phase: 'Adopt', isolation: 'worktree', schema: ADOPT_SCHEMA })
+// Every agent names its model: an unset model inherits the parent model (often opus), and climb and verify fan out across threads and rounds.
+const WORKER_MODEL = 'sonnet'
+const adopt = (await agent(adoptPrompt(), { label: 'adopt', phase: 'Adopt', model: WORKER_MODEL, isolation: 'worktree', schema: ADOPT_SCHEMA })
   .catch((e) => {
     log(`Adopt failed: ${errorText(e)}`)
     return { status: 'failed', note: errorText(e) }
@@ -316,6 +318,7 @@ async function climb(t) {
     const result = await agent(climbPrompt(t, round), {
       label: `climb:${t.slug}#${round}`,
       phase: 'Climb',
+      model: WORKER_MODEL,
       schema: CLIMB_SCHEMA,
       ...(t.worktree ? {} : { isolation: 'worktree' }),
     }).catch((e) => {
@@ -352,6 +355,7 @@ async function climb(t) {
       }), {
         label: `verify-existing:${t.slug}`,
         phase: 'Verify',
+        model: WORKER_MODEL,
         schema: VERIFY_SCHEMA,
       }).catch((e) => {
         log(`${t.slug}: verify agent failed for existing commits: ${errorText(e)}`)
@@ -380,6 +384,7 @@ async function climb(t) {
       const verdict = await agent(verifyPrompt(t, result), {
         label: `verify:${t.slug}#${round}`,
         phase: 'Verify',
+        model: WORKER_MODEL,
         schema: VERIFY_SCHEMA,
       }).catch((e) => {
         log(`${t.slug}: verify agent failed in round ${round}: ${errorText(e)}`)
@@ -419,7 +424,7 @@ const published = {}
 if (publish && publishable.length) {
   phase('Publish')
   const results = await parallel(publishable.map((t) => () =>
-    agent(publishPrompt(t), { label: `publish:${t.slug}`, phase: 'Publish', schema: PUBLISH_SCHEMA })
+    agent(publishPrompt(t), { label: `publish:${t.slug}`, phase: 'Publish', model: WORKER_MODEL, schema: PUBLISH_SCHEMA })
       .then((r) => ({ slug: t.slug, ...(r || { status: 'failed', note: 'publish agent returned nothing' }) }))
       .catch((e) => {
         log(`${t.slug}: publish agent failed: ${errorText(e)}`)

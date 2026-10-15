@@ -294,6 +294,27 @@ test('packet returns no dimensions: blocked after exactly one agent call', async
   assert.equal(trace.agents.length, 1)
 })
 
+test('repeated dimensions get one reviewer each', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({ respond: respondHappy({ dims: ['correctness', 'security', 'correctness'] }) })
+
+  await workflow.run({ ...globals, args: BASE_ARGS })
+
+  assert.deepEqual(trace.agents.map(({ opts }) => opts.label).filter((l) => l.startsWith('review:')).sort(), ['review:correctness', 'review:security'])
+})
+
+test('a packet with more than 12 distinct dimensions blocks before any reviewer runs', async () => {
+  const workflow = await loadWorkflow(path)
+  const dims = Array.from({ length: 13 }, (_, i) => `dim-${String.fromCharCode(97 + i)}`)
+  const { globals, trace } = createRuntime({ respond: respondHappy({ dims }) })
+
+  const result = await workflow.run({ ...globals, args: BASE_ARGS })
+
+  assert.equal(result.status, 'blocked')
+  assert.match(result.error, /too many dimensions: 13 \(cap 12\)/)
+  assert.equal(trace.agents.length, 1)
+})
+
 test('route_curds given: reconcile returns flat findings with severity and fix_cost_now, no per_curd, and the prompt drops git-log ownership', async () => {
   const workflow = await loadWorkflow(path)
   const routeCurds = [{ slug: 'alpha', branch: 'curd/alpha' }, { slug: 'beta', branch: 'curd/beta' }]
