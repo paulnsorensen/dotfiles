@@ -96,7 +96,7 @@ function responder(overrides = {}) {
     }
     if (label === 'ideas') return IDEAS
     if (label.startsWith('strategist:') || label.startsWith('synthesize:')) return STRATEGY
-    if (label.startsWith('advise:')) return { verdict: 'approve', concerns: [], guidance: 'ok' }
+    if (label.startsWith('advise:')) return { verdict: 'approve', concerns: [], guidance: 'ok', blocking_questions: [] }
     if (label === 'resolve') {
       const slugs = JSON.parse(/<data name="slugs">\n([\s\S]*?)\n<\/data>/.exec(prompt)[1])
       return { specs: slugs.map((slug) => ({ slug, path: `${SPECS_DIR}/${slug}.md`, exists: false })), report_path: REPORT }
@@ -331,7 +331,7 @@ test('cheese-board sends close verdicts to needs-human when triage routing is mi
 })
 
 test('cheese-board stops at the advisor and never drafts a spec', async () => {
-  const { result, labels } = await runBoard({ overrides: { 'advise:strategy:0': { verdict: 'stop', concerns: ['wrong goal'], guidance: 'stop' } } })
+  const { result, labels } = await runBoard({ overrides: { 'advise:strategy:0': { verdict: 'stop', concerns: ['wrong goal'], guidance: 'stop', blocking_questions: [] } } })
 
   assert.equal(result.status, 'stopped')
   assert.equal(labels.some((l) => l.startsWith('draft:') || l === 'resolve'), false)
@@ -385,7 +385,7 @@ test('cheese-board fails a spec whose research child throws, without drafting it
 
 test('cheese-board caps research runs in priority order and moves the overflow to mold', async () => {
   const strategy = { ...STRATEGY, initiatives: [
-    ...STRATEGY.initiatives.map((i) => (i.id === 'IN-3' ? i : { ...i, research_questions: ['a?', 'b?'] })),
+    ...STRATEGY.initiatives.map((i) => (i.id === 'IN-3' ? i : { ...i, research_questions: [`${i.id} a?`, `${i.id} b?`] })),
     initiative('IN-4', { slug: 'gap-fill', priority: 3, research_questions: ['c?'] }),
   ] }
   const { result, children } = await runBoard({ overrides: { 'synthesize:r0': strategy } })
@@ -424,7 +424,7 @@ test('cheese-board continues without decisions when wiki grounding fails, and re
 })
 
 test('cheese-board records nothing in the wiki when the done advisor does not approve', async () => {
-  const { result, labels } = await runBoard({ overrides: { 'advise:done': { verdict: 'revise', concerns: ['queue order is wrong'], guidance: 'reorder' } } })
+  const { result, labels } = await runBoard({ overrides: { 'advise:done': { verdict: 'revise', concerns: ['queue order is wrong'], guidance: 'reorder', blocking_questions: [] } } })
 
   assert.equal(result.status, 'needs-review')
   assert.equal(result.recorded, null)
@@ -556,7 +556,7 @@ test('cheese-board reports a failed strategist lens as a gap', async () => {
 })
 
 test('cheese-board sends the advisor concerns and guidance to the revised synthesis', async () => {
-  const revise = { verdict: 'revise', concerns: ['IN-2 is too large'], guidance: 'split IN-2 by module' }
+  const revise = { verdict: 'revise', concerns: ['IN-2 is too large'], guidance: 'split IN-2 by module', blocking_questions: [] }
   const { result, trace } = await runBoard({ overrides: { 'advise:strategy:0': revise } })
 
   const resynth = trace.agents.find(({ opts }) => opts.label === 'synthesize:r1').prompt
@@ -566,7 +566,7 @@ test('cheese-board sends the advisor concerns and guidance to the revised synthe
 })
 
 test('cheese-board asks for input after the advisor revises twice', async () => {
-  const revise = { verdict: 'revise', concerns: ['still wrong'], guidance: 'rethink' }
+  const revise = { verdict: 'revise', concerns: ['still wrong'], guidance: 'rethink', blocking_questions: [] }
   const { result, labels } = await runBoard({ overrides: { 'advise:strategy:0': revise, 'advise:strategy:1': revise } })
 
   assert.equal(result.status, 'needs-input')
