@@ -41,7 +41,7 @@ Gather → Ground → Strategy → Advise → Resolve → Spec → Verify → Re
 
 The Workflow runtime cannot pause, so approval takes two runs bound by a digest. This supersedes the old rule that Advise returns `needs-input` with no resume channel. The shared prelude owns the protocol (`stable`, `fnv1a`, `digestOf`, `matchAnswers`), and move-my-cheese uses it too ([[architecture/move-my-cheese-workflow]]).
 
-- **Default is interactive.** `auto: true` keeps the unattended behavior. A run with `state`, `digest`, `answers`, or `lanes` and `auto: true` is blocked.
+- **Default is interactive.** `auto: true` keeps the unattended behavior. A run with `state`, `digest`, `answers`, or `lanes` and `auto: true` returns `blocked`.
 - **Three checkpoints** return `status: needs-input` with `checkpoint`, typed `questions`, `state`, and `digest`: `strategy` (advisor cap, blocking questions, override calls), `spec` (leverage triggers and drafter open questions), and `done` (the done advisor did not approve).
 - **Code validates a resume before the first agent.** It checks the state shape, the digest, the answers, closed options, `lanes`, and the auto flag, and it returns every error in one `blocked` result. The digest detects edits, not a hostile caller.
 - **A resume restores state.** It does not rerun Gather, Ground, or the first-round Strategy. A strategy resume applies the answers and `lanes`, runs one synthesizer revision, and advises again. A spec resume redrafts only the answered initiatives. A done resume skips Verify and either records (`approve`) or applies one fix to the report.

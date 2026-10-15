@@ -15,13 +15,13 @@ Run the cheese-board workflow. Ask the user each question the workflow raises. R
 
 ## Loop
 
-1. Run the Workflow tool with `cheese-board` and args `{ stamp: "<today, YYYY-MM-DD>" }`. Add `repo`, `limit`, `ideas`, or `maxSpecs` only when the user gave them.
+1. Run the Workflow tool with `cheese-board` and args `{ stamp: "<today, YYYY-MM-DD>" }`. Add `repo`, `limit`, `ideas`, `maxSpecs`, or `focus` only when the user gave them.
 2. Read `status` in the result.
 3. If `status` is `needs-input`, ask the user every entry in `questions` with AskUserQuestion.
-   - Put the `recommended` option first. Add the other `options`. Let the user type a free answer when `options` is empty.
+   - Put the `recommended` option first. Add the other `options`.
    - Show `evidence` as the question context.
    - AskUserQuestion takes 1 to 4 questions per call and 2 to 4 options per question. Batch the questions in groups of up to 4, with one call per group.
-   - A question with 0 or 1 options gets padded options, or relies on the built-in "Other" free-text answer. Keep the `recommended` option first.
+   - If a question has 0 or 1 options, pad the options, or let the user type a free answer in the built-in "Other" field. Keep the `recommended` option first.
    - At the `strategy` checkpoint, ask whether any initiative changes lane. Pass the moves as `lanes: { "IN-n": "spec|mold|defer" }`.
 4. Rerun the Workflow tool with `{ stamp, state, digest, answers }`.
    - Reuse the original `stamp` without change on every rerun.

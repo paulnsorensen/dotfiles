@@ -112,7 +112,7 @@ const brieGround = async (question) => {
   return { found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }
 }
 
-// Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is { id, question, options?, recommended?, evidence?, initiative? }; the next run passes answers back.
+// Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
   if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stable(value[k])}`).join(',')}}`

@@ -35,8 +35,9 @@ Do not send raw transcripts.
 
 1. When the executor has evidence against the advice, make one reconcile call. State the evidence and ask which constraint breaks the tie [s15].
 2. Bound revision rounds in code, for example `LIMITS.advisorRevisions = 1`.
-3. After the limit, return `needs-input` to the user with typed questions `{id, question, options?, recommended?, evidence}`, the state, and a digest of the state from the prelude `digestOf`. Do not loop.
-   The next run takes `{state, digest, answers}`, checks the digest and the answers with the prelude `matchAnswers` before the first agent, and applies one revision. An unsettled advisor returns `needs-input` on every path.
+3. After the limit, return `needs-input` to the user. Return typed questions `{id, question, options[], recommended, evidence, initiative?, closed?, kind?}`, the state, and a digest of the state. Do not loop.
+   The next run takes `{state, digest, answers}`. Before the first agent, it checks the digest and the answers. Then it applies one revision. An unsettled advisor returns `needs-input` on every path.
+   The prelude `digestOf` and `matchAnswers` are one implementation of this check. Any equivalent code works.
 4. Ask for guidance under 80 words. Advisor output is its main cost driver [s15].
 5. On a revision round, send the prior concerns. The advisor judges only whether each one is resolved. It raises a new concern only for a blocker, and it never reverses a prior concern.
 
