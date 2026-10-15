@@ -289,7 +289,7 @@ test('cheese-board blocks a dependent spec when its prerequisite goes to mold', 
   assert.deepEqual(result.mold.find((m) => m.initiative === 'IN-1').open_questions, ['Which banner format?'])
 })
 
-test('cheese-board redrafts once after a failed gate, then routes the spec to mold', async () => {
+test('cheese-board redrafts once after a failed gate, then reports a spec failure with the last gate error', async () => {
   const failGate = ({ prompt }) => installed('version-banner', prompt, { validate_exit: 1, validate_output: 'missing Contract', installed: false })
   const { result, labels, trace } = await runBoard({ overrides: { 'install:version-banner:r0': failGate, 'install:version-banner:r1': failGate } })
 
@@ -297,8 +297,29 @@ test('cheese-board redrafts once after a failed gate, then routes the spec to mo
   const redraft = trace.agents.find(({ opts }) => opts.label === 'draft:version-banner:r1')
   assert.match(redraft.prompt, /validate-spec exit 1: missing Contract/)
   assert.equal(labels.includes('draft:version-banner:r2'), false)
-  assert.match(result.mold.find((m) => m.initiative === 'IN-1').reason, /2 rounds/)
-  assert.equal(result.status, 'ok')
+  assert.equal(result.mold.some((m) => m.initiative === 'IN-1'), false)
+  const failure = result.spec_failures.find((f) => f.slug === 'version-banner')
+  assert.equal(failure.status, 'failed')
+  assert.match(failure.reason, /2 rounds/)
+  assert.match(failure.reason, /last gate error: validate-spec exit 1: missing Contract/)
+  assert.deepEqual(result.blocked.map((b) => [b.slug, b.blocked_by]), [['sync-cache', ['IN-1 spec failed']]])
+  assert.equal(result.status, 'partial')
+})
+
+test('cheese-board reports a draft that fails taste every round as a spec failure, not a mold item', async () => {
+  const revise = (round) => ({ verdict: 'revise', concerns: [`criteria are vague r${round}`] })
+  const { result, labels } = await runBoard({ overrides: { 'taste:version-banner:r0': revise(0), 'taste:version-banner:r1': revise(1) } })
+
+  assert.equal(labels.includes('install:version-banner:r0'), false)
+  assert.equal(labels.includes('install:version-banner:r1'), false)
+  assert.equal(labels.includes('draft:version-banner:r2'), false)
+  assert.equal(result.mold.some((m) => m.initiative === 'IN-1'), false)
+  assert.deepEqual(result.mold.map((m) => m.initiative), ['IN-3'])
+  const failure = result.spec_failures.find((f) => f.slug === 'version-banner')
+  assert.equal(failure.status, 'failed')
+  assert.match(failure.reason, /2 rounds/)
+  assert.match(failure.reason, /last taste verdict: revise \(criteria are vague r1\)/)
+  assert.equal(result.status, 'partial')
 })
 
 test('cheese-board rejects an install report that claims success for a failed gate', async () => {

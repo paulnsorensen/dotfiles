@@ -1375,7 +1375,9 @@ async function mintSpec(init, prior = null, user = null, asksFirst = false) {
     if (w.candidate_curds > LIMITS.maxCurds) return { ...base, status: 'mold', reason: `${w.candidate_curds} curds exceed the limit of ${LIMITS.maxCurds}` }
     feedback = { gate_failures: [`validate-spec exit ${w.validate_exit}: ${w.validate_output}`, `candidate_curds ${w.candidate_curds}`] }
   }
-  return { ...base, status: 'mold', reason: `no spec passed taste and the gates in ${LIMITS.specRounds + 1} rounds`, feedback }
+  // A failed draft is a spec failure, not a design question, so it never goes to mold.
+  const last = feedback.taste_concerns ? `last taste verdict: revise (${feedback.taste_concerns.join('; ')})` : `last gate error: ${feedback.gate_failures.join('; ')}`
+  return { ...base, status: 'failed', reason: `no spec passed taste and the gates in ${LIMITS.specRounds + 1} rounds; ${last}`, feedback }
 }
 // A resumed initiative redrafts only when the user answered it; every other outcome comes from the state.
 const priorOutcomes = new Map(resume && !resumedStrategy ? resume.state.outcomes.map((o) => [o.initiative, o]) : [])

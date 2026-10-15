@@ -16,7 +16,7 @@ Gather → Ground → Strategy → Advise → Resolve → Spec → Verify → Re
   - taste-test: taste-tester
   - install: a coder stages the file in a temp dir and runs `validate-spec --strict` and `curd-count`. It moves the file into place only when both pass.
 
-  One redraft is allowed, then the initiative goes to mold.
+  One redraft is allowed. Then the initiative is a spec failure (`spec_failures`) with the last taste verdict or gate error. It does not go to mold, because no design question is open.
 - **Verify** is a judge that re-runs both mold gates on every installed spec, because the installer cannot grade itself.
 - **Report**: code computes the factory waves and renders the report. A haiku coder writes the report. A done advisor signs off.
 - **Record** runs only after the done advisor approves. One agent writes `strategy/cheese-board-<stamp>.md` to the repo wiki with `add_markdown`, and the next Ground reads it as kind `strategy`. The page is an uncommitted wiki change in the checkout.
