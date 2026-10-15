@@ -90,7 +90,7 @@ class QueryDryRunTests(FreezeCase):
     def test_query_dry_run_is_refused_when_the_database_is_missing(self) -> None:
         with mock.patch.dict(os.environ, {"SESSIONS_DB": str(self.dir / "absent.db")}):
             rc, out = self.query_freeze(QUERY)
-        self.assertRefusedWithoutGate(rc, out, "dry run")
+        self.assertRefusedWithoutGate(rc, out, "session database unavailable")
 
     @needs_duckdb
     def test_query_with_the_three_columns_freezes(self) -> None:
@@ -101,14 +101,14 @@ class QueryDryRunTests(FreezeCase):
 
 
 class DuckdbMissingTests(FreezeCase):
-    """The CI runner has no duckdb on PATH: the freeze must refuse, not crash."""
+    """Package database failures must not become invalid-query findings."""
 
     def hide_duckdb(self) -> mock._patch[Any]:
         real = subprocess.run
 
         def run(args: Any, *a: Any, **kw: Any) -> Any:
-            if args[0] == "duckdb":
-                raise FileNotFoundError(2, "No such file", "duckdb")
+            if args[:2] == ["uvx", "agent-session-analytics@latest"]:
+                return subprocess.CompletedProcess(args, 3, "", '{"exit_code":3}')
             return real(args, *a, **kw)
 
         return mock.patch.object(hc_db.subprocess, "run", run)
@@ -116,7 +116,7 @@ class DuckdbMissingTests(FreezeCase):
     def test_duck_turns_a_missing_binary_into_a_db_error(self) -> None:
         with self.hide_duckdb(), self.assertRaises(hc_db.DbError) as ctx:
             hc_db.duck(self.dir / "x.duckdb", "SELECT 1")
-        self.assertIn("duckdb not installed", str(ctx.exception))
+        self.assertIn("session analytics database unavailable", str(ctx.exception))
 
     def test_freeze_refuses_and_records_the_reason_without_duckdb(self) -> None:
         self.critic()
@@ -124,10 +124,9 @@ class DuckdbMissingTests(FreezeCase):
             rc, out = self.freeze()
         self.assertEqual((rc, out["status"]), (1, "refused"), out)
         self.assertIn("session database unavailable", out["reason"])
-        self.assertIn("duckdb not installed", out["reason"])
         (line,) = self.ledger_lines()
         self.assertEqual(line["candidate"], "n/a")
-        self.assertIn("duckdb not installed", line["change"])
+        self.assertIn("session analytics database unavailable", line["change"])
         self.assertFalse((self.repo / "harness-climb").exists())
 
 

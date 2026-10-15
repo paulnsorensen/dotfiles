@@ -19,6 +19,11 @@ Run `<skill-dir>/scripts/analyze.sh <domain> <target> [harness]` for each
 relevant domain: `prompt-analysis`, `routing-accuracy`, `knowledge-gaps`, or
 `all`.
 
+The script calls the public `agent-session-analytics` package for SQL and
+Markdown tables. Its default database follows package freshness rules.
+An explicit `SESSIONS_DB` must name a package-compatible database.
+A package failure is an error, not insufficient signal.
+
 Then calibrate with `../session-analytics/references/calibration.md`. Two
 domains are explicitly weaker signal — honor that: `routing-accuracy` has no
 intent ground-truth (correlational at best — never claim the *right* skill

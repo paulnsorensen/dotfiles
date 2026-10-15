@@ -36,6 +36,8 @@ class FreezeCase(RepoCase):
             db = make_db(
                 self.dir / "sessions.duckdb",
                 "CREATE TABLE sessions (harness VARCHAR, sessionId VARCHAR, project VARCHAR)",
+                "CREATE TABLE schema_info (version INTEGER)",
+                "INSERT INTO schema_info VALUES (1)",
             )
             patch = mock.patch.dict(os.environ, {"SESSIONS_DB": str(db)})
             patch.start()
@@ -317,7 +319,6 @@ class DbFailureTests(FreezeCase):
         db = Path("/x/s.duckdb")
         with (
             mock.patch("hc_freeze.resolve_db", return_value=db),
-            mock.patch("hc_db._shell_settings", return_value=(db, "1GB")),
             mock.patch("hc_db.subprocess.run", side_effect=FileNotFoundError),
         ):
             reason = hc_freeze.query_problem(QUERY)

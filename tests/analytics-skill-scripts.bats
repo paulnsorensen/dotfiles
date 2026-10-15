@@ -1,223 +1,163 @@
 #!/usr/bin/env bats
-# Tests for the session-log analytics skill scripts (skills/*/scripts/).
-# Fixtures are real DuckDB databases; SESSIONS_DB pins the path and disables
-# the scripts' auto-ingest.
+# Package-backed integration tests for session analytics report scripts.
 
-DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
-SKILLS="$DOTFILES_DIR/skills"
+load test_helper
+load lib/session-analytics-package
+
+SKILLS="$REAL_DOTFILES_DIR/skills"
 
 setup() {
-    TMPROOT="$(mktemp -d)"
-    TMPROOT="$(cd "$TMPROOT" && pwd -P)"
-    export TMPROOT
-    FIXTURE_DB="$TMPROOT/sessions.duckdb"
-    export SESSIONS_DB="$FIXTURE_DB"
+    setup_test_env
+    package_fixture_env
 }
 
-teardown() {
-    rm -rf "$TMPROOT"
-}
-
-need_duckdb() {
-    command -v duckdb >/dev/null 2>&1 || skip "duckdb not installed"
-}
+teardown() { teardown_test_env; }
 
 make_fixture() {
-    need_duckdb
-    duckdb -init /dev/null "$FIXTURE_DB" -c "
-CREATE TABLE tool_uses (harness VARCHAR, tool_name VARCHAR, tool_use_id VARCHAR,
-    bash_cmd VARCHAR, skill_name VARCHAR, agent_type VARCHAR, file_path VARCHAR,
-    timestamp VARCHAR, sessionId VARCHAR, cwd VARCHAR);
-CREATE TABLE tool_results (harness VARCHAR, tool_use_id VARCHAR, content VARCHAR,
-    is_error VARCHAR, timestamp VARCHAR, sessionId VARCHAR);
-CREATE TABLE sessions (harness VARCHAR, sessionId VARCHAR, first_seen VARCHAR,
-    last_seen VARCHAR, project VARCHAR, branch VARCHAR, entry_count BIGINT);
-CREATE TABLE skill_invocations (harness VARCHAR, skill_name VARCHAR, args VARCHAR,
-    timestamp VARCHAR, sessionId VARCHAR, cwd VARCHAR);
-CREATE TABLE mcp_calls (harness VARCHAR, tool_name VARCHAR, tool_use_id VARCHAR,
-    timestamp VARCHAR, sessionId VARCHAR, cwd VARCHAR);
-CREATE TABLE raw_entries (harness VARCHAR, type VARCHAR, message VARCHAR,
-    timestamp VARCHAR, sessionId VARCHAR);
-CREATE TABLE stop_hooks (harness VARCHAR, timestamp VARCHAR, sessionId VARCHAR,
-    preventedContinuation VARCHAR, stopReason VARCHAR, level VARCHAR);
-
-INSERT INTO tool_uses VALUES
-    ('claude','Bash','tu1','git status',NULL,NULL,NULL,'2026-08-01T10:00:00Z','s1','/Users/t/proj'),
-    ('claude','Read','tu2',NULL,NULL,NULL,'/Users/t/proj/main.rs','2026-08-01T10:01:00Z','s1','/Users/t/proj'),
-    ('claude','Edit','tu3',NULL,NULL,NULL,'/Users/t/proj/main.rs','2026-08-01T10:02:00Z','s1','/Users/t/proj'),
-    ('claude','Bash','tu4','cargo test',NULL,NULL,NULL,'2026-08-01T10:03:00Z','s1','/Users/t/proj'),
-    ('claude','Bash','tu5','grep foo | sort',NULL,NULL,NULL,'2026-08-01T10:04:00Z','s1','/Users/t/proj');
-INSERT INTO tool_results VALUES
-    ('claude','tu1','ok','false','2026-08-01T10:00:01Z','s1'),
-    ('claude','tu2','File not found: main.rs','true','2026-08-01T10:01:01Z','s1'),
-    ('claude','tu3','ok','false','2026-08-01T10:02:01Z','s1'),
-    ('claude','tu4','test result: ok','false','2026-08-01T10:03:01Z','s1'),
-    ('claude','tu5','Permission to use Bash with command grep foo | sort has been denied','true','2026-08-01T10:04:01Z','s1'),
-    ('claude','tu6','ok','false','2026-08-01T10:05:01Z','s1');
-INSERT INTO sessions VALUES
-    ('claude','s1','2026-08-01T10:00:00Z','2026-08-01T11:00:00Z','/Users/t/proj','main',42);
-INSERT INTO skill_invocations VALUES
-    ('claude','cheese',NULL,'2026-08-01T10:00:00Z','s1','/Users/t/proj'),
-    ('claude','cook',NULL,'2026-08-01T10:02:00Z','s1','/Users/t/proj');
-INSERT INTO mcp_calls VALUES
-    ('claude','mcp__tilth__tilth_read','tu6','2026-08-01T10:05:00Z','s1','/Users/t/proj');
-INSERT INTO raw_entries VALUES
-    ('claude','user','{\"content\": \"fix the auth bug\"}','2026-08-01T10:00:00Z','s1'),
-    ('claude','user','{\"content\": \"/cheese go\"}','2026-08-01T10:10:00Z','s1');
-"
+    package_fixture_ingest >/dev/null
+    printf '%s\n' \
+        '{"type":"user","timestamp":"2026-08-01T10:00:00Z","sessionId":"s1","cwd":"/work/proj","gitBranch":"main","message":{"content":"fix the auth bug"}}' \
+        '{"type":"assistant","timestamp":"2026-08-01T10:01:00Z","sessionId":"s1","cwd":"/work/proj","gitBranch":"main","message":{"content":[{"type":"tool_use","id":"tu3","name":"Read","input":{"file_path":"/work/proj/main.rs"}},{"type":"tool_use","id":"tu4","name":"Skill","input":{"skill":"cheese"}},{"type":"tool_use","id":"tu5","name":"mcp__tilth__tilth_read","input":{}}]}}' \
+        '{"type":"user","timestamp":"2026-08-01T10:01:01Z","sessionId":"s1","cwd":"/work/proj","message":{"content":[{"type":"tool_result","tool_use_id":"tu3","content":"File not found: main.rs","is_error":"true"},{"type":"tool_result","tool_use_id":"tu4","content":"ok","is_error":"false"},{"type":"tool_result","tool_use_id":"tu5","content":"ok","is_error":"false"}]}}' \
+        '{"type":"assistant","timestamp":"2026-08-01T10:02:00Z","sessionId":"s1","cwd":"/work/proj","gitBranch":"main","message":{"content":[{"type":"tool_use","id":"tu6","name":"Edit","input":{"file_path":"/work/proj/main.rs"}},{"type":"tool_use","id":"tu7","name":"Skill","input":{"skill":"cook"}}]}}' \
+        '{"type":"assistant","timestamp":"2026-08-01T10:03:00Z","sessionId":"s1","cwd":"/work/proj","gitBranch":"main","message":{"content":[{"type":"tool_use","id":"tu8","name":"Bash","input":{"command":"cargo test"}}]}}' \
+        '{"type":"assistant","timestamp":"2026-08-01T10:04:00Z","sessionId":"s1","cwd":"/work/proj","gitBranch":"main","message":{"content":[{"type":"tool_use","id":"tu9","name":"Bash","input":{"command":"grep foo | sort"}}]}}' \
+        '{"type":"user","timestamp":"2026-08-01T10:04:01Z","sessionId":"s1","cwd":"/work/proj","message":{"content":[{"type":"tool_result","tool_use_id":"tu9","content":"Permission to use Bash with command grep foo | sort has been denied","is_error":"true"}]}}' \
+        '{"type":"user","timestamp":"2026-08-01T10:05:00Z","sessionId":"s1","cwd":"/work/proj","message":{"content":"/cheese go"}}' \
+        >> "$CLAUDE_CONFIG_DIR/projects/proj/session.jsonl"
+    "${PACKAGE_CLI[@]}" ingest --force >/dev/null
+    export SESSIONS_DB
+    SESSIONS_DB="$(package_fixture_db)"
 }
 
-make_empty_db() {
-    need_duckdb
-    duckdb -init /dev/null "$FIXTURE_DB" -c "SELECT 1;" >/dev/null
+add_codex_token_fixture() {
+    mkdir -p "$CODEX_HOME/sessions/2026/05/30"
+    printf '%s\n' \
+        '{"timestamp":"2026-05-30T11:00:00Z","type":"session_meta","payload":{"id":"cx1","cwd":"/work/proj"}}' \
+        '{"timestamp":"2026-05-30T11:00:01Z","type":"turn_context","payload":{"cwd":"/work/proj","model":"gpt-x"}}' \
+        '{"timestamp":"2026-05-30T11:00:02Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7,"total_tokens":107},"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7,"total_tokens":107}}}}' \
+        > "$CODEX_HOME/sessions/2026/05/30/rollout.jsonl"
+    unset SESSIONS_DB
+    "${PACKAGE_CLI[@]}" ingest --force >/dev/null
+    export SESSIONS_DB
+    SESSIONS_DB="$(package_fixture_db)"
 }
 
 assert_contains() {
     [[ "$1" == *"$2"* ]] || {
-        echo "expected to contain: $2" >&2
-        echo "actual: $1" >&2
+        printf 'expected to contain: %s\nactual: %s\n' "$2" "$1" >&2
         return 1
     }
 }
 
 assert_not_contains() {
     [[ "$1" != *"$2"* ]] || {
-        echo "expected NOT to contain: $2" >&2
-        echo "actual: $1" >&2
+        printf 'expected NOT to contain: %s\nactual: %s\n' "$2" "$1" >&2
         return 1
     }
 }
 
-# ── missing / empty database ────────────────────────────────────────
-
-@test "query.sh reports a missing database gracefully" {
-    run "$SKILLS/session-analytics/scripts/query.sh" tools
+@test "package fixture contains only isolated Claude logs" {
+    make_fixture
+    run "${PACKAGE_CLI[@]}" sql "SELECT DISTINCT harness FROM sessions"
     [ "$status" -eq 0 ]
-    assert_contains "$output" "No session database"
+    assert_contains "$output" '"claude"'
+    assert_not_contains "$output" '"omp"'
 }
 
-@test "query.sh default database follows XDG_CACHE_HOME" {
-    need_duckdb
-    local cache="$TMPROOT/custom-cache"
-    local db="$cache/dotfiles/session-analytics/sessions.duckdb"
-    mkdir -p "$(dirname "$db")"
-    duckdb -init /dev/null "$db" -c "SELECT 1" >/dev/null
+@test "default report invokes package freshness without an override" {
+    printf '%s\n' \
+        '{"type":"assistant","timestamp":"2026-05-30T10:00:00Z","sessionId":"fresh-1","cwd":"/work/fresh","message":{"content":[{"type":"tool_use","id":"fresh-tu","name":"Read","input":{"file_path":"README.md"}}]}}' \
+        > "$CLAUDE_CONFIG_DIR/projects/proj/session.jsonl"
     unset SESSIONS_DB
-    export XDG_CACHE_HOME="$cache"
-    run "$SKILLS/session-analytics/scripts/query.sh" tools
+    run "$SKILLS/work-recovery/scripts/sessions.sh" fresh
     [ "$status" -eq 0 ]
-    assert_contains "$output" "$db"
+    assert_contains "$output" "fresh-1"
+    assert_contains "$output" "fresh"
 }
 
-@test "tool-efficiency analyze.sh reports a missing database gracefully" {
-    run "$SKILLS/tool-efficiency/scripts/analyze.sh" tool-usage Bash
-    [ "$status" -eq 0 ]
-    assert_contains "$output" "No session database"
-}
-
-@test "recover.sh reports an empty database gracefully" {
-    make_empty_db
-    run "$SKILLS/work-recovery/scripts/recover.sh" s1
-    [ "$status" -eq 0 ]
-    assert_contains "$output" "no ingested tables"
-}
-
-# ── session-analytics/scripts/query.sh ──────────────────────────────
-
-@test "query.sh tools reports per-tool counts" {
+@test "expert workflow reads public schema, path, and SQL" {
     make_fixture
-    run "$SKILLS/session-analytics/scripts/query.sh" tools
+    run "${PACKAGE_CLI[@]}" schema
     [ "$status" -eq 0 ]
-    assert_contains "$output" "Bash"
-    assert_contains "$output" "3"
-}
-
-@test "query.sh errors reports error rates" {
-    make_fixture
-    run "$SKILLS/session-analytics/scripts/query.sh" errors
+    assert_contains "$output" '"reference": "canonical-schema.md"'
+    run "${PACKAGE_CLI[@]}" db-path
     [ "$status" -eq 0 ]
-    assert_contains "$output" "error_pct"
-    assert_contains "$output" "Read"
-    assert_contains "$output" "100.0"
-}
-
-@test "query.sh honors a harness filter" {
-    make_fixture
-    run "$SKILLS/session-analytics/scripts/query.sh" tools codex
+    assert_contains "$output" "$SESSIONS_DB"
+    run "${PACKAGE_CLI[@]}" sql "SELECT count(DISTINCT sessionId) AS n FROM sessions WHERE harness = 'claude'"
     [ "$status" -eq 0 ]
-    assert_not_contains "$output" "Bash"
+    assert_contains "$output" '"n": 2'
 }
 
-@test "query.sh sql runs raw SQL" {
-    make_fixture
-    run "$SKILLS/session-analytics/scripts/query.sh" sql "SELECT count(*) AS n FROM tool_uses"
-    [ "$status" -eq 0 ]
-    assert_contains "$output" "5"
-}
-
-@test "query.sh rejects an unknown report" {
-    make_fixture
-    run "$SKILLS/session-analytics/scripts/query.sh" bogus
-    [ "$status" -eq 2 ]
-}
-
-# ── tool-efficiency/scripts/analyze.sh ──────────────────────────────
-
-@test "analyze.sh tool-usage Bash includes frequency and task fit" {
+@test "tool usage preserves frequency and Bash task fit" {
     make_fixture
     run "$SKILLS/tool-efficiency/scripts/analyze.sh" tool-usage Bash
     [ "$status" -eq 0 ]
-    assert_contains "$output" "Frequency"
-    assert_contains "$output" "Task fit"
-    assert_contains "$output" "git"
+    assert_contains "$output" "### Frequency"
+    assert_contains "$output" "| Bash |"
+    assert_contains "$output" "### Task fit"
+    assert_contains "$output" "grep"
 }
 
-@test "analyze.sh error-forensics reports target vs baseline and signatures" {
+@test "error forensics preserves the target and baseline" {
     make_fixture
     run "$SKILLS/tool-efficiency/scripts/analyze.sh" error-forensics Read
     [ "$status" -eq 0 ]
-    assert_contains "$output" "baseline"
+    assert_contains "$output" "| target |"
+    assert_contains "$output" "| baseline |"
     assert_contains "$output" "File not found"
 }
 
-@test "analyze.sh permission-friction categorizes denials" {
+@test "permission friction reports denial category and command" {
     make_fixture
     run "$SKILLS/tool-efficiency/scripts/analyze.sh" permission-friction Bash
     [ "$status" -eq 0 ]
     assert_contains "$output" "grep (use tilth_search)"
-    assert_contains "$output" "Compound-command"
     assert_contains "$output" 'grep foo \| sort'
 }
 
-@test "analyze.sh mcp-health lists servers" {
+@test "MCP health names the server and method" {
     make_fixture
-    run "$SKILLS/tool-efficiency/scripts/analyze.sh" mcp-health %
+    run "$SKILLS/tool-efficiency/scripts/analyze.sh" mcp-health tilth
     [ "$status" -eq 0 ]
     assert_contains "$output" "tilth"
     assert_contains "$output" "tilth_read"
 }
 
-@test "analyze.sh token-economics counts codex token_usage rows as incl_cache" {
+@test "fix recommendations retain the signal caveat" {
     make_fixture
-    duckdb -init /dev/null "$FIXTURE_DB" -c "
-INSERT INTO raw_entries VALUES
-    ('codex','token_usage','{\"usage\": {\"input_tokens\": 100, \"output_tokens\": 7, \"cache_read_input_tokens\": 40}}','2026-08-01T11:00:04Z','cx1');
-"
-    run "$SKILLS/tool-efficiency/scripts/analyze.sh" token-economics Bash
+    run "$SKILLS/tool-efficiency/scripts/analyze.sh" fix-recommendations %
     [ "$status" -eq 0 ]
-    assert_contains "$output" "cx1"
-    assert_contains "$output" "incl_cache"
+    assert_contains "$output" "### Raw-bash"
+    assert_contains "$output" "insufficient signal"
 }
 
-@test "analyze.sh rejects an unknown domain" {
+@test "token economics counts native Codex input including cache reads" {
     make_fixture
-    run "$SKILLS/tool-efficiency/scripts/analyze.sh" bogus Bash
-    [ "$status" -eq 2 ]
+    add_codex_token_fixture
+    run "$SKILLS/tool-efficiency/scripts/analyze.sh" token-economics Bash codex
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "| cx1 | codex | incl_cache | 100 | 7 | 40 |"
+    assert_contains "$output" "input_tokens: codex includes cached tokens"
 }
 
-# ── prompt-analytics/scripts/analyze.sh ─────────────────────────────
+@test "tool report honors harness filter" {
+    make_fixture
+    run "$SKILLS/tool-efficiency/scripts/analyze.sh" tool-usage Bash codex
+    [ "$status" -eq 0 ]
+    assert_not_contains "$output" "| Bash |"
+}
 
-@test "prompt-analysis splits slash-command vs freeform" {
+@test "tool all domain keeps every section heading" {
+    make_fixture
+    run "$SKILLS/tool-efficiency/scripts/analyze.sh" all %
+    [ "$status" -eq 0 ]
+    for heading in 'Tool Usage' 'Error Forensics' 'Fix Recommendations' 'Permission Friction' 'MCP Health' 'Token Economics'; do
+        assert_contains "$output" "## $heading"
+    done
+}
+
+@test "prompt analysis separates slash commands and freeform text" {
     make_fixture
     run "$SKILLS/prompt-analytics/scripts/analyze.sh" prompt-analysis %
     [ "$status" -eq 0 ]
@@ -225,7 +165,7 @@ INSERT INTO raw_entries VALUES
     assert_contains "$output" "/cheese"
 }
 
-@test "routing-accuracy finds the downstream skill" {
+@test "routing accuracy reports downstream skill without intent proof" {
     make_fixture
     run "$SKILLS/prompt-analytics/scripts/analyze.sh" routing-accuracy cheese
     [ "$status" -eq 0 ]
@@ -233,17 +173,32 @@ INSERT INTO raw_entries VALUES
     assert_contains "$output" "no intent ground-truth"
 }
 
-# ── work-recovery scripts ───────────────────────────────────────────
-
-@test "sessions.sh lists the recent session" {
+@test "knowledge gaps keeps its inference caveat" {
     make_fixture
-    run "$SKILLS/work-recovery/scripts/sessions.sh" proj
+    run "$SKILLS/prompt-analytics/scripts/analyze.sh" knowledge-gaps auth
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "medium signal"
+    assert_contains "$output" "candidate gap only"
+}
+
+@test "prompt all domain keeps every section heading" {
+    make_fixture
+    run "$SKILLS/prompt-analytics/scripts/analyze.sh" all %
+    [ "$status" -eq 0 ]
+    for heading in 'Prompt Analysis' 'Routing Accuracy' 'Knowledge Gaps'; do
+        assert_contains "$output" "## $heading"
+    done
+}
+
+@test "recent sessions filter lists the matching branch" {
+    make_fixture
+    run "$SKILLS/work-recovery/scripts/sessions.sh" proj claude
     [ "$status" -eq 0 ]
     assert_contains "$output" "s1"
     assert_contains "$output" "main"
 }
 
-@test "recover.sh reconstructs goal, files, and verified state" {
+@test "recovery quotes goal, file, and test command" {
     make_fixture
     run "$SKILLS/work-recovery/scripts/recover.sh" s1
     [ "$status" -eq 0 ]
@@ -252,7 +207,41 @@ INSERT INTO raw_entries VALUES
     assert_contains "$output" "cargo test"
 }
 
-@test "recover.sh requires a sessionId" {
+@test "no matching session is an empty result, not a package failure" {
+    make_fixture
+    run "$SKILLS/work-recovery/scripts/recover.sh" absent
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "| harness | sessionId |"
+    assert_contains "$output" "no test/build/git command recorded"
+}
+
+@test "unstamped override fails rather than reporting insufficient signal" {
+    local invalid="$TEST_HOME/invalid.duckdb"
+    duckdb -init /dev/null "$invalid" -c "CREATE TABLE sessions (sessionId VARCHAR)" >/dev/null
+    export SESSIONS_DB="$invalid"
+    run "$SKILLS/tool-efficiency/scripts/analyze.sh" tool-usage Bash
+    [ "$status" -eq 4 ]
+    assert_not_contains "$output" "insufficient signal"
+    run "$SKILLS/prompt-analytics/scripts/analyze.sh" prompt-analysis %
+    [ "$status" -eq 4 ]
+    run "$SKILLS/work-recovery/scripts/recover.sh" s1
+    [ "$status" -eq 4 ]
+    run "$SKILLS/work-recovery/scripts/sessions.sh"
+    [ "$status" -eq 4 ]
+}
+
+@test "missing override fails instead of fabricating empty evidence" {
+    export SESSIONS_DB="$TEST_HOME/missing.duckdb"
+    run "$SKILLS/tool-efficiency/scripts/analyze.sh" tool-usage Bash
+    [ "$status" -eq 4 ]
+    assert_not_contains "$output" "(query failed)"
+}
+
+@test "invalid arguments keep usage status" {
     run "$SKILLS/work-recovery/scripts/recover.sh"
+    [ "$status" -eq 2 ]
+    run "$SKILLS/tool-efficiency/scripts/analyze.sh" bogus Bash
+    [ "$status" -eq 2 ]
+    run "$SKILLS/prompt-analytics/scripts/analyze.sh" bogus %
     [ "$status" -eq 2 ]
 }

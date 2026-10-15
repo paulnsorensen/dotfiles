@@ -9,8 +9,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/db-path.sh"
-DB="$(sessions_db_path)"
+# shellcheck source=skills/session-analytics/scripts/report-lib.sh
+source "$SCRIPT_DIR/report-lib.sh"
 
 usage() {
     sed -n '2,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -29,34 +29,11 @@ fi
 
 hf() { [[ "$HARNESS" == all ]] || printf "AND %sharness = '%s'" "${1:-}" "${HARNESS//\'/\'\'}"; }
 
-ensure_db() {
-    if [[ -z "${SESSIONS_DB:-}" ]]; then
-        if [[ ! -f "$DB" || -z "$(find "$DB" -mmin -60 2>/dev/null)" ]]; then
-            if [[ -f "$SCRIPT_DIR/ingest.py" ]]; then
-                python3 "$SCRIPT_DIR/ingest.py" >/dev/null 2>&1 || true
-            fi
-        fi
-    fi
-    if [[ ! -f "$DB" ]]; then
-        echo "No session database at $DB — no logs ingested yet."
-        exit 0
-    fi
-    local n
-    n="$(duckdb -init /dev/null "$DB" -cmd "SET memory_limit='$(sessions_duckdb_memory_limit)'" -noheader -list -c \
-        "SELECT count(*) FROM information_schema.tables WHERE table_name = 'tool_uses'" 2>/dev/null || echo 0)"
-    if [[ "$n" != 1 ]]; then
-        echo "Session database at $DB has no ingested tables."
-        exit 0
-    fi
-}
-
-run() { duckdb -init /dev/null "$DB" -cmd "SET memory_limit='$(sessions_duckdb_memory_limit)'" -markdown -c "$1" 2>/dev/null || echo "(query failed)"; }
-
-ensure_db
+run() { sessions_package_sql_markdown "$1"; }
 
 case "$REPORT" in
     sql)
-        duckdb -init /dev/null "$DB" -cmd "SET memory_limit='$(sessions_duckdb_memory_limit)'" -markdown -c "$RAW_SQL"
+        run "$RAW_SQL"
         ;;
     tools)
         run "SELECT tool_name, count(*) AS uses
@@ -182,11 +159,6 @@ case "$REPORT" in
         ;;
     latency)
         # Model round-trip cost per turn. duration/ttft/prompt_k are omp-only.
-        # A database from before model_turns existed can still be inside the TTL.
-        sessions_db_has_table "$DB" model_turns || case $? in
-            1) echo "No model_turns table in $DB — run ingest.py --force."; exit 0 ;;
-            *) echo "Cannot query $DB." >&2; exit 1 ;;
-        esac
         run "SELECT harness, model, count(*) AS turns,
                     round(avg(tool_calls), 2) AS calls_per_turn,
                     round(100.0 * avg(CASE WHEN tool_calls = 1 THEN 1 ELSE 0 END) FILTER (WHERE tool_calls IS NOT NULL), 1) AS single_call_pct,

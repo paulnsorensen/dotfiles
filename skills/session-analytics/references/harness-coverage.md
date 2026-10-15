@@ -1,10 +1,9 @@
 # Harness Coverage
 
-Which coding-agent harnesses the analytics layer ingests, where their session
-logs live, and how each is parsed. `ingest.py` runs one **normalizing adapter**
-per harness; every adapter is discovery-gated and best-effort. A harness with no
-accessible logs is recorded here and skipped non-fatally — full coverage of what
-is reachable, not parsing the unparseable.
+The published `agent-session-analytics` package owns discovery and normalization.
+Run `uvx agent-session-analytics@latest schema` for the current schema.
+This page records signal limits for local reports, not an independent adapter contract.
+The package skips harnesses with no accessible logs without failing the other harnesses.
 
 Every canonical table carries a `harness` column (`claude` / `codex` / `omp` /
 `pi` / `cursor` / `copilot`) so one query can compare sources. See
@@ -172,10 +171,9 @@ e.g. token/cost data is absent from most logs (`token-economics` degrades to
 entries, so `stop_hooks` / `permission_denials` are effectively claude-only.
 Packs must degrade gracefully rather than fabricate.
 
-`ingest.py` prints a per-harness **coverage stanza** after every run:
-`results_joined_pct` (tool calls with a joined result — low means per-tool
-error rates for that harness are floors, not estimates) and
-`explicit_error_flag_pct` (results whose error flag came from the source
-rather than the `'false'` backfill). Read it before quoting cross-harness
-error-rate comparisons.
+`uvx agent-session-analytics@latest ingest` returns a JSON `coverage` array.
+It reports `results_joined_pct` (tool calls with a joined result) and
+`explicit_error_flag_pct` (results whose error flag came from the source).
+Read it before quoting cross-harness error-rate comparisons. A low join rate
+makes per-tool error rates floors, not estimates.
 An empty latency report or zero errors is not evidence of speed or no failures. Unsupported native events and missing result joins can produce both outcomes. Inspect native Codex JSONL read-only before making either claim.

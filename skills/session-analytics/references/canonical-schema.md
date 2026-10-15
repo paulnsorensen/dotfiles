@@ -1,10 +1,10 @@
 # Canonical Schema
 
-The shape every harness adapter normalizes into and every analytics pack queries
-against. `ingest.py` loads one canonical row shape (the Claude envelope plus a
-`harness` tag) into `${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/session-analytics/sessions.duckdb` by default, then flattens it into
-the tables below. **Pack authors: write SQL against these tables; never reach
-into a harness's native format.**
+The published `agent-session-analytics` package owns this schema and ingestion.
+Run `uvx agent-session-analytics@latest schema` for its current table reference.
+This local guide explains report-facing fields; it is not an engine definition.
+The package loads canonical rows into `${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/session-analytics/sessions.duckdb` by default.
+**Pack authors: write SQL against these tables; never reach into native log formats.**
 
 Every session-scoped table carries a `harness` column
 (`claude`/`codex`/`omp`/`pi`/`cursor`/`copilot`). Filter or group by it to
@@ -117,8 +117,8 @@ Columns: `harness`, `content`, `sessionId`, `timestamp`.
 
 ## `raw_entries`
 
-The full unflattened canonical rows (post-adapter). Carries `harness` plus every
-column in `ingest.py`'s `RAW_COLUMNS`. Use only when the materialized tables
+The full unflattened canonical rows (post-adapter). It carries `harness` and
+all columns in the published package schema. Use it only when materialized tables
 lack a field you need.
 
 ## Type gotchas

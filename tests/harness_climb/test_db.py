@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest import TestCase, main, mock, skipUnless
@@ -69,18 +69,69 @@ def session_row(
     )
 
 
+class PackageBoundaryTests(TestCase):
+    def test_duck_uses_passed_database_with_package_sql(self) -> None:
+        db = Path("/tmp/selected.duckdb")
+        result = subprocess.CompletedProcess([], 0, '[{"value": 1}]', "")
+        with mock.patch.object(hc_db.subprocess, "run", return_value=result) as run:
+            self.assertEqual(hc_db.duck(db, "SELECT 1 AS value"), [{"value": 1}])
+        args, kwargs = run.call_args
+        self.assertEqual(
+            args[0],
+            ["uvx", "agent-session-analytics@latest", "sql", "--", "SELECT 1 AS value"],
+        )
+        self.assertEqual(kwargs["env"]["SESSIONS_DB"], str(db))
+        self.assertGreater(kwargs["timeout"], 0)
+
+    def test_duck_rejects_non_row_json(self) -> None:
+        result = subprocess.CompletedProcess([], 0, '{"value": 1}', "")
+        with (
+            mock.patch.object(hc_db.subprocess, "run", return_value=result),
+            self.assertRaises(hc_db.DbError),
+        ):
+            hc_db.duck(Path("/tmp/selected.duckdb"), "SELECT 1")
+
+    def test_package_exit_codes_keep_input_and_database_errors_separate(self) -> None:
+        db = Path("/tmp/selected.duckdb")
+        for code, error in (
+            (3, hc_db.DbError),
+            (4, hc_db.DbError),
+            (5, hc_db.InputError),
+        ):
+            result = subprocess.CompletedProcess(
+                [], code, "", '{"message":"SECRET PROMPT"}'
+            )
+            with (
+                mock.patch.object(hc_db.subprocess, "run", return_value=result),
+                self.assertRaises(error) as caught,
+            ):
+                hc_db.duck(db, "SELECT SECRET PROMPT")
+            self.assertNotIn("SECRET PROMPT", str(caught.exception))
+
+    def test_resolve_db_rejects_invalid_package_path(self) -> None:
+        for output in ("{}", '{"path":"relative.duckdb"}', "[]", "not-json"):
+            result = subprocess.CompletedProcess([], 0, output, "")
+            with (
+                mock.patch.dict(os.environ, {"SESSIONS_DB": "/tmp/x.duckdb"}),
+                mock.patch.object(hc_db.subprocess, "run", return_value=result),
+                self.assertRaises(hc_db.DbError),
+            ):
+                hc_db.resolve_db()
+
+
 class EnsureFreshDbTests(TestCase):
-    def test_ingest_runs_when_no_sessions_db_override_is_set(self) -> None:
+    def test_default_refresh_uses_package_sql(self) -> None:
         env = {k: v for k, v in os.environ.items() if k != "SESSIONS_DB"}
+        result = subprocess.CompletedProcess([], 0, '[{"ready":1}]', "")
         with (
             mock.patch.dict(os.environ, env, clear=True),
-            mock.patch.object(hc_db.subprocess, "run") as run,
+            mock.patch.object(hc_db.subprocess, "run", return_value=result) as run,
         ):
-            hc_db.ensure_fresh_db()
-        ((args, _),) = run.call_args_list
-        self.assertEqual(args[0], [sys.executable, str(hc_db.INGEST_PY)])
-        self.assertNotIn("--force", args[0])
-        self.assertTrue(Path(hc_db.INGEST_PY).is_file())
+            self.assertTrue(hc_db.ensure_fresh_db())
+        self.assertEqual(
+            run.call_args.args[0], [*hc_db.PACKAGE, "sql", "SELECT 1 AS ready"]
+        )
+        self.assertNotIn("SESSIONS_DB", run.call_args.kwargs["env"])
 
     def test_sessions_db_override_skips_the_ingest(self) -> None:
         with (
@@ -90,24 +141,14 @@ class EnsureFreshDbTests(TestCase):
             hc_db.ensure_fresh_db()
         run.assert_not_called()
 
-    def test_ingest_output_is_discarded_and_the_run_is_bounded(self) -> None:
-        env = {k: v for k, v in os.environ.items() if k != "SESSIONS_DB"}
-        with (
-            mock.patch.dict(os.environ, env, clear=True),
-            mock.patch.object(hc_db.subprocess, "run") as run,
-        ):
-            hc_db.ensure_fresh_db()
-        ((_, kwargs),) = run.call_args_list
-        self.assertIs(kwargs["stdout"], subprocess.DEVNULL)
-        self.assertEqual(kwargs["timeout"], hc_db.INGEST_TIMEOUT_S)
-
-    def test_refresh_status_follows_the_ingest_outcome(self) -> None:
+    def test_default_refresh_is_bounded_and_checks_output(self) -> None:
         env = {k: v for k, v in os.environ.items() if k != "SESSIONS_DB"}
         outcomes = (
-            (subprocess.CompletedProcess([], 0), True),
-            (subprocess.CompletedProcess([], 1), False),
-            (subprocess.TimeoutExpired("ingest", 1), False),
-            (FileNotFoundError("python"), False),
+            (subprocess.CompletedProcess([], 0, '[{"ready":1}]', ""), True),
+            (subprocess.CompletedProcess([], 0, "[]", ""), False),
+            (subprocess.CompletedProcess([], 4, "", ""), False),
+            (subprocess.TimeoutExpired("sql", 1), False),
+            (FileNotFoundError("uvx"), False),
         )
         for result, expected in outcomes:
             effect = result if isinstance(result, BaseException) else None
@@ -116,9 +157,12 @@ class EnsureFreshDbTests(TestCase):
                 mock.patch.dict(os.environ, env, clear=True),
                 mock.patch.object(
                     hc_db.subprocess, "run", return_value=value, side_effect=effect
-                ),
+                ) as run,
             ):
                 self.assertIs(hc_db.ensure_fresh_db(), expected, result)
+                self.assertEqual(
+                    run.call_args.kwargs["timeout"], hc_db.PACKAGE_TIMEOUT_S
+                )
 
     def test_override_counts_as_fresh(self) -> None:
         with mock.patch.dict(os.environ, {"SESSIONS_DB": "/tmp/x.duckdb"}):
@@ -148,9 +192,13 @@ class EnsureFreshDbTests(TestCase):
             self.assertTrue(issubclass(cls, hc_db.DbError), cls)
             self.assertFalse(issubclass(cls, hc_db.InputError), cls)
 
-    def test_settings_follow_the_environment_despite_the_cache(self) -> None:
+    def test_resolver_follows_the_environment(self) -> None:
         for name in ("/tmp/a.duckdb", "/tmp/b.duckdb"):
-            with mock.patch.dict(os.environ, {"SESSIONS_DB": name}):
+            result = subprocess.CompletedProcess([], 0, json.dumps({"path": name}), "")
+            with (
+                mock.patch.dict(os.environ, {"SESSIONS_DB": name}),
+                mock.patch.object(hc_db.subprocess, "run", return_value=result),
+            ):
                 self.assertEqual(hc_db.resolve_db(), Path(name))
 
     def test_every_database_reader_refreshes_first(self) -> None:
@@ -179,7 +227,14 @@ class EnsureFreshDbTests(TestCase):
 @skipUnless(HAVE_DUCKDB, "duckdb CLI not installed")
 class LoadRowsTests(RepoCase):
     def build(self, *extra: str, sessions_ddl: str = SESSIONS_DDL) -> Path:
-        return make_db(self.dir / "s.duckdb", sessions_ddl, *OTHER_DDL, *extra)
+        return make_db(
+            self.dir / "s.duckdb",
+            sessions_ddl,
+            *OTHER_DDL,
+            "CREATE TABLE schema_info (version INTEGER)",
+            "INSERT INTO schema_info VALUES (1)",
+            *extra,
+        )
 
     def build_session_db(self, t: float) -> Path:
         return self.build(
@@ -239,8 +294,15 @@ class LoadRowsTests(RepoCase):
     def test_database_without_the_new_columns_names_the_reingest(self) -> None:
         ddl = SESSIONS_DDL.replace(", parent_session_id VARCHAR", "")
         db = self.build(sessions_ddl=ddl)
-        with self.assertRaisesRegex(hc_db.SchemaOutdated, "re-run ingest.py --force"):
+        with self.assertRaisesRegex(
+            hc_db.SchemaOutdated,
+            re.escape("run uvx agent-session-analytics@latest ingest --force"),
+        ):
             hc_db.load_rows(db, gate_json(), AFTER, AFTER + DAY)
+
+    def test_duck_accepts_sql_that_starts_with_a_comment(self) -> None:
+        db = self.build()
+        self.assertEqual(hc_db.duck(db, "-- note\nSELECT 1 AS n"), [{"n": 1}])
 
     def test_database_without_the_new_columns_is_inconclusive_schema_outdated(
         self,

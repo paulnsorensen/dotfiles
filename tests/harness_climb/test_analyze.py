@@ -141,7 +141,7 @@ class AnalyzeCommandTests(unittest.TestCase):
         path.write_text(json.dumps(data))
         return path
 
-    def test_db_path_comes_from_db_path_sh(self) -> None:
+    def test_db_path_comes_from_package(self) -> None:
         rc, out = self.analyze()
         self.assertEqual((rc, out["status"]), (1, "no-db"))
         self.assertEqual(out["db"], str(self.db))
@@ -152,8 +152,8 @@ class AnalyzeCommandTests(unittest.TestCase):
     def test_db_path_is_never_hardcoded_in_the_cli(self) -> None:
         source = (CLI_PATH.parent / "hc_db.py").read_text()
         self.assertNotIn("sessions.duckdb", source)
-        self.assertIn("db-path.sh", source)
-        self.assertIn("sessions_db_path", source)
+        self.assertIn("agent-session-analytics@latest", source)
+        self.assertIn('"db-path"', source)
 
     def test_invalid_findings_exit_2_with_errors_and_no_db_read(self) -> None:
         bad = self.findings({"failure_modes": [{"counts": {}}], "success_habits": [{}]})
@@ -182,6 +182,8 @@ class AnalyzeCommandTests(unittest.TestCase):
     def test_counts_cover_claude_and_codex_only(self) -> None:
         sql = """
         CREATE TABLE sessions(harness VARCHAR, sessionId VARCHAR, first_seen VARCHAR);
+        CREATE TABLE schema_info(version INTEGER);
+        INSERT INTO schema_info VALUES (1);
         CREATE TABLE tool_results(harness VARCHAR, sessionId VARCHAR, timestamp VARCHAR, is_error VARCHAR);
         INSERT INTO sessions SELECT h, h || i::VARCHAR, CAST(now() AS VARCHAR)
           FROM (VALUES ('claude'), ('codex'), ('pi')) AS v(h), range(2) AS r(i);

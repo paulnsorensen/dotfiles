@@ -40,6 +40,10 @@ A round runs the first step that applies: stop check, field gate due, analyze, p
 
 ## Deployment
 
-The skill lives in `skills/harness-climb/` and Claude selects it through `claude.skills` in `chezmoi/.chezmoidata/claude.yaml`. Tests: `tests/harness-climb.bats` wraps `tests/harness_climb/`. Session analytics gained `sessions.version`, `sessions.parent_session_id`, `model_turns.context_tokens`, and Codex `model_turns` token rows for this loop; see `skills/session-analytics/references/canonical-schema.md` and [[operations/session-analytics-gotchas]]. A database built before PR #1224 lacks the new columns, and `load_rows` asks for `ingest.py --force`.
+The skill lives in `skills/harness-climb/` and Claude selects it through `claude.skills` in `chezmoi/.chezmoidata/claude.yaml`. Tests: `tests/harness-climb.bats` wraps `tests/harness_climb/`. Session analytics gained `sessions.version`, `sessions.parent_session_id`, `model_turns.context_tokens`, and Codex `model_turns` token rows for this loop; see `skills/session-analytics/references/canonical-schema.md` and [[operations/session-analytics-gotchas]]. A database built before PR #1224 lacks the new columns. The published package owns rebuilding it through `uvx agent-session-analytics@latest ingest --force`; `load_rows` no longer calls a dotfiles engine.
 
-_Source: PR #1224 review and cure (`.cheese/affinage/pr-1224.md`, `.cheese/cure/pr-1224.md`) · Updated: 2026-10-09_
+The package owns schema and ingestion so `harness-climb` reads one published contract. Its own SQL, statistical rules, and database-error split stay local. Consumer fixtures set an isolated `HOME` because the package discovers OMP and Pi logs below it; configured Claude, Codex, and Cursor roots alone do not prevent personal-log reads.[^package-boundary]
+
+_Source: PR #1224 review and cure; C3/C4 package consumer migration · Updated: 2026-10-11_
+
+[^package-boundary]: `skills/harness-climb/scripts/hc_db.py`; `tests/harness_climb/test_package_integration.py`; `tests/lib/session-analytics-package.bash`.
