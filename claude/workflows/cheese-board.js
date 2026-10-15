@@ -243,11 +243,15 @@ const focusRule = focus ? 'Limit the strategy to this focus. Drop or deprioritiz
 const focusData = (name = 'focus') => (focus ? data(name, focus) : null)
 const repo = input.repo || null
 const repoFlag = repo ? ` --repo ${repo}` : ''
+// An invalid optional number falls back to its default, and a clamp goes to log(), so no cap is silent.
+if (input.limit != null && !(Number.isInteger(input.limit) && input.limit > 0)) log(`args.limit must be a positive integer; using ${LIMITS.triageLimit}.`)
 let limit = Number.isInteger(input.limit) && input.limit > 0 ? input.limit : LIMITS.triageLimit
 if (limit > LIMITS.maxTriageLimit) {
   log(`Requested limit ${limit} exceeds max ${LIMITS.maxTriageLimit}; clamping.`)
   limit = LIMITS.maxTriageLimit
 }
+if (input.maxSpecs != null && !(Number.isInteger(input.maxSpecs) && input.maxSpecs > 0)) log(`args.maxSpecs must be a positive integer; using ${LIMITS.maxSpecs}.`)
+if (Number.isInteger(input.maxSpecs) && input.maxSpecs > LIMITS.maxSpecsCap) log(`Requested maxSpecs ${input.maxSpecs} exceeds max ${LIMITS.maxSpecsCap}; clamping.`)
 let maxSpecs = Number.isInteger(input.maxSpecs) && input.maxSpecs > 0 ? Math.min(input.maxSpecs, LIMITS.maxSpecsCap) : LIMITS.maxSpecs
 const rawSeeds = Array.isArray(input.ideas) ? input.ideas : []
 const seedIdeas = rawSeeds.filter((s) => typeof s === 'string' && s.trim()).map((s) => s.trim())
@@ -328,18 +332,18 @@ const STRATEGY_SCHEMA = {
 
 const ADVICE_SCHEMA = {
   type: 'object',
-  required: ['verdict', 'concerns', 'guidance'],
+  required: ['verdict', 'concerns', 'guidance', 'blocking_questions'],
   properties: {
     verdict: { type: 'string', enum: ADVICE_VERDICTS },
     concerns: { type: 'array', items: { type: 'string' } },
     guidance: { type: 'string', description: 'Under 80 words' },
     blocking_questions: { type: 'array', description: 'Questions only the user can settle; leave empty when none', items: {
       type: 'object',
-      required: ['question'],
+      required: ['question', 'options', 'recommended', 'evidence'],
       properties: {
         question: { type: 'string' },
         options: { type: 'array', items: { type: 'string' } },
-        recommended: { type: 'string' },
+        recommended: { type: 'string', description: 'one of options, or empty' },
         evidence: { type: 'string' },
       },
     } },
@@ -618,6 +622,22 @@ const moldReasons = (i) => [
   ...(i.overrides.length ? [`overrides ${i.overrides.join(', ')}`] : []),
   ...researchReason(i),
 ]
+// Research questions compare by their one-line, lower-case text.
+const questionKey = (q) => oneLine(q).toLowerCase()
+// Code removes a repeated research question, so one initiative never starts two brie-ground children for it.
+function uniqueQuestions(id, questions) {
+  const seen = new Set()
+  return questions.map(oneLine).filter((q) => {
+    if (!q) return false
+    if (!seen.has(questionKey(q))) {
+      seen.add(questionKey(q))
+      return true
+    }
+    log(`${id}: dropped a repeated research question: ${q}`)
+    dropped.push({ kind: 'research_question', ref: `${id}: ${q}`, reason: 'repeats an earlier question of the same initiative' })
+    return false
+  })
+}
 function normalizeStrategy(s) {
   const usedThemes = new Set(s.initiatives.map((i) => i.theme))
   const unused = s.themes.filter((t) => !usedThemes.has(t.id)).map((t) => t.id)
@@ -627,7 +647,7 @@ function normalizeStrategy(s) {
     ...s,
     themes: s.themes.filter((t) => usedThemes.has(t.id)),
     initiatives: s.initiatives.map((raw) => {
-      const i = { ...raw, overrides: raw.overrides.map(normRef), research_questions: raw.research_questions.map(oneLine).filter(Boolean) }
+      const i = { ...raw, overrides: raw.overrides.map(normRef), research_questions: uniqueQuestions(raw.id, raw.research_questions) }
       if (i.lane !== 'spec') return { ...i, slug: '' }
       const reasons = INTERACTIVE ? researchReason(i) : moldReasons(i)
       if (!reasons.length) return i
@@ -1080,7 +1100,23 @@ if (resume) {
   const issueIds = new Set(strategyIssues.map((i) => i.id))
   const rawIdeas = ideaResult && ideaResult.value ? ideaResult.value.ideas : []
   // ideaCheck rejects a blank title or source, so every returned idea is complete.
-  let keptIdeas = rawIdeas
+  // Code removes a repeated idea: the same title, or a second idea for the same existing spec.
+  const ideaKey = (i) => oneLine(i.title).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const seenTitles = new Set()
+  const seenSpecs = new Set()
+  const repeats = []
+  let keptIdeas = rawIdeas.filter((i) => {
+    const spec = blank(i.existing_spec) ? '' : i.existing_spec.trim()
+    if (seenTitles.has(ideaKey(i)) || (spec && seenSpecs.has(spec))) {
+      repeats.push(oneLine(i.title))
+      return false
+    }
+    seenTitles.add(ideaKey(i))
+    if (spec) seenSpecs.add(spec)
+    return true
+  })
+  if (repeats.length) log(`Dropped ${repeats.length} repeated idea(s): ${repeats.join('; ')}`)
+  for (const title of repeats) dropped.push({ kind: 'idea', ref: title, reason: 'repeats an earlier idea or its existing spec' })
   if (keptIdeas.length > LIMITS.maxIdeas) {
     log(`Kept the first ${LIMITS.maxIdeas} of ${keptIdeas.length} ideas; dropped: ${keptIdeas.slice(LIMITS.maxIdeas).map((i) => oneLine(i.title)).join('; ')}`)
     for (const i of keptIdeas.slice(LIMITS.maxIdeas)) dropped.push({ kind: 'idea', ref: oneLine(i.title), reason: `over the cap of ${LIMITS.maxIdeas} ideas` })
@@ -1287,12 +1323,17 @@ const pathBySlug = new Map(resolvedValue.specs.map((s) => [s.slug, s]))
 const reportPath = resolvedValue.report_path
 
 
-// brieGround (shared prelude) runs one brie-ground child per question.
+// brieGround (shared prelude) runs one brie-ground child per distinct question. Initiatives that ask the same question share its child.
+const researchRuns = new Map()
 async function research(base, questions) {
   const found = []
   for (const question of questions) {
-    if (floorReached()) return { result: { ...base, status: 'skipped', reason: 'budget floor reached before research' } }
-    const r = await brieGround(question)
+    const key = questionKey(question)
+    if (!researchRuns.has(key)) {
+      if (floorReached()) return { result: { ...base, status: 'skipped', reason: 'budget floor reached before research' } }
+      researchRuns.set(key, brieGround(question))
+    }
+    const r = await researchRuns.get(key)
     if (r.failed) return { result: { ...base, status: 'failed', reason: r.failed } }
     if (r.unsettled) return { result: { ...base, status: 'mold', reason: `research could not settle: ${question}`, open_questions: r.unsettled } }
     found.push(r.found)
@@ -1405,13 +1446,22 @@ for (const init of specInits) {
 }
 // A fresh initiative with open questions or leverage triggers asks before it spends research or a draft.
 const asksFirstBy = new Map(jobs.map(({ init, prior }) => [init.id, INTERACTIVE && !prior && Boolean(init.leverage_triggers.length || init.open_questions.length)]))
-// Code caps brie-ground child runs across the jobs, in priority order.
+// A resumed run reuses the answers that its earlier outcomes hold, at no cost to the cap.
+for (const o of priorOutcomes.values()) {
+  for (const f of Array.isArray(o.research) ? o.research : []) if (f && typeof f.question === 'string') researchRuns.set(questionKey(f.question), Promise.resolve({ found: f }))
+}
+// Code caps brie-ground child runs across the jobs, in priority order. A question that is already planned costs no slot.
+const plannedKeys = new Set(researchRuns.keys())
 const researchPlan = new Map(jobs.map(({ init, prior }) => {
   if (prior && Array.isArray(prior.research)) return [init.id, []]
   // All or nothing: a partial plan sends the initiative to mold and wastes its slots.
   const qs = init.research_questions
-  const planned = asksFirstBy.get(init.id) || pathBySlug.get(init.slug).exists || qs.length > LIMITS.maxResearch - researchUsed ? [] : qs
-  researchUsed += planned.length
+  const fresh = [...new Set(qs.map(questionKey))].filter((k) => !plannedKeys.has(k))
+  const planned = asksFirstBy.get(init.id) || pathBySlug.get(init.slug).exists || fresh.length > LIMITS.maxResearch - researchUsed ? [] : qs
+  if (planned.length) {
+    for (const k of fresh) plannedKeys.add(k)
+    researchUsed += fresh.length
+  }
   return [init.id, planned]
 }))
 const minted = jobs.length ? await parallel(jobs.map(({ init, prior, user }) => () => mintSpec(init, prior, user, asksFirstBy.get(init.id)))) : []
@@ -1480,7 +1530,8 @@ const moldList = [
 const deferred = strategy.initiatives.filter((i) => i.lane === 'defer').map((i) => ({ initiative: i.id, title: i.title, items: i.items, reason: i.rationale }))
 const specFailures = [...specById.values()].filter((r) => ['failed', 'skipped'].includes(r.status) || (r.status === 'written' && !r.verified))
 const existing = [...specById.values()].filter((r) => r.status === 'exists')
-const researchDone = [...specById.values()].flatMap((r) => r.research || [])
+// Initiatives that share a question share its answer, so the report lists each answer once.
+const researchDone = [...new Map([...specById.values()].flatMap((r) => r.research || []).map((f) => [questionKey(f.question), f])).values()]
 const overriding = strategy.initiatives.filter((i) => i.overrides.length)
 const coverage = {
   issues: issues.length,
