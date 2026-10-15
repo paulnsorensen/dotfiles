@@ -184,6 +184,48 @@ test('extract_40idsOverLimit_dispatchesNoAdvisorOrCook', async () => {
   assert.equal(starting(trace, 'advise').length, 0)
 })
 
+// ---- Resolve: escaped spec_text (issue #1311) ----
+
+const escaped = (text) => text.replaceAll('\n', '\\n')
+
+test('resolve_escapedNewlineSpecText_redoesResolveThenRunsCriteria', async () => {
+  let n = 0
+  const { result, trace } = await run(single, { resolve: () => resolved({ spec_text: n++ ? SPEC2 : escaped(SPEC2) }) })
+
+  assert.deepEqual(starting(trace, 'resolve').map((c) => c.opts.label), ['resolve', 'resolve:redo1'])
+  assert.match(calls(trace, 'resolve:redo1')[0].prompt, /escaped/)
+  assert.deepEqual(plain(dataOf(calls(trace, 'criteria')[0].prompt, 'acceptance_ids')), ['AC-1', 'AC-2'])
+  assert.equal(result.verification.status, 'passed')
+})
+
+test('resolve_escapedNewlineSpecTextEveryAttempt_failsWithAReasonBeforeAnyOtherAgent', async () => {
+  const { result, trace } = await run(single, { resolve: () => resolved({ spec_text: escaped(SPEC2) }) })
+
+  assert.match(result.error, /^Resolve failed: .*escaped/)
+  assert.deepEqual(labels(trace).filter((l) => !l.startsWith('resolve')), [])
+})
+
+test('resolve_specTextWithRealNewlinesAndLiteralBackslashN_isAccepted', async () => {
+  const spec = `${SPEC2}\nUse printf 'a\\nb' in the check.\n`
+  const { trace } = await run(single, { resolve: () => resolved({ spec_text: spec }) })
+
+  assert.deepEqual(starting(trace, 'resolve').map((c) => c.opts.label), ['resolve'])
+  assert.deepEqual(plain(dataOf(calls(trace, 'criteria')[0].prompt, 'acceptance_ids')), ['AC-1', 'AC-2'])
+})
+
+test('resolve_prompt_readsTheSpecPathFromTheArtifactPathJson', async () => {
+  const { trace } = await run(single)
+
+  assert.match(calls(trace, 'resolve')[0].prompt, /artifact-path specs parent \| python3 -c 'import json,sys; print\(json\.load\(sys\.stdin\)\["path"\]\)'/)
+})
+
+test('extract_zeroAcIds_logsThatCriteriaIsSkipped', async () => {
+  const { trace } = await run(single, { resolve: () => resolved({ spec_text: '# Spec\n\nno acceptance lines here\n' }) })
+
+  assert.equal(starting(trace, 'criteria').length, 0)
+  assert.match(trace.logs.join('\n'), /no "- AC-n:" line; Criteria and Verify are skipped/)
+})
+
 // ---- checkCriteria: coverage ----
 
 test('checkCriteria_extraId_failsAfterTheTypedBoundBeforeAnyAdvisorOrCook', async () => {
