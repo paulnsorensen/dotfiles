@@ -15,8 +15,9 @@ path = "agent-profile/AGENTS.md"
 max_tokens = 600
 
 [[source]]
+# 740: acceptance-check lifecycle, flaky-test, plate, and wheypoint rules (2026-10-14).
 path = "agents/AGENTS.md"
-max_tokens = 550
+max_tokens = 740
 
 [[source]]
 # 520: PR #1051 added section-read and coder re-dispatch rules (2026-09-24).
@@ -111,15 +112,16 @@ max_tokens = 5000
 
 # 1060: parallel-call batching and read-section handoff rules (2026-09-28).
 # 1120: preamble tilth_write and no-redirect rules (2026-10-01).
+# 1310: global AGENTS.md acceptance-check lifecycle rules (2026-10-14).
 [[stack]]
 name = "global_codex"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1120
+max_tokens = 1310
 
 [[stack]]
 name = "global_claude"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1120
+max_tokens = 1310
 
 [[stack]]
 name = "repo_codex"
@@ -141,10 +143,11 @@ name = "omp"
 sources = ["chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"]
 max_tokens = 500
 
+# 900: global AGENTS.md acceptance-check lifecycle rules (2026-10-14).
 [[stack]]
 name = "pi"
 sources = ["agents/AGENTS.md", "chezmoi/dot_pi/private_agent/APPEND_SYSTEM.md"]
-max_tokens = 850
+max_tokens = 900
 
 [[stack]]
 name = "copilot_coding_max"
