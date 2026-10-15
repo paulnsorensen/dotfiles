@@ -747,3 +747,28 @@ test('a null filing-batch result marks each issue unfiled instead of crashing', 
   assert.notEqual(result.issues[0].created, true)
   assert.match(result.issues[0].skipped_reason, /filing batch failed: agent issues:batch-1 returned no result/)
 })
+
+test('the refuter sees the rubric and severity guide, and no evaluator prompt asks for shell grep', async () => {
+  const { globals, trace } = build({
+    slices: [slice('x')],
+    on: ({ opts }) => {
+      if (opts.label === 'eval:x') return { slice: 'x', findings: [finding({ severity: 'high' })] }
+      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('refute:')) return { refuted: true, reason: 'misapplied' }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  await workflow.run({ ...globals, args: { dry_run: true } })
+
+  const refuter = trace.agents.find((a) => a.opts.label.startsWith('refute:'))
+  assert.ok(refuter, 'a high finding must reach the refuter')
+  assert.match(refuter.prompt, /SLICED BREAD ARCHITECTURE RUBRIC/)
+  assert.match(refuter.prompt, /Severity: blocker = /)
+  const evaluators = trace.agents.filter((a) => a.opts.label.startsWith('eval:'))
+  assert.equal(evaluators.length, 2)
+  for (const evaluator of evaluators) {
+    assert.match(evaluator.prompt, /tilth_search/)
+    assert.doesNotMatch(evaluator.prompt, /grep\/read|by grepping/)
+  }
+})

@@ -242,7 +242,7 @@ function evalPrompt(item, sliceIndex) {
   const shared = [
     RUBRIC,
     SEVERITY_GUIDE,
-    'Search and read via the available code tools (tilth via ToolSearch if present, else grep/read). Cite exact file:line for every finding; quote the offending code in `evidence` and state its behavioral impact.',
+    'Search and read with the tilth tools (load tilth_search and tilth_read via ToolSearch); host hooks deny shell grep, cat, and sed on repository files. Cite exact file:line for every finding; quote the offending code in `evidence` and state its behavioral impact.',
   ]
   if (item.kind === 'cross-slice') {
     const roots = sliceIndex.map((s) => `${s.name} (${s.path}, ${s.kind})`).join('; ')
@@ -255,7 +255,7 @@ function evalPrompt(item, sliceIndex) {
       '- systemic dependency-direction inversions,',
       '- common/ importing sibling domains, or common/ hoarding single-slice code,',
       '- crust bypasses counted across consumers (an internal import used from 3 slices is high, not low).',
-      'Build the import graph by grepping import/require/use statements across slice roots. Do not re-audit intra-slice quality.',
+      'Build the import graph with tilth_search queries for import/require/use statements across slice roots. Do not re-audit intra-slice quality.',
       'Return slice="cross-slice".',
     ].join('\n')
   }
@@ -298,7 +298,9 @@ function verifyPrompt(f) {
     `  [${f.dimension}:${f.severity}] ${f.file}:${f.line}`,
     untrustedBlock('CLAIM', f.claim),
     untrustedBlock('EVIDENCE', f.evidence),
-    'Open the cited file and judge: does the rubric rule actually apply here, and is the severity honest (not inflated by 2+ levels)?',
+    RUBRIC,
+    SEVERITY_GUIDE,
+    'Open the cited file and judge against the rubric and severity guide above: does the rubric rule actually apply here, and is the severity honest (not inflated by 2+ levels)?',
     'refuted=true if the rule is misapplied, the finding misreads the code, or the severity is badly inflated. Default to refuted=true when uncertain.',
   ].join('\n')
 }
