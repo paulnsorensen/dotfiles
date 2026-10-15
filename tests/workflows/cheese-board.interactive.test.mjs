@@ -49,8 +49,8 @@ const DRAFT = {
   criteria: ['`bin/demo --version` exits 0.'], non_goals: ['No other command changes.'],
   leverage_triggers: [], open_questions: [],
 }
-const APPROVE = { verdict: 'approve', concerns: [], guidance: 'ok' }
-const REVISE = { verdict: 'revise', concerns: ['Split the work differently.'], guidance: 'rethink' }
+const APPROVE = { verdict: 'approve', concerns: [], guidance: 'ok', blocking_questions: [] }
+const REVISE = { verdict: 'revise', concerns: ['Split the work differently.'], guidance: 'rethink', blocking_questions: [] }
 
 const specText = (prompt) => JSON.parse(/<data name="spec_text">\n([\s\S]*?)\n<\/data>/.exec(prompt)[1])
 const chars = (text) => [...text].length
@@ -519,7 +519,7 @@ test('F15: the research cap carries across a resume through research_used', asyn
   assert.match(molded.reason, /research cap of 4 reached; unresearched: d\?/)
 })
 
-const TWO_CONCERNS = { verdict: 'revise', concerns: ['Order the mold list.', 'Cite the right line.'], guidance: 'two fixes' }
+const TWO_CONCERNS = { verdict: 'revise', concerns: ['Order the mold list.', 'Cite the right line.'], guidance: 'two fixes', blocking_questions: [] }
 const BAD_FIX = Object.fromEntries(['write:report:fix', 'write:report:fix:redo1', 'write:report:fix:redo2', 'write:report:fix:redo3'].map((label) => [label, { path: 'wrong.md', chars: 1 }]))
 
 test('F5: a done checkpoint with two questions blocks until every one has an answer', async () => {
