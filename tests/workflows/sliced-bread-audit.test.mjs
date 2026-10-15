@@ -21,7 +21,7 @@ const finding = (over = {}) => ({
 })
 // Citation and refuter agents take numbered batches; these mocks answer every item in the batch prompt.
 const batchItems = (prompt) => prompt.split(/^\d+\. \[/m).slice(1)
-const citeAll = (prompt) => ({ results: batchItems(prompt).map((_, index) => ({ index, ok: true })) })
+const citeAll = (prompt) => ({ results: batchItems(prompt).map((_, index) => ({ index, ok: true, reason: '' })) })
 const verdicts = (prompt, verdict) => ({
   verdicts: batchItems(prompt).map((item, index) => ({ index, ...(typeof verdict === 'function' ? verdict(item) : verdict) })),
 })
@@ -834,4 +834,75 @@ test('the refuter cap keeps the highest-severity findings, not the earliest slic
   // Thirteen highs plus one blocker: the blocker and eleven highs fill the 12-finding cap.
   assert.equal(result.floor_unverified.length, 2)
   for (const entry of result.floor_unverified) assert.match(entry, /^\[high\].*\(past the 12-finding refuter cap\)$/)
+})
+
+test('the citation schema requires a reason, so a cite result without one fails schema validation', async () => {
+  const { globals, trace } = build({
+    slices: [slice('x')],
+    on: ({ opts }) => {
+      if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
+      if (opts.label.startsWith('cite:')) return { results: [{ index: 0, ok: true }] }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const result = await workflow.run({ ...globals, args: { dry_run: true } })
+  const cite = trace.agents.find((a) => a.opts.label.startsWith('cite:'))
+  assert.deepEqual([...cite.opts.schema.properties.results.items.required], ['index', 'ok', 'reason'])
+  assert.equal(result.confirmed.length, 0)
+  assert.match(result.floor_unverified[0], /citation check failed/)
+})
+
+test('code rejects a finding with empty evidence or a line below 1 before citation', async () => {
+  const { globals, trace } = build({
+    slices: [slice('x')],
+    on: ({ opts, prompt }) => {
+      if (opts.label === 'eval:x') {
+        return {
+          slice: 'x',
+          findings: [
+            finding({ file: 'domains/x/empty.py', evidence: '   ' }),
+            finding({ file: 'domains/x/zero.py', line: 0 }),
+            finding({ file: 'domains/x/good.py' }),
+          ],
+        }
+      }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const result = await workflow.run({ ...globals, args: { dry_run: true } })
+  const citePrompt = trace.agents.find((a) => a.opts.label.startsWith('cite:')).prompt
+  assert.doesNotMatch(citePrompt, /empty\.py|zero\.py/)
+  assert.deepEqual([...result.confirmed.map((f) => f.location)], ['domains/x/good.py:40'])
+  assert.equal(result.refuted.length, 2)
+  assert.match(result.refuted.find((r) => r.includes('empty.py')), /\(invalid: evidence is empty\)$/)
+  assert.match(result.refuted.find((r) => r.includes('zero.py')), /\(invalid: line 0 is not a positive integer\)$/)
+})
+
+test('duplicate slice paths get one evaluator', async () => {
+  const { globals, trace } = build({
+    slices: [slice('x'), slice('x-again', { path: './domains/x/' }), slice('y')],
+    on: ({ opts }) => {
+      if (opts.label.startsWith('eval:')) return { slice: opts.label.slice(5), findings: [] }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  await workflow.run({ ...globals, args: { dry_run: true } })
+  assert.deepEqual(labels(trace).filter((l) => l.startsWith('eval:')).sort(), ['eval:cross-slice', 'eval:x', 'eval:y'])
+  assert.ok(trace.logs.some((l) => /Removed 1 duplicate slice path/.test(l)))
+})
+
+test('no evaluator starts when the remaining budget is below the minimum for one Opus agent', async () => {
+  const { globals, trace } = createRuntime({
+    budgetTotal: 1000000,
+    budgetSpent: 1000000 - 20000,
+    respond: ({ opts }) => {
+      if (opts.label === 'map:slices') return { layout: 'flat', slices: [slice('x')] }
+      if (opts.label === 'map:gh-setup') return { gh_ok: true, repo: 'o/n', existing_fingerprints: [], error: '' }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const result = await workflow.run({ ...globals, args: { dry_run: true } })
+  assert.equal(labels(trace).some((l) => l.startsWith('eval:')), false)
+  assert.match(result.truncated, /budget exhausted before Evaluate/)
 })

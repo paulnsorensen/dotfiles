@@ -70,6 +70,8 @@ const SEV_RANK = { blocker: 3, high: 2, medium: 1, low: 0 }
 // Each slice and each refuter is one opus agent, so code caps both counts for the whole run.
 const MAX_SLICES = 20
 const MAX_REFUTES = 12
+// An Opus evaluator or refuter spends far more than an agent's ~25k-token startup, so no agent starts below this remaining budget.
+const MIN_BUDGET = 50000
 if (!Object.hasOwn(SEV_RANK, MIN_SEVERITY)) {
   return { error: `min_severity must be one of blocker|high|medium|low, got: ${MIN_SEVERITY}` }
 }
@@ -104,6 +106,11 @@ const SEVERITY_GUIDE = [
 ].join('\n')
 
 // ── schemas ─────────────────────────────────────────────────────────────
+const DIMENSIONS = [
+  'import-direction', 'crust-integrity', 'model-purity', 'growth-justification', 'event-usage',
+  'correctness', 'security', 'complexity', 'deslop', 'tests',
+]
+
 const SLICE_MAP_SCHEMA = {
   type: 'object',
   required: ['slices', 'layout'],
@@ -136,13 +143,7 @@ const FINDINGS_SCHEMA = {
         type: 'object',
         required: ['dimension', 'severity', 'file', 'line', 'claim', 'evidence', 'impact', 'recommendation'],
         properties: {
-          dimension: {
-            type: 'string',
-            enum: [
-              'import-direction', 'crust-integrity', 'model-purity', 'growth-justification',
-              'event-usage', 'correctness', 'security', 'complexity', 'deslop', 'tests',
-            ],
-          },
+          dimension: { type: 'string', enum: DIMENSIONS },
           severity: { type: 'string', enum: ['blocker', 'high', 'medium', 'low'] },
           file: { type: 'string' },
           line: { type: 'integer' },
@@ -194,11 +195,11 @@ const CITATION_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        required: ['index', 'ok'],
+        required: ['index', 'ok', 'reason'],
         properties: {
           index: { type: 'integer' },
           ok: { type: 'boolean' },
-          reason: { type: 'string' },
+          reason: { type: 'string', description: 'why the citation fails; "" when ok=true' },
         },
       },
     },
@@ -292,7 +293,7 @@ function citationPrompt(findings) {
     'For EACH numbered finding, open the cited file and verify:',
     '(a) the quoted evidence actually appears within ~10 lines of the cited line, and',
     '(b) the path is production source — not test, vendored, generated, or build output.',
-    'Return one results entry per finding, using the same 0-based index. ok=false with a short reason when either check fails or the file cannot be read. Do not judge severity or rule choice — only the citations.',
+    'Return one results entry per finding, using the same 0-based index. ok=false with a short reason when either check fails or the file cannot be read; reason="" when ok=true. Do not judge severity or rule choice — only the citations.',
     '',
     ...numberedFindings(findings),
   ].join('\n')
@@ -466,7 +467,7 @@ log(`Mapped ${sliceMap.slices.length} slices (${sliceMap.layout}); gh ${setup.gh
 
 // ── Evaluate + Verify ───────────────────────────────────────────────────
 phase('Evaluate')
-const budgetExhausted = () => budget.total != null && budget.remaining() <= 0
+const budgetExhausted = () => budget.total != null && budget.remaining() < MIN_BUDGET
 if (budgetExhausted()) {
   log('Budget exhausted before Evaluate — returning partial report with no slice findings.')
   return {
@@ -499,9 +500,14 @@ const failures = []
 let skippedSlices = 0
 
 const crossItem = { name: 'cross-slice', path: SCOPE, kind: 'cross-slice' }
-const auditedSlices = sliceMap.slices.slice(0, MAX_SLICES)
-for (const s of sliceMap.slices.slice(MAX_SLICES)) failures.push({ stage: 'evaluate', slice: s.name, error: `over the ${MAX_SLICES}-slice cap` })
-if (sliceMap.slices.length > MAX_SLICES) log(`Slice cap: evaluating ${MAX_SLICES} of ${sliceMap.slices.length} slices.`)
+// The mapper can list one directory twice; each copy would cost one more Opus evaluator.
+const slicePathKey = (s) => String(s.path || '').trim().replace(/^\.\//, '').replace(/\/+$/, '') || '.'
+const seenSlicePaths = new Set()
+const uniqueSlices = sliceMap.slices.filter((s) => !seenSlicePaths.has(slicePathKey(s)) && seenSlicePaths.add(slicePathKey(s)))
+if (uniqueSlices.length < sliceMap.slices.length) log(`Removed ${sliceMap.slices.length - uniqueSlices.length} duplicate slice path(s) before Evaluate.`)
+const auditedSlices = uniqueSlices.slice(0, MAX_SLICES)
+for (const s of uniqueSlices.slice(MAX_SLICES)) failures.push({ stage: 'evaluate', slice: s.name, error: `over the ${MAX_SLICES}-slice cap` })
+if (uniqueSlices.length > MAX_SLICES) log(`Slice cap: evaluating ${MAX_SLICES} of ${uniqueSlices.length} slices.`)
 const evaluationItems = [...auditedSlices, crossItem]
 const evaluationResults = await runBounded(evaluationItems, async (item) => {
   if (budgetExhausted()) {
@@ -524,11 +530,23 @@ for (const { item, outcome } of evaluationResults) {
 const rawAll = evaluationResults
   .filter(({ outcome }) => outcome.ok)
   .flatMap(({ item, outcome }) => outcome.value.findings.map((finding) => ({ ...finding, slice: item.name })))
-const belowAll = rawAll.filter((f) => SEV_RANK[f.severity] < SEV_RANK[MIN_SEVERITY])
-const floorAll = sortDesc(rawAll.filter((f) => SEV_RANK[f.severity] >= SEV_RANK[MIN_SEVERITY]))
 const confirmedAll = []
 const refutedAll = []
 const unverifiedAll = []
+// A finding without quoted evidence or a real line cannot be cited, so code rejects it before any agent sees it.
+const invalidReason = (f) => {
+  if (!String(f.evidence || '').trim()) return 'invalid: evidence is empty'
+  if (!Number.isInteger(f.line) || f.line < 1) return `invalid: line ${JSON.stringify(f.line)} is not a positive integer`
+  return ''
+}
+const validAll = []
+for (const f of rawAll) {
+  const reason = invalidReason(f)
+  if (reason) refutedAll.push({ ...f, refute_reason: reason })
+  else validAll.push(f)
+}
+const belowAll = validAll.filter((f) => SEV_RANK[f.severity] < SEV_RANK[MIN_SEVERITY])
+const floorAll = sortDesc(validAll.filter((f) => SEV_RANK[f.severity] >= SEV_RANK[MIN_SEVERITY]))
 
 // Citation check after the Evaluate barrier: one explorer per CITE_BATCH floor findings, across slices.
 phase('Verify')
@@ -681,14 +699,10 @@ if (DRY_RUN) {
 
 const filed = issues.filter((issue) => issue.created)
 log(`Filed ${filed.length}/${toFile.length} issues${DRY_RUN ? ' (dry run)' : ''}`)
-const dimensions = [
-  'import-direction', 'crust-integrity', 'model-purity', 'growth-justification', 'event-usage',
-  'correctness', 'security', 'complexity', 'deslop', 'tests',
-]
 const nonCleanDimensions = new Set([...uniqueConfirmed, ...belowAll, ...unverifiedAll].map((finding) => finding.dimension))
 const cleanDimensions = failures.length || skippedSlices
   ? []
-  : dimensions.filter((dimension) => !nonCleanDimensions.has(dimension))
+  : DIMENSIONS.filter((dimension) => !nonCleanDimensions.has(dimension))
 
 return {
   scope: SCOPE,
