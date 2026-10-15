@@ -610,3 +610,59 @@ test('cheese-board treats a throwing agent as no output and keeps the run alive'
   assert.deepEqual(result.gaps, ['wiki grounding failed; the strategy ran without recorded decisions'])
   assert.equal(result.status, 'partial')
 })
+
+test('cheese-board drops an idea that repeats an earlier title or existing spec, and logs it', async () => {
+  const ideas = { ideas: [
+    ...IDEAS.ideas,
+    { title: 'faster  SYNC!', summary: 'same idea again', source: 'args', existing_spec: '', duplicate_of: '' },
+    { title: 'Another old plan', summary: 'same spec', source: 'args', existing_spec: `${SPECS_DIR}/old-plan.md`, duplicate_of: '' },
+  ] }
+  const { result, trace } = await runBoard({ overrides: { ideas } })
+
+  assert.deepEqual(result.dropped.filter((d) => d.kind === 'idea'), [
+    { kind: 'idea', ref: 'faster SYNC!', reason: 'repeats an earlier idea or its existing spec' },
+    { kind: 'idea', ref: 'Another old plan', reason: 'repeats an earlier idea or its existing spec' },
+  ])
+  assert.ok(trace.logs.some((l) => /^Dropped 2 repeated idea\(s\)/.test(l)), trace.logs.join('\n'))
+  assert.equal(result.status, 'ok')
+})
+
+test('cheese-board runs one brie-ground child for a question that repeats in one initiative', async () => {
+  const strategy = { ...STRATEGY, initiatives: STRATEGY.initiatives.map((i) => (i.id === 'IN-1' ? { ...i, research_questions: ['Flaky?', ' flaky? '] } : i)) }
+  const { result, children, trace } = await runBoard({ overrides: { 'synthesize:r0': strategy } })
+
+  assert.equal(children.filter((c) => c.name === 'brie-ground').length, 1)
+  assert.deepEqual(result.dropped.filter((d) => d.kind === 'research_question'), [
+    { kind: 'research_question', ref: 'IN-1: flaky?', reason: 'repeats an earlier question of the same initiative' },
+  ])
+  assert.ok(trace.logs.includes('IN-1: dropped a repeated research question: flaky?'), trace.logs.join('\n'))
+})
+
+test('cheese-board shares one brie-ground child for a question that two initiatives ask, and counts it once against the cap', async () => {
+  const strategy = { ...STRATEGY, initiatives: [
+    ...STRATEGY.initiatives.map((i) => (i.id === 'IN-3' ? i : { ...i, research_questions: ['Shared?', `${i.id} own?`] })),
+    initiative('IN-4', { slug: 'gap-fill', priority: 3, research_questions: ['Last?'] }),
+  ] }
+  const { result, children, labels } = await runBoard({ overrides: { 'synthesize:r0': strategy } })
+
+  assert.equal(children.filter((c) => c.name === 'brie-ground').length, 4)
+  assert.equal(result.mold.some((m) => m.initiative === 'IN-4'), false)
+  for (const slug of ['version-banner', 'sync-cache', 'gap-fill']) assert.ok(labels.includes(`draft:${slug}:r0`), slug)
+})
+
+test('cheese-board logs an invalid limit or maxSpecs and a maxSpecs clamp', async () => {
+  const { trace } = await runBoard({ args: { stamp: STAMP, auto: true, maxSpecs: 99, limit: 'many' } })
+  assert.ok(trace.logs.some((l) => /^Requested maxSpecs 99 exceeds max \d+; clamping\.$/.test(l)), trace.logs.join('\n'))
+  assert.ok(trace.logs.some((l) => /^args\.limit must be a positive integer; using \d+\.$/.test(l)), trace.logs.join('\n'))
+
+  const invalid = await runBoard({ args: { stamp: STAMP, auto: true, maxSpecs: 0 } })
+  assert.ok(invalid.trace.logs.some((l) => /^args\.maxSpecs must be a positive integer; using \d+\.$/.test(l)), invalid.trace.logs.join('\n'))
+})
+
+test('cheese-board requires blocking_questions and every question field in the advice schema', async () => {
+  const { trace } = await runBoard()
+  const schema = trace.agents.find(({ opts }) => opts.label === 'advise:strategy:0').opts.schema
+
+  assert.ok(schema.required.includes('blocking_questions'))
+  assert.deepEqual([...schema.properties.blocking_questions.items.required].sort(), ['evidence', 'options', 'question', 'recommended'])
+})
