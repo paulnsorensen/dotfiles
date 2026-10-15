@@ -74,7 +74,7 @@ const replaceRoutes = (overrides = []) => planRoutes([
   ['plan:minimal', replaceOnePlan()],
   ['target:T-1', built(sha(50), '/tmp/wt-t1')],
   ['integrate', integrated(['T-1', 'T-2'])],
-  ['verify', verified],
+  ['verify', { verdicts: [verified] }],
   ['publish', published('T-1', 10, sha(50))],
   ['age:10', ageFull(10, { worktree_path: '/tmp/wt-t1' })],
   ['finalize:10', finalized],

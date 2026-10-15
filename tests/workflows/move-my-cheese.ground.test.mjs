@@ -79,7 +79,7 @@ test('a ground failure is a gap: the plan still runs, and the result names the g
 
 test('a settled research answer reaches the planner and the landing', async () => {
   const { calls, child } = childFor((q) => answer(q))
-  const { result, trace } = await run({ prs: [1, 2] }, planRoutes([researching(['Is gh 2.60 current?'])]), null, child)
+  const { result, trace } = await run({ prs: [1, 2], research: true }, planRoutes([researching(['Is gh 2.60 current?'])]), null, child)
   assert.deepEqual(calls, [{ name: 'brie-ground', q: 'Is gh 2.60 current?' }])
   assert.deepEqual(dataOf(call(trace, 'plan:minimal').prompt, 'context').research, [found('Is gh 2.60 current?')])
   assert.deepEqual(plain(result.landing.grounding.research), [found('Is gh 2.60 current?')])
@@ -88,7 +88,7 @@ test('a settled research answer reaches the planner and the landing', async () =
 
 test('an unsettled answer becomes an open question even when the planner drops it', async () => {
   const { child } = childFor(() => answer('x', { confidence: 'dont_know', open_questions: ['Which gh?'] }))
-  const { result, trace } = await run({ prs: [1, 2] }, planRoutes([researching(['Is gh 2.60 current?'])]), null, child)
+  const { result, trace } = await run({ prs: [1, 2], research: true }, planRoutes([researching(['Is gh 2.60 current?'])]), null, child)
   assert.deepEqual(dataOf(call(trace, 'plan:minimal').prompt, 'context').unsettled_research, ['Is gh 2.60 current?', 'Which gh?'])
   assert.equal(result.status, 'needs-input')
   assert.deepEqual(plain(result.questions), ['Is gh 2.60 current?', 'Which gh?'])
@@ -97,7 +97,7 @@ test('an unsettled answer becomes an open question even when the planner drops i
 
 test('questions over the cap run no child and become open questions; repeats run once', async () => {
   const { calls, child } = childFor((q) => answer(q))
-  const { result } = await run({ prs: [1, 2] }, planRoutes([researching(['q1', ' q1 ', 'q2', 'q3'])]), null, child)
+  const { result } = await run({ prs: [1, 2], research: true }, planRoutes([researching(['q1', ' q1 ', 'q2', 'q3'])]), null, child)
   assert.deepEqual(calls.map((c) => c.q), ['q1', 'q2'])
   assert.equal(result.status, 'needs-input')
   assert.deepEqual(plain(result.questions), ['q3'])
@@ -105,10 +105,25 @@ test('questions over the cap run no child and become open questions; repeats run
 
 test('a failed research child blocks the run before any planner', async () => {
   const { child } = childFor(() => { throw new Error('tavily down') })
-  const { result, labels } = await run({ prs: [1, 2] }, planRoutes([researching(['Is gh 2.60 current?'])]), null, child)
+  const { result, labels } = await run({ prs: [1, 2], research: true }, planRoutes([researching(['Is gh 2.60 current?'])]), null, child)
   assert.equal(result.status, 'blocked')
   assert.equal(result.error, 'research failed: Is gh 2.60 current?')
   assert.equal(labels.some((l) => l.startsWith('plan:')), false)
+})
+
+test('without research:true, a run that stops at a human gate sends questions to the user and starts no brie-ground child', async () => {
+  const { calls, child } = childFor((q) => answer(q))
+  const { result, trace } = await run({ prs: [1, 2] }, planRoutes([researching(['Is gh 2.60 current?'])]), null, child)
+  assert.deepEqual(calls, [])
+  assert.equal(result.status, 'needs-input')
+  assert.deepEqual(plain(result.questions), ['Is gh 2.60 current?'])
+  assert.ok(trace.logs.some((l) => /a human gate follows/.test(l)))
+})
+
+test('auto on the viewer\'s own PRs has no human gate, so research runs without research:true', async () => {
+  const { calls, child } = childFor((q) => answer(q))
+  await run({ prs: [1, 2], auto: true }, planRoutes([researching(['Is gh 2.60 current?'])]), null, child)
+  assert.deepEqual(calls, [{ name: 'brie-ground', q: 'Is gh 2.60 current?' }])
 })
 
 test('the approve run reads grounding from the landing: no new Ground, and the done advisor sees it', async () => {

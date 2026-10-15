@@ -75,7 +75,7 @@ test('cure commits that cure could not push fail the review before re-age, final
 test('a keep-only plan with a command criterion verifies in the pinned integration worktree without a checkout', async () => {
   const { result, labels, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['integrate:pre', { ...integrated(['T-1', 'T-2']), head: sha(97) }],
-    ['verify:pre:AC-1', { ...verified, evidence: 'grep printed 1 and 1' }],
+    ['verify:pre:AC-1', { verdicts: [{ ...verified, evidence: 'grep printed 1 and 1' }] }],
   ]))
   assert.equal(result.status, 'ready')
   const verify = call('verify:pre:AC-1')
@@ -149,7 +149,7 @@ test('a branch this run rebuilt gets a full review, never an incremental one', a
     ['plan:minimal', minimalPlan()],
     ['target:T-2', built(sha(60), '/tmp/wt-t2')],
     ['integrate:pre', integrated(['T-1', 'T-2'])],
-    ['verify:pre:AC-1', verified],
+    ['verify:pre:AC-1', { verdicts: [verified] }],
     ['publish', published('T-2', 2, sha(60))],
     ['age:2', ageFull(2, { worktree_path: '/tmp/wt-t2' })],
     ['finalize:2', finalized],

@@ -119,7 +119,7 @@ test('code shell-quotes a criterion check, and a dirty tree before a check shows
   const { result, trace, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['plan:minimal', quoted],
     ['integrate:pre', pinned],
-    ['verify:pre:AC-1', { ...verified, tree_clean: false, evidence: 'grep printed 1' }],
+    ['verify:pre:AC-1', { verdicts: [{ ...verified, tree_clean: false, evidence: 'grep printed 1' }] }],
   ]))
   assert.ok(call('verify:pre:AC-1').prompt.includes("cd /tmp/int && bash -c 'git log --oneline | grep -c '\\''helper'\\'''"))
   assert.match(plain(result.verification.verdicts)[0].evidence, /the worktree had changes from an earlier check/)
@@ -129,7 +129,7 @@ test('code shell-quotes a criterion check, and a dirty tree before a check shows
 test('a judge that finds a missing path fails the criterion before publish', async () => {
   const { result, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['integrate:pre', pinned],
-    ['verify:pre:AC-1', { ...verified, missing_paths: ['src/2.js'], evidence: 'grep printed 1' }],
+    ['verify:pre:AC-1', { verdicts: [{ ...verified, missing_paths: ['src/2.js'], evidence: 'grep printed 1' }] }],
   ]))
   assert.equal(result.status, 'fail')
   assert.match(result.note, /criteria failed: AC-1/)
@@ -140,7 +140,7 @@ test('a judge that finds a missing path fails the criterion before publish', asy
 test('a judge that reports a guard denial gives an unrun verdict that still blocks before publish', async () => {
   const { result, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['integrate:pre', pinned],
-    ['verify:pre:AC-1', { ...verified, passes: false, guard_blocked: true, evidence: 'A PreToolUse hook blocked it' }],
+    ['verify:pre:AC-1', { verdicts: [{ ...verified, passes: false, guard_blocked: true, evidence: 'A PreToolUse hook blocked it' }] }],
   ]))
   assert.equal(result.status, 'fail')
   assert.match(result.note, /criteria verification unrun \(guard\): AC-1/)
@@ -186,9 +186,46 @@ test('a redone integration records every attempt worktree for cleanup', async ()
     ['integrate:pre', () => (++calls === 1
       ? { ...integrated(['T-1']), worktree_path: wt('int1'), head: sha(97) }
       : { ...integrated(['T-1', 'T-2']), worktree_path: wt('int2'), head: sha(97) })],
-    ['verify:pre:AC-1', { ...verified, evidence: 'grep printed 1 and 1' }],
+    ['verify:pre:AC-1', { verdicts: [{ ...verified, evidence: 'grep printed 1 and 1' }] }],
   ]))
   assert.equal(result.status, 'ready')
   const sweep = call('cleanup').prompt
   assert.ok(sweep.includes(wt('int1')) && sweep.includes(wt('int2')))
+})
+
+test('a judge checks at most 8 criteria, and a missing verdict gets a typed redo', async () => {
+  const ids = Array.from({ length: 9 }, (_, i) => `AC-${i + 1}`)
+  const criteria = ids.map((id) => ({ id, statement: 's', check_kind: 'command', check: 'test -e src/1.js' }))
+  const targets = keepPlan().targets.map((t) => ({ ...t, satisfies: ids }))
+  const pass = (id) => ({ ...verified, criterion: id })
+  let calls = 0
+  const { result, labels, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
+    ['plan:minimal', { ...keepPlan(), targets, criteria }],
+    ['integrate:pre', pinned],
+    ['verify:pre:AC-1..AC-8', () => ({ verdicts: ids.slice(0, ++calls === 1 ? 7 : 8).map(pass) })],
+    ['verify:pre:AC-9', { verdicts: [pass('AC-9')] }],
+  ]))
+  assert.equal(result.status, 'ready')
+  assert.deepEqual(labels.filter((l) => l.startsWith('verify:')), ['verify:pre:AC-1..AC-8', 'verify:pre:AC-1..AC-8:redo1', 'verify:pre:AC-9'])
+  assert.ok(call('verify:pre:AC-1..AC-8:redo1').prompt.includes('no verdict for AC-8'))
+  assert.deepEqual(plain(result.verification.verdicts).map((v) => v.result), Array(9).fill('pass'))
+})
+
+test('an advisor stop on the plan returns a usage line that says how to resume', async () => {
+  const { result } = await run({ prs: [1, 2] }, planRoutes([['advise:plan:0', { verdict: 'stop', chosen: 'P-1', concerns: ['unsafe'], guidance: '' }]]))
+  assert.equal(result.status, 'stopped')
+  assert.match(result.usage, /re-run with \{ prs \} for a new plan/)
+  assert.doesNotMatch(result.usage, /landing/)
+  assert.equal(result.landing, undefined)
+})
+
+test('a file overlap over 20 files logs the cut, and the tension prompt lists the first 20', async () => {
+  const files = Array.from({ length: 25 }, (_, i) => `src/shared${String(i).padStart(2, '0')}.js`)
+  const { trace, call } = await run({ prs: [1, 2] }, planRoutes([
+    ['recon:detail', { prs: [detail(1, { files, changed_files: 25 }), detail(2, { files, changed_files: 25 })] }],
+  ]))
+  assert.ok(trace.logs.some((l) => /#1 and #2 share 25 files; the tension prompt lists the first 20/.test(l)))
+  const prompt = call('tensions').prompt
+  assert.ok(prompt.includes('src/shared19.js'))
+  assert.ok(!prompt.includes('src/shared20.js'))
 })

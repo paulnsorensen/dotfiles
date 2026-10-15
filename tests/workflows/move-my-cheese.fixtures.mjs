@@ -149,7 +149,7 @@ export const builtConsolidation = (overrides = []) => planRoutes([
   ...overrides,
   ['target:T-1', built(sha(50), '/tmp/wt-t1')],
   ['integrate:pre', integrated(['T-1'])],
-  ['verify:pre:AC-1', verified],
+  ['verify:pre:AC-1', { verdicts: [verified] }],
   ['publish', published('T-1', 10, sha(50))],
   ['age:10', ageFull(10, { worktree_path: '/tmp/wt-t1' })],
   ['finalize:10', finalized],
