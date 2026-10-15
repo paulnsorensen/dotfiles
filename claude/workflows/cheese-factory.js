@@ -1633,12 +1633,16 @@ const judgePrompt = (mode, ...parts) => `Judge mode: ${mode}\n\n${prompt(...part
 // POSIX single-quote a string so a shell passes it through unchanged.
 const shq = (s) => `'${String(s).replaceAll("'", "'\\''")}'`
 
+// A second review judges the first review's concerns. It does not reopen the plan.
+const ROUND_TWO_RULE = 'payload.prior_concerns holds your concerns from the last round. Judge only whether each prior concern is resolved. Raise a new concern only when it makes the work wrong or unsafe, and start it with "NEW:". Never reverse a prior concern.'
+
 const advisorPrompt = (stage, payload) => judgePrompt('advise',
   'You are the advisor: a read-only judge one level above the implementers. Do not edit files or change state.',
   stage === 'plan'
-    ? 'Stage: plan. Judge whether the curds and the criteria cover the spec and are safe to cook now. Return approve, revise with concrete concerns, or stop.'
+    ? 'Stage: plan. Judge whether the curds and the criteria cover the spec and are safe to cook now. Return approve, revise with concrete concerns, or stop. A payload with single_pass true is a valid plan: one curd cooks the whole spec in payload.spec. Do not ask for a decomposition, a brief, or a file list unless the spec itself requires separate layers.'
     : 'Stage: done. Judge whether the verified work is safe to plate now: each criterion is verified or covered by CI. Return approve, revise with concrete concerns, or stop.',
   'payload.grounding holds recorded wiki decisions and settled research answers. Ask for a revision when the work contradicts one.',
+  payload.prior_concerns && ROUND_TWO_RULE,
   'Keep guidance under 80 words.',
   data('payload', payload),
 )
@@ -1869,7 +1873,23 @@ let { curds, singlePass } = decomposed
 // ---- Advise (ADR-017: the plan advisor always runs, even for a spec with no AC line) ----
 phase('Advise')
 // The advisors judge the plan against the spec, so every advisor payload carries the spec text.
-const planOnly = () => ({ curds: curds.map((c) => ({ slug: c.slug, brief: c.brief, files: c.files })), criteria: criteriaList, single_pass: singlePass })
+// The single curd of a single-pass run holds brief null and files []. The advisor reads that as a broken plan, so the payload says that one curd cooks the whole spec.
+const SINGLE_PASS_BRIEF = 'single pass: cook the whole parent spec in payload.spec'
+function fileScopeOf(text) {
+  const files = new Set()
+  let inScope = false
+  for (const line of text.split('\n')) {
+    const heading = /^#{2,4} +(.*?) *$/.exec(line)
+    if (heading) inScope = /^(file scope|files|outputs)$/i.test(heading[1])
+    else if (inScope && /^ *[-*] /.test(line)) for (const m of line.matchAll(/`([^` ]+[.][a-z0-9]+)`/gi)) files.add(m[1])
+  }
+  return [...files]
+}
+const planCurd = (c) => {
+  const files = c.files.length ? c.files : singlePass ? fileScopeOf(resolved.spec_text) : []
+  return { slug: c.slug, brief: c.brief || (singlePass ? SINGLE_PASS_BRIEF : c.brief), ...(files.length ? { files } : {}) }
+}
+const planOnly = () => ({ curds: curds.map(planCurd), criteria: criteriaList, single_pass: singlePass })
 const planPayload = () => ({ spec: resolved.spec_text, grounding, ...planOnly() })
 let planAdvice = await advise('plan', 'advise:plan', planPayload())
 let lastAdvice = planAdvice.advice

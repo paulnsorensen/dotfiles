@@ -443,6 +443,7 @@ async function advise(stage, label, payload) {
     stage === 'strategy'
       ? 'Judge the strategy: altitude (themes state directions, not lists), coverage, lane choice, initiative size, sequencing, and hidden coupling. Return approve, revise with concrete concerns, or stop when the strategy is unsafe or wrong.'
       : 'Judge the finished run: do the factory queue, the mold list, and the parked items carry out the approved strategy? Return approve, revise with concrete concerns, or stop.',
+    payload.prior_concerns && 'payload.prior_concerns holds your concerns from the last round. Judge only whether each prior concern is resolved. Raise a new concern only when it makes the work wrong or unsafe, and start it with "NEW:". Never reverse a prior concern.',
     'Keep guidance under 80 words.',
     data('payload', payload),
   ), { label, phase: stage === 'strategy' ? 'Advise' : 'Report', agentType: 'judge', schema: ADVICE_SCHEMA }, checkAdvice)
@@ -884,7 +885,7 @@ phase('Advise')
 const adviceLog = []
 const advisorPayload = () => ({ strategy, decisions: decisions.map(({ id, kind, statement, citation }) => ({ id, kind, statement, citation })), items: strategyItems.map((i) => ({ id: i.id, kind: i.kind, title: i.title, lane: i.lane || null })), needs_human: needsHuman.length, close_batch: closeBatch.length })
 for (let round = 0; ; round++) {
-  const advice = await advise('strategy', `advise:strategy:${round}`, advisorPayload())
+  const advice = await advise('strategy', `advise:strategy:${round}`, round ? { ...advisorPayload(), prior_concerns: adviceLog[round - 1].concerns, guidance: adviceLog[round - 1].guidance } : advisorPayload())
   if (!advice) return { status: 'needs-input', reason: 'advisor returned no valid advice', strategy, advice: adviceLog, gaps, ...lists }
   adviceLog.push(advice)
   if (advice.verdict === 'approve') break
