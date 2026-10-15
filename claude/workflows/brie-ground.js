@@ -57,6 +57,17 @@ const DEEP = {
   MAX_DEEP_SUBQUESTIONS: 3,
 }
 
+// ── Fan-out caps and worker model ───────────────────────────────────────────
+// Verify spawns one refute agent per claim, so the claim cap bounds it. Claims
+// past the cap stay unchecked. An agent() call with no model inherits the
+// parent model (often opus), so every fan-out worker names its model.
+// Worst case with these caps is 96 agents: recall 1 + 4 refutes, plan 1,
+// 3 deep mixed x 25, 2 shallow mixed x 6, synthesis 1, prototype 2. Callers
+// budget BRIE_GROUND_MAX_AGENTS = 100 for one child (workflow-prelude).
+const MAX_SUBQUESTIONS = 5
+const VERIFY_MAX_CLAIMS = 4
+const WORKER_MODEL = 'sonnet'
+
 const EVIDENCE_SCHEMA = {
   type: 'object',
   required: ['sub_question_id', 'route', 'claims'],
@@ -305,7 +316,7 @@ function planPrompt(question, recall) {
     covered,
     'Steps:',
     '1. Restate the decision/question crisply and name any loaded assumptions buried in it.',
-    '2. Decompose into 2-6 focused sub-questions — each independently answerable. If prior research already covers a sub-question, either drop it or keep it shallow just to re-verify.',
+    `2. Decompose into 2-${MAX_SUBQUESTIONS} focused sub-questions — each independently answerable. If prior research already covers a sub-question, either drop it or keep it shallow just to re-verify.`,
     '3. Route each sub-question to the single best source:',
     '   - "wiki": internal repo knowledge — architecture, conventions, past decisions, "why this design". Lives in the hallouminate repo wiki.',
     '   - "web": external facts — library/API behaviour, current vendor docs, version/changelog, comparisons, GitHub examples.',
@@ -420,7 +431,7 @@ function refutePrompt(claim, sq) {
   ].join('\n')
 }
 
-function synthPrompt(question, plan, evidence) {
+function synthPrompt(question, plan, evidence, dropped = []) {
   return [
     "Synthesize a grounded answer to the user's question from the collected, partially-verified evidence below. Apply /briesearch house style.",
     '',
@@ -428,7 +439,8 @@ function synthPrompt(question, plan, evidence) {
     `Restated: ${plan.restated_question || ''}`,
     plan.loaded_assumptions && plan.loaded_assumptions.length ? `Loaded assumptions to flag: ${plan.loaded_assumptions.join('; ')}` : '',
     '',
-    'EVIDENCE (JSON — decision_critical claims have already been adversarially checked; a claim with refuted=true was knocked down):',
+    dropped.length ? `NOT GROUNDED (over the sub-question cap; list each in open_questions and do not claim them settled): ${dropped.join(' | ')}` : '',
+    'EVIDENCE (JSON — decision_critical claims have already been adversarially checked; a claim with refuted=true was knocked down; a claim with unchecked=true was past the check cap and is unverified):',
     JSON.stringify(evidence, null, 2),
     '',
     'Rules:',
@@ -519,13 +531,13 @@ function webClaimToEvidence(c, src, quality) {
 // dynamic-depth Fetch+Extract. Fetch depth scales with the count of novel
 // relevant results. Returns EVIDENCE-shaped claims for the shared Verify pass.
 async function deepWebEngine(sq) {
-  const scope = await agent(deepScopePrompt(sq), { schema: ANGLE_SCHEMA, phase: 'Ground', label: `deep-scope:${sq.id}` })
+  const scope = await agent(deepScopePrompt(sq), { schema: ANGLE_SCHEMA, phase: 'Ground', label: `deep-scope:${sq.id}`, model: WORKER_MODEL })
   const angles =
-    scope && Array.isArray(scope.angles) && scope.angles.length ? scope.angles : [{ label: 'primary', query: sq.question }]
+    scope && Array.isArray(scope.angles) && scope.angles.length ? scope.angles.slice(0, DEEP.MAX_ANGLES) : [{ label: 'primary', query: sq.question }]
 
   const searchResults = await parallel(
     angles.map((a) => () =>
-      agent(deepSearchPrompt(sq, a), { schema: SEARCH_SCHEMA, phase: 'Ground', label: `deep-search:${sq.id}:${a.label}` }).then((r) =>
+      agent(deepSearchPrompt(sq, a), { schema: SEARCH_SCHEMA, phase: 'Ground', label: `deep-search:${sq.id}:${a.label}`, model: WORKER_MODEL }).then((r) =>
         r && Array.isArray(r.results) ? r.results.map((x) => ({ ...x, angle: a.label })) : [],
       ),
     ),
@@ -553,8 +565,8 @@ async function deepWebEngine(sq) {
 
   const extracts = await parallel(
     toFetch.map((src) => () =>
-      agent(deepExtractPrompt(sq, src), { schema: EXTRACT_SCHEMA, phase: 'Ground', label: `deep-extract:${sq.id}` })
-        .then((e) => (e && Array.isArray(e.claims) ? e.claims.map((c) => webClaimToEvidence(c, src, e.sourceQuality)) : []))
+      agent(deepExtractPrompt(sq, src), { schema: EXTRACT_SCHEMA, phase: 'Ground', label: `deep-extract:${sq.id}`, model: WORKER_MODEL })
+        .then((e) => (e && Array.isArray(e.claims) ? e.claims.slice(0, DEEP.EXTRACT_MAX_CLAIMS).map((c) => webClaimToEvidence(c, src, e.sourceQuality)) : []))
         .catch(() => []),
     ),
   )
@@ -574,7 +586,7 @@ async function groundOne(sq) {
   if (sq.depth === 'deep' && sq.route !== 'code') {
     // Deep escalation: wiki grounding + Tavily web fan-out in parallel, merged.
     // (A pure-code sub-question never goes deep — it has no web/wiki surface.)
-    const lanes = [() => agent(wikiPrompt(sq), { ...base, label: `wiki:${sq.id}` }), () => deepWebEngine(sq)]
+    const lanes = [() => agent(wikiPrompt(sq), { ...base, label: `wiki:${sq.id}`, model: WORKER_MODEL }), () => deepWebEngine(sq)]
     if (sq.route === 'mixed') lanes.push(() => agent(codePrompt(sq), { ...base, label: `code:${sq.id}`, agentType: 'explorer' }))
     const parts = await parallel(lanes)
     return mergeEvidence(sq, parts.filter(Boolean))
@@ -583,27 +595,40 @@ async function groundOne(sq) {
   // Shallow (default) — one targeted searcher per route.
   if (sq.route === 'web') return agent(webPrompt(sq), { ...base, label: `web:${sq.id}`, agentType: 'researcher' })
   if (sq.route === 'code') return agent(codePrompt(sq), { ...base, label: `code:${sq.id}`, agentType: 'explorer' })
-  if (sq.route === 'wiki') return agent(wikiPrompt(sq), { ...base, label: `wiki:${sq.id}` })
+  if (sq.route === 'wiki') return agent(wikiPrompt(sq), { ...base, label: `wiki:${sq.id}`, model: WORKER_MODEL })
   // mixed — gather internal + external in parallel, then merge claim tables.
   const parts = await parallel([
-    () => agent(wikiPrompt(sq), { ...base, label: `wiki:${sq.id}` }),
+    () => agent(wikiPrompt(sq), { ...base, label: `wiki:${sq.id}`, model: WORKER_MODEL }),
     () => agent(webPrompt(sq), { ...base, label: `web:${sq.id}`, agentType: 'researcher' }),
   ])
   return mergeEvidence(sq, parts.filter(Boolean))
 }
 
+// A refute agent re-reads one citation, so a repeat must match both the claim and its citation.
+const claimKey = (c) => `${String(c.claim || '').toLowerCase().replace(/\s+/g, ' ').trim()}\n${String(c.citation || '').trim()}`
+const needsCheck = (c) => c.decision_critical && c.confidence !== 'certain'
+// A speculating claim can still move the answer; a dont_know claim already counts as unknown.
+const CHECK_RANK = { speculating: 0, dont_know: 1 }
+
 async function verifyEvidence(ev, sq) {
   if (!ev || !Array.isArray(ev.claims)) return ev
-  const toVerify = ev.claims.filter((c) => c.decision_critical && c.confidence !== 'certain')
+  // Repeated claims share one check.
+  const distinct = new Map()
+  for (const c of ev.claims) if (needsCheck(c) && !distinct.has(claimKey(c))) distinct.set(claimKey(c), c)
+  const ranked = [...distinct].sort(([, a], [, b]) => (CHECK_RANK[a.confidence] ?? 0) - (CHECK_RANK[b.confidence] ?? 0))
+  const toVerify = ranked.slice(0, VERIFY_MAX_CLAIMS)
+  if (ranked.length > toVerify.length) log(`verify[${sq.id}]: checking ${toVerify.length} of ${ranked.length} distinct decision-critical claims (cap ${VERIFY_MAX_CLAIMS}).`)
   if (!toVerify.length) return ev
   const verdicts = await parallel(
-    toVerify.map((c, i) => () => agent(refutePrompt(c, sq), { schema: VERDICT_SCHEMA, phase: 'Verify', label: `verify:${sq.id}#${i}` })),
+    toVerify.map(([, c], i) => () => agent(refutePrompt(c, sq), { schema: VERDICT_SCHEMA, phase: 'Verify', label: `verify:${sq.id}#${i}`, model: WORKER_MODEL })),
   )
-  const verdictOf = new Map()
-  toVerify.forEach((c, i) => verdictOf.set(c, verdicts[i]))
+  const verdictOf = new Map(toVerify.map(([key], i) => [key, verdicts[i]]))
   ev.claims = ev.claims.map((c) => {
-    const v = verdictOf.get(c)
-    if (!v) return c
+    if (!needsCheck(c)) return c
+    if (!verdictOf.has(claimKey(c))) return { ...c, unchecked: true }
+    const v = verdictOf.get(claimKey(c))
+    // A refute agent that returned nothing leaves the claim unverified, so it counts as unchecked.
+    if (!v) return { ...c, unchecked: true }
     if (v.verdict === 'refuted') return { ...c, confidence: 'dont_know', refuted: true, note: v.corrected_claim || v.reasoning }
     if (v.verdict === 'uncertain') return { ...c, confidence: 'speculating', note: v.reasoning }
     return { ...c, verified: true }
@@ -652,10 +677,12 @@ const recallEvidence = recallClaims.length
   : []
 // A decision-critical cached claim that adversarial re-check knocked down means
 // the cache is stale — don't trust "fully answers", fall through to fresh research.
-const recallHolds = recallEvidence.length && !recallEvidence[0].claims.some((c) => c.decision_critical && c.refuted)
+// A decision-critical claim past the check cap is unverified, so it cannot hold the cache either.
+const recallHolds = recallEvidence.length && !recallEvidence[0].claims.some((c) => c.decision_critical && (c.refuted || c.unchecked))
 
 let plan
 let subs = []
+let droppedSubs = []
 let evidence
 
 if (recall && recall.fully_answers && recallClaims.length && recallHolds) {
@@ -670,9 +697,13 @@ if (recall && recall.fully_answers && recallClaims.length && recallHolds) {
   plan = await agent(planPrompt(question, recall), { schema: PLAN_SCHEMA, label: 'plan' })
   if (!plan) return { error: 'Planning failed — no plan produced.' }
 
+  if (Array.isArray(plan.sub_questions) && plan.sub_questions.length > MAX_SUBQUESTIONS) {
+    droppedSubs = plan.sub_questions.slice(MAX_SUBQUESTIONS).map((s) => s.question)
+    log(`Sub-question cap: grounding ${MAX_SUBQUESTIONS} of ${plan.sub_questions.length} sub-questions.`)
+  }
   subs = (
     Array.isArray(plan.sub_questions) && plan.sub_questions.length
-      ? plan.sub_questions
+      ? plan.sub_questions.slice(0, MAX_SUBQUESTIONS)
       : [{ id: 'q1', question, route: 'mixed', why: 'whole question' }]
   ).map((s) => ({ ...s, depth: s.depth === 'deep' ? 'deep' : 'shallow' }))
 
@@ -698,7 +729,7 @@ if (recall && recall.fully_answers && recallClaims.length && recallHolds) {
 }
 
 phase('Synthesize')
-const synth = await agent(synthPrompt(question, plan, evidence), { schema: SYNTHESIS_SCHEMA, label: 'synthesize' })
+const synth = await agent(synthPrompt(question, plan, evidence, droppedSubs), { schema: SYNTHESIS_SCHEMA, label: 'synthesize' })
 if (!synth) return { error: 'Synthesis failed.', evidence }
 
 let prototype = null
@@ -718,15 +749,19 @@ if (decision.warranted && decision.spec) {
 return {
   question,
   answer: synth.answer,
-  confidence: synth.confidence,
+  // Code, not the synthesizer, keeps an answer with ungrounded sub-questions below certain.
+  confidence: droppedSubs.length && synth.confidence === 'certain' ? 'speculating' : synth.confidence,
   confidence_justification: synth.confidence_justification || '',
   evidence_table: synth.evidence_table || [],
   conflicts: synth.conflicts || [],
-  open_questions: synth.open_questions || [],
+  open_questions: [...new Set([...(synth.open_questions || []), ...droppedSubs])],
   report_path: synth.report_path || '',
   recommended_next_step: synth.recommended_next_step || '',
   prototype,
   sub_questions: subs.length,
   deep_sub_questions: subs.filter((s) => s.depth === 'deep').length,
   reused_claims: recallClaims.length,
+  // Coverage the caps dropped: questions never grounded, and decision-critical claims never checked.
+  dropped_sub_questions: droppedSubs,
+  unchecked_claims: evidence.flatMap((e) => (e && Array.isArray(e.claims) ? e.claims : [])).filter((c) => c.unchecked).length,
 }

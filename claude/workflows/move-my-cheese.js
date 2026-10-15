@@ -232,7 +232,7 @@ function matchAnswers(questions, raw) {
 // viewer's comments, and a marker without full 40-hex values reads as none.
 
 // ---- Limits and closed sets: every loop has a bound in code ----
-const LIMITS = { maxPrs: 12, maxTargets: 12, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000, maxResearch: 2 }
+const LIMITS = { maxPrs: 12, maxTargets: 12, maxCriteria: 24, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000, maxResearch: 2 }
 // Worst case for one age-fanout child: packet, two attempts for each of about 12 dimensions, reconcile.
 const AGE_FANOUT_MAX_AGENTS = 27
 const MARKER_PREFIX = 'move-my-cheese:aged'
@@ -665,6 +665,8 @@ function checkPlan(plan, ctx) {
   if (!plan.targets.length) errors.push(substance('plan has no targets'))
   if (plan.targets.length > LIMITS.maxTargets) errors.push(substance(`plan has ${plan.targets.length} targets; the limit is ${LIMITS.maxTargets}`))
   if (!acIds.length) errors.push(substance('plan has no acceptance criteria'))
+  // Verify runs one judge per criterion in every round, so code bounds the count.
+  if (acIds.length > LIMITS.maxCriteria) errors.push(substance(`plan has ${acIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}`))
   for (const id of duplicates(targetIds.concat(acIds))) errors.push(substance(`duplicate id ${id}`))
   for (const branch of duplicates(plan.targets.map((t) => t.branch))) errors.push(substance(`two targets use branch ${branch}`))
 
@@ -1071,7 +1073,7 @@ const planPrompt = (angle, context, fold = {}) => prompt(
   'Write each check as one bash command that runs from the repository root. When a tool reads its config from a subdirectory, such as a workspace member with its own pyproject.toml or package.json, start the check with cd <that directory> && and make its paths relative to that directory. Quote every glob. Put every option before --.',
   'A check must be able to fail. Every path that it reads must exist on the default branch or come from a target.',
   'grep exits 2 on a missing file, and a leading ! turns that into a pass. Put test -e <path> && before a negated search, once for each path.',
-  `Use at most ${LIMITS.maxTargets} targets. Put each unresolved question in open_questions. Do not guess.`,
+  `Use at most ${LIMITS.maxTargets} targets and ${LIMITS.maxCriteria} acceptance criteria. Put each unresolved question in open_questions. Do not guess.`,
   'context.decisions are recorded constraints from the wiki. Keep the landing within them. When a PR contradicts one, resolve it in a target brief, or ask in open_questions.',
   'context.research holds settled facts; do not contradict them. Copy each context.unsettled_research question into open_questions.',
   fold.answers?.length && 'The user answered open questions of previous_plan. Apply each answer and remove its question from open_questions. Settle an unanswered question from repository evidence, or keep it in open_questions.',

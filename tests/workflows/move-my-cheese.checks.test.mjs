@@ -12,6 +12,14 @@ const vacuousPlan = () => consolidatePlan({ criteria: [{ id: 'AC-1', statement: 
 const checkPlanWith = (check) => run({ prs: [1, 2] }, planRoutes([['plan:minimal', consolidatePlan({ criteria: [{ id: 'AC-1', statement: 's', check_kind: 'command', check }] })]]))
 const pinned = { ...integrated(['T-1', 'T-2']), head: sha(97) }
 
+test('a plan with more than 24 acceptance criteria is rejected at plan time', async () => {
+  const criteria = Array.from({ length: 25 }, (_, i) => ({ id: `AC-${i + 1}`, statement: 's', check_kind: 'command', check: 'test -e src/1.js' }))
+  const { result, trace, call } = await run({ prs: [1, 2] }, planRoutes([['plan:minimal', consolidatePlan({ criteria })]]))
+  assert.equal(result.status, 'blocked')
+  assert.ok(trace.logs.some((l) => /plan has 25 acceptance criteria; the limit is 24/.test(l)))
+  assert.ok(call('plan:minimal').prompt.includes('at most 12 targets and 24 acceptance criteria'))
+})
+
 test('planners get the rules that keep criterion checks runnable', async () => {
   const { call } = await run({ prs: [1, 2] }, planRoutes())
   const planner = call('plan:minimal').prompt

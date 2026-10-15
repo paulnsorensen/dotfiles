@@ -43,6 +43,13 @@ test('validate rejects unsupported schema keywords', () => {
   )
 })
 
+test('validate enforces minItems and maxItems on arrays', () => {
+  const schema = { type: 'array', minItems: 1, maxItems: 2, items: { type: 'string' } }
+  validate(['a', 'b'], schema)
+  assert.throws(() => validate([], schema), /\$: expected at least 1 items, got 0/)
+  assert.throws(() => validate(['a', 'b', 'c'], schema), /\$: expected at most 2 items, got 3/)
+})
+
 test('a workflow fails when an agent schema uses an unsupported keyword', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'workflow-harness-'))
   t.after(() => rm(directory, { recursive: true, force: true }))

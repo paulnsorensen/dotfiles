@@ -137,3 +137,23 @@ test('triage-sweep with scope=issues only asks gh for issues, never PRs', async 
   assert.match(trace.agents[0].prompt, /gh issue list/)
   assert.doesNotMatch(trace.agents[0].prompt, /gh pr list/)
 })
+
+test('triage-sweep drops repeated items and caps each kind at the limit before Ground', async () => {
+  const workflow = await loadWorkflow(path)
+  const pr = (number) => ({ number, kind: 'pr', title: `pr ${number}` })
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'gather') return { items: [item(1, 'a'), item(1, 'a again'), item(2, 'b'), item(3, 'c'), pr(1), pr(2)] }
+      if (opts.label.startsWith('ground:')) return null
+      if (opts.label === 'route') return { routed: [], summary: 'done' }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { repo: 'owner/name', limit: 2 } })
+
+  assert.deepEqual(result.items.map((i) => `${i.kind}#${i.number}`), ['issue#1', 'issue#2', 'pr#1', 'pr#2'])
+  assert.deepEqual(trace.agents.filter(({ opts }) => opts.label.startsWith('ground:')).map(({ opts }) => opts.label),
+    ['ground:issue#1', 'ground:issue#2', 'ground:pr#1', 'ground:pr#2'])
+  assert.equal(trace.agents.find(({ opts }) => opts.label === 'route').opts.model, 'opus')
+})
