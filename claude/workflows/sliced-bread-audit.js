@@ -680,8 +680,10 @@ const uniqueConfirmed = confirmedAll.filter((finding) => {
   return true
 })
 const setupComplete = setup.gh_ok && setup.repo.length > 0 && Array.isArray(setup.existing_fingerprints)
-// The setup agent copies jq output; code strips stray comment wrappers and keeps only well-formed markers.
-const normalizeFingerprint = (text) => String(text).trim().replace(/^<!--\s*/, '').replace(/\s*-->$/, '').trim()
+// The setup agent copies jq output; code keeps only a well-formed marker, with or without its comment wrapper.
+// The wrapper end accepts both --> and --!>, the two HTML comment end forms.
+const MARKER_RE = /^(?:<!--\s*)?(sba:[^\s<>]+?)(?:\s*--!?>)?$/
+const normalizeFingerprint = (text) => (MARKER_RE.exec(String(text).trim()) || [])[1] || ''
 const existing = new Set(
   (setupComplete ? setup.existing_fingerprints : []).map(normalizeFingerprint).filter((fp) => /^sba:\S+$/.test(fp))
 )
