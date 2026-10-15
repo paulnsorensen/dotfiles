@@ -1,19 +1,17 @@
 #!/usr/bin/env bats
 # Package-backed integration tests for session analytics report scripts.
 
-DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
-SKILLS="$DOTFILES_DIR/skills"
-source "$DOTFILES_DIR/tests/lib/session-analytics-package.bash"
+load test_helper
+load lib/session-analytics-package
+
+SKILLS="$REAL_DOTFILES_DIR/skills"
 
 setup() {
-    TEST_HOME="$(mktemp -d)"
-    export TEST_HOME HOME="$TEST_HOME"
+    setup_test_env
     package_fixture_env
 }
 
-teardown() {
-    rm -rf "$TEST_HOME"
-}
+teardown() { teardown_test_env; }
 
 make_fixture() {
     package_fixture_ingest >/dev/null

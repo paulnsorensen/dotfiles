@@ -82,7 +82,7 @@ def resolve_db() -> Path:
 
 
 def duck(db: Path, sql: str) -> list[dict[str, Any]]:
-    rows = _package("sql", sql, db=db)
+    rows = _package("sql", "--", sql, db=db)
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise DbError("session analytics returned invalid SQL rows")
     return rows
@@ -104,7 +104,7 @@ def load_rows(
     )[0]["n"]
     if current != 2:
         raise SchemaOutdated(
-            "session database predates parent_session_id/context_tokens; run agent-session-analytics ingest --force"
+            f"session database predates parent_session_id/context_tokens; run {' '.join(PACKAGE)} ingest --force"
         )
     version = "arg_max(version, last_seen) FILTER (WHERE version IS NOT NULL)"
     query = gate["targeted_query"].strip().rstrip(";")

@@ -13,7 +13,7 @@ setup() {
 teardown() { teardown_test_env; }
 
 @test "package reports keep names, headings, and harness filters" {
-    local report heading
+    local report heading headings
     for report in tools errors mcp skills sessions bash denials allowlist-gaps python3 hooks compound projects heatmap latency; do
         run "$QUERY_SH" "$report" claude
         [ "$status" -eq 0 ] || { echo "$report: $output" >&2; false; }
@@ -75,6 +75,18 @@ teardown() { teardown_test_env; }
     run "$QUERY_SH" sql "SELECT tool_name FROM tool_uses WHERE 1=0"
     assert_success
     [ "$output" = $'| tool_name |\n| --- |' ]
+}
+
+@test "raw SQL empty result keeps headings after a trailing semicolon" {
+    run "$QUERY_SH" sql "SELECT tool_name FROM tool_uses WHERE 1=0 ;  "
+    assert_success
+    [ "$output" = $'| tool_name |\n| --- |' ]
+}
+
+@test "raw SQL may start with a comment" {
+    run "$QUERY_SH" sql $'-- note\nSELECT 1 AS n'
+    assert_success
+    assert_output_contains '| 1 |'
 }
 
 @test "package SQL failure stays nonzero and does not look empty" {

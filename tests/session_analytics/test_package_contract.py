@@ -12,7 +12,8 @@ import unittest
 from pathlib import Path
 from typing import cast, final, override
 
-CLI = ["uvx", "agent-session-analytics@latest"]
+# -q keeps uv install progress out of stderr; the sandbox starts with a cold uv cache.
+CLI = ["uvx", "-q", "agent-session-analytics@latest"]
 
 
 @final

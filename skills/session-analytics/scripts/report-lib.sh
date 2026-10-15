@@ -6,9 +6,9 @@ sessions_package() {
 
 sessions_package_sql_markdown() {
     local rows description=""
-    rows="$(sessions_package sql "$1")" || return $?
+    rows="$(sessions_package sql -- "$1")" || return $?
     if [[ "${rows//[[:space:]]/}" == "[]" ]]; then
-        description="$(sessions_package sql "DESCRIBE $1")" || return $?
+        description="$(sessions_package sql -- "DESCRIBE $1")" || return $?
     fi
     printf '%s\n' "$rows" | python3 -c '
 import json

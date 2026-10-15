@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -77,7 +78,7 @@ class PackageBoundaryTests(TestCase):
         args, kwargs = run.call_args
         self.assertEqual(
             args[0],
-            ["uvx", "agent-session-analytics@latest", "sql", "SELECT 1 AS value"],
+            ["uvx", "agent-session-analytics@latest", "sql", "--", "SELECT 1 AS value"],
         )
         self.assertEqual(kwargs["env"]["SESSIONS_DB"], str(db))
         self.assertGreater(kwargs["timeout"], 0)
@@ -294,9 +295,14 @@ class LoadRowsTests(RepoCase):
         ddl = SESSIONS_DDL.replace(", parent_session_id VARCHAR", "")
         db = self.build(sessions_ddl=ddl)
         with self.assertRaisesRegex(
-            hc_db.SchemaOutdated, "run agent-session-analytics ingest --force"
+            hc_db.SchemaOutdated,
+            re.escape("run uvx agent-session-analytics@latest ingest --force"),
         ):
             hc_db.load_rows(db, gate_json(), AFTER, AFTER + DAY)
+
+    def test_duck_accepts_sql_that_starts_with_a_comment(self) -> None:
+        db = self.build()
+        self.assertEqual(hc_db.duck(db, "-- note\nSELECT 1 AS n"), [{"n": 1}])
 
     def test_database_without_the_new_columns_is_inconclusive_schema_outdated(
         self,
