@@ -8,9 +8,12 @@ default:
 [parallel]
 lint: lint-shell lint-python lint-js lint-markdown
 
+# [script] runs `bash FILE` and does not exec the new file. A shebang lane in
+# `[parallel]` can fail with ETXTBSY: a sibling child can hold the file open.
+
 # shellcheck on shell scripts: one process per file, fanned across all cores
+[script("bash")]
 lint-shell:
-    #!/usr/bin/env bash
     set -uo pipefail
     jobs=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
     check() { xargs -P "$jobs" -n 1 shellcheck -x "$@"; }
