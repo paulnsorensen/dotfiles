@@ -84,7 +84,7 @@ test('answers with a stale approve digest are refused', async () => {
 test('an advisor revise on an answered plan gets one planner revision before needs-approval', async () => {
   const first = await run({ prs: [1, 2] }, askingRoutes())
   const revise = { verdict: 'revise', chosen: 'P-1', concerns: ['AC-1 reads src/1.js only'], guidance: 'check src/2.js too' }
-  const fixed = consolidatePlan({ criteria: [{ id: 'AC-1', statement: 'the helper exists once', check_kind: 'command', check: 'grep -c helper src/1.js src/2.js' }] })
+  const fixed = consolidatePlan({ criteria: [{ id: 'AC-1', statement: 'the helper exists once', check_kind: 'command', check: 'node --test --test-name-pattern helpers tests/helper.test.mjs' }] })
   const second = await run({ prs: [1, 2], plan: plain(first.result.landing), approve: first.result.digest, answers: { 1: 'x', 2: 'y' } }, [
     ...reconOnly(),
     ['plan:answers:r1', fixed],
@@ -95,7 +95,7 @@ test('an advisor revise on an answered plan gets one planner revision before nee
   assert.equal(second.result.status, 'needs-approval')
   assert.match(second.result.reason, /the advisor approved it/)
   assert.deepEqual(second.labels, ['recon:index', 'recon:detail', 'plan:answers', 'advise:plan:answers:0', 'plan:answers:r1', 'advise:plan:answers:1'])
-  assert.equal(second.result.landing.plan.criteria[0].check, 'grep -c helper src/1.js src/2.js')
+  assert.equal(second.result.landing.plan.criteria[0].check, 'node --test --test-name-pattern helpers tests/helper.test.mjs')
   const planner = call(second.trace, 'plan:answers:r1').prompt
   assert.ok(planner.includes('Revise previous_plan to resolve the advisor concerns'))
   assert.ok(planner.includes('"guidance": "check src/2.js too"'))

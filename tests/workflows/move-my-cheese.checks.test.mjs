@@ -40,8 +40,50 @@ test('the plan check accepts each negated search with a guard on its own path', 
     'test -e a && ! grep -q x ./a',
     '! git grep -q x',
     "! rg -g '*.py' -q x",
-    'grep -c helper src/1.js',
+  ]) {
+    // Most of these search a file, which the guard rule rejects; the vacuity rule under test must not fire.
+    const { trace } = await checkPlanWith(check)
+    assert.equal(trace.logs.some((l) => /can pass without testing anything/.test(l)), false, check)
+  }
+})
+
+test('the plan check accepts checks that run under the PreToolUse guards', async () => {
+  for (const check of [
+    "node --test --test-name-pattern 'AC-2' tests/x.test.mjs",
+    'test -e src/1.js',
+    'test ! -e src/gone.js',
+    'git diff --quiet',
+    'git log --oneline | grep -q fix',
+    'node --test tests/x.test.mjs | grep -q ok',
+    'git show HEAD:src/1.js | grep -c helper',
+    'rg --files | grep -q x',
+    'grep -q x <<< "$(git log)"',
   ]) assert.equal((await checkPlanWith(check)).result.status, 'needs-approval', check)
+})
+
+test('the plan check rejects a shell reader or searcher on a file and names the guard', async () => {
+  for (const check of [
+    'grep -Fq x big/file.js',
+    'cat file | wc -l',
+    'sed -n 1p file',
+    'head -n 3 file',
+    'test -e a && rg -q x src',
+    'grep -rq x',
+    'awk 1 file',
+    'grep -q x < file',
+  ]) {
+    const { result, trace } = await checkPlanWith(check)
+    assert.equal(result.status, 'blocked', check)
+    assert.ok(trace.logs.some((l) => /AC-1 check `\w+` reads .*PreToolUse guard denies.*Instead run the repository's own test/.test(l)), check)
+  }
+})
+
+test('the planner prompt tells the planner that checks run under the PreToolUse guards', async () => {
+  const { call } = await run({ prs: [1, 2] }, planRoutes())
+  const planner = call('plan:minimal').prompt
+  assert.ok(planner.includes('PreToolUse guards'))
+  assert.ok(planner.includes('node --test --test-name-pattern <AC id or name> <file>'))
+  assert.ok(planner.includes('a target must add a marked test for it'))
 })
 
 test('the plan check rejects each negated search that can pass on missing input', async () => {
@@ -64,13 +106,13 @@ test('the plan check rejects each negated search that can pass on missing input'
 })
 
 test('code shell-quotes a criterion check, and a dirty tree before a check shows in the verdict', async () => {
-  const quoted = { ...keepPlan(), criteria: [{ id: 'AC-1', statement: 'the helper exists', check_kind: 'command', check: "grep -c 'helper' src/1.js" }] }
+  const quoted = { ...keepPlan(), criteria: [{ id: 'AC-1', statement: 'the helper exists', check_kind: 'command', check: "git log --oneline | grep -c 'helper'" }] }
   const { result, trace, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['plan:minimal', quoted],
     ['integrate:pre', pinned],
     ['verify:pre:AC-1', { ...verified, tree_clean: false, evidence: 'grep printed 1' }],
   ]))
-  assert.ok(call('verify:pre:AC-1').prompt.includes("cd /tmp/int && bash -c 'grep -c '\\''helper'\\'' src/1.js'"))
+  assert.ok(call('verify:pre:AC-1').prompt.includes("cd /tmp/int && bash -c 'git log --oneline | grep -c '\\''helper'\\'''"))
   assert.match(plain(result.verification.verdicts)[0].evidence, /the worktree had changes from an earlier check/)
   assert.ok(trace.logs.some((l) => /integration worktree had changes before the check/.test(l)))
 })
@@ -84,6 +126,18 @@ test('a judge that finds a missing path fails the criterion before publish', asy
   assert.match(result.note, /criteria failed: AC-1/)
   assert.match(plain(result.verification.verdicts)[0].evidence, /the check reads missing paths: src\/2\.js/)
   assert.ok(call('verify:pre:AC-1').prompt.includes('Put each missing path in missing_paths'))
+})
+
+test('a judge that reports a guard denial gives an unrun verdict that still blocks before publish', async () => {
+  const { result, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
+    ['integrate:pre', pinned],
+    ['verify:pre:AC-1', { ...verified, passes: false, guard_blocked: true, evidence: 'A PreToolUse hook blocked it' }],
+  ]))
+  assert.equal(result.status, 'fail')
+  assert.match(result.note, /criteria verification unrun \(guard\): AC-1/)
+  assert.doesNotMatch(result.note, /criteria failed/)
+  assert.deepEqual(plain(result.verification.verdicts).map((v) => [v.result, v.evidence]), [['unrun', 'check blocked by a PreToolUse guard']])
+  assert.ok(call('verify:pre:AC-1').prompt.includes('Set guard_blocked to true'))
 })
 
 // Mirrors digestOf in the workflow, so a test can hold an approval that a newer plan check rejects.
