@@ -107,6 +107,23 @@ STUB
     chmod +x "$FIXTURE_DIR/$name"
 }
 
+# Print each [parallel] dependency that just runs by exec of its script file.
+parallel_exec_scripts() {
+    just --justfile "$1" --dump --dump-format json | jq -r '
+        .recipes as $r
+        | $r[] | select(.attributes | index("parallel")) | .dependencies[].recipe
+        | select($r[.].shebang and ($r[.].attributes | map(objects | has("script")) | any | not))'
+}
+
+@test "parallel lanes run script recipes through an interpreter, not exec" {
+    # just writes a script recipe to a new file. A shebang recipe then execs
+    # that file. In a [parallel] group, a sibling child can still hold the
+    # file open for write, and exec fails with ETXTBSY (Text file busy).
+    run parallel_exec_scripts "$DOTFILES_DIR/justfile"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ] || return 1
+}
+
 @test "just lint runs all four read-only lanes together and reports each failure" {
     local lane
     for lane in shellcheck ruff eslint markdownlint-cli2; do
