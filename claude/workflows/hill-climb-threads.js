@@ -468,6 +468,9 @@ async function climb(t) {
       if (verdict && verdict.confirmed) {
         log(`${t.slug}: the verifier confirmed ${existing.length} commit(s) from an earlier run.`)
       } else {
+        // Carried gains describe the refuted commits, so they cannot survive a later revert.
+        if (t.gains.length) log(`${t.slug}: dropped ${t.gains.length} carried gain(s) because the verifier refuted the commits behind them.`)
+        t.gains = []
         for (const commit of existing) {
           if (!t.refuted.some((r) => sameCommit(r.commit, commit))) {
             t.refuted.push({ commit, note: `it predates this run and the verifier refuted it: ${verdict ? verdict.note : 'verifier failed to return'}` })

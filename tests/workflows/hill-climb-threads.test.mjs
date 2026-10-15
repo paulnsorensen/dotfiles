@@ -475,6 +475,26 @@ test('reverting a refuted existing commit clears it and lets a later verified ga
   assert.equal(publishCount(trace), 1)
 })
 
+test('carried gains drop when the verifier refutes their commits, so a revert does not publish them', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'climb:s#1') return climb('no-gain', { existing_commits: ['e1d0001'] })
+      if (opts.label === 'verify-existing:s') return { confirmed: false, note: 'stale' }
+      if (opts.label === 'climb:s#2') return climb('no-gain', { reverted_commits: ['e1d0001'], head: sha('b') })
+      if (opts.label === 'publish') return published(['s'])
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const carried = [{ ...thread('s'), head: sha('c'), verified: false, gains: [{ change: 'cache', before: 5, after: 4 }] }]
+
+  const result = await workflow.run({ ...globals, args: { threads: carried, rounds: 2, publish: true } })
+
+  assert.equal(result.threads[0].pendingRefutation, false)
+  assert.equal(result.threads[0].gains, 0)
+  assert.equal(publishCount(trace), 0)
+})
+
 test('existing commits the verifier confirms are kept: no revert prompt, and a later verified gain publishes', async () => {
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({
