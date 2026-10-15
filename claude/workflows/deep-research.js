@@ -14,7 +14,49 @@ export const meta = {
 //
 // One implementation: the bundled pipeline's capability (multi-angle fan-out,
 // fetch, adversarial verify, synthesis) now lives in brie-ground as a dynamic
-// per-sub-question "deep" escalation, hard-coded to Tavily and far more token-
-// efficient than the fixed ~97-agent bundled run. This shim just forwards.
+// per-sub-question "deep" escalation, hard-coded to Tavily. The bundled run
+// always starts about 97 agents. brie-ground starts fewer for a narrow
+// question, but its worst case is 35 agents (see its fan-out caps). This shim
+// adds no agent of its own.
+//
+// The shim owns the /deep-research entry contract: it reads the question,
+// rejects a missing one with its own usage before any research starts, and
+// turns a child failure into an error result that carries the question, so
+// the caller can rerun with the same input.
 
-return await workflow('brie-ground', args)
+const USAGE = 'Usage: /deep-research <question>, or args { question }.'
+
+// Accepts a bare question, { question }, or that object sent as a JSON string.
+function questionOf(input) {
+  let value = input
+  if (typeof value === 'string' && /^\s*\{/.test(value)) {
+    try {
+      value = JSON.parse(value)
+    } catch {
+      // A question that only starts with a brace stays text.
+    }
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) value = value.question
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+const question = questionOf(args)
+if (!question) {
+  log(`No question provided. ${USAGE}`)
+  return { error: `No question provided. ${USAGE}` }
+}
+
+phase('Delegate')
+let result = null
+try {
+  result = await workflow('brie-ground', question)
+} catch (e) {
+  const reason = `brie-ground failed: ${(e && e.message) || e}`
+  log(reason)
+  return { error: `${reason}. Check that brie-ground is deployed (dots sync), then rerun /deep-research with the same question.`, question }
+}
+if (!result || typeof result !== 'object' || Array.isArray(result)) {
+  log('brie-ground returned no result object.')
+  return { error: 'brie-ground returned no result object. Rerun /deep-research with the same question.', question }
+}
+return result
