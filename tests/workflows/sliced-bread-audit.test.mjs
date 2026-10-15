@@ -621,25 +621,31 @@ test('dispatches each audit stage on its selected model and effort tier', async 
   assert.deepEqual([byLabel.get('issues:batch-1').model, byLabel.get('issues:batch-1').effort], ['haiku', 'low'])
 })
 
-test('one refuter runs per distinct fingerprint, across slices, and reused votes carry over', async () => {
-  let refuters = 0
+test('one refuter runs per distinct finding, across slices, and reused votes carry over', async () => {
+  const refuted = []
   const same = finding({ severity: 'high', file: 'domains/x/shared.py', line: 10 })
+  // Same line bucket as `same`, but a different claim: it needs its own refuter.
+  const other = { ...same, line: 12, claim: 'calls an adapter from the domain' }
   const { globals } = build({
     slices: [slice('a'), slice('b')],
-    on: ({ opts }) => {
-      if (opts.label === 'eval:a') return { slice: 'a', findings: [same, { ...same, line: 11 }] }
+    on: ({ opts, prompt }) => {
+      if (opts.label === 'eval:a') return { slice: 'a', findings: [same, { ...same, line: 11 }, other] }
       if (opts.label === 'eval:b') return { slice: 'b', findings: [same] }
-      if (opts.label.startsWith('cite:')) return citeOk(2)
-      if (opts.label.startsWith('refute:')) { refuters++; return { refuted: true, reasoning: 'rule misapplied' } }
+      if (opts.label.startsWith('cite:')) return citeOk(3)
+      if (opts.label.startsWith('refute:')) {
+        const isOther = prompt.includes(other.claim)
+        refuted.push(isOther ? 'other' : 'same')
+        return isOther ? { refuted: false, reasoning: 'rule applies' } : { refuted: true, reasoning: 'rule misapplied' }
+      }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })
 
   const result = await workflow.run({ ...globals, args: { dry_run: true } })
 
-  assert.equal(refuters, 1)
+  assert.deepEqual(refuted.sort(), ['other', 'same'])
   assert.equal(result.refuted.length, 3)
-  assert.equal(result.confirmed.length, 0)
+  assert.equal(result.confirmed.length, 1)
 })
 
 test('code caps opus evaluators at 20 slices and refuters at 12 per run', async () => {

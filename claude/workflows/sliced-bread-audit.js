@@ -435,6 +435,7 @@ if (budgetExhausted()) {
 const sortDesc = (fs) => [...fs].sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity])
 const refuterOutcomes = []
 const refuteVotes = new Map()
+const voteKey = (f) => `${issueFingerprint(f)}\n${String(f.claim || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
 let refuteCapHits = 0
 const failures = []
 let skippedSlices = 0
@@ -479,11 +480,12 @@ async function verifyFindings(findings, label) {
   )
 
   const contested = cited.filter((f) => SEV_RANK[f.severity] >= SEV_RANK.high)
-  // One refuter per distinct fingerprint for the whole run; a repeat reuses the earlier vote.
+  // One refuter per distinct finding for the whole run; a repeat reuses the earlier vote.
+  // The filing fingerprint buckets lines, so the vote key adds the claim: a different claim in the same bucket gets its own refuter.
   const reserved = []
   for (const finding of contested) {
-    const fingerprint = issueFingerprint(finding)
-    if (refuteVotes.has(fingerprint) || reserved.some((f) => issueFingerprint(f) === fingerprint)) continue
+    const key = voteKey(finding)
+    if (refuteVotes.has(key) || reserved.some((f) => voteKey(f) === key)) continue
     if (budgetExhausted()) continue
     // Count the cap at reservation time, so a budget stop during the votes is never reported as a cap hit.
     if (refuteVotes.size + reserved.length >= MAX_REFUTES) { refuteCapHits++; continue }
@@ -498,9 +500,9 @@ async function verifyFindings(findings, label) {
       effort: 'high',
     })
   )
-  reserved.forEach((finding, index) => refuteVotes.set(issueFingerprint(finding), votes[index]))
+  reserved.forEach((finding, index) => refuteVotes.set(voteKey(finding), votes[index]))
   for (const finding of contested) {
-    const vote = refuteVotes.get(issueFingerprint(finding))
+    const vote = refuteVotes.get(voteKey(finding))
     const location = `${finding.file}:${finding.line}`
     if (!vote) {
       out.unverified.push(finding)

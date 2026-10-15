@@ -61,7 +61,10 @@ const DEEP = {
 // Verify spawns one refute agent per claim, so the claim cap bounds it. Claims
 // past the cap stay unchecked. An agent() call with no model inherits the
 // parent model (often opus), so every fan-out worker names its model.
-const MAX_SUBQUESTIONS = 6
+// Worst case with these caps is 96 agents: recall 1 + 4 refutes, plan 1,
+// 3 deep mixed x 25, 2 shallow mixed x 6, synthesis 1, prototype 2. Callers
+// budget BRIE_GROUND_MAX_AGENTS = 100 for one child (workflow-prelude).
+const MAX_SUBQUESTIONS = 5
 const VERIFY_MAX_CLAIMS = 4
 const WORKER_MODEL = 'sonnet'
 
@@ -313,7 +316,7 @@ function planPrompt(question, recall) {
     covered,
     'Steps:',
     '1. Restate the decision/question crisply and name any loaded assumptions buried in it.',
-    '2. Decompose into 2-6 focused sub-questions — each independently answerable. If prior research already covers a sub-question, either drop it or keep it shallow just to re-verify.',
+    `2. Decompose into 2-${MAX_SUBQUESTIONS} focused sub-questions — each independently answerable. If prior research already covers a sub-question, either drop it or keep it shallow just to re-verify.`,
     '3. Route each sub-question to the single best source:',
     '   - "wiki": internal repo knowledge — architecture, conventions, past decisions, "why this design". Lives in the hallouminate repo wiki.',
     '   - "web": external facts — library/API behaviour, current vendor docs, version/changelog, comparisons, GitHub examples.',
@@ -428,7 +431,7 @@ function refutePrompt(claim, sq) {
   ].join('\n')
 }
 
-function synthPrompt(question, plan, evidence) {
+function synthPrompt(question, plan, evidence, dropped = []) {
   return [
     "Synthesize a grounded answer to the user's question from the collected, partially-verified evidence below. Apply /briesearch house style.",
     '',
@@ -436,6 +439,7 @@ function synthPrompt(question, plan, evidence) {
     `Restated: ${plan.restated_question || ''}`,
     plan.loaded_assumptions && plan.loaded_assumptions.length ? `Loaded assumptions to flag: ${plan.loaded_assumptions.join('; ')}` : '',
     '',
+    dropped.length ? `NOT GROUNDED (over the sub-question cap; list each in open_questions and do not claim them settled): ${dropped.join(' | ')}` : '',
     'EVIDENCE (JSON — decision_critical claims have already been adversarially checked; a claim with refuted=true was knocked down; a claim with unchecked=true was past the check cap and is unverified):',
     JSON.stringify(evidence, null, 2),
     '',
@@ -600,7 +604,8 @@ async function groundOne(sq) {
   return mergeEvidence(sq, parts.filter(Boolean))
 }
 
-const claimKey = (c) => String(c.claim || '').toLowerCase().replace(/\s+/g, ' ').trim()
+// A refute agent re-reads one citation, so a repeat must match both the claim and its citation.
+const claimKey = (c) => `${String(c.claim || '').toLowerCase().replace(/\s+/g, ' ').trim()}\n${String(c.citation || '').trim()}`
 const needsCheck = (c) => c.decision_critical && c.confidence !== 'certain'
 // A speculating claim can still move the answer; a dont_know claim already counts as unknown.
 const CHECK_RANK = { speculating: 0, dont_know: 1 }
@@ -724,7 +729,7 @@ if (recall && recall.fully_answers && recallClaims.length && recallHolds) {
 }
 
 phase('Synthesize')
-const synth = await agent(synthPrompt(question, plan, evidence), { schema: SYNTHESIS_SCHEMA, label: 'synthesize' })
+const synth = await agent(synthPrompt(question, plan, evidence, droppedSubs), { schema: SYNTHESIS_SCHEMA, label: 'synthesize' })
 if (!synth) return { error: 'Synthesis failed.', evidence }
 
 let prototype = null
@@ -744,11 +749,12 @@ if (decision.warranted && decision.spec) {
 return {
   question,
   answer: synth.answer,
-  confidence: synth.confidence,
+  // Code, not the synthesizer, keeps an answer with ungrounded sub-questions below certain.
+  confidence: droppedSubs.length && synth.confidence === 'certain' ? 'speculating' : synth.confidence,
   confidence_justification: synth.confidence_justification || '',
   evidence_table: synth.evidence_table || [],
   conflicts: synth.conflicts || [],
-  open_questions: synth.open_questions || [],
+  open_questions: [...new Set([...(synth.open_questions || []), ...droppedSubs])],
   report_path: synth.report_path || '',
   recommended_next_step: synth.recommended_next_step || '',
   prototype,

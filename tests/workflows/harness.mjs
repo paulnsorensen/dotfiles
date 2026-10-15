@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { createContext, Script } from 'node:vm'
 
 const GLOBALS = ['agent', 'parallel', 'pipeline', 'phase', 'log', 'workflow', 'args', 'budget', 'Date', 'Math']
-const SUPPORTED_SCHEMA_KEYS = new Set(['type', 'required', 'properties', 'items', 'enum', 'description', 'pattern'])
+const SUPPORTED_SCHEMA_KEYS = new Set(['type', 'required', 'properties', 'items', 'enum', 'description', 'pattern', 'minItems', 'maxItems'])
 const workflowCache = new Map()
 
 export class SchemaError extends Error {
@@ -47,6 +47,12 @@ function validateValue(value, schema, path) {
   }
   if (schema.pattern && typeof value === 'string' && !new RegExp(schema.pattern).test(value)) {
     throw new SchemaError(path + ': expected to match /' + schema.pattern + '/, got ' + JSON.stringify(value))
+  }
+  if (Array.isArray(value) && schema.minItems != null && value.length < schema.minItems) {
+    throw new SchemaError(path + ': expected at least ' + schema.minItems + ' items, got ' + value.length)
+  }
+  if (Array.isArray(value) && schema.maxItems != null && value.length > schema.maxItems) {
+    throw new SchemaError(path + ': expected at most ' + schema.maxItems + ' items, got ' + value.length)
   }
   if (schema.enum && !schema.enum.includes(value)) {
     throw new SchemaError(path + ': expected one of ' + schema.enum.join(', ') + ', got ' + JSON.stringify(value))
