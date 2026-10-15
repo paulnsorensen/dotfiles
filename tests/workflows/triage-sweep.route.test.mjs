@@ -47,6 +47,40 @@ test('code gates the close plan, fills omitted items, and counts the routes', as
   assert.deepEqual(readData(prompt, 'items').map((d) => [d.number, d.closable]), [[1, false], [2, true], [3, false]])
 })
 
+test('code derives the close reason from the verified verdict and the duplicate target from Ground', async () => {
+  const workflow = await loadWorkflow(path)
+  const close = (number, rank, extra) => routeEntry(number, 'close', rank, { confidence: 'certain', comment: 'c', ...extra })
+  const { globals } = createRuntime({
+    respond: responder({
+      gather: [issue(1), issue(2), issue(3), issue(4)],
+      grounds: {
+        1: 'stale',
+        2: ground(2, 'duplicate', { duplicate_of: 3 }),
+        3: ground(3, 'duplicate', { duplicate_of: 99 }),
+        4: ground(4, 'duplicate', { duplicate_of: 1 }),
+      },
+      route: () => ({
+        routed: [
+          close(1, 1, { close_reason: 'completed' }),
+          close(2, 2, { close_reason: 'duplicate', duplicate_of: 4 }),
+          close(3, 3, { close_reason: 'duplicate', duplicate_of: 99 }),
+          close(4, 4, { close_reason: 'duplicate', duplicate_of: 1 }),
+        ],
+        domains: [],
+        summary: 'summary',
+      }),
+    }),
+  })
+
+  const routing = plain((await workflow.run({ ...globals, args: 'owner/name' })).routing)
+
+  assert.deepEqual(routing.routed.map((r) => [r.number, r.route]), [[4, 'close'], [1, 'needs-human'], [2, 'needs-human'], [3, 'needs-human']])
+  assert.deepEqual([routing.routed[0].close_reason, routing.routed[0].duplicate_of], ['duplicate', 1])
+  assert.match(routing.routed[1].why, /close_reason "completed" does not match the verified stale verdict/)
+  assert.match(routing.routed[2].why, /Route named duplicate_of 4, but Ground named #3/)
+  assert.match(routing.routed[3].why, /Ground named no other item in this sweep/)
+})
+
 test('code merges Ground and lens links, drops narrative and unknown links, and keeps the weaker type on a disagreement', async () => {
   const workflow = await loadWorkflow(path)
   const link = (from, to, type, evidence = `${type} evidence`) => ({ from, to, type, evidence })

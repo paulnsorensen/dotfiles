@@ -53,6 +53,8 @@ const VERDICTS = ['valid', 'partial', 'needs-info', ...CLOSE_VERDICTS]
 const LINK_TYPES = ['hard-coupling', 'ordering', 'shared-seam', 'alternative', 'umbrella', 'overlay', 'narrative']
 const ROUTES = ['fix-now', 'needs-design', 'deferred', 'rescope', 'close', 'needs-human']
 const CLOSE_REASONS = ['completed', 'not planned', 'duplicate']
+// Code derives the close reason from the verified verdict; Route must agree with it.
+const REASON_BY_VERDICT = { superseded: 'completed', stale: 'not planned', misfiled: 'not planned', duplicate: 'duplicate' }
 const CONFIDENCES = ['certain', 'likely']
 
 const ITEM_SCHEMA = {
@@ -69,7 +71,10 @@ const ITEM_SCHEMA = {
 const GATHER_SCHEMA = {
   type: 'object',
   required: ['items'],
-  properties: { items: { type: 'array', items: ITEM_SCHEMA } },
+  properties: {
+    items: { type: 'array', items: ITEM_SCHEMA },
+    error: { type: 'string', description: 'the failing command and its message when a listing command fails; omit or "" otherwise' },
+  },
 }
 
 const EVIDENCE_SCHEMA = {
@@ -304,6 +309,7 @@ function gatherPrompt() {
     scope !== 'issues' ? `- \`gh pr list${repoFlag} --state open --limit ${limit} --json number,title,url\`` : '',
     '',
     'Return one entry per item: number, kind ("issue" or "pr"), title, url. Do not read issue bodies or diffs here — that belongs to the next phase.',
+    'If a listing command fails, set error to the command and its message. An empty items list without error means nothing is open.',
   ].filter(Boolean).join('\n')
 }
 
@@ -583,10 +589,13 @@ function checkRouting(out, grounded, links) {
     seen.add(r.number)
     const entry = { number: r.number, kind: g.item.kind, title: g.item.title, route: r.route, rank: r.rank, why: r.why }
     if (r.route === 'close') {
+      const reason = closable(g) ? REASON_BY_VERDICT[g.verify.final_verdict] : ''
+      const target = g.ground.duplicate_of
       let problem = ''
       if (!closable(g)) problem = 'its close verdict is not verified'
-      else if (!CLOSE_REASONS.includes(r.close_reason)) problem = 'it has no close_reason'
-      else if (r.close_reason === 'duplicate' && !(r.duplicate_of > 0)) problem = 'a duplicate close names no duplicate_of'
+      else if (r.close_reason !== reason) problem = `close_reason "${r.close_reason}" does not match the verified ${g.verify.final_verdict} verdict`
+      else if (reason === 'duplicate' && !(target !== r.number && byNumber.has(target))) problem = 'Ground named no other item in this sweep as the surviving duplicate'
+      else if (reason === 'duplicate' && r.duplicate_of !== target) problem = `Route named duplicate_of ${r.duplicate_of}, but Ground named #${target}`
       if (problem) {
         log(`Route closed #${r.number}, but ${problem}; moved to needs-human.`)
         entry.route = 'needs-human'
@@ -647,6 +656,10 @@ for (let round = 0; round <= LIMITS.gatherRedo && !gathered; round++) {
 if (!gathered) {
   log('The gather agent returned no item list after a redo; stopping before Ground.')
   return finish('blocked', { reason: 'The gather agent returned no item list. Rerun with the same args.' })
+}
+if (gathered.error) {
+  log(`The gather agent reported a listing failure: ${gathered.error}; stopping before Ground.`)
+  return finish('blocked', { reason: `Listing open items failed: ${gathered.error}. Fix the cause, then rerun with the same args.` })
 }
 
 // The gather agent reads the limit only as a prompt hint, so code drops repeats, out-of-scope kinds, and caps each kind.

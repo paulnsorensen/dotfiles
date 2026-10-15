@@ -176,6 +176,18 @@ test('a failed gather blocks the run instead of reporting an empty backlog', asy
   assert.doesNotMatch(trace.logs.join('\n'), /No open items/)
 })
 
+test('a gather that reports a listing failure blocks the run instead of reporting an empty backlog', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({ respond: responder({ overrides: { gather: () => ({ items: [], error: 'gh issue list: HTTP 401' }) } }) })
+
+  const result = await workflow.run({ ...globals, args: 'owner/name' })
+
+  assert.equal(result.status, 'blocked')
+  assert.match(result.reason, /Listing open items failed: gh issue list: HTTP 401/)
+  assert.deepEqual(labels(trace), ['gather'])
+  assert.doesNotMatch(trace.logs.join('\n'), /No open items/)
+})
+
 test('triage-sweep accepts object-form and JSON-string args', async () => {
   const workflow = await loadWorkflow(path)
 
