@@ -196,6 +196,23 @@ push_pin_branch() {
     [[ "$(git -C "$WORK" status --porcelain)" == " M mise-config.toml" ]]
 }
 
+@test "a parent attributes symlink does not warn or change a current pin PR" {
+    push_pin_branch
+    dirty_bump
+    land_upstream other.txt $'y\n'
+    printf "# fixture\n" > "$TEST_HOME/attributes"
+    ln -s "$TEST_HOME/attributes" "$TEST_HOME/.gitattributes"
+    local head
+    head="$(git -C "$WORK" rev-parse HEAD)"
+
+    run settle_mise_pin_bump "$MANIFEST"
+    assert_success
+    [[ -z "$output" ]]
+    [[ "$(git -C "$WORK" rev-parse HEAD)" == "$head" ]]
+    [[ "$(git -C "$WORK" status --porcelain)" == " M mise-config.toml" ]]
+    [[ "$(cat "$MANIFEST")" == "$(printf '%s' "$BUMPED")" ]]
+}
+
 @test "a dropped stale bump comes back when local edits block the fast-forward" {
     push_pin_branch
     dirty_bump

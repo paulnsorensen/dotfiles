@@ -16,6 +16,28 @@ The default puts the Project Panel on the left at 260px, Agent Panel on the righ
 
 Zed's Agentic layout is an intentional alternative, not this default: it places the Agent Panel and Threads Sidebar left, while Project/Git panels move right. Use `workspace: use agentic layout` to try that agent-first arrangement.
 
+### Brownfield surfaces (2026-10-11)
+
+The user selects Brownfield for dark mode and keeps the existing Modus light theme.
+This supersedes the historical dark defaults below.[^brownfield-selection]
+The center editor and gutter use the exact palette background `#211a16`.
+Both side panels use `#322b26`; elevated popups use `#3c322b`.
+These Zed-only surfaces live in the scheme’s optional `zed` role overrides, not in its 24 palette slots.[^brownfield-surfaces]
+Use `base04` for UI placeholder and disabled text on the lighter surfaces.
+Its contrast is 6.632:1 on side panels and 5.946:1 on elevated surfaces.
+Syntax comments retain the exact `base03` value on the editor background.
+The user selects blue `#799af9` for focus and modified-file indicators.
+The scheme’s `zed.ui_accent` controls these UI roles without changing yellow syntax, warnings, or ANSI slots.
+
+Zed’s file tree and Agent Panel both use `panel.background`.[^zed-shared-panel]
+The current theme API cannot assign independent backgrounds to those two panels.
+Do not invent an agent-specific theme key or claim separate left/right colors.
+The supported distinction is lighter side panels against the darker center editor.
+
+[^brownfield-selection]: chezmoi/dot_config/zed/settings.json.tmpl:17-21
+[^brownfield-surfaces]: theme/schemes/brownfield-warm.yaml; theme/lib-zed.sh:write_zed_theme
+[^zed-shared-panel]: [Project Panel](https://raw.githubusercontent.com/zed-industries/zed/main/crates/project_panel/src/project_panel.rs); [Agent Panel](https://raw.githubusercontent.com/zed-industries/zed/main/crates/agent_ui/src/agent_panel.rs); [Theme schema](https://zed.dev/schema/themes/v0.2.0.json)
+
 ## Accessibility theme
 
 Use the Modus Themes extension and select `Modus Vivendi Deuteranopia` in dark mode and `Modus Operandi Deuteranopia` in light mode. The upstream deuteranopia palette avoids red/green-only coding and uses yellow/blue distinctions, including diff additions/removals; it targets 7:1 foreground/background contrast. The Zed extension must still be installed on each machine before a checked-in `theme` setting can resolve.

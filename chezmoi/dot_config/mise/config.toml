@@ -44,7 +44,7 @@
 [tools]
 "aqua:jqlang/jq" = "jq-1.8.2"
 "aqua:mikefarah/yq" = "v4.54.1"
-"aqua:junegunn/fzf" = "v0.74.4"
+"aqua:junegunn/fzf" = "v0.74.5"
 "aqua:cli/cli" = "v2.102.0"
 "aqua:koalaman/shellcheck" = "v0.11.0"
 "aqua:bats-core/bats-core" = "v1.14.0"
@@ -65,28 +65,30 @@
 "aqua:sxyazi/yazi" = "v26.9.1"
 "aqua:Wilfred/difftastic" = "0.71.0"
 "aqua:codeberg.org/mergiraf/mergiraf" = "v0.18.0"
-"aqua:jesseduffield/lazygit" = "v0.66.0"
+"aqua:jesseduffield/lazygit" = "v0.66.1"
 "aqua:git-town/git-town" = "v24.1.0"
-"aqua:joshmedeski/sesh" = "v2.32.0"
+"aqua:joshmedeski/sesh" = "v2.33.0"
 "aqua:casey/just" = "1.58.0"
-"aqua:twpayne/chezmoi" = "v2.73.0"
+"aqua:twpayne/chezmoi" = "v2.73.1"
 "aqua:duckdb/duckdb" = "v1.5.6"
 "aqua:chmln/sd" = "v1.1.0"
 "aqua:charmbracelet/vhs" = "v0.12.1"
+"aqua:sharkdp/hyperfine" = "v2.0.0"
+"aqua:jdx/usage" = "v6.12.1"
 
 "aqua:mozilla/sccache" = "v0.18.0"
 "aqua:nextest-rs/nextest/cargo-nextest" = "cargo-nextest-0.9.140"
 "aqua:protocolbuffers/protobuf/protoc" = "v36.2"
-"aqua:astral-sh/uv" = "0.13.0"
-"aqua:rust-lang/rust-analyzer" = "2026-10-05"
+"aqua:astral-sh/uv" = "0.13.1"
+"aqua:rust-lang/rust-analyzer" = "2026-10-12"
 "aqua:taiki-e/cargo-llvm-cov" = "v0.9.1"
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 "aqua:axodotdev/cargo-dist" = "v0.33.0"
 "aqua:rust-lang/mdBook" = "v0.5.4"
-"aqua:anthropics/claude-code" = "v2.1.296"
+"aqua:anthropics/claude-code" = "v2.1.300"
 "aqua:openai/codex" = "rust-v0.160.0"
 
-node = "26.11.1"
+node = "26.12.0"
 bun = "1.4.3"
 rust = "1.99.0"
 
@@ -96,6 +98,6 @@ rust = "1.99.0"
 "npm:basedpyright" = "1.40.2"
 # OpenCode v2 ships on npm only; its GitHub tags carry no release assets for aqua.
 # The package postinstall links the platform binary, so allow its build script.
-"npm:@opencode/cli" = { version = "2.0.26", allow_builds = ["@opencode/cli"] }
+"npm:@opencode/cli" = { version = "2.0.29", allow_builds = ["@opencode/cli"] }
 "cargo:eza" = { version = "0.23.5", features = "vendored-libgit2" }
 "cargo:tokei" = "15.0.0"

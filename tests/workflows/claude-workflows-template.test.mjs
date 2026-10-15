@@ -518,6 +518,25 @@ test('an advisor revise replans once with its concerns and the rejected plan, th
   assert.doesNotMatch(agentCall(trace, 'plan').prompt, /previous_plan/)
 })
 
+test('the second advisor round re-checks the prior concerns only', async () => {
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = runtime({
+    ...happy,
+    'advise:plan:0': { verdict: 'revise', concerns: ['split T-1'], guidance: 'smaller tasks' },
+    'plan:r1': plan(),
+    'advise:plan:1': approve,
+  })
+
+  await workflow.run({ ...globals, args: 'g' })
+
+  const first = agentCall(trace, 'advise:plan:0').prompt
+  const second = agentCall(trace, 'advise:plan:1').prompt
+  assert.doesNotMatch(first, /prior_concerns/)
+  assert.match(second, /"prior_concerns": \[\s*"split T-1"\s*\]/)
+  assert.match(second, /Judge only whether each one is resolved/)
+  assert.match(second, /Never reverse a prior concern/)
+})
+
 test('a second revise verdict returns needs-input instead of looping', async () => {
   const workflow = await loadWorkflow(path)
   const revise = { verdict: 'revise', concerns: ['still wrong'], guidance: 'again' }

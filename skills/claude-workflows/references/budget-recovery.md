@@ -15,6 +15,19 @@ A progress file plus git history lets a fresh context learn the state fast [s9].
 End each session in a clean state that can merge [s9].
 Make the deliverable durable before a long advisor or verifier call [s15].
 
+## Resume across runs
+
+A Workflow cannot pause for the user. Each stop for input ends the run.
+
+1. Write the run state to a file in code, for example `.cheese/runs/<name>-<digest>.json`. The state holds the plan, the stage outcomes, and the open questions.
+2. Each `needs-*` result names the resume input, for example `{ resume: '<digest>', answers }`. Return that call shape in `usage`.
+3. On resume, validate the digest and the state before the first agent. Skip each stage that the state marks done.
+4. Rerun a stage only when its inputs changed, for example when the default branch moved.
+5. Prefer a calling skill that asks the user and holds the state. Then the Workflow runs once, after approval.
+6. Accepted variant: the caller carries the state. The run returns `{state, digest}`, and the caller sends `{state, digest, answers}` on resume. The cost is tokens, because the caller sends the whole state back each run. Use it when no file store exists. See `advisor.md` rule 3.
+
+Evidence: 19 of 28 move-my-cheese runs from 2026-10-11 to 2026-10-14 ended at a gate before any build. Each rerun repeated Recon, and the caller sent the full plan object back each time.
+
 ## Status contract
 
 | Status | Meaning | Required fields |
@@ -35,7 +48,7 @@ Normalize contradictions in code. A `done` result with items in `remaining` beco
 
 The template guard compares implementer-reported SHAs. This is the minimal form. Uncommitted progress reads as `stalled`, and code does not check that the SHA exists.
 Use a fingerprint guard when work can progress without a commit, or when you cannot trust the reported SHA. Hash the worktree state in code and compare it between rounds.
-The local exemplar is `claude/workflows/cheese-factory.js` in the dotfiles repository (checkpoint coordinator, fingerprint guard, continuation limit).
+The local exemplar is `claude/workflows/cheese-factory.js` in the dotfiles repository (commit-SHA continuation, salvage from the ref, stall guard, continuation limit).
 
 ## Workflow runtime
 

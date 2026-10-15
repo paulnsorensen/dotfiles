@@ -68,7 +68,7 @@ Decisions behind replacing `claude/workflows/curd-flock.js` with the spec-driven
 
 _Source: preamble and coder prompt consolidation · Updated: 2026-07-28 · Supersedes: preamble-owned fan-out and continuation attributions_
 
-## ADR-010: Phase-owned checkpoint before one targeted Cook retry [status: accepted]
+## ADR-010: Phase-owned checkpoint before one targeted Cook retry [status: superseded by ADR-011]
 
 This decision replaces ADR-009's recovery procedure, not its requirement to preserve partial work.
 The September 19, 2026 session shows that handwritten notes and broad continuation assignments still exhaust coders.[^recovery-20260919]
@@ -87,3 +87,83 @@ The parent must not implement the remainder automatically.
 The coordinator's verified response remains an agent trust boundary; deterministic workflow tests verify routing, not model execution.[^recovery-20260919]
 
 [^recovery-20260919]: `claude/workflows/cheese-factory.js` (`checkpointPrompt`, `validCheckpointResult`, Cook pipeline stage); `tests/workflows/cheese-factory.test.mjs`; [[operations/subagent-dispatch-analytics]]. Decision: September 19, 2026.
+
+## ADR-011: Commit-SHA continuation with source ranges as data [status: accepted]
+
+- **Context:** ADR-010's wheypoint coordinator must run in the cook's worktree to see its uncommitted state. ADR-012 gives every writer its own isolated worktree, so the coordinator cannot see that state. It also costs one sonnet agent per round. move-my-cheese (`buildTarget`, `claude/workflows/move-my-cheese.js:1097`) continues from a committed SHA instead.
+- **Decision:** A cook that runs low on context commits its work, advances `curd/<slug>`, and returns completed, remaining, a checkpoint SHA, and `source_ranges`. Code validates the ranges with `validGroundedRanges` and passes all four as fenced data to a fresh isolated continuation. A null result runs one `salvage()` that reads `refs/heads/curd/<slug>`. A repeated SHA stops the curd as stalled. The limit is 3.
+- **Alternatives:** pure move-my-cheese continuation without ranges (loses ADR-010's targeted first read); keep the coordinator and pin it at the SHA (unverified that a wheypoint checkpoint resolves across worktrees).
+- **Consequences:** No wheypoint dependency in the workflow. The continuation still reads the named ranges first. Uncommitted work at a hard death is lost; salvage resumes from the last commit.
+
+## ADR-012: Writers advance curd branches with update-ref from a detached HEAD [status: accepted]
+
+- **Context:** `claude/hooks/worktree-guard.js:25-41,60-71` allows writes only under the agent's own worktree root. cheese-factory writers `cd` into the cook's worktree, so the guard blocks their edits. move-my-cheese fixed the same failure in #1267 (wiki: architecture/move-my-cheese-workflow).
+- **Decision:** Cook, continuation, corrective, press, and cure each run with `isolation: 'worktree'`. Each checks out `--detach <sha>`, commits, and runs `git update-ref refs/heads/curd/<slug> HEAD`. Each returns `head_sha`, and code passes it to the next writer and to Plate. No worktree checks out `curd/<slug>`.
+- **Alternatives:** per-stage branches with `--ignore-other-worktrees` (more refs and cleanup); keep the shared worktree (blocked by the guard).
+- **Consequences:** State moves only through refs and SHAs. Plate can check out `curd/<slug>` because no worktree holds it.
+
+## ADR-013: age-fanout returns flat findings for code routing [status: accepted]
+
+- **Context:** ADR-006 routes findings to curds by file, but the age-fanout reconcile model did the routing with `git log --name-only` and reported cheap lows as one global boolean (`claude/workflows/age-fanout.js:128,214-219`). cheese-factory could not cure cheap lows per curd or check the routing.
+- **Decision:** When the caller passes `route_curds`, reconcile returns a flat `findings` list. Each item has a severity and `fix_cost_now` (contained, sprawling, or n/a). cheese-factory's integrate step returns `files_by_slug`, and code routes each finding to every curd that owns its file. A finding that needs cure with no owner marks every integrated curd dirty. An unowned low that needs no cure leaves the curds clean. A call without `route_curds` is unchanged, so move-my-cheese is unaffected.
+- **Alternatives:** validate the model's `per_curd` in code (the model still routes); defer routing (cheap lows cure every curd).
+- **Consequences:** Routing is deterministic and testable. `fix_cost_now` stays a reviewer judgment.
+
+_Source: /mold spec `cheese-factory-hardening` (durable corpus) · Decided: 2026-10-12 · ADR-011 supersedes ADR-010_
+
+## Implementation notes for ADR-011..013 (2026-10-12)
+
+The `cheese-factory-hardening` run implements ADR-011, ADR-012, and ADR-013. Review and user decisions refine them as follows.
+
+- **Cook answers that stay final (user decision B).** A partial cook or continuation with a bad checkpoint SHA goes to `salvage()`. An `ok` cook with a bad `head_sha` fails the curd at stage cook at once. A `needs-context` status, a null result, and a throw also go to `salvage()`. No cook SHA defect re-dispatches `cookPrompt`, because that prompt resets `curd/<slug>` to the base SHA.
+- **Cook status outside the enum (user decision, 2026-10-12).** A cook status other than `ok`, `partial`, `blocked`, or `needs-context` also goes to `salvage()`. A redo would reset the curd ref, as for a SHA defect.
+- **Ranges.** `groundedRanges` keeps the valid `source_ranges` and drops the rest. A one-line `#n-n` range is valid. This replaces the reject-all check that ADR-011 names.
+- **Integration (amends ADR-006).** Integrate and re-merge build on a detached HEAD at the resolved base SHA through one shared merge prompt. They merge each curd by its code-known SHA. No `integration/<parent>` branch exists, because a second worktree cannot check out a branch that another worktree holds.
+- **Fail-closed reviews.** A barrier, fan-out, or re-age result whose status is not `ok` is not a review. A blocked barrier fails every integrated curd. A blocked re-age after a cure marks every integrated curd dirty.
+- **Plate pin.** Plate checks `refs/heads/curd/<slug>` against the reviewed SHA once, before /plate starts any commit, restack, or push step. A check at push time conflicts with the stacked restack, which rewrites upper-layer SHAs.
+- **Typed calls.** A status or SHA error is a substance error, so the producer redoes the call. No formatter repairs it. A writer throw is final; a read-only throw (taste, salvage, reviewers, formatter repairs) retries within `LIMITS.fixRounds`. A short SHA gets a read-only expansion instead of a writer redo. Cook is the exception: its status and SHA defects stay final, as above.
+- **Writers read skill files (user decision, 2026-10-12).** The `coder` type has no Skill tool, because the Skill tool adds the full skill listing (about 11k tokens) to every coder spawn. The cook, press, and cure prompts tell the writer to read `~/.claude/skills/<name>/SKILL.md` and follow it, as age-fanout does for the reviewer.
+- **Code-owned checks.** A taste pass over a `revise` lens counts as `revise`. A resolved spec must carry `curd_count`. A decomposition above `LIMITS.maxCurds` (12) is a substance error, which keeps a run under the 1000-agent cap.
+
+_Source: `claude/workflows/cheese-factory.js`, `claude/workflows/age-fanout.js`, `tests/workflows/cheese-factory*.test.mjs` · Age reports `.cheese/age/pass{1,2}-cheese-factory-hardening.md` · Updated: 2026-10-12_
+
+## ADR-014: Shared helper prelude as a vendored block with a drift test [status: accepted]
+
+- **Context:** Workflow scripts cannot import. cheese-factory and move-my-cheese hold nine byte-identical helpers, two scratch and SHA regexes that differ in form, and two diverged `typed()` functions. `dots sync` copies `claude/workflows/` with `cp -L` and has no build step (`.sync-lib.sh:406,670`).
+- **Decision:** `claude/workflow-prelude/prelude.js` holds the nine helpers plus the two converged regexes (`SCRATCH_WORKTREE_RE` with its `SCRATCH_PATH_SRC`, and `FULL_SHA_RE`). `node claude/workflow-prelude/sync.mjs` pastes it between markers in both workflows. A test fails when a block drifts from the source. Each workflow keeps its own `typed()`. The shared `FULL_SHA_RE` has the `i` flag, so cheese-factory now accepts an uppercase 40-hex SHA.
+- **Alternatives:** concat at deploy (repo file differs from deployed file; ADR-007 rejected template machinery); a drift test only (fixes still need manual ports).
+- **Consequences:** The deployed file equals the repo file, and the harness and deploy stay unchanged. An edit inside a block fails the test until it moves to the source.
+
+## ADR-015: Extract one read-only check per spec AC at resolve [status: accepted]
+
+- **Context:** Spec ACs are EARS prose with no check command. move-my-cheese's planner emits criteria with checks, and code gates them with `UNSAFE_CHECKS` (`claude/workflows/move-my-cheese.js:189,269`).
+- **Decision:** After resolve, one read-only opus agent returns one criterion per spec AC id: a check_kind (command, test, inspection, or ci) and a check. Code requires exact AC-id coverage and gates each non-ci check with `UNSAFE_CHECKS` and the negated-search gate. A spec with no AC line skips verification. The gate is stricter than move-my-cheese: it adds a structural pre-filter (raw newlines, shell expansion, here documents), per-command rules (command paths, interpreters with code flags, `find`, `sed`, `awk`, `git` config and network subcommands, package runners), tree-mutation rules, and always-pass rules (a check that cannot exit non-zero). Follow-up `cfh-criteria-fu-3` ports the gate back to move-my-cheese.
+- **Alternatives:** judges read the prose and choose a check (less reproducible); the mold spec format carries checks (changes the easy-cheese mold skill and every older spec).
+- **Consequences:** Checks are reproducible and reviewable before cook. An extracted check can be weak; the plan advisor reviews it.
+
+## ADR-016: A failed spec criterion blocks Plate [status: accepted]
+
+- **Context:** Today a curd plates when its review is clean, without a check against the spec's ACs.
+- **Decision:** Before Plate, one judge per non-ci criterion verifies it at the final integration head. A fail, a missing path, or no valid verdict blocks Plate for the whole run, even when some curds failed earlier (user decision of 2026-10-12: fail closed for all). The run returns status partial with the verdicts, and each clean curd stays unplated. CI criteria are deferred.
+- **Alternatives:** one corrective round before blocking (ACs do not map to curds); advisory only (no guarantee).
+- **Consequences:** Fail closed, as in move-my-cheese. A run can finish clean on review but still not plate. One failed criterion blocks every clean curd, even when an unrelated curd causes it. A run that reaches Report is ok only when every curd is clean and plated. Otherwise it is partial. Only a budget or gate block sets reason.
+
+## ADR-017: Advisor gates on the plan and on done [status: accepted]
+
+- **Context:** move-my-cheese advises on its plan (approve, one revise, or stop) and on done (`claude/workflows/move-my-cheese.js:1103-1108,1599-1621`). cheese-factory starts cook on an unreviewed decomposition.
+- **Decision:** A judge in advise mode reviews the curds and criteria before any cook: approve, one revise, or stop. A second advise call after verification gates Plate: only approve proceeds. Both advisors always run, including for a spec with no AC line. The done advisor does not run after a verification failure, because Plate is already blocked.
+- **Alternatives:** a done gate only (a bad plan surfaces late); no advisor.
+- **Consequences:** Two or three opus calls per run. A stopped plan spends no cook agents. A plan that the advisor does not approve returns `status: 'blocked'` with the last valid concerns and an `advice.plan` record (verdict, concerns, guidance, revisions). A revise that no step can rerun (one candidate curd and no AC line) blocks at once. Both advisor payloads carry the spec text. A verify judge that reports `tree_clean: false` fails its criterion, because an earlier check may have changed the shared worktree.
+
+## ADR-018: Ground in the wiki and settle research before the plan [status: accepted]
+
+- **Context:** cheese-board grounds its strategy in recorded wiki decisions and runs `workflow('brie-ground')` for open external questions ([[architecture/cheese-board-workflow]]). cheese-factory and move-my-cheese planned without either, so a plan could contradict an ADR or rest on a stale library fact.
+- **Decision:** The prelude (ADR-014) now holds the shared contract: `MOLD`, `DECISION_KINDS`, `RESEARCH_CONFIDENCE`, `GROUNDING_SCHEMA`, `GROUND_RESEARCH_SCHEMA`, `GROUND_RULES`, `researchRule()`, and `brieGround()`. `brieGround()` returns `{ found }`, `{ unsettled }`, or `{ failed }`, so three workflows read one result contract. Each workflow keeps its own `checkGrounding`, because its item refs differ. In cheese-factory, one read-only explorer grounds the spec after the AC-count check and before Criteria. Items are `SPEC` and the AC ids. Code assigns `D-n` ids and removes repeated questions. Then at most `LIMITS.maxResearch` (3) brie-ground children run in sequence. The decisions and answers go to the decomposer, cook, taste, and both advisor payloads. A prompt gets the grounding block only when it holds a decision or an answer.
+- **Failure semantics:** A Ground failure is a gap. The run continues, `gaps` lists it, and the run ends `partial`. Research fails closed. A failed child, an unsettled answer, or more questions than the cap returns `status: 'blocked'` with `open_questions` before any plan, and the spec goes back to /mold.
+- **Duplicate research:** cheese-board specs already cite their brie-ground reports under Provenance. The Ground prompt asks a question only when the spec text, the code, the wiki, and prior research all leave it open.
+- **Alternatives:** grounding inside the decomposer (the advisors would not see it); a copied helper in each workflow (three result contracts would drift); a blocking Ground failure (the wiki is an aid, so cheese-board treats it as a gap too).
+- **Agent cap:** each brie-ground child counts toward the 1000-agent runtime cap at up to `BRIE_GROUND_MAX_AGENTS` (100, shared prelude). `curdCap` lowers the Decompose limit by what research spent: 0 or 1 children keep 12 curds, 2 allow 11, and 3 allow 9.
+- **Taste:** only `adr`, `locked`, and `gotcha` decisions reach taste as locked decisions. `roadmap` and `strategy` decisions are context, and taste never halts on them. Cook continuations and corrective passes get the same grounding block as the first cook.
+- **Consequences:** Each run adds one explorer and up to three research children. "Ok" now also needs a Ground run with no gap. The result carries `grounding` and `gaps`.
+
+_Source: /mold specs `cfh-shared-prelude` and `cfh-criteria-gate` (durable corpus) · Decided: 2026-10-12 · ADR-015..017 accepted when `cfh-criteria-gate` landed · ADR-018: grounding-parity session with /claude-workflows and an advisor revise round, 2026-10-14_

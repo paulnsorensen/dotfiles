@@ -99,8 +99,9 @@ function sandboxMath() {
   })
 }
 
+const UNSCRIPTED_RE = /^(unexpected agent|agent fixture missing)/
 export function createRuntime({ respond = () => { throw new Error('agent fixture missing') }, budgetTotal = null, budgetSpent = 0 } = {}) {
-  const trace = { agents: [], phases: [], logs: [] }
+  const trace = { agents: [], phases: [], logs: [], unscripted: [] }
   const budget = {
     total: budgetTotal,
     spent: () => budgetSpent,
@@ -111,7 +112,14 @@ export function createRuntime({ respond = () => { throw new Error('agent fixture
     agent: async (prompt, opts = {}) => {
       const call = { prompt, opts, index: trace.agents.length }
       trace.agents.push(call)
-      const response = await respond(call)
+      let response
+      try {
+        response = await respond(call)
+      } catch (e) {
+        // A workflow turns an agent throw into a value, so an unscripted label would hide a test mistake. Record it for run() to fail loudly.
+        if (UNSCRIPTED_RE.test(e && e.message)) trace.unscripted.push(opts.label)
+        throw e
+      }
       if (opts.schema) {
         validateSchema(opts.schema, '$')
         if (response !== null) validateValue(response, opts.schema, '$')
@@ -146,6 +154,7 @@ export function createRuntime({ respond = () => { throw new Error('agent fixture
     Math: sandboxMath(),
   }
 
+  globals.agent.unscripted = trace.unscripted
   return { globals, trace }
 }
 
@@ -163,13 +172,19 @@ async function compileWorkflow(path) {
 export async function loadWorkflow(path) {
   if (!workflowCache.has(path)) workflowCache.set(path, compileWorkflow(path))
   const { meta, script } = await workflowCache.get(path)
+  // Only the cheese-factory suite fails on an unscripted label. Other suites rely on a swallowed throw.
+  const strict = /\/cheese-factory\.js$/.test(path)
 
   return {
     meta,
     run: (overrides = {}) => {
       const sandbox = Object.fromEntries(GLOBALS.map((name) => [name, overrides[name]]))
       const context = createContext(sandbox, { codeGeneration: { strings: false, wasm: false } })
-      return script.runInContext(context)
+      return Promise.resolve(script.runInContext(context)).then((result) => {
+        const unscripted = strict && overrides.agent && overrides.agent.unscripted
+        if (unscripted && unscripted.length) throw new Error('unscripted agent call(s): ' + unscripted.join(', '))
+        return result
+      })
     },
   }
 }

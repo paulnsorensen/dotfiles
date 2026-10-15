@@ -23,6 +23,8 @@ packages:
   - gettext
   - taf2/tap/mdvi
   - mise                                      # tool-version manager; declared so upgrade mode moves the binary too
+  - ffmpeg                                    # audio/video encoder; VHS (mise pin) records TUI demos through it
+  - graphviz                                  # `dot` graph renderer
 
   # Remote access (Tailscale mesh VPN → SSH bootstrap → mosh)
   - mosh                                      # resilient mobile shell (UDP 60000-61000); survives roaming/sleep

@@ -69,13 +69,6 @@ register_local_marketplaces() {
         mp_name=$(echo "$entry" | jq -r '.name')
         mp_path=$(echo "$entry" | jq -r '.path')
 
-        # Skip shared marketplaces (e.g. `@local`) — those are registered
-        # elsewhere (claude/.sync sync_vaudeville_cache) and may host multiple
-        # plugins. Only auto-manage one-plugin-per-marketplace entries.
-        if [[ "$mp_name" != "$plugin_name" ]]; then
-            continue
-        fi
-
         # shellcheck disable=SC2088  # literal "~/" pattern, expanded explicitly below
         case "$mp_path" in
             "~/"*) abs_path="${HOME}/${mp_path#"~/"}" ;;
@@ -85,6 +78,15 @@ register_local_marketplaces() {
 
         if [[ ! -d "$abs_path" ]]; then
             echo -e "  ${RED}Warning: $mp_name path not found: $abs_path${NC}"
+            continue
+        fi
+
+        # Register only a marketplace this entry owns: one plugin per
+        # marketplace (`name@name`), or a source dir whose marketplace.json
+        # names the marketplace (`vaudeville@paulnsorensen`). Skip shared
+        # names such as `@local`, which no source marketplace.json declares.
+        if [[ "$mp_name" != "$plugin_name" ]] \
+            && [[ "$(jq -r '.name // empty' "$abs_path/.claude-plugin/marketplace.json" 2>/dev/null)" != "$mp_name" ]]; then
             continue
         fi
 

@@ -1649,6 +1649,20 @@ YAML
     [[ ! -f "$CODESIGN_LOG" ]] || [[ ! -s "$CODESIGN_LOG" ]]
 }
 
+curl_log_has_codex_download() {
+    grep -Eq 'https?://[^[:space:]]*codex' "$CURL_LOG"
+}
+
+@test "Codex download check ignores local paths but detects Codex URLs" {
+    printf 'curl -o %s/codex-tmp/omp https://example.com/omp\n' "$TEST_HOME" > "$CURL_LOG"
+    run curl_log_has_codex_download
+    [ "$status" -eq 1 ]
+
+    printf 'curl -fsSL https://example.com/codex/install.sh\n' >> "$CURL_LOG"
+    run curl_log_has_codex_download
+    [ "$status" -eq 0 ]
+}
+
 @test "native harness sync never installs or self-updates mise-managed claude and codex" {
     write_test_yaml
     rm -f "$MOCK_BIN/claude" "$MOCK_BIN/codex"
@@ -1656,7 +1670,8 @@ YAML
     run_sync
     assert_success
     ! grep -q "claude.ai/install.sh" "$CURL_LOG"
-    ! grep -q "codex" "$CURL_LOG"
+    run curl_log_has_codex_download
+    [ "$status" -eq 1 ]
     [[ ! -f "$CLAUDE_LOG" ]] || ! grep -q "update" "$CLAUDE_LOG"
     [[ ! -f "$CODEX_LOG" ]] || ! grep -q "update" "$CODEX_LOG"
 }
@@ -1671,7 +1686,9 @@ YAML
     PATH="$MOCK_BIN:${clean_path%:}" run bash "$SYNC_SCRIPT"
     assert_success
 
-    [[ ! -f "$CURL_LOG" ]] || ! grep -q "codex" "$CURL_LOG"
+    printf 'curl -L -o %s https://example.invalid/omp\n' "$TEST_HOME/codex-download" >> "$CURL_LOG"
+    run curl_log_has_codex_download
+    [ "$status" -eq 1 ]
 }
 
 @test "migration: lingering brew claude-code cask and omp formula are uninstalled" {

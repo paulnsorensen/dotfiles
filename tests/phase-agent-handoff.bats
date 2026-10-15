@@ -522,12 +522,18 @@ print(str(agent_is_read_only(explorer)).lower())
 
 @test "completion maps the requested outcome beyond green tests" {
     local root="$AGENTS_DIR/AGENTS.md"
-    run grep -Fq 'Map outcomes to evidence' "$root"
-    assert_success
-    run grep -Fq 'Green tests do not prove completion' "$root"
-    assert_success
-    run grep -Fq 'For simplification, compare net diff and remaining complexity' "$root"
-    assert_success
+    local contract
+    for contract in \
+        'The goal is working behavior, not passing tests or a PR' \
+        'Define an acceptance check that rejects the current broken behavior' \
+        'Run the acceptance check against the final artifact' \
+        'Show that the check rejects a relevant broken case' \
+        'unexpected error, or infrastructure failure is not a pass' \
+        'Do not dismiss a failing test as flaky' \
+        'For simplification, compare net diff and remaining complexity'; do
+        run grep -Fq "$contract" "$root"
+        assert_success
+    done
 }
 
 @test "verification is proportional and carries reusable evidence" {

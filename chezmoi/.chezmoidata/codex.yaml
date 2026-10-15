@@ -43,6 +43,7 @@ codex:
     shell_environment_policy:
       set:
         TMPDIR: "~/.cache/codex-tmp"
+        UV_CACHE_DIR: "~/.cache/codex-tmp/uv-cache"
     agents:
       max_threads: 32
       max_depth: 1

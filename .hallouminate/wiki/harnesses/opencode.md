@@ -93,49 +93,12 @@ Each specialist denies Task launches. Its step limit follows the shared registry
 
 The advisor accepts a concise contract and evidence packet. Four steps bound its work. A default-deny policy allows only Tilth read and search.[^native-agents]
 
-Checkpoint checks use the shared deterministic classifier, not a hidden model agent.[^idle-hook]
-
 [^shared-agents]: agents/registry.yaml; .sync-lib.sh `_cz_opencode_agents_json`
 [^native-agents]: chezmoi/.chezmoidata/opencode.yaml; tests/opencode-agents.bats
 
-## Post-idle checkpoint policy
+## Post-idle checkpoint plugin (retired)
 
-The native plugin applies the shared deterministic wheypoint policy after `session.execution.succeeded`.[^idle-hook]
-It does not veto a stop.
-The plugin creates no checker session and makes no model call.
-
-Completed tool records supply mutation and checkpoint evidence.
-The shared classifier accepts only successful persistence results.
-Skill calls and marker quotations do not clear pending changes.
-Verified child-session mutations count toward their root session.
-Read-only child work does not count as a mutation.
-
-No confirmed mutation allows idle.
-Later mutations after a checkpoint require UPDATE.
-A mutation without a checkpoint requires WRITE only when Git reports uncommitted work.
-Q&A with a pre-existing dirty tree remains silent.
-
-**Why execution events:** successful completion provides the post-turn check boundary.
-Failed and interrupted executions do not receive a follow-up.
-
-**Why synthetic follow-ups:** `ctx.session.synthetic` wakes the session and stores a `type: "synthetic"` message.[^synthetic]
-A real user quotation cannot count as the plugin's follow-up.
-
-**Why `delivery: "queue"`:** the follow-up waits behind a user prompt that arrives during the check.[^synthetic]
-
-The plugin serializes checks per root.
-Before sending, it rechecks the same turn, completed assistant, and execution state.
-It sends at most one follow-up for a root turn.
-Child sessions do not receive their own follow-up.
-Errors fail open and produce a bounded diagnostic.
-
-The context API starts at the latest compaction.[^history]
-Compaction summary prose does not prove checkpoint persistence.
-Offline tests prove the shared classifier and deployed module import, not authenticated model behavior.
-
-[^idle-hook]: chezmoi/dot_config/opencode/plugins/wheypoint-idle.js; agents/lib/wheypoint-stop-gate.cjs; tests/opencode-wheypoint.test.js; tests/opencode-wheypoint-guards.test.js
-[^synthetic]: OpenCode v2.0.26, packages/core/src/session/session.ts:296; packages/schema/src/session-inbox.ts:11
-[^history]: OpenCode v2.0.26, packages/core/src/session/history.ts:78-95
+The `wheypoint-idle.js` plugin is gone since PR #1267. `.chezmoiremove` deletes the deployed plugin and its library. See [[wheypoint-stop-hook]].
 
 ## Installation
 
@@ -149,9 +112,7 @@ Offline tests prove the shared classifier and deployed module import, not authen
 
 ## Gaps
 
-- Post-idle checkpoint checks cannot provide a synchronous pre-stop veto.
 - v2 has no `doom_loop` guard. The v1 prompt for repeated identical tool calls is gone, and `build`, `plan`, `general`, and `explore` set no `steps`, so v2 does not bound their turns.[^doom-loop] The operator chose to keep this unbounded.
-- The checkpoint path has offline coverage. No authenticated model turn verifies its queued follow-up.
 - Claude Pro/Max subscriptions do not work in third-party harnesses. Use ChatGPT, Copilot, API keys, or OpenCode Zen.
 - Live inference requires operator authentication. Sync never reads or copies authentication.
 
