@@ -39,6 +39,16 @@ test('a null packet answer is redone once, then blocks instead of throwing', asy
   assert.deepEqual(labels, ['packet', 'packet:retry'])
 })
 
+for (const args of ['null', '5', null]) {
+  test(`args ${JSON.stringify(args)} block with the call shape instead of throwing`, async () => {
+    const { result, labels } = await run(args)
+
+    assert.equal(result.status, 'blocked')
+    assert.match(result.usage, /worktree_path/)
+    assert.deepEqual(labels, [])
+  })
+}
+
 test('a null first packet answer recovers on the redo', async () => {
   const { result, labels } = await run(BASE_ARGS, { packet: () => null, 'packet:retry': () => ({ skill_files_ok: true, dimensions: DIMS }) })
 

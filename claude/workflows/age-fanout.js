@@ -37,7 +37,9 @@ export const meta = {
 
 const NO_CHAIN_DIRECTIVE = 'Do not chain forward to the next phase even though your auto-mode contract documents that. Return your structured result and stop. The parent workflow orchestrating /age-fanout is driving the chain. Run in the foreground — do not background yourself, spawn detached processes, or defer work to a later session. If you cannot complete the phase within your context window, return status blocked with blocked_reason and stop; do not silently timeout.'
 
-const input = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { log(`args was a string but not valid JSON (${e.message})`); return {} } })() : args || {}
+const parsed = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { log(`args was a string but not valid JSON (${e.message})`); return {} } })() : args
+// JSON.parse('null') and other non-object args become {}, so validation below reports them with the call shape.
+const input = parsed && typeof parsed === 'object' ? parsed : {}
 
 // SLUG_RE / SAFE_REF_RE match cheese-factory.js / move-my-cheese.js verbatim.
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]*$/
