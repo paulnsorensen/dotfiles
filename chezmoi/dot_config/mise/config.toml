@@ -85,7 +85,7 @@
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 "aqua:axodotdev/cargo-dist" = "v0.33.0"
 "aqua:rust-lang/mdBook" = "v0.5.4"
-"aqua:anthropics/claude-code" = "v2.1.296"
+"aqua:anthropics/claude-code" = "v2.1.299"
 "aqua:openai/codex" = "rust-v0.160.0"
 
 node = "26.11.1"
@@ -98,6 +98,6 @@ rust = "1.99.0"
 "npm:basedpyright" = "1.40.2"
 # OpenCode v2 ships on npm only; its GitHub tags carry no release assets for aqua.
 # The package postinstall links the platform binary, so allow its build script.
-"npm:@opencode/cli" = { version = "2.0.28", allow_builds = ["@opencode/cli"] }
+"npm:@opencode/cli" = { version = "2.0.29", allow_builds = ["@opencode/cli"] }
 "cargo:eza" = { version = "0.23.5", features = "vendored-libgit2" }
 "cargo:tokei" = "15.0.0"

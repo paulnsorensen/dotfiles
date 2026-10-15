@@ -151,6 +151,47 @@ test('cheese-board blocks before any agent when the stamp is missing or malforme
   }
 })
 
+test('cheese-board blocks with the exact call shape when no stamp is given, and keeps a bare focus', async () => {
+  for (const args of [null, {}]) {
+    const { result, labels } = await runBoard({ args })
+    assert.equal(result.status, 'blocked')
+    assert.match(result.error, /call shape: \/cheese-board YYYY-MM-DD/)
+    assert.match(result.error, /focus\?/)
+    assert.deepEqual(labels, [])
+  }
+  const { result, labels } = await runBoard({ args: 'bugs related to routines' })
+  assert.equal(result.status, 'blocked')
+  assert.equal(result.focus, 'bugs related to routines')
+  assert.deepEqual(labels, [])
+})
+
+test('cheese-board reads a date string as the stamp and passes no focus', async () => {
+  const { result, trace } = await runBoard({ args: STAMP })
+  assert.equal(result.status, 'ok')
+  assert.equal(result.report_path, REPORT)
+  assert.ok(trace.agents.every((a) => !a.prompt.includes('<data name="focus">')))
+})
+
+test('cheese-board passes an object focus to the idea explorer and every strategist', async () => {
+  const focus = 'bugs related to routines'
+  const { result, trace } = await runBoard({ args: { stamp: STAMP, focus } })
+  assert.equal(result.status, 'ok')
+  assert.equal(result.report_path, REPORT)
+  const withFocus = (label) => trace.agents.filter((a) => a.opts.label === label || a.opts.label.startsWith(label)).map((a) => a.prompt)
+  const prompts = [...withFocus('ideas'), ...withFocus('strategist:'), ...withFocus('synthesize')]
+  assert.ok(prompts.length >= 5, `expected ideas, 3 strategists and a synthesis, got ${prompts.length}`)
+  for (const p of prompts) {
+    assert.ok(p.includes(`<data name="focus">\n"${focus}"\n</data>`))
+  }
+  assert.ok(withFocus('strategist:').every((p) => p.includes('Limit the strategy to this focus')))
+})
+
+test('cheese-board takes a JSON string with both stamp and focus', async () => {
+  const { result, trace } = await runBoard({ args: JSON.stringify({ stamp: STAMP, focus: 'sync speed' }) })
+  assert.equal(result.status, 'ok')
+  assert.ok(trace.agents.find((a) => a.opts.label === 'ideas').prompt.includes('sync speed'))
+})
+
 test('cheese-board turns triage and ideas into a strategy, one verified spec wave, and side lists', async () => {
   const { result, labels, children, trace } = await runBoard({ args: { stamp: STAMP, auto: true, repo: 'owner/name', limit: 12 } })
 

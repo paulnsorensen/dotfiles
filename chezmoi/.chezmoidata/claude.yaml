@@ -195,6 +195,7 @@ claude:
       # logs show gh, git, just, and node calls reach the classifier despite
       # the broad rules. Narrow rules survive auto mode and skip that
       # inference. Merge, push, and API calls stay with the classifier.
+      - "Bash(gh issue close:*)"
       - "Bash(gh issue comment:*)"
       - "Bash(gh issue create:*)"
       - "Bash(gh issue list:*)"
@@ -290,6 +291,9 @@ claude:
       - "Skill"
       - "WebFetch"
       - "WebSearch"
+      # Workflow runs only after an explicit user opt-in, and each child agent
+      # still faces its own permission rules.
+      - "Workflow"
       - "mcp__context7__*"
       - "mcp__hallouminate__*"
       - "mcp__plugin_playwright_playwright__*"

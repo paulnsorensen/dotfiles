@@ -83,7 +83,7 @@ test('a keep-only plan with a command criterion verifies in the pinned integrati
   assert.match(verify.prompt, /^Judge mode: verify\n/)
   assert.ok(verify.prompt.includes(`worktree_path: /tmp/int. head: ${sha(97)}`))
   assert.ok(verify.prompt.includes(`git -C /tmp/int rev-parse HEAD and confirm that it equals ${sha(97)}`))
-  assert.ok(verify.prompt.includes("cd /tmp/int && bash -c 'grep -c helper src/1.js src/2.js'"))
+  assert.ok(verify.prompt.includes("cd /tmp/int && bash -c 'node --test --test-name-pattern helpers tests/helper.test.mjs'"))
   assert.ok(verify.prompt.includes('git -C /tmp/int status --porcelain'))
   assert.doesNotMatch(verify.prompt, /git checkout --detach/)
   assert.deepEqual(plain(result.verification.verdicts).map((v) => v.result), ['pass'])

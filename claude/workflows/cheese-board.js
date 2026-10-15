@@ -20,15 +20,19 @@ export const meta = {
 // resolver-owned spec paths, a curd-count gate, explicit triage-sweep route
 // mapping, idea dedup against existing specs, and code-assigned slugs.
 //
-// Args: { stamp: 'YYYY-MM-DD', repo?: 'owner/name', limit? = 30, ideas?: string[], maxSpecs? = 8, auto? }
-//   or a bare 'YYYY-MM-DD' string. The stamp is required because workflow
-//   scripts cannot read the clock; it dates each spec and names the report.
+// Args: { stamp: 'YYYY-MM-DD', focus?: string, repo?: 'owner/name', limit? = 30, ideas?: string[], maxSpecs? = 8, auto? }
+//   or a bare 'YYYY-MM-DD' string (the stamp), or any other bare string (the focus).
+//   The stamp is required because workflow scripts cannot read the clock; it dates
+//   each spec and names the report. A focus is a free-text scope: the idea explorer
+//   and the strategists limit their work to it. triage-sweep has no free-text
+//   scope arg, so the issue triage stays repo-wide.
 //   Interactive is the default. A run pauses at the strategy, spec, and done
 //   checkpoints and returns { status: 'needs-input', checkpoint, questions,
 //   state, digest, usage }. Resume with a fresh run: { stamp, state, digest,
 //   answers: { <question id, exact text, or 1-based number>: <answer> }, lanes? }.
 //   lanes { <IN-n>: 'spec'|'mold'|'defer' } moves an initiative at the strategy
 //   checkpoint. The digest covers { stamp, checkpoint, state } and detects an edit.
+//   The state carries the focus, so a resumed run keeps it.
 //   auto: true never pauses: it keeps the old routing, and an override, an open
 //   question, or a leverage trigger sends the initiative to /mold.
 //
@@ -214,21 +218,29 @@ const validSlug = (slug) => typeof slug === 'string' && slug.length <= 64 && SLU
 // An agent-copied path reaches shell commands, so it holds only safe characters and no '..' segment.
 const SAFE_PATH_RE = /^[A-Za-z0-9._@+\/-]+$/
 const safePath = (p) => SAFE_PATH_RE.test(p) && !p.split('/').includes('..')
-const USAGE = 'usage: /cheese-board YYYY-MM-DD, or args {stamp, repo?, limit?, ideas?, maxSpecs?, auto?, state?, digest?, answers?, lanes?}'
+const USAGE = 'call shape: /cheese-board YYYY-MM-DD, or args {stamp: "YYYY-MM-DD", focus?: "free-text scope", repo?, limit?, ideas?, maxSpecs?, auto?, state?, digest?, answers?, lanes?}. A bare string that is not a date is the focus; the stamp is still required.'
+const MAX_FOCUS = 500
 const input = typeof args === 'string'
   ? (() => {
       try {
         const parsed = JSON.parse(args)
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
-      } catch { /* not JSON: a bare stamp */ }
-      return { stamp: args.trim() }
+      } catch { /* not JSON: a bare stamp or a bare focus */ }
+      const text = args.trim()
+      return STAMP_RE.test(text) ? { stamp: text } : { focus: text }
     })()
   : (args && typeof args === 'object' && !Array.isArray(args) ? args : {})
-if (typeof input.stamp !== 'string' || !STAMP_RE.test(input.stamp)) return { status: 'blocked', error: `args.stamp must be YYYY-MM-DD; ${USAGE}` }
+const cleanFocus = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, MAX_FOCUS) : null)
+const focusArg = cleanFocus(input.focus)
+// A resumed run keeps the focus of its checkpoint state. The digest check below rejects an edited state.
+const focus = focusArg || (input.state && typeof input.state === 'object' ? cleanFocus(input.state.focus) : null)
+if (typeof input.stamp !== 'string' || !STAMP_RE.test(input.stamp)) return { status: 'blocked', error: `args.stamp must be YYYY-MM-DD (workflow scripts cannot read the clock); ${USAGE}`, ...(focus ? { focus } : {}) }
 if (input.repo != null && (typeof input.repo !== 'string' || !REPO_RE.test(input.repo))) return { status: 'blocked', error: `args.repo must be owner/name; ${USAGE}` }
 const AUTO = input.auto === true
 const INTERACTIVE = !AUTO
 const stamp = input.stamp
+const focusRule = focus ? 'Limit the strategy to this focus. Drop or deprioritize work that does not serve it.' : null
+const focusData = (name = 'focus') => (focus ? data(name, focus) : null)
 const repo = input.repo || null
 const repoFlag = repo ? ` --repo ${repo}` : ''
 let limit = Number.isInteger(input.limit) && input.limit > 0 ? input.limit : LIMITS.triageLimit
@@ -504,6 +516,7 @@ async function advise(stage, label, payload) {
     stage === 'strategy'
       ? 'Judge the strategy: altitude (themes state directions, not lists), coverage, lane choice, initiative size, sequencing, and hidden coupling. Return approve, revise with concrete concerns, or stop when the strategy is unsafe or wrong.'
       : 'Judge the finished run: do the factory queue, the mold list, and the parked items carry out the approved strategy? Return approve, revise with concrete concerns, or stop.',
+    payload.prior_concerns && 'payload.prior_concerns holds your concerns from the last round. Judge only whether each prior concern is resolved. Raise a new concern only when it makes the work wrong or unsafe, and start it with "NEW:". Never reverse a prior concern.',
     'Keep guidance under 80 words.',
     INTERACTIVE ? 'blocking_questions: list a question only when the user must decide something that the data cannot settle. Each has a question, optional options, a recommended option, and the evidence. Put design feedback for the writers in concerns instead.' : '',
     data('payload', payload),
@@ -648,6 +661,8 @@ const ideasPrompt = () => prompt(
   `4. Open issues, for dedup only: \`gh issue list${repoFlag} --state open --limit ${limit} --json number,title\`. When an open issue covers an idea, set duplicate_of to its ref, such as #12.`,
   'Every idea needs a title, a one-sentence summary, and a source citation. Use empty strings for existing_spec and duplicate_of when they do not apply.',
   `Return at most ${LIMITS.maxIdeas} ideas. Prefer ideas with strategic weight over small chores.`,
+  focus && 'Limit the ideas to this focus. Skip candidate work that does not serve it.',
+  focusData(),
   data('seed_ideas', seedIdeas),
 )
 
@@ -682,6 +697,8 @@ const LENSES = [
 const strategistPrompt = (lens, context) => prompt(
   `You are a strategist. Read only: write no file and change no state. Propose a strategy through one lens: ${lens.key}, meaning ${lens.brief}`,
   STRATEGY_RULES,
+  focusRule,
+  focusData(),
   data('context', context),
 )
 
@@ -690,6 +707,8 @@ const synthesisPrompt = (proposals, context, advice, previous) => prompt(
   'Keep the strongest theme structure. Graft better initiatives from the other proposals. Resolve conflicts with the evidence in the item data, and record the tie-break in the rationale.',
   advice && advice.answers ? 'Apply the user answers in advisor_feedback.answers to the previous strategy. Keep every lane in advisor_feedback.user_lanes exactly as the user set it.' : '',
   STRATEGY_RULES,
+  focusRule,
+  focusData(),
   data('context', context),
   data('proposals', proposals),
   previous && data('previous_strategy', previous),
@@ -873,6 +892,7 @@ function stateErrors(s) {
   }
   if (!Number.isInteger(s.idea_count)) errors.push('args.state.idea_count must be an integer')
   if (!isObject(s.override_decisions)) errors.push('args.state.override_decisions must be an object')
+  if (s.focus != null && typeof s.focus !== 'string') errors.push('args.state.focus must be a string or null')
   const st = s.strategy
   if (!isObject(st) || !Array.isArray(st.themes) || !Array.isArray(st.initiatives) || !Array.isArray(st.parked)) errors.push('args.state.strategy must be a strategy object')
   if (s.checkpoint === 'strategy' && (!Array.isArray(s.proposals) || typeof s.approved !== 'boolean')) errors.push('args.state.proposals must be an array and args.state.approved a boolean')
@@ -897,6 +917,7 @@ if (resumeArgs.length) {
     errors.push(...shape)
     if (typeof input.digest !== 'string' || !input.digest) errors.push('args.digest must be the digest of the same needs-input result')
     else if (input.digest !== digestOf({ stamp, checkpoint: st.checkpoint, state: st })) errors.push('args.digest does not match args.state; pass both back unchanged')
+    if (focusArg && typeof st.focus === 'string' && st.focus !== focusArg) errors.push('args.focus differs from args.state.focus; omit args.focus to keep the checkpoint focus')
     if (!shape.length) {
       const matched = matchAnswers(st.questions, input.answers)
       errors.push(...matched.errors)
@@ -979,7 +1000,7 @@ const setLists = () => {
   needsHuman = issues.filter((i) => i.lane === 'human')
   lists = { close_batch: closeBatch, needs_human: needsHuman, already_specced: alreadySpecced, ungrounded, dropped }
 }
-const baseState = () => ({ issues, ungrounded, idea_count: ideaCount, already_specced: alreadySpecced, strategy_items: strategyItems, decisions, prior_research: priorResearch, domains, links, gaps, dropped, advice: adviceLog, strategy, override_decisions: overrideDecisions })
+const baseState = () => ({ issues, ungrounded, idea_count: ideaCount, already_specced: alreadySpecced, strategy_items: strategyItems, decisions, prior_research: priorResearch, domains, links, gaps, dropped, advice: adviceLog, strategy, override_decisions: overrideDecisions, focus })
 const contextNow = () => ({ items: strategyItems, decisions, prior_research: priorResearch, domains, links })
 const check = (s) => checkStrategy(s, itemIds, decisions.map((d) => d.id))
 const synthesize = (advice, previous, round) => typed(synthesisPrompt(proposals, contextNow(), advice, previous),
@@ -1169,7 +1190,9 @@ if (!resumedSpec && !resumedDone) {
     }
   }
   while (!settled) {
-    const advice = await advise('strategy', `advise:strategy:${round}`, advisorPayload())
+    // A revision round sends the last concerns, so the advisor re-checks them instead of starting over. A resumed run restores that advice from its state.
+    const last = round ? adviceLog[adviceLog.length - 1] : null
+    const advice = await advise('strategy', `advise:strategy:${round}`, last ? { ...advisorPayload(), prior_concerns: last.concerns, guidance: last.guidance } : advisorPayload())
     if (!advice) {
       const row = { text: 'The strategy advisor returned no valid advice. Answer approve to keep this strategy, or describe a change.', options: ['approve'], recommended: 'approve', evidence: '' }
       return askStrategy(INTERACTIVE ? [row, ...overrideRows(strategy)] : [], false, { reason: 'advisor returned no valid advice' })

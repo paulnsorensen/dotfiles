@@ -239,6 +239,10 @@ const repairPrompt = (value, errors) => prompt(
 const advisorPrompt = (stage, payload) => judgePrompt('advise',
   'You are the advisor: a read-only judge one level above the implementers. Do not edit files or change state.',
   `Stage: ${stage}. Judge the approach: decomposition, fit with existing architecture, missing criteria, hidden coupling. Return approve, revise with concrete concerns, or stop when the goal is unsafe or wrong.`,
+  ...(payload.prior_concerns ? [
+    'payload.prior_concerns lists your concerns from the last round. Judge only whether each one is resolved.',
+    'Add a new concern only when it makes the work wrong or unsafe. Start it with "NEW:". Never reverse a prior concern.',
+  ] : []),
   'Keep guidance under 80 words.',
   data('payload', payload),
 )
@@ -344,7 +348,9 @@ if (plan.open_questions.length) return { status: 'needs-input', questions: plan.
 phase('Advise')
 const adviceLog = []
 for (let round = 0; ; round++) {
-  const advice = await advise('plan', `advise:plan:${round}`, { goal, plan })
+  // Round two sends the last concerns, so the advisor re-checks them instead of starting over.
+  const prior = round ? { prior_concerns: adviceLog[adviceLog.length - 1].concerns } : {}
+  const advice = await advise('plan', `advise:plan:${round}`, { goal, plan, ...prior })
   if (!advice) return { status: 'needs-input', reason: 'advisor returned no valid advice', plan, advice: adviceLog }
   adviceLog.push(advice)
   if (advice.verdict === 'approve') break

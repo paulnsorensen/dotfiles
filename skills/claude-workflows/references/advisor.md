@@ -10,12 +10,21 @@ It has no write tools. The implementer stays the only writer [s15], [s16].
 
 ## When to call
 
-1. After orientation, before substantive work [s15].
+1. After orientation, before substantive work [s15]. Skip this call when code already checks the whole plan and no leverage trigger fires. Leverage triggers are auth, irreversible effects, concurrency, public contracts, destructive operations, and cross-slice dependencies.
 2. Optional: when a task stalls or exhausts its continuations. The template does not implement this call.
 3. When the run considers a change of approach [s15].
 4. Before the run declares done, after the deliverable is durable [s15].
 
 Plan for about two to three calls per task [s15].
+
+## Give the advisor a plan it can approve
+
+The advisor judges the payload, not the code that built it. A placeholder reads as a defect.
+State each valid plan shape in the prompt. For example, a single-pass plan has one task that covers the whole spec.
+Do not send `null` or an empty list for a field that the plan shape leaves out. Omit the field.
+When a revise round cannot change the field that the advisor names, return `needs-input` with the concern. Do not call the advisor again.
+
+Evidence: 8 of 22 cheese-factory runs from 2026-10-13 to 2026-10-14 stopped at the plan advisor. The single-pass payload sent `brief: null` and `files: []`, and the advisor asked for both in each round.
 
 ## What to send
 
@@ -29,6 +38,7 @@ Do not send raw transcripts.
 3. After the limit, return `needs-input` to the user with typed questions `{id, question, options?, recommended?, evidence}`, the state, and a digest of the state from the prelude `digestOf`. Do not loop.
    The next run takes `{state, digest, answers}`, checks the digest and the answers with the prelude `matchAnswers` before the first agent, and applies one revision. An unsettled advisor returns `needs-input` on every path.
 4. Ask for guidance under 80 words. Advisor output is its main cost driver [s15].
+5. On a revision round, send the prior concerns. The advisor judges only whether each one is resolved. It raises a new concern only for a blocker, and it never reverses a prior concern.
 
 ## Workflow tool implementation
 

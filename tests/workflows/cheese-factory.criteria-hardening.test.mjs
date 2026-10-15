@@ -62,6 +62,13 @@ const accepts = (check) => async () => {
   assert.equal(result.error, undefined, `check was rejected: ${check}`)
 }
 
+// A shell reader on a file passes the safety and vacuity rules but fails the PreToolUse guard rule, tested below.
+const passesRuleGates = (check) => async () => {
+  const { result } = await run(withCheck(check))
+
+  assert.doesNotMatch(result.error ?? '', /check is unsafe|can pass without testing anything/, `check was rejected: ${check}`)
+}
+
 // An output redirection of `>&file` writes stdout and stderr into the file.
 test('checkCriteria_redirectAmpersandToFile_isRejected', rejects('echo x >&out.txt'))
 
@@ -134,8 +141,6 @@ for (const [name, check] of BYPASSES) {
 
 // Every read-only check shape keeps passing the gate.
 const ACCEPTED = [
-  'grep -q foo src/a.js',
-  'rg -q foo src',
   'test -e src/a.js',
   '[ -e src/a.js ]',
   '[[ -d src ]]',
@@ -149,15 +154,21 @@ const ACCEPTED = [
   'just check',
   'npm test',
   'test -e src/a.js || test -e src/b.js',
+]
+for (const check of ACCEPTED) test(`checkCriteria_readOnlyCheck_${check.replaceAll(/\W+/g, '_')}_isAccepted`, accepts(check))
+
+const READER_ACCEPTED = [
+  'grep -q foo src/a.js',
+  'rg -q foo src',
   'test -e src/a.js 2>/dev/null && grep -q x src/a.js >/dev/null 2>&1',
   'grep -q \'a$\' src/a.js',
   'grep -q \'$(foo)\' src/a.js',
 ]
-for (const check of ACCEPTED) test(`checkCriteria_readOnlyCheck_${check.replaceAll(/\W+/g, '_')}_isAccepted`, accepts(check))
+for (const check of READER_ACCEPTED) test(`checkCriteria_readOnlyCheck_${check.replaceAll(/\W+/g, '_')}_passesTheRuleGates`, passesRuleGates(check))
 
 // A redirect operator inside a quoted pattern is data, not a redirect.
 for (const check of ["grep -q 'async () =>' src/a.js", "grep -q 'Map<string, number>' src/a.js", "awk '$1 > 3' src/a.js", 'grep -q "a > b" src/a.js']) {
-  test(`checkCriteria_quotedRedirectCharacter_${check.replaceAll(/\W+/g, '_')}_isAccepted`, accepts(check))
+  test(`checkCriteria_quotedRedirectCharacter_${check.replaceAll(/\W+/g, '_')}_passesTheRuleGates`, passesRuleGates(check))
 }
 
 test('checkCriteria_redirectToFile_errorNamesTheOffendingText', async () => {
@@ -211,7 +222,7 @@ for (const [name, check] of ALWAYS_PASS) {
 
 test('checkCriteria_alwaysPassWithNewlineTail_isRejected', rejects('test -e src/x.js\necho ok'))
 
-test('checkCriteria_andChainEndingInEcho_isAccepted', accepts('grep -q foo src/x.js && echo found'))
+test('checkCriteria_andChainEndingInEcho_passesTheRuleGates', passesRuleGates('grep -q foo src/x.js && echo found'))
 
 // A fenced example line `- AC-1:` is not a spec criterion.
 test('extract_acLineInsideCodeFence_doesNotCountAsACriterion', async () => {
@@ -228,4 +239,40 @@ test('verify_treeCleanFalse_isSurfacedInLogsOrEvidence', async () => {
   const surfaced = logs.some((l) => /clean|changes/.test(l) && /AC-1/.test(l)) || /worktree had changes/.test(result.verification.criteria[0].evidence)
 
   assert.equal(surfaced, true)
+})
+
+// The user's PreToolUse hook denies a shell reader or searcher that reads a file, so such a check never runs.
+const guardRejects = (check) => async () => {
+  const { result, trace } = await run(withCheck(check))
+
+  assert.match(result.error ?? '', /check `\w+` reads .*PreToolUse guard denies.*Instead run the repository's own test/, `check was accepted: ${check}`)
+  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cook:')), false)
+}
+
+for (const check of ['grep -Fq x big/file.js', 'cat file | wc -l', 'sed -n 1p file', 'head -n 3 file', 'test -e a && rg -q x src', 'grep -rq x', 'awk 1 file', 'grep -q x < file', 'grep -e x -- file', 'FOO=1 grep -q x file']) {
+  test(`checkCriteria_guardedReader_${check.replaceAll(/\W+/g, '_')}_isRejectedWithTheGuardReason`, guardRejects(check))
+}
+
+for (const check of [
+  "node --test --test-name-pattern 'AC-2' tests/x.test.mjs",
+  'test -e path',
+  'test ! -e path',
+  'git diff --quiet',
+  'git log --oneline | grep -q fix',
+  'node --test tests/x.test.mjs | grep -q ok',
+  'git show HEAD:src/a.js | sed -n 1p',
+  'git grep -q foo -- src',
+  'rg --files | grep -q x',
+]) {
+  test(`checkCriteria_guardAllowed_${check.replaceAll(/\W+/g, '_')}_isAccepted`, accepts(check))
+}
+
+test('criteriaPrompt_tellsTheAuthorAboutTheGuardsAndThePreferredForms', async () => {
+  const { trace } = await run()
+  const prompt = trace.agents.find(({ opts }) => opts.label === 'criteria').prompt
+
+  assert.ok(prompt.includes('PreToolUse guards'))
+  assert.ok(prompt.includes('Never use grep, egrep, fgrep, rg, ag, ack, cat, head, tail, sed, awk, or less on a file'))
+  assert.ok(prompt.includes('node --test --test-name-pattern <AC id or name> <file>'))
+  assert.ok(prompt.includes('the cook must add a marked test for it, and the check runs that test'))
 })
