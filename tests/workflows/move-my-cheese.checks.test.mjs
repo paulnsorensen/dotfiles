@@ -5,6 +5,7 @@ import test from 'node:test'
 import {
   approveP1, consolidatePlan, detail, integrated, keepPlan, keepPlanRoutes, plain, planRoutes, reconOnly, run, sha, verified, wt,
 } from './move-my-cheese.fixtures.mjs'
+import { digestOf } from './prelude-digest.mjs'
 
 const vacuousCheck = 'cd src && ! grep -q helper gone.js'
 const vacuousPlan = () => consolidatePlan({ criteria: [{ id: 'AC-1', statement: 'the old helper is gone', check_kind: 'command', check: vacuousCheck }] })
@@ -139,20 +140,6 @@ test('a judge that reports a guard denial gives an unrun verdict that still bloc
   assert.deepEqual(plain(result.verification.verdicts).map((v) => [v.result, v.evidence]), [['unrun', 'check blocked by a PreToolUse guard']])
   assert.ok(call('verify:pre:AC-1').prompt.includes('Set guard_blocked to true'))
 })
-
-// Mirrors digestOf in the workflow, so a test can hold an approval that a newer plan check rejects.
-function digestOf(value) {
-  const stable = (v) => Array.isArray(v) ? `[${v.map(stable).join(',')}]`
-    : v && typeof v === 'object' ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(',')}}`
-      : JSON.stringify(v) ?? 'null'
-  const fnv1a = (input, seed) => {
-    let hash = seed >>> 0
-    for (let i = 0; i < input.length; i++) hash = Math.imul(hash ^ input.charCodeAt(i), 16777619) >>> 0
-    return hash.toString(16).padStart(8, '0')
-  }
-  const canonical = stable(value)
-  return `${fnv1a(canonical, 2166136261)}${fnv1a(canonical, 3735928559)}`
-}
 
 test('an approval that a newer check rejects blocks with a revise hint, and revise repairs it', async () => {
   const first = await run({ prs: [1, 2] }, planRoutes())

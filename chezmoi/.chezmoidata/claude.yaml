@@ -356,6 +356,7 @@ claude:
     - bash-shortening
     - bin-doctor
     - build-optimize
+    - cheese-board-loop
     - claude-local
     - claude-workflows
     - ci-optimize

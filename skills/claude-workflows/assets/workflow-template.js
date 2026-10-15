@@ -355,6 +355,7 @@ for (let round = 0; ; round++) {
   adviceLog.push(advice)
   if (advice.verdict === 'approve') break
   if (advice.verdict === 'stop') return { status: 'stopped', plan, advice: adviceLog }
+  // After the limit, return needs-input with the plan and the advice log. The caller decides what to do next. Do not loop.
   if (round >= LIMITS.advisorRevisions) return { status: 'needs-input', plan, advice: adviceLog }
   const revised = await typed(planPrompt(advice.concerns, plan), { label: `plan:r${round + 1}`, phase: 'Plan', schema: PLAN_SCHEMA }, checkPlan)
   if (!revised.value) return { status: 'blocked', errors: revised.errors.map((e) => e.msg), advice: adviceLog }

@@ -124,7 +124,7 @@ const RESEARCH = {
   conflicts: [], open_questions: [], report_path: '/data/cheese/repo/research/banner.md', recommended_next_step: '', prototype: null,
 }
 
-async function runBoard({ args = STAMP, overrides = {}, triage = TRIAGE, research = () => RESEARCH, budgetTotal = null, budgetSpent = 0 } = {}) {
+async function runBoard({ args = { stamp: STAMP, auto: true }, overrides = {}, triage = TRIAGE, research = () => RESEARCH, budgetTotal = null, budgetSpent = 0 } = {}) {
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({ respond: responder(overrides), budgetTotal, budgetSpent })
   const children = []
@@ -193,7 +193,7 @@ test('cheese-board takes a JSON string with both stamp and focus', async () => {
 })
 
 test('cheese-board turns triage and ideas into a strategy, one verified spec wave, and side lists', async () => {
-  const { result, labels, children, trace } = await runBoard({ args: { stamp: STAMP, repo: 'owner/name', limit: 12 } })
+  const { result, labels, children, trace } = await runBoard({ args: { stamp: STAMP, auto: true, repo: 'owner/name', limit: 12 } })
 
   assert.deepEqual(children, [{ name: 'triage-sweep', childArgs: { scope: 'issues', limit: 12, repo: 'owner/name' } }])
   assert.equal(result.status, 'ok')
@@ -594,7 +594,7 @@ test('cheese-board rejects a resolved path with a parent segment', async () => {
 
 test('cheese-board returns dropped seeds and ideas over the cap in the result', async () => {
   const many = { ideas: Array.from({ length: 41 }, (_, n) => ({ title: `idea ${n + 1}`, summary: 's', source: 'wiki/roadmap.md', existing_spec: '', duplicate_of: '' })) }
-  const { result } = await runBoard({ args: { stamp: STAMP, ideas: ['keep me', 3, '  '] }, overrides: { ideas: many } })
+  const { result } = await runBoard({ args: { stamp: STAMP, auto: true, ideas: ['keep me', 3, '  '] }, overrides: { ideas: many } })
 
   assert.deepEqual(result.dropped.filter((d) => d.kind !== 'theme'), [
     { kind: 'seed', count: 2, reason: 'not a non-empty string' },
