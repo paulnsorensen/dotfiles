@@ -4,7 +4,7 @@ export const meta = {
   description:
     'Deep slice-by-slice audit of a Sliced Bread codebase: map the slices, run one Opus evaluator per slice plus a concurrent cross-slice dependency pass, then, after all evaluators finish, verify every finding — citation checks in batches of 20 findings, then adversarial Opus refuters in batches of 4 blocker/high findings, highest severity first — and open labeled GitHub issues for confirmed findings in batches.',
   whenToUse:
-    'Audit a repo (or subtree) against Sliced Bread architecture and code quality with findings landing as GitHub issues. Requires gh auth in the target repo. Pass {dry_run: true} to preview without filing issues.',
+    'Audit a repo (or subtree) against Sliced Bread architecture and code quality with findings landing as GitHub issues. Requires gh auth in the target repo. Pass {dry_run: true} to preview without filing issues; pass the resume object from that result as args to file the previewed findings without a new audit.',
   phases: [
     { title: 'Map', detail: 'discover slices; in parallel, gh setup (labels + existing audit issues)' },
     { title: 'Evaluate', detail: 'one Opus/high evaluator per slice + concurrent cross-slice pass', model: 'opus', effort: 'high' },
@@ -17,16 +17,19 @@ export const meta = {
 // Deployed to ~/.claude/workflows/ by `dots sync` (exact_workflows assembly in
 // .sync-lib.sh). Invoked as `/sliced-bread-audit [scope]` or with object args:
 //   { scope?: string, min_severity?: 'blocker'|'high'|'medium'|'low',
-//     dry_run?: boolean, max_issues?: number, workers?: number }
+//     dry_run?: boolean, max_issues?: number, workers?: number,
+//     file_findings?: Finding[] }
+// A dry run returns resume: { file_findings }. Pass it back as args to file
+// those findings: the run skips Map slices, Evaluate, and Verify.
 //
 // The architecture rubric below is inlined from
 // ~/.agents/reference/sliced-bread.md so evaluators work in any repo without
 // depending on that file being readable.
 
 // ── args ────────────────────────────────────────────────────────────────
-const ARG_KEYS = ['scope', 'min_severity', 'dry_run', 'max_issues', 'workers']
+const ARG_KEYS = ['scope', 'min_severity', 'dry_run', 'max_issues', 'workers', 'file_findings']
 const USAGE =
-  'Usage: /sliced-bread-audit [scope], or object args {scope?: string, min_severity?: "blocker"|"high"|"medium"|"low", dry_run?: true|false, max_issues?: 1-100, workers?: 1-16}.'
+  'Usage: /sliced-bread-audit [scope], or object args {scope?: string, min_severity?: "blocker"|"high"|"medium"|"low", dry_run?: true|false, max_issues?: 1-100, workers?: 1-16, file_findings?: the resume.file_findings array from a dry run}.'
 
 // A string that starts with "{" is JSON object args, not a scope path.
 // Unknown keys and a non-boolean dry_run are errors, so a typo such as
@@ -67,6 +70,10 @@ const MAX_ISSUES = opts.max_issues === undefined ? 25 : opts.max_issues
 const WORKERS = opts.workers === undefined ? 4 : opts.workers
 
 const SEV_RANK = { blocker: 3, high: 2, medium: 1, low: 0 }
+const DIMENSIONS = [
+  'import-direction', 'crust-integrity', 'model-purity', 'growth-justification', 'event-usage',
+  'correctness', 'security', 'complexity', 'deslop', 'tests',
+]
 // Each slice and each refuter is one opus agent, so code caps both counts for the whole run.
 const MAX_SLICES = 20
 const MAX_REFUTES = 12
@@ -81,6 +88,32 @@ if (!(Number.isInteger(MAX_ISSUES) && MAX_ISSUES >= 1 && MAX_ISSUES <= 100)) {
 if (!(Number.isInteger(WORKERS) && WORKERS >= 1 && WORKERS <= 16)) {
   return { error: `workers must be an integer from 1 to 16, got: ${WORKERS}` }
 }
+
+// A resume files the findings that a dry run returned, so code validates each one as strictly as an evaluator result.
+const FINDING_FIELDS = ['slice', 'dimension', 'severity', 'file', 'line', 'claim', 'evidence', 'impact', 'recommendation']
+const pickFinding = (f) => Object.fromEntries(FINDING_FIELDS.map((key) => [key, f[key]]))
+function findingProblem(f) {
+  if (!f || typeof f !== 'object' || Array.isArray(f)) return 'is not an object'
+  const blank = FINDING_FIELDS.filter((key) => key !== 'line' && !(typeof f[key] === 'string' && f[key].trim()))
+  if (blank.length) return `needs non-empty string fields: ${blank.join(', ')}`
+  if (!DIMENSIONS.includes(f.dimension)) return `has an unknown dimension: ${JSON.stringify(f.dimension)}`
+  if (!Object.hasOwn(SEV_RANK, f.severity)) return `has an unknown severity: ${JSON.stringify(f.severity)}`
+  if (!Number.isInteger(f.line) || f.line < 1) return `has line ${JSON.stringify(f.line)}, which is not a positive integer`
+  return ''
+}
+const RESUME = opts.file_findings !== undefined
+if (RESUME) {
+  if (!Array.isArray(opts.file_findings) || !opts.file_findings.length) {
+    return { error: `file_findings must be the non-empty resume.file_findings array from a dry run. ${USAGE}` }
+  }
+  for (const [index, f] of opts.file_findings.entries()) {
+    const problem = findingProblem(f)
+    if (problem) return { error: `file_findings[${index}] ${problem}. ${USAGE}` }
+  }
+}
+const RESUMED = RESUME
+  ? opts.file_findings.map((f) => ({ ...pickFinding(f), verification: typeof f.verification === 'string' && f.verification.trim() ? f.verification : 'resumed' }))
+  : []
 
 // ── rubric (inlined Sliced Bread rules) ─────────────────────────────────
 const RUBRIC = [
@@ -106,10 +139,6 @@ const SEVERITY_GUIDE = [
 ].join('\n')
 
 // ── schemas ─────────────────────────────────────────────────────────────
-const DIMENSIONS = [
-  'import-direction', 'crust-integrity', 'model-purity', 'growth-justification', 'event-usage',
-  'correctness', 'security', 'complexity', 'deslop', 'tests',
-]
 
 const SLICE_MAP_SCHEMA = {
   type: 'object',
@@ -444,7 +473,9 @@ async function runBounded(items, task, limit = WORKERS) {
 
 phase('Map')
 const [mapOutcome, setupOutcome] = await parallel([
-  () => safeAgent(mapPrompt(), { label: 'map:slices', phase: 'Map', schema: SLICE_MAP_SCHEMA, model: 'sonnet', effort: 'medium', agentType: 'explorer' }),
+  async () => RESUME
+    ? { ok: true, value: { layout: 'resumed from file_findings', slices: [] } }
+    : safeAgent(mapPrompt(), { label: 'map:slices', phase: 'Map', schema: SLICE_MAP_SCHEMA, model: 'sonnet', effort: 'medium', agentType: 'explorer' }),
   () => safeAgent(setupPrompt(), { label: 'map:gh-setup', phase: 'Map', schema: SETUP_SCHEMA, model: 'haiku', effort: 'low' }),
 ])
 const sliceMap = mapOutcome && mapOutcome.ok ? mapOutcome.value : null
@@ -452,7 +483,7 @@ const setup = setupOutcome && setupOutcome.ok
   ? setupOutcome.value
   : { gh_ok: false, repo: '', existing_fingerprints: [], error: setupOutcome ? setupOutcome.error : 'GitHub setup did not return a result' }
 
-if (!sliceMap || !sliceMap.slices.length) {
+if (!RESUME && (!sliceMap || !sliceMap.slices.length)) {
   return {
     error: sliceMap
       ? 'Slice mapping failed or found no slices — nothing to audit.'
@@ -468,7 +499,7 @@ log(`Mapped ${sliceMap.slices.length} slices (${sliceMap.layout}); gh ${setup.gh
 // ── Evaluate + Verify ───────────────────────────────────────────────────
 phase('Evaluate')
 const budgetExhausted = () => budget.total != null && budget.remaining() < MIN_BUDGET
-if (budgetExhausted()) {
+if (!RESUME && budgetExhausted()) {
   log('Budget exhausted before Evaluate — returning partial report with no slice findings.')
   return {
     scope: SCOPE,
@@ -508,7 +539,7 @@ if (uniqueSlices.length < sliceMap.slices.length) log(`Removed ${sliceMap.slices
 const auditedSlices = uniqueSlices.slice(0, MAX_SLICES)
 for (const s of uniqueSlices.slice(MAX_SLICES)) failures.push({ stage: 'evaluate', slice: s.name, error: `over the ${MAX_SLICES}-slice cap` })
 if (uniqueSlices.length > MAX_SLICES) log(`Slice cap: evaluating ${MAX_SLICES} of ${uniqueSlices.length} slices.`)
-const evaluationItems = [...auditedSlices, crossItem]
+const evaluationItems = RESUME ? [] : [...auditedSlices, crossItem]
 const evaluationResults = await runBounded(evaluationItems, async (item) => {
   if (budgetExhausted()) {
     skippedSlices++
@@ -631,6 +662,7 @@ for (const finding of contested) {
     refuterOutcomes.push({ location, outcome: 'confirmed', reason: String(vote.value.reason || '').slice(0, 140) })
   }
 }
+if (RESUME) log(`Resume: filing ${confirmedAll.push(...RESUMED)} findings from file_findings without a new audit.`)
 confirmedAll.splice(0, confirmedAll.length, ...sortDesc(confirmedAll))
 if (skippedSlices) log(`Budget exhausted mid-Evaluate — ${skippedSlices} evaluator passes not audited.`)
 if (refuteCapHits) log(`Refuter cap: ${refuteCapHits} high+ finding(s) past the ${MAX_REFUTES}-finding refuter cap stay unverified.`)
@@ -704,7 +736,8 @@ if (DRY_RUN) {
 const filed = issues.filter((issue) => issue.created)
 log(`Filed ${filed.length}/${toFile.length} issues${DRY_RUN ? ' (dry run)' : ''}`)
 const nonCleanDimensions = new Set([...uniqueConfirmed, ...belowAll, ...unverifiedAll].map((finding) => finding.dimension))
-const cleanDimensions = failures.length || skippedSlices
+// A resume audits nothing, so it cannot call a dimension clean.
+const cleanDimensions = RESUME || failures.length || skippedSlices
   ? []
   : DIMENSIONS.filter((dimension) => !nonCleanDimensions.has(dimension))
 
@@ -736,5 +769,8 @@ return {
   clean_dimensions: cleanDimensions,
   issues,
   issue_urls: filed.map((issue) => issue.url),
+  ...(DRY_RUN && fresh.length
+    ? { resume: { file_findings: fresh.map((f) => ({ ...pickFinding(f), evidence: redactSecrets(f.evidence), verification: f.verification })) } }
+    : {}),
   ...(skippedSlices ? { truncated: `budget exhausted — ${skippedSlices} evaluator passes were not audited` } : {}),
 }

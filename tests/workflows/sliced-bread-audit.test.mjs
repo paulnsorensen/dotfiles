@@ -926,3 +926,68 @@ test('no evaluator starts when the remaining budget is below the minimum for one
   assert.equal(labels(trace).some((l) => l.startsWith('eval:')), false)
   assert.match(result.truncated, /budget exhausted before Evaluate/)
 })
+
+test('a dry run returns resume.file_findings, and a resume files them without a new audit', async () => {
+  const dry = build({
+    slices: [slice('x')],
+    on: ({ opts, prompt }) => {
+      if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const preview = await workflow.run({ ...dry.globals, args: { dry_run: true } })
+  assert.equal(preview.resume.file_findings.length, 1)
+  assert.equal(preview.resume.file_findings[0].evidence, finding().evidence)
+  assert.equal(preview.resume.file_findings[0].recommendation, finding().recommendation)
+
+  const live = build({
+    on: ({ opts }) => {
+      if (opts.label === 'issues:batch-1') return { results: [{ index: 0, created: true, url: 'https://gh/1' }] }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const result = await workflow.run({ ...live.globals, args: JSON.parse(JSON.stringify(preview.resume)) })
+
+  assert.deepEqual(labels(live.trace), ['map:gh-setup', 'issues:batch-1'])
+  assert.deepEqual([...result.issue_urls], ['https://gh/1'])
+  assert.equal(result.confirmed[0].location, 'domains/x/a.py:40')
+  assert.equal(result.clean_dimensions.length, 0)
+  assert.equal(result.resume, undefined)
+})
+
+test('a resume skips findings that already have an audit issue', async () => {
+  const dry = build({
+    slices: [slice('x')],
+    on: ({ opts, prompt }) => {
+      if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+  const preview = await workflow.run({ ...dry.globals, args: { dry_run: true } })
+  const marker = preview.issues[0].body.match(/<!-- (sba:\S+) -->/)[1]
+  const again = build({ existing: [marker], on: ({ opts }) => { throw new Error(`unexpected agent ${opts.label}`) } })
+
+  const result = await workflow.run({ ...again.globals, args: preview.resume })
+
+  assert.deepEqual(labels(again.trace), ['map:gh-setup'])
+  assert.equal(result.issues.length, 0)
+})
+
+for (const [name, file_findings] of [
+  ['not an array', 'x'],
+  ['an empty array', []],
+  ['an unknown dimension', [finding({ slice: 'x', dimension: 'vibes' })]],
+  ['an unknown severity', [finding({ slice: 'x', severity: 'critical' })]],
+  ['line 0', [finding({ slice: 'x', line: 0 })]],
+  ['empty evidence', [finding({ slice: 'x', evidence: ' ' })]],
+  ['a missing claim', [finding({ slice: 'x', claim: undefined })]],
+]) {
+  test(`rejects file_findings with ${name} before dispatching any agent`, async () => {
+    const { globals, trace } = createRuntime()
+    const result = await workflow.run({ ...globals, args: { file_findings } })
+    assert.match(result.error, /^file_findings/)
+    assert.equal(trace.agents.length, 0)
+  })
+}
