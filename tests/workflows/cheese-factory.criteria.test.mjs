@@ -612,6 +612,26 @@ test('planAdvisor_reviseMultiCurdMergesDownToOne_runsAsSinglePassOnTheParent', a
   assert.equal(dataOf(calls(trace, 'advise:plan:r1')[0].prompt, 'payload').single_pass, true)
 })
 
+test('planAdvisor_reviseReturnsOneCurd_sendsTheRevisedBriefToTheAdvisorAndTheCook', async () => {
+  let n = 0
+  const { result, trace } = await run(multi, {
+    'advise:plan': () => (n++ === 0 ? advice('revise', ['name the leak path']) : advice('approve')),
+    'decompose:plan:r1': () => ({ curds: [{ slug: 'only', brief: 'revised: close the leak path', files: ['a.js'] }] }),
+    'cook:parent': () => cook('parent'),
+    'taste:parent': () => taste('pass'),
+    'press:parent': () => press('parent'),
+    integrate: () => integrateOf(['parent']),
+    'age:barrier': () => age(['parent']),
+    plate: () => plateOf('parent'),
+  })
+
+  const [curd] = dataOf(calls(trace, 'advise:plan:r1')[0].prompt, 'payload').curds
+  assert.equal(curd.brief, 'revised: close the leak path')
+  assert.deepEqual(plain(curd.files), ['a.js'])
+  assert.equal(dataOf(calls(trace, 'cook:parent')[0].prompt, 'brief'), 'revised: close the leak path')
+  assert.equal(result.status, 'ok')
+})
+
 test('planAdvisor_noMoreThanOneRevision_evenWhenEveryAnswerIsRevise', async () => {
   const { trace } = await run(multi, { 'advise:plan': () => advice('revise', ['again']) })
 
