@@ -1837,6 +1837,8 @@ const groundingContext = (g) => (g ? {
   ...(g.unsettled?.length ? { unsettled_research: g.unsettled } : {}),
 } : {})
 const STOP_USAGE = 'The advisor stopped the run; advice lists its concerns. Fix the cause, then re-run with { prs } for a new plan, or add revise: "<change>" to a re-run with { prs: landing.inputs, plan: landing, approve: digest }.'
+// A stop on the first plan has no landing yet, so the only resume is a new plan.
+const PLAN_STOP_USAGE = 'The advisor stopped the run; advice lists its concerns and candidates holds the drafted plans. Fix the cause, then re-run with { prs } for a new plan.'
 const APPROVE_USAGE = 'To execute, re-run with { prs: landing.inputs, plan: landing, approve: digest }. Add land:true to merge. To change the plan first, re-run with the same fields and revise: "<change>".'
 const needsInput = (questions) => ({
   status: 'needs-input', questions, plan_source: planSource, digest, landing, advice: adviceLog, skipped, ...gapField(),
@@ -2016,7 +2018,7 @@ if (APPROVED) {
 
     phase('Advise')
     const settled = await advisePlans(pool, context, ctx, 'advise:plan', null)
-    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped, ...gapField(), usage: STOP_USAGE }
+    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped, ...gapField(), usage: PLAN_STOP_USAGE }
     if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
     chosenPlan = settled.pool[0].plan
     planSource = settled.pool[0].angle

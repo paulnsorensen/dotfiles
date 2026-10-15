@@ -215,6 +215,8 @@ test('an advisor stop on the plan returns a usage line that says how to resume',
   const { result } = await run({ prs: [1, 2] }, planRoutes([['advise:plan:0', { verdict: 'stop', chosen: 'P-1', concerns: ['unsafe'], guidance: '' }]]))
   assert.equal(result.status, 'stopped')
   assert.match(result.usage, /re-run with \{ prs \} for a new plan/)
+  assert.doesNotMatch(result.usage, /landing/)
+  assert.equal(result.landing, undefined)
 })
 
 test('a file overlap over 20 files logs the cut, and the tension prompt lists the first 20', async () => {
