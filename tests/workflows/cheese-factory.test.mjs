@@ -632,10 +632,29 @@ test('an invalid spec arg fails loud before any phase agent spawns', async () =>
     },
   })
 
-  const result = await workflow.run({ ...globals, args: { spec: 'bad slug; rm -rf /' } })
+  const result = await workflow.run({ ...globals, args: { spec: 'bad;slug$(rm)' } })
 
   assert.match(result.error, /Invalid spec arg/)
   assert.equal(trace.agents.length, 0)
+})
+
+test('a free-text spec arg returns needs-spec before any agent spawns', async () => {
+  const workflow = await loadWorkflow(path)
+  for (const task of ['add retry to the sync worker', 'fix flaky login']) {
+    for (const args of [{ spec: task }, task]) {
+      const { globals, trace } = createRuntime({
+        respond: ({ opts }) => { throw new Error(`unexpected agent ${opts.label}`) },
+      })
+      const result = await workflow.run({ ...globals, args })
+
+      assert.equal(result.status, 'needs-spec')
+      assert.equal(result.task, task)
+      assert.equal(result.reason, 'the arg is a task description, not a spec slug or path')
+      assert.equal(result.usage, 'Shape it into a spec with /mold, then run /cheese-factory { spec: <slug-or-path> }')
+      assert.equal(result.error, undefined)
+      assert.equal(trace.agents.length, 0)
+    }
+  }
 })
 
 test('integrate receives slug-sorted curds and small diffs skip the age-fanout workflow', async () => {

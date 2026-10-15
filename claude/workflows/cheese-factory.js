@@ -201,6 +201,16 @@ if (CORRECTIVE_ROUNDS > MAX_CORRECTIVE_ROUNDS) {
 
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]*$/
 const SPEC_ARG_RE = /^(?:~\/|\/)?[a-zA-Z0-9._][a-zA-Z0-9._/-]*$/ // slug, relative, absolute, or ~/ path ('..' rejected separately)
+// Free text has whitespace. It is a task description, so point the caller at /mold instead of failing.
+if (SPEC_ARG !== null && /\s/.test(SPEC_ARG)) {
+  log('The spec arg is free text, not a spec slug or path.')
+  return {
+    status: 'needs-spec',
+    reason: 'the arg is a task description, not a spec slug or path',
+    usage: 'Shape it into a spec with /mold, then run /cheese-factory { spec: <slug-or-path> }',
+    task: SPEC_ARG,
+  }
+}
 if (SPEC_ARG !== null && (!SPEC_ARG_RE.test(SPEC_ARG) || SPEC_ARG.includes('..'))) {
   log(`Invalid spec arg: ${SPEC_ARG}`)
   return { error: `Invalid spec arg: ${SPEC_ARG}` }
