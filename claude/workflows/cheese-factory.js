@@ -936,6 +936,7 @@ Immediately after the checkout and before any work, run git update-ref refs/head
 ${codeFields(branch)}
 
 ${skillStep('cook', `${curd.spec_path} --auto`)}
+${curd.brief ? data('brief', curd.brief) : ''}
 ${groundingBlock('Respect each recorded decision. Treat each research answer as a settled fact.')}
 
 ${NO_CHAIN_DIRECTIVE}
@@ -1890,7 +1891,9 @@ async function decomposeCurds(feedback, round = 0) {
 
   if (merged.length < 2) {
     log(`Decomposition merged down to ${merged.length} curd(s) — running single-pass against the parent spec.`)
-    return single
+    // Keep the decomposer brief: after a plan revision it carries the advisor's fixes to the next advisor and the cook.
+    if (!merged.length) return single
+    return { curds: [{ slug: parentSlug, spec_path: parentSpecPath, brief: merged[0].brief, files: merged[0].files }], singlePass: true }
   }
   const invalidSlugs = findInvalidSlugs(merged)
   if (invalidSlugs.length) {
@@ -1924,7 +1927,7 @@ let { curds, singlePass } = decomposed
 // ---- Advise (ADR-017: the plan advisor always runs, even for a spec with no AC line) ----
 phase('Advise')
 // The advisors judge the plan against the spec, so every advisor payload carries the spec text.
-// The single curd of a single-pass run holds brief null and files []. The advisor reads that as a broken plan, so the payload says that one curd cooks the whole spec.
+// The single curd of a single-pass run with no decomposer output holds brief null and files []. The advisor reads that as a broken plan, so the payload says that one curd cooks the whole spec.
 const SINGLE_PASS_BRIEF = 'single pass: cook the whole parent spec in payload.spec'
 function fileScopeOf(text) {
   const files = new Set()
