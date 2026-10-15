@@ -244,7 +244,7 @@ function setupPrompt() {
     DRY_RUN
       ? '2. Dry run — do NOT create labels, issues, comments, files, or mutate GitHub in any way.'
       : '2. Ensure these labels exist (create quietly if missing, ignore already-exists errors): `sliced-bread-audit`, `sev:blocker`, `sev:high`, `sev:medium`, `sev:low`.',
-    '3. Fetch fingerprints from ALL existing audit issues, open and closed, using `gh api --paginate "repos/$repo/issues?state=all&labels=sliced-bread-audit&per_page=100" --jq \'.[].body\'` and extract every `<!-- sba:... -->` marker. A genuinely empty result means existing_fingerprints=[]. Any query failure means gh_ok=false.',
+    "3. Fetch fingerprints from ALL existing audit issues, open and closed, with exactly this command: `gh api --paginate \"repos/$repo/issues?state=all&labels=sliced-bread-audit&per_page=100\" --jq '.[] | (.body // \"\") | scan(\"<!-- (sba:[^ ]+) -->\") | .[0]'`. Copy each output line into existing_fingerprints unchanged. Do not read issue bodies or extract markers yourself. Empty output means existing_fingerprints=[]. Any command failure means gh_ok=false.",
     'Always return all four fields: gh_ok, repo, existing_fingerprints, and error. Use repo="" or existing_fingerprints=[] only when gh_ok=false; use error="" on success.',
   ].join('\n')
 }
@@ -648,7 +648,11 @@ const uniqueConfirmed = confirmedAll.filter((finding) => {
   return true
 })
 const setupComplete = setup.gh_ok && setup.repo.length > 0 && Array.isArray(setup.existing_fingerprints)
-const existing = new Set((setupComplete ? setup.existing_fingerprints : []).map((text) => text.trim()))
+// The setup agent copies jq output; code strips stray comment wrappers and keeps only well-formed markers.
+const normalizeFingerprint = (text) => String(text).trim().replace(/^<!--\s*/, '').replace(/\s*-->$/, '').trim()
+const existing = new Set(
+  (setupComplete ? setup.existing_fingerprints : []).map(normalizeFingerprint).filter((fp) => /^sba:\S+$/.test(fp))
+)
 const fresh = uniqueConfirmed.filter((finding) => !existing.has(issueFingerprint(finding)))
 const existingDupes = uniqueConfirmed.length - fresh.length
 const toFile = fresh.slice(0, MAX_ISSUES)

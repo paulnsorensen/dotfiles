@@ -218,6 +218,26 @@ test('a confirmed finding matching an existing audit issue fingerprint is not re
   assert.match(trace.logs.join('\n'), /already exists/)
 })
 
+test('gh setup extracts markers with a jq scan, and code normalizes wrapped markers before the dedupe', async () => {
+  const { globals, trace } = build({
+    slices: [slice('x')],
+    existing: ['  <!-- sba:domains/x/a.py:model-purity:4 -->\n', 'not a marker'],
+    on: ({ opts, prompt }) => {
+      if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
+      if (opts.label.startsWith('cite:')) return citeAll(prompt)
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: {} })
+
+  const setupPrompt = trace.agents.find((a) => a.opts.label === 'map:gh-setup').prompt
+  assert.match(setupPrompt, /scan\("<!-- \(sba:\[\^ \]\+\) -->"\)/)
+  assert.match(setupPrompt, /Do not read issue bodies or extract markers yourself/)
+  assert.equal(result.issues.length, 0)
+  assert.equal(labels(trace).some((l) => l.startsWith('issues:batch')), false)
+})
+
 test('max_issues caps how many confirmed findings are filed, and the rest stay in the report', async () => {
   const { globals, trace } = build({
     slices: [slice('x')],
