@@ -364,7 +364,9 @@ test('route mode: fix_cost_now accepts moderate, and review workers return fix_c
   const plain = createRuntime({ respond: respondHappy() })
   await workflow.run({ ...plain.globals, args: BASE_ARGS })
   const plainReview = plain.trace.agents.find((c) => c.opts.label.startsWith('review:'))
-  assert.equal(plainReview.opts.schema.properties.findings.items.required, undefined)
+  const plainRequired = plainReview.opts.schema.properties.findings.items.required
+  for (const key of ['dimension', 'severity', 'file', 'line', 'claim', 'why_it_matters', 'fix_direction']) assert.ok(plainRequired.includes(key), key)
+  assert.ok(!plainRequired.includes('fix_cost_now'))
   assert.ok(!plainReview.prompt.includes('fix_cost_now'))
 })
 
@@ -387,7 +389,7 @@ test('route_curds absent: the reconcile schema does not require findings', async
   assert.equal(trace.agents.find((c) => c.opts.label === 'reconcile').opts.schema.required.includes('findings'), false)
 })
 
-test('route_curds given: finding items require severity, fix_cost_now, and file; absent: items have no required list', async () => {
+test('route_curds given: finding items require severity, fix_cost_now, and file; absent: items require the base fields only', async () => {
   const workflow = await loadWorkflow(path)
   const route = createRuntime({ respond: respondHappy() })
   await workflow.run({ ...route.globals, args: { ...BASE_ARGS, route_curds: [{ slug: 'alpha', branch: 'curd/alpha' }] } })
@@ -397,15 +399,16 @@ test('route_curds given: finding items require severity, fix_cost_now, and file;
   const plain = createRuntime({ respond: respondHappy() })
   await workflow.run({ ...plain.globals, args: BASE_ARGS })
   const plainItems = plain.trace.agents.find((c) => c.opts.label === 'reconcile').opts.schema.properties.findings.items
-  assert.equal(plainItems.required, undefined)
+  for (const key of ['dimension', 'severity', 'file', 'line', 'claim', 'why_it_matters', 'fix_direction']) assert.ok(plainItems.required.includes(key), key)
+  assert.ok(!plainItems.required.includes('fix_cost_now'))
 })
 
-test('route mode: a reconcile finding without claim or fix_direction fails the schema; non-route items stay unconstrained', async () => {
+test('route mode: a reconcile finding without claim or fix_direction fails the schema', async () => {
   const workflow = await loadWorkflow(path)
   const route = createRuntime({ respond: respondHappy() })
   await workflow.run({ ...route.globals, args: { ...BASE_ARGS, route_curds: [{ slug: 'alpha', branch: 'curd/alpha' }] } })
   const schema = route.trace.agents.find((c) => c.opts.label === 'reconcile').opts.schema
-  const full = { severity: 'medium', fix_cost_now: 'contained', file: 'src/a.ts', claim: 'c', fix_direction: 'd' }
+  const full = { dimension: 'correctness', severity: 'medium', fix_cost_now: 'contained', file: 'src/a.ts', line: 1, claim: 'c', why_it_matters: 'w', fix_direction: 'd' }
   validate({ status: 'ok', has_medium_plus_findings: true, has_cheap_lows: false, artifact: 'a', findings: [full] }, schema)
   for (const key of ['claim', 'fix_direction']) {
     const partial = Object.fromEntries(Object.entries(full).filter(([k]) => k !== key))
