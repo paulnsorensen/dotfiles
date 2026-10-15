@@ -119,7 +119,7 @@ test('code shell-quotes a criterion check, and a dirty tree before a check shows
   const { result, trace, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['plan:minimal', quoted],
     ['integrate:pre', pinned],
-    ['verify:pre:AC-1', { ...verified, tree_clean: false, evidence: 'grep printed 1' }],
+    ['verify:pre:AC-1', { verdicts: [{ ...verified, tree_clean: false, evidence: 'grep printed 1' }] }],
   ]))
   assert.ok(call('verify:pre:AC-1').prompt.includes("cd /tmp/int && bash -c 'git log --oneline | grep -c '\\''helper'\\'''"))
   assert.match(plain(result.verification.verdicts)[0].evidence, /the worktree had changes from an earlier check/)
@@ -129,7 +129,7 @@ test('code shell-quotes a criterion check, and a dirty tree before a check shows
 test('a judge that finds a missing path fails the criterion before publish', async () => {
   const { result, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['integrate:pre', pinned],
-    ['verify:pre:AC-1', { ...verified, missing_paths: ['src/2.js'], evidence: 'grep printed 1' }],
+    ['verify:pre:AC-1', { verdicts: [{ ...verified, missing_paths: ['src/2.js'], evidence: 'grep printed 1' }] }],
   ]))
   assert.equal(result.status, 'fail')
   assert.match(result.note, /criteria failed: AC-1/)
@@ -140,7 +140,7 @@ test('a judge that finds a missing path fails the criterion before publish', asy
 test('a judge that reports a guard denial gives an unrun verdict that still blocks before publish', async () => {
   const { result, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['integrate:pre', pinned],
-    ['verify:pre:AC-1', { ...verified, passes: false, guard_blocked: true, evidence: 'A PreToolUse hook blocked it' }],
+    ['verify:pre:AC-1', { verdicts: [{ ...verified, passes: false, guard_blocked: true, evidence: 'A PreToolUse hook blocked it' }] }],
   ]))
   assert.equal(result.status, 'fail')
   assert.match(result.note, /criteria verification unrun \(guard\): AC-1/)
@@ -186,7 +186,7 @@ test('a redone integration records every attempt worktree for cleanup', async ()
     ['integrate:pre', () => (++calls === 1
       ? { ...integrated(['T-1']), worktree_path: wt('int1'), head: sha(97) }
       : { ...integrated(['T-1', 'T-2']), worktree_path: wt('int2'), head: sha(97) })],
-    ['verify:pre:AC-1', { ...verified, evidence: 'grep printed 1 and 1' }],
+    ['verify:pre:AC-1', { verdicts: [{ ...verified, evidence: 'grep printed 1 and 1' }] }],
   ]))
   assert.equal(result.status, 'ready')
   const sweep = call('cleanup').prompt

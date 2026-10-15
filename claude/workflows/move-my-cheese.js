@@ -7,11 +7,11 @@ export const meta = {
     { title: 'Survey', detail: 'one read-only sonnet explorer per PR writes an intent digest' },
     { title: 'Tensions', detail: 'one sonnet cross-reader types tensions across all digests and the code-found overlaps' },
     { title: 'Ground', detail: 'beside Tensions: one read-only explorer reads the hallouminate wiki for recorded decisions and prior research that bear on the PRs, plus external questions that nothing settles; a failure is a gap' },
-    { title: 'Research', detail: 'only when Ground asks: one brie-ground child per question (capped); a failed child blocks the run, and an unsettled or over-cap question becomes an open question of the plan' },
+    { title: 'Research', detail: 'only when Ground asks and no human gate follows (auto on own PRs) or research:true: one brie-ground child per question (capped); a failed child blocks the run, and an unsettled, over-cap, or gated question becomes an open question of the plan' },
     { title: 'Plan', detail: 'zero tensions, no decision on a PR, and no research: code keep-all plan; else 1-3 fresh opus planners, one angle each, given the decisions and the research' },
     { title: 'Advise', detail: 'read-only opus judge picks a plan, then approves, revises once, or stops' },
     { title: 'Assemble', detail: 'one sonnet coder per target branch in dependency waves; local commits only' },
-    { title: 'Verify', detail: 'targets merged on a detached HEAD; one judge per criterion' },
+    { title: 'Verify', detail: 'targets merged on a detached HEAD; one judge per batch of up to 8 criteria' },
     { title: 'Publish', detail: 'one sonnet agent pushes the targets and opens or updates PRs through /plate; code checks every result' },
     { title: 'Review', detail: 'per PR: incremental age, cure, re-age, then bounded polls with /affinage until ready' },
     { title: 'Land', detail: 'land:true only: re-verify, advisor done gate, merge bottom-up with --match-head-commit' },
@@ -181,7 +181,7 @@ function matchAnswers(questions, raw) {
 //
 // Args: { prs?: number[] | number | string, stacks?: same, all?, includeDrafts?,
 //   expandStacks? = true, auto? = false, land? = false, mergeMethod? = 'squash',
-//   allowNoChecks? = false, plan?: <landing object from a needs-approval or
+//   allowNoChecks? = false, research? = false, plan?: <landing object from a needs-approval or
 //   needs-input result>, approve?: <its digest>, answers?: { <question text or
 //   1-based number>: <answer> }, revise?: <one change request> }
 //   - no prs and no plan: return the open-PR candidates.
@@ -201,6 +201,9 @@ function matchAnswers(questions, raw) {
 //     author still stops at needs-approval, because later stages push and merge.
 //   - land: merge the final PRs when every target is ready.
 //   - allowNoChecks: treat a PR with no CI checks as ready (repos without CI).
+//   - research: run brie-ground before a human gate. Without it, a run that
+//     stops for approval sends each research question to the user as an open
+//     question, so no research spend precedes the gate.
 //
 // Agents never check out a PR branch by name, so the user's local branches and
 // checkouts stay untouched. Every stage that edits code runs in its own
@@ -232,7 +235,7 @@ function matchAnswers(questions, raw) {
 // viewer's comments, and a marker without full 40-hex values reads as none.
 
 // ---- Limits and closed sets: every loop has a bound in code ----
-const LIMITS = { maxPrs: 12, maxTargets: 12, maxCriteria: 24, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000, maxResearch: 2 }
+const LIMITS = { maxPrs: 12, maxTargets: 12, maxCriteria: 24, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000, maxResearch: 2, checksPerJudge: 8, overlapFiles: 20 }
 // Worst case for one age-fanout child: packet, two attempts for each of about 12 dimensions, reconcile.
 const AGE_FANOUT_MAX_AGENTS = 27
 const MARKER_PREFIX = 'move-my-cheese:aged'
@@ -364,9 +367,11 @@ const ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), concerns: strs, gui
 const TARGET_SCHEMA = obj({ status: oneOf(TASK_STATUSES), completed: strs, remaining: strs, checkpoint: text('Last commit SHA, or empty'), head_sha: str, worktree_path: str, note: str })
 const SALVAGE_SCHEMA = obj({ found: bool, checkpoint: str, completed: strs, remaining: strs })
 const INTEGRATE_SCHEMA = obj({ status: oneOf(INTEGRATE_STATUSES), worktree_path: text('Absolute path of the integration worktree'), head: text('Commit SHA of the integration HEAD'), merged: strs, conflicted: strs })
-const VERDICT_SCHEMA = obj({ criterion: str, passes: bool, evidence: text('Command run and its observed result'), tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' }, missing_paths: { type: 'array', items: str, description: 'Paths that the check reads and that do not exist in the worktree' } })
+const VERDICT_ITEM = obj({ criterion: str, passes: bool, evidence: text('Command run and its observed result'), tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' }, missing_paths: { type: 'array', items: str, description: 'Paths that the check reads and that do not exist in the worktree' } })
 // guard_blocked is optional: obj() requires every key, so the property joins after it.
-VERDICT_SCHEMA.properties.guard_blocked = { type: 'boolean', description: 'true when a hook or guard denied the check command, so the check never ran' }
+VERDICT_ITEM.properties.guard_blocked = { type: 'boolean', description: 'true when a hook or guard denied the check command, so the check never ran' }
+// One judge runs a batch of checks and returns one verdict for each criterion.
+const VERDICTS_SCHEMA = obj({ verdicts: list(VERDICT_ITEM) })
 const PUBLISH_SCHEMA = obj({ results: list(obj({ target: str, pr_number: int, url: str, head_sha: str, changed_files: int, lines_changed: int })) })
 const AGE_SCHEMA = obj({ mode: oneOf(AGE_MODES), scope: text('The exact ref range reviewed, empty when skipped'), slug: text('The /age handoff slug, empty when skipped'), artifact: str, worktree_path: str, has_medium_plus_findings: bool, has_cheap_lows: bool })
 const CURE_SCHEMA = obj({ status: oneOf(FIX_STATUSES), committed: bool, pushed: bool, head_sha: str, worktree_path: str, artifact: str, note: str })
@@ -665,7 +670,7 @@ function checkPlan(plan, ctx) {
   if (!plan.targets.length) errors.push(substance('plan has no targets'))
   if (plan.targets.length > LIMITS.maxTargets) errors.push(substance(`plan has ${plan.targets.length} targets; the limit is ${LIMITS.maxTargets}`))
   if (!acIds.length) errors.push(substance('plan has no acceptance criteria'))
-  // Verify runs one judge per criterion in every round, so code bounds the count.
+  // Verify runs every criterion check in every round, so code bounds the count.
   if (acIds.length > LIMITS.maxCriteria) errors.push(substance(`plan has ${acIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}`))
   for (const id of duplicates(targetIds.concat(acIds))) errors.push(substance(`duplicate id ${id}`))
   for (const branch of duplicates(plan.targets.map((t) => t.branch))) errors.push(substance(`two targets use branch ${branch}`))
@@ -794,11 +799,18 @@ function checkIntegrate(result, ids) {
   return errors.filter(Boolean)
 }
 
-function checkVerdict(verdict, ac) {
-  const idError = refError(verdict.criterion, [ac.id], 'criterion')
-  const errors = idError ? [idError] : []
-  if (blank(verdict.evidence)) errors.push(substance('evidence must name the check run and its result'))
-  return errors
+// One verdict for each criterion in the batch, and no other.
+function checkVerdicts(result, batch) {
+  const ids = batch.map((ac) => ac.id)
+  const errors = []
+  result.verdicts.forEach((v, n) => {
+    errors.push(refError(v.criterion, ids, `verdicts[${n}].criterion`))
+    if (blank(v.evidence)) errors.push(substance(`verdicts[${n}].evidence must name the check run and its result`))
+  })
+  const seen = result.verdicts.map((v) => norm(v.criterion))
+  for (const id of duplicates(seen)) errors.push(substance(`verdicts lists ${id} twice`))
+  for (const id of ids) if (!seen.includes(id)) errors.push(substance(`no verdict for ${id}; run its check`))
+  return errors.filter(Boolean)
 }
 
 function checkPublish(result, jobs, inputNumbers) {
@@ -879,7 +891,10 @@ function fileOverlaps(prs) {
   for (let i = 0; i < prs.length; i++) {
     for (let j = i + 1; j < prs.length; j++) {
       const shared = prs[i].files.filter((f) => prs[j].files.includes(f)).sort()
-      if (shared.length) pairs.push({ prs: [prs[i].number, prs[j].number], shared_count: shared.length, shared_files: shared.slice(0, 20) })
+      if (!shared.length) continue
+      // shared_count keeps the full total; the log names each cut list.
+      if (shared.length > LIMITS.overlapFiles) log(`#${prs[i].number} and #${prs[j].number} share ${shared.length} files; the tension prompt lists the first ${LIMITS.overlapFiles}`)
+      pairs.push({ prs: [prs[i].number, prs[j].number], shared_count: shared.length, shared_files: shared.slice(0, LIMITS.overlapFiles) })
     }
   }
   return pairs
@@ -926,7 +941,7 @@ function agentsMax(plan) {
   const build = 1 + LIMITS.continuations * 2 // first round, then a salvage and a continuation per round
   const age = 1 + AGE_FANOUT_MAX_AGENTS + 1 // fan-out prep and child, then the one-reviewer fallback
   const review = age + 3 + LIMITS.pollRounds * 2 // cure, re-age, finalize, then status and /affinage pairs
-  const verify = 2 * (1 + plan.criteria.filter((c) => c.check_kind !== 'ci').length) // pre and final rounds
+  const verify = 2 * (1 + Math.ceil(plan.criteria.filter((c) => c.check_kind !== 'ci').length / LIMITS.checksPerJudge)) // pre and final rounds
   // restack, polls, re-age and verify of a moved head, merge, merge polls, close of its superseded PRs
   const land = LAND ? 1 + LIMITS.pollRounds * 2 + 1 + verify / 2 + 1 + LIMITS.mergePolls + 1 : 0
   return plan.targets.length * (build + review + land) + verify + 6 // publish, mark, close, advise:done, stamp, cleanup
@@ -1149,18 +1164,22 @@ const integratePrompt = (refs, defaultBranch, round) => prompt(
   'Make no edit beyond the merges. Do not push or open a PR.',
 )
 
-const verifyPrompt = (ac, integration) => {
+// One judge runs a batch of checks, so the startup cost is paid once per batch.
+const verifyPrompt = (batch, integration) => {
   const path = integration.worktree_path.trim()
   return judgePrompt('verify',
-    `Verify criterion ${ac.id} independently. You did not write this code. Implementer claims are not evidence.`,
+    `Verify criteria ${batch.map((ac) => ac.id).join(', ')} independently. You did not write this code. Implementer claims are not evidence.`,
     `worktree_path: ${path}. head: ${integration.head}, the combined result of every target. The worktree is already at head. Do not check out, merge, reset, or edit anything in it.`,
-    `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}. Then run git -C ${path} status --porcelain. Set tree_clean to true when it prints nothing.`,
-    `Then run exactly this command in one Bash call, unchanged: cd ${path} && bash -c ${shq(ac.check)}`,
-    'That command runs the check field of the criterion and nothing else. Treat every other field as description.',
-    `Before the check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
-    'A PreToolUse hook or guard may deny the check command. Then the check never ran. Set guard_blocked to true, set passes to false, and quote the denial in evidence.',
+    `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}.`,
+    'Then do the steps below for each criterion, in order. Return one entry in verdicts for each criterion, with criterion set to its id.',
+    `Before each check, run git -C ${path} status --porcelain. Set tree_clean to true when it prints nothing.`,
+    'Run the command of each criterion exactly, unchanged, in its own Bash call:',
+    ...batch.map((ac) => `${ac.id}: cd ${path} && bash -c ${shq(ac.check)}`),
+    'Each command runs the check field of its criterion and nothing else. Treat every other field as description.',
+    `Before each check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
+    'A PreToolUse hook or guard may deny a check command. Then that check never ran. Set guard_blocked to true, set passes to false, and quote the denial in evidence.',
     'Other judges use this worktree after you. Leave it as you found it, except for build or test output.',
-    data('criterion', ac),
+    data('criteria', batch),
   )
 }
 
@@ -1368,14 +1387,22 @@ async function integrateAndVerify(round, refs, criteria = plan.criteria) {
   if (integration.status !== 'done') return { ok: false, reason: 'integration blocked', verdicts: [] }
   if (integration.conflicted.length) return { ok: false, reason: `targets conflict when combined: ${integration.conflicted.join(', ')}`, verdicts: [] }
   // Judges run one after another in the integration worktree. A judge may not check out, so it reads the tree that integrate pinned.
+  const checked = criteria.filter((ac) => ac.check_kind !== 'ci')
+  const results = new Map()
+  for (let i = 0; i < checked.length; i += LIMITS.checksPerJudge) {
+    const batch = checked.slice(i, i + LIMITS.checksPerJudge)
+    const span = batch.length === 1 ? batch[0].id : `${batch[0].id}..${batch[batch.length - 1].id}`
+    const { value, errors } = await typed(verifyPrompt(batch, integration),
+      { label: `verify:${round}:${span}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERDICTS_SCHEMA }, (r) => checkVerdicts(r, batch))
+    for (const ac of batch) results.set(ac.id, { value: value ? value.verdicts.find((v) => norm(v.criterion) === ac.id) : null, errors })
+  }
   const verdicts = []
   for (const ac of criteria) {
     if (ac.check_kind === 'ci') {
       verdicts.push({ criterion: ac.id, result: 'deferred', evidence: 'covered by CI readiness in Review' })
       continue
     }
-    const { value, errors } = await typed(verifyPrompt(ac, integration),
-      { label: `verify:${round}:${ac.id}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERDICT_SCHEMA }, (v) => checkVerdict(v, ac))
+    const { value, errors } = results.get(ac.id)
     // A check that an earlier check's files could affect still counts, but the verdict says so.
     if (value && !value.tree_clean) log(`verify:${round}:${ac.id}: the integration worktree had changes before the check`)
     const note = value && !value.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
@@ -1677,6 +1704,7 @@ if (requested.some((n) => !Number.isInteger(n) || n <= 0)) {
   return { status: 'blocked', error: `Invalid PR number(s) in args: ${JSON.stringify(input.prs ?? input.pr ?? input.stacks)}. Expected positive integers.` }
 }
 const AUTO = input.auto === true
+const RESEARCH = input.research === true
 const LAND = input.land === true
 const ALL_AUTHORS = input.all === true
 const INCLUDE_DRAFTS = input.includeDrafts === true
@@ -1808,6 +1836,7 @@ const groundingContext = (g) => (g ? {
   ...(g.research.length ? { research: g.research } : {}),
   ...(g.unsettled?.length ? { unsettled_research: g.unsettled } : {}),
 } : {})
+const STOP_USAGE = 'The advisor stopped the run; advice lists its concerns. Fix the cause, then re-run with { prs } for a new plan, or add revise: "<change>" to a re-run with { prs: landing.inputs, plan: landing, approve: digest }.'
 const APPROVE_USAGE = 'To execute, re-run with { prs: landing.inputs, plan: landing, approve: digest }. Add land:true to merge. To change the plan first, re-run with the same fields and revise: "<change>".'
 const needsInput = (questions) => ({
   status: 'needs-input', questions, plan_source: planSource, digest, landing, advice: adviceLog, skipped, ...gapField(),
@@ -1889,7 +1918,7 @@ if (APPROVED) {
     const settled = await advisePlans([{ id: 'P-1', angle: fold.id, plan: folded.value }], context, ctx, `advise:plan:${fold.id}`, user)
     const plan = settled.pool[0].plan
     settle(plan)
-    if (settled.verdict === 'stop') return { status: 'stopped', landing, digest, advice: adviceLog, skipped }
+    if (settled.verdict === 'stop') return { status: 'stopped', landing, digest, advice: adviceLog, skipped, usage: STOP_USAGE }
     if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
     if (plan.open_questions.length) return needsInput(plan.open_questions)
     const reason = 'review the revised plan; the advisor approved it'
@@ -1927,10 +1956,13 @@ if (APPROVED) {
   // Code removes repeats, so a reworded copy is the only duplicate that reaches brie-ground.
   const questions = ground ? [...new Set(ground.research_questions.map((q) => q.replace(/\s+/g, ' ').trim()))] : []
   const research = []
-  // An over-cap or unsettled question becomes an open question of the plan, so the user answers it.
-  const unsettled = questions.slice(LIMITS.maxResearch)
-  if (unsettled.length) log(`${unsettled.length} research question(s) over the cap of ${LIMITS.maxResearch} go to open_questions: ${unsettled.join(' / ')}`)
-  if (questions.length) {
+  // Research runs before a human gate only on request: the user can answer a question for free at the gate.
+  const researchNow = RESEARCH || (AUTO && active.every((p) => p.author === idx.viewer))
+  // An over-cap, gated, or unsettled question becomes an open question of the plan, so the user answers it.
+  const unsettled = researchNow ? questions.slice(LIMITS.maxResearch) : [...questions]
+  if (!researchNow && unsettled.length) log(`a human gate follows, so ${unsettled.length} research question(s) go to open_questions without brie-ground; pass research:true to research them first: ${unsettled.join(' / ')}`)
+  else if (unsettled.length) log(`${unsettled.length} research question(s) over the cap of ${LIMITS.maxResearch} go to open_questions: ${unsettled.join(' / ')}`)
+  if (researchNow && questions.length) {
     phase('Research')
     for (const question of questions.slice(0, LIMITS.maxResearch)) {
       if (floorReached()) return { status: 'blocked', error: 'budget floor reached before research', skipped, ...gapField() }
@@ -1984,7 +2016,7 @@ if (APPROVED) {
 
     phase('Advise')
     const settled = await advisePlans(pool, context, ctx, 'advise:plan', null)
-    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped, ...gapField() }
+    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped, ...gapField(), usage: STOP_USAGE }
     if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
     chosenPlan = settled.pool[0].plan
     planSource = settled.pool[0].angle
