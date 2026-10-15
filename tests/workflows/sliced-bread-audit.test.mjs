@@ -670,3 +670,80 @@ test('code caps opus evaluators at 20 slices and refuters at 12 per run', async 
   assert.equal(result.floor_unverified.length, 8)
   assert.ok(trace.logs.some((l) => /8 high\+ finding\(s\) past the 12-refuter cap/.test(l)))
 })
+
+for (const [name, args, pattern] of [
+  ['a string dry_run', { dry_run: 'true' }, /dry_run must be true or false/],
+  ['a camelCase dryRun key', { dryRun: true }, /unknown args: dryRun/],
+  ['a non-string scope', { scope: 7 }, /scope must be a string/],
+  ['malformed JSON-string args', '{"dry_run": tru', /args look like JSON but do not parse/],
+  ['an array', ['src'], /args must be a scope string or an object/],
+]) {
+  test(`rejects ${name} with usage text before dispatching any agent`, async () => {
+    const { globals, trace } = createRuntime()
+    const result = await workflow.run({ ...globals, args })
+    assert.match(result.error, pattern)
+    assert.match(result.error, /Usage: \/sliced-bread-audit/)
+    assert.equal(trace.agents.length, 0)
+  })
+}
+
+test('JSON-string object args parse into options instead of becoming the scope', async () => {
+  const { globals, trace } = build({ slices: [] })
+  const result = await workflow.run({ ...globals, args: '{"scope": "src/pkg", "dry_run": true}' })
+
+  assert.match(result.error, /found no slices/)
+  const mapPrompt = trace.agents.find((a) => a.opts.label === 'map:slices').prompt
+  assert.match(mapPrompt, /under `src\/pkg`/)
+  assert.doesNotMatch(mapPrompt, /dry_run/)
+})
+
+test('a null gh-setup result is a setup failure, not a crash', async () => {
+  const { globals } = createRuntime({
+    respond: ({ opts }) => {
+      if (opts.label === 'map:slices') return { layout: 'flat', slices: [slice('x')] }
+      if (opts.label === 'map:gh-setup') return null
+      if (opts.label.startsWith('eval:')) return { slice: opts.label.slice(5), findings: [] }
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: {} })
+
+  assert.equal(result.setup.gh_ok, false)
+  assert.match(result.setup.error, /map:gh-setup returned no result/)
+})
+
+test('a null evaluator result records an evaluate failure and the run still completes', async () => {
+  const { globals } = build({
+    slices: [slice('x')],
+    on: ({ opts }) => {
+      if (opts.label === 'eval:x') return null
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: { dry_run: true } })
+
+  const evaluateFailures = result.failures.filter((f) => f.stage === 'evaluate')
+  assert.equal(evaluateFailures.length, 1)
+  assert.equal(evaluateFailures[0].slice, 'x')
+  assert.equal(evaluateFailures[0].error, 'agent eval:x returned no result')
+})
+
+test('a null filing-batch result marks each issue unfiled instead of crashing', async () => {
+  const { globals } = build({
+    slices: [slice('x')],
+    on: ({ opts }) => {
+      if (opts.label === 'eval:x') return { slice: 'x', findings: [finding()] }
+      if (opts.label.startsWith('cite:')) return citeOk(1)
+      if (opts.label.startsWith('issues:batch')) return null
+      throw new Error(`unexpected agent ${opts.label}`)
+    },
+  })
+
+  const result = await workflow.run({ ...globals, args: {} })
+
+  assert.equal(result.issues.length, 1)
+  assert.notEqual(result.issues[0].created, true)
+  assert.match(result.issues[0].skipped_reason, /filing batch failed: agent issues:batch-1 returned no result/)
+})

@@ -24,7 +24,42 @@ export const meta = {
 // depending on that file being readable.
 
 // ── args ────────────────────────────────────────────────────────────────
-const opts = typeof args === 'string' ? { scope: args } : args && typeof args === 'object' ? args : {}
+const ARG_KEYS = ['scope', 'min_severity', 'dry_run', 'max_issues', 'workers']
+const USAGE =
+  'Usage: /sliced-bread-audit [scope], or object args {scope?: string, min_severity?: "blocker"|"high"|"medium"|"low", dry_run?: true|false, max_issues?: 1-100, workers?: 1-16}.'
+
+// A string that starts with "{" is JSON object args, not a scope path.
+// Unknown keys and a non-boolean dry_run are errors, so a typo such as
+// dryRun or dry_run:"true" never files real issues.
+function parseArgs(raw) {
+  if (raw === undefined || raw === null) return { opts: {} }
+  let value = raw
+  if (typeof value === 'string') {
+    const text = value.trim()
+    if (!text.startsWith('{')) return { opts: { scope: text } }
+    try {
+      value = JSON.parse(text)
+    } catch (error) {
+      return { error: `args look like JSON but do not parse: ${errorMessage(error)}. ${USAGE}` }
+    }
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return { error: `args must be a scope string or an object. ${USAGE}` }
+  }
+  const unknown = Object.keys(value).filter((key) => !ARG_KEYS.includes(key))
+  if (unknown.length) return { error: `unknown args: ${unknown.join(', ')}. ${USAGE}` }
+  if (value.dry_run !== undefined && typeof value.dry_run !== 'boolean') {
+    return { error: `dry_run must be true or false, got: ${JSON.stringify(value.dry_run)}. ${USAGE}` }
+  }
+  if (value.scope !== undefined && typeof value.scope !== 'string') {
+    return { error: `scope must be a string, got: ${JSON.stringify(value.scope)}. ${USAGE}` }
+  }
+  return { opts: value }
+}
+
+const parsedArgs = parseArgs(args)
+if (parsedArgs.error) return { error: parsedArgs.error }
+const opts = parsedArgs.opts
 const SCOPE = (opts.scope || '.').trim() || '.'
 const MIN_SEVERITY = opts.min_severity || 'medium'
 const DRY_RUN = opts.dry_run === true
@@ -364,9 +399,15 @@ function errorMessage(error) {
   return error && error.message ? String(error.message) : String(error)
 }
 
+// agent() resolves to null when the agent ends without a structured result.
+// Treat null as a failure so callers never dereference a missing value.
 async function safeAgent(prompt, opts) {
   try {
-    return { ok: true, value: await agent(prompt, opts) }
+    const value = await agent(prompt, opts)
+    if (value === null || value === undefined) {
+      return { ok: false, error: `agent ${(opts && opts.label) || 'call'} returned no result` }
+    }
+    return { ok: true, value }
   } catch (error) {
     return { ok: false, error: errorMessage(error) }
   }
