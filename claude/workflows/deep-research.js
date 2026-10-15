@@ -16,7 +16,7 @@ export const meta = {
 // fetch, adversarial verify, synthesis) now lives in brie-ground as a dynamic
 // per-sub-question "deep" escalation, hard-coded to Tavily. The bundled run
 // always starts about 97 agents. brie-ground starts fewer for a narrow
-// question, but its worst case is 96 agents (see its fan-out caps). This shim
+// question, but its worst case is 35 agents (see its fan-out caps). This shim
 // adds no agent of its own.
 //
 // The shim owns the /deep-research entry contract: it reads the question,
