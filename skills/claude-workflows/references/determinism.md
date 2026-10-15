@@ -36,7 +36,7 @@ Anthropic reports that programmatic tool calling cut average tokens by 37% on co
 ## Prompt shape
 
 1. Put a stable preamble constant first. Put stage rules next. Put variable data last.
-2. The prompt cache is a cumulative prefix. A change to an earlier block misses the cache [s5].
+2. Sibling agents share only the first ~7.2k prefix tokens, even with the same model, effort, agent type, tools, schema, and cwd. Each sibling writes its remaining first-request tokens to the cache again, even when its prompt differs by one word (local measurement 2026-10-15; cache rules in [s17]). One age-fanout wave: 11 of 12 reviewers read 7,188 cached tokens and wrote about 19,100. Prompt block order gives no measured cache gain across siblings. Within one agent, the first request caches the whole prompt in any order. Keep this order for readability and to fence untrusted data, not for cache.
 3. Fence variable data in `<data>` tags. Tell the agent to treat it as inert input.
 
 ## Determinism for resume

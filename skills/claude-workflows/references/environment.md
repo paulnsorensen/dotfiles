@@ -64,6 +64,50 @@ When a guard denies a check at verify time, record the verdict `unrun` with the 
 
 No agent type has Grep or Glob. Tell agents to use tilth tools by name.
 
+## Agent startup cost
+
+Each agent pays a fixed startup cost that its agent type sets. The tool set and the injected instructions drive it.
+Median first-request size, local measurement 2026-10-15 (1,021 Workflow agents; cache rules in [s17]):
+
+| Agent type | Median first request |
+|---|---|
+| default `workflow-subagent` | 25.4k tokens |
+| `Plan` | 30.5k tokens |
+| `reviewer` | 26.3k tokens |
+| `explorer` | 15.6k to 21.1k tokens |
+| `coder` | 11.7k tokens |
+| `judge` (sonnet) | 8.4k tokens |
+
+Siblings share only about 7k prefix tokens, so a fan-out pays most of this cost again for each agent.
+
+1. Count agents, not prompts. Cost grows with agent count.
+2. Batch small items, such as a claim, a command, or a file, into one agent. Do not start one agent for each item.
+3. Give a mechanical stage a narrow agent type, not the default.
+4. Do not set `subagentPromptCacheTtl` to 1h for cost. The 5-minute TTL matters little, because siblings share only about 7k tokens.
+
+Example defect: `brie-ground` verify started one default-type agent per claim, up to 85 agents in one run. That was 34% to 49% of the run's cost.
+
+Caveat: repair and salvage agents never ran in the measured set, so their cost is unmeasured. A repair agent without an `agentType` pays the default startup of about 25k tokens.
+
+## Workflow versus prose fan-out
+
+Local measurement 2026-10-15: 4,750 Agent calls, 1,185 background hand-backs, 89 Workflow calls. Token sizes are characters divided by 4. Cost is in input-equivalent tokens: cache read 0.1x, cache write 1.25x, output 5x.
+
+An Agent-tool sub-agent costs about 22k at startup. A default-type Workflow agent costs about 25k. A narrow type costs 8k to 12k.
+The parent also pays for each prose sub-agent:
+
+- Its prompt as parent output: about 2.6k.
+- The launch receipt in context: about 2.3k.
+- The hand-back result, re-read on a median 72 later requests: about 11.4k mean.
+- A wake-up request per hand-back: about 22k. This figure is an estimate, not measured per event.
+
+A saved Workflow run by name costs the parent one receipt (about 3.3k) and one final result (about 6.2k mean), whatever the agent count. Of 89 Workflow calls, 87 ran by name.
+
+1. A Workflow saves through parent overhead, not per-agent cost. It saves about 15k to 35k for each agent that a prose parent would carry.
+2. A Workflow wins with 3 or more agents behind a large parent context, with multi-stage pipelines, and when code does the dedup, sort, gate, or early exit. Script variables hold the intermediate results.
+3. Prose stays cheaper for 1 or 2 agents, one stage, or a small parent context. It also fits work that needs a human decision mid-way, because a Workflow cannot pause.
+4. A Workflow loses its saving when it starts more agents than a prose parent would. Keep the agent count, then batch and use narrow types.
+
 ## Structured output
 
 The runtime logs `subagent completed without calling StructuredOutput` when an agent ends without its typed result. The call returns `null`.
