@@ -12,6 +12,8 @@ Each token a model spends on a mechanical step costs money and adds variance.
 | Work | Code form |
 |---|---|
 | Argument parsing and validation | Parse `args`; return `{ status: 'blocked' }` before the first agent |
+| Argument shape | Accept a bare string and map it to the main field. Return the exact call shape in each error |
+| Git and GitHub plumbing | One script, for example in `bin/`, that one agent calls. Not one small agent for each command |
 | ID, coverage, and graph checks | Validators and a topological sort |
 | Dedup, sort, filter, and caps | Plain JavaScript over typed results |
 | Status normalization | A table or a function, not a prompt rule |

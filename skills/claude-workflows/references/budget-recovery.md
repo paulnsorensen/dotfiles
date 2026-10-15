@@ -15,6 +15,18 @@ A progress file plus git history lets a fresh context learn the state fast [s9].
 End each session in a clean state that can merge [s9].
 Make the deliverable durable before a long advisor or verifier call [s15].
 
+## Resume across runs
+
+A Workflow cannot pause for the user. Each stop for input ends the run.
+
+1. Write the run state to a file in code, for example `.cheese/runs/<name>-<digest>.json`. The state holds the plan, the stage outcomes, and the open questions.
+2. Each `needs-*` result names the resume input, for example `{ resume: '<digest>', answers }`. Return that call shape in `usage`.
+3. On resume, validate the digest and the state before the first agent. Skip each stage that the state marks done.
+4. Rerun a stage only when its inputs changed, for example when the default branch moved.
+5. Prefer a calling skill that asks the user and holds the state. Then the Workflow runs once, after approval.
+
+Evidence: 19 of 28 move-my-cheese runs from 2026-10-11 to 2026-10-14 ended at a gate before any build. Each rerun repeated Recon, and the caller sent the full plan object back each time.
+
 ## Status contract
 
 | Status | Meaning | Required fields |
