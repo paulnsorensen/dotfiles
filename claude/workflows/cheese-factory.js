@@ -586,7 +586,13 @@ const specPathErrors = (path, value) =>
 // curd_count comes from mold.pyz curd-count. A formatter cannot invent it, so a missing count is substance.
 const curdCountErrors = (c) =>
   (c && typeof c.slug === 'string' && c.slug.length && Number.isInteger(c.candidate_curds) && c.candidate_curds >= 1 ? [] : [substance('$.curd_count must carry the slug and a candidate_curds of 1 or more from mold.pyz curd-count')])
-const checkResolve = checkWith(RESOLVE_SCHEMA, (v) => (v.mode === 'resolved' ? [...specPathErrors('$.spec_path', v.spec_path), ...(typeof v.spec_text === 'string' && v.spec_text.length ? [] : [substance('$.spec_text must be a non-empty string')]), ...shaErrors('$.base_sha', v.base_sha), ...curdCountErrors(v.curd_count)] : []))
+// A spec_text whose line breaks arrive as the two characters \n is one line to acIdsOf, so Criteria would be skipped (#1311).
+const specTextErrors = (text) => {
+  if (typeof text !== 'string' || !text.length) return [substance('$.spec_text must be a non-empty string')]
+  if (!text.includes('\n') && text.includes('\\n')) return [substance('$.spec_text has escaped \\n sequences and no real newline; return the spec file text verbatim with real line breaks')]
+  return []
+}
+const checkResolve = checkWith(RESOLVE_SCHEMA, (v) => (v.mode === 'resolved' ? [...specPathErrors('$.spec_path', v.spec_path), ...specTextErrors(v.spec_text), ...shaErrors('$.base_sha', v.base_sha), ...curdCountErrors(v.curd_count)] : []))
 const checkDecompose = checkWith(DECOMPOSE_SCHEMA, (v) => (v.curds.length > curdCap ? [substance(`$.curds has ${v.curds.length} curds; the limit is ${curdCap}`)] : []))
 const checkMiniSpecs = checkWith(MINISPEC_SCHEMA, (v) => v.curds.flatMap((c, i) => specPathErrors(`$.curds[${i}].spec_path`, c.spec_path)))
 // A coder at its guard ceiling answers status needs-context (coder.md). That is a final answer: code salvages the curd ref, and no repair or redo runs.
@@ -855,7 +861,7 @@ function resolvePrompt() {
 
 ${SPEC_ARG
   ? `A spec was given: "${SPEC_ARG}" (slug or path).
-1. Resolve it: \`SPEC=$(python3 ~/.claude/skills/mold/scripts/mold.pyz artifact-path specs ${SPEC_ARG})\`, falling back to treating the arg as a literal path if it already looks like one.
+1. Resolve it: \`SPEC=$(python3 ~/.claude/skills/mold/scripts/mold.pyz artifact-path specs ${SPEC_ARG} | python3 -c 'import json,sys; print(json.load(sys.stdin)["path"])')\` (artifact-path prints JSON, not a bare path), falling back to treating the arg as a literal path if it already looks like one.
 2. If the resolved file does not exist, return {"mode":"missing","usage":"Usage: /cheese-factory { spec: <slug-or-path> } — spec not found at <resolved path>"}.
 3. Otherwise read the spec's full text with mcp__tilth__tilth_read, then run: \`python3 ~/.claude/skills/mold/scripts/mold.pyz curd-count "$SPEC" --blast-radius medium\` (omit --blast-radius if the spec states one and use that instead). Also run \`git fetch origin main && git rev-parse origin/main\`; base_sha is its 40-hex output. Return {"mode":"resolved","base_sha":"<40 hex>","spec_path":"<resolved path>","spec_text":"<full spec text>","curd_count":{"slug":"...","candidate_curds":<n>,"blast_radius":"..."}}.`
   : `No spec was given. Scan the durable spec corpus ($XDG_DATA_HOME/cheese/<project>/specs/ or ~/.local/share/cheese/<project>/specs/) plus legacy .cheese/specs/ for candidate spec files. Return {"mode":"candidates","candidates":["<slug-or-path>", ...]}.`}
@@ -1774,6 +1780,7 @@ function acIdsOf(text) {
   return [...ids]
 }
 const specAcIds = acIdsOf(resolved.spec_text)
+if (!specAcIds.length) log('Spec has no "- AC-n:" line; Criteria and Verify are skipped')
 if (specAcIds.length > LIMITS.maxCriteria) {
   log(`Spec has ${specAcIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}`)
   return { error: `Spec has ${specAcIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}` }
