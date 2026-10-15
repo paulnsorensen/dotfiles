@@ -300,7 +300,7 @@ test('cure runs and a clean re-age keeps the curd in plate', async () => {
   for (const [label, skill] of [['cook:parent', 'cook'], ['press:parent', 'press'], ['cure:parent', 'cure']]) {
     const writer = trace.agents.find(({ opts }) => opts.label === label)
     assert.equal(writer.opts.agentType, 'coder', label)
-    assert.ok(writer.prompt.includes(`Read ~/.claude/skills/${skill}/SKILL.md and follow it.`), label)
+    assert.ok(writer.prompt.includes(`Read ~/.claude/skills/${skill}/SKILL.md with mcp__tilth__tilth_read and follow it.`), label)
     assert.equal(/via the Skill tool/.test(writer.prompt), false, label)
   }
 })
@@ -2661,7 +2661,7 @@ test('a writer that returns a short head_sha gets a haiku expansion, never a wri
 
   assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('press')), ['press:parent', 'press:parent:sha'])
   assert.equal(expand.opts.model, 'haiku')
-  assert.equal(expand.opts.agentType, undefined)
+  assert.equal(expand.opts.agentType, 'explorer')
   assert.equal(expand.opts.isolation, undefined)
   assert.ok(callsOf(trace, 'integrate')[0].prompt.includes(full))
   assert.equal(result.curds[0].status, 'clean')
@@ -2740,7 +2740,7 @@ test('a short head_sha on an ok cook gets a read-only expansion, never a cook re
 
   assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('cook:parent')), ['cook:parent', 'cook:parent:sha'])
   assert.equal(expand.opts.model, 'haiku')
-  assert.equal(expand.opts.agentType, undefined)
+  assert.equal(expand.opts.agentType, 'explorer')
   assert.equal(result.curds[0].status, 'clean')
   assert.ok(callsOf(trace, 'taste:parent')[0].prompt.includes(full))
 })
@@ -3537,7 +3537,7 @@ test(`${CG} AC-7: the return carries verification and advice, and meta.phases li
 test(`${CG} AC-7: the new phases run in order`, async () => {
   const { trace } = await cgRun(cgSingle)
 
-  assert.deepEqual(trace.phases, ['Resolve', 'Ground', 'Criteria', 'Advise', 'Cook', 'Integrate', 'Age', 'Verify', 'Done', 'Plate', 'Report'])
+  assert.deepEqual(trace.phases, ['Resolve', 'Criteria', 'Ground', 'Advise', 'Cook', 'Integrate', 'Age', 'Verify', 'Done', 'Plate', 'Report'])
 })
 
 test(`${CG} AC-8: more than LIMITS.maxCriteria spec ACs returns an error before any criteria agent`, async () => {

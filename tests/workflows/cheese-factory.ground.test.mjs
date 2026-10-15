@@ -52,12 +52,20 @@ const dataOf = (text, name) => {
   return m ? JSON.parse(m[1]) : null
 }
 
-test('ground_runsAfterResolveAndBeforeCriteria_asAReadOnlyExplorer', async () => {
+test('ground_runsAfterResolveAndCriteria_asAReadOnlyExplorer', async () => {
   const { labels, trace } = await run()
 
-  assert.deepEqual(labels.slice(0, 3), ['resolve', 'ground', 'criteria'])
-  assert.equal(trace.agents[1].opts.agentType, 'explorer')
-  assert.deepEqual(dataOf(trace.agents[1].prompt, 'items'), ['SPEC', 'AC-1'])
+  assert.deepEqual(labels.slice(0, 3), ['resolve', 'criteria', 'ground'])
+  assert.equal(trace.agents[2].opts.agentType, 'explorer')
+  assert.deepEqual(dataOf(trace.agents[2].prompt, 'items'), ['SPEC', 'AC-1'])
+})
+
+test('criteria_failure_runsNoGroundAndNoResearch', async () => {
+  const { result, labels, research } = await run({ criteria: () => null, ground: () => ground({ research_questions: ['Is X current?'] }) })
+
+  assert.match(result.error, /^Criteria failed/)
+  assert.ok(!labels.includes('ground'))
+  assert.equal(research.length, 0)
 })
 
 test('ground_decision_reachesAdvisorsCookAndTaste_andTheReport', async () => {
@@ -102,7 +110,7 @@ test('research_settledAnswer_reachesTheAdvisorAndCook', async () => {
   const found = { question: 'Does gh support --match-head-commit?', answer: 'answer to Does gh support --match-head-commit?', confidence: 'certain', report_path: '/research/r.md', citations: ['https://example.test/doc'] }
   assert.deepEqual(dataOf(promptOf('advise:plan'), 'payload').grounding.research, [found])
   assert.deepEqual(dataOf(promptOf('cook:parent'), 'grounding').research, [found])
-  assert.deepEqual(trace.phases.slice(0, 4), ['Resolve', 'Ground', 'Research', 'Criteria'])
+  assert.deepEqual(trace.phases.slice(0, 4), ['Resolve', 'Criteria', 'Ground', 'Research'])
   assert.equal(result.status, 'ok')
 })
 
@@ -118,7 +126,7 @@ test('research_dontKnow_blocksBeforeAnyPlan_andRoutesToMold', async () => {
   assert.equal(result.status, 'blocked')
   assert.match(result.reason, /could not settle: Is X current\?; settle it in \/mold/)
   assert.deepEqual(result.open_questions, ['Is X current?', 'Which X?'])
-  assert.deepEqual(labels, ['resolve', 'ground'])
+  assert.deepEqual(labels, ['resolve', 'criteria', 'ground'])
 })
 
 test('research_failedChild_blocksTheRunWithNoCook', async () => {
@@ -126,7 +134,7 @@ test('research_failedChild_blocksTheRunWithNoCook', async () => {
 
   assert.equal(result.status, 'blocked')
   assert.equal(result.reason, 'research failed: Is X current?')
-  assert.deepEqual(labels, ['resolve', 'ground'])
+  assert.deepEqual(labels, ['resolve', 'criteria', 'ground'])
 })
 
 test('research_overTheCap_blocksWithEveryQuestionAndRunsNoChild', async () => {
@@ -137,13 +145,13 @@ test('research_overTheCap_blocksWithEveryQuestionAndRunsNoChild', async () => {
   assert.match(result.reason, /4 external questions open, over the cap of 3/)
   assert.deepEqual(result.open_questions, questions)
   assert.equal(research.length, 0)
-  assert.deepEqual(labels, ['resolve', 'ground'])
+  assert.deepEqual(labels, ['resolve', 'criteria', 'ground'])
 })
 
 test('research_budgetFloor_blocksBeforeTheChild', async () => {
   const workflow = await loadWorkflow(path)
   const { globals } = createRuntime({
-    respond: ({ opts }) => (opts.label === 'resolve' ? table.resolve() : ground({ research_questions: ['q1'] })),
+    respond: ({ opts }) => (table[opts.label] && opts.label !== 'ground' ? table[opts.label]() : ground({ research_questions: ['q1'] })),
     budgetTotal: 100000,
     budgetSpent: 60000,
   })

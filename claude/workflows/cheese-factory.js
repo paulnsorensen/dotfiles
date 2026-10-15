@@ -254,7 +254,7 @@ if (SPEC_ARG !== null && /\s/.test(SPEC_ARG)) {
 }
 if (SPEC_ARG !== null && (!SPEC_ARG_RE.test(SPEC_ARG) || SPEC_ARG.includes('..'))) {
   log(`Invalid spec arg: ${SPEC_ARG}`)
-  return { error: `Invalid spec arg: ${SPEC_ARG}` }
+  return { error: `Invalid spec arg: ${SPEC_ARG}`, usage: 'Usage: /cheese-factory { spec: <slug-or-path> }, or /cheese-factory with no spec to list candidates' }
 }
 const branchFor = (slug) => `curd/${slug}`
 
@@ -770,7 +770,7 @@ async function expandShortShas(value, opts) {
     const { value: reply } = await attempt(prompt(
       'Expand a short commit SHA. Run git rev-parse --verify "<short>^{commit}" in the repo at worktree_path. Use the current directory when worktree_path is empty. Return {"sha":"<40 hex>"}.',
       data('request', { short, worktree_path: typeof value.worktree_path === 'string' ? value.worktree_path : '' }),
-    ), { label: `${opts.label}:sha`, phase: opts.phase, schema: SHA_EXPAND_SCHEMA, model: 'haiku', effort: 'low' })
+    ), { label: `${opts.label}:sha`, phase: opts.phase, agentType: 'explorer', schema: SHA_EXPAND_SCHEMA, model: 'haiku', effort: 'low' })
     const full = reply && typeof reply.sha === 'string' ? reply.sha.trim() : ''
     if (!FULL_SHA_RE.test(full) || !full.startsWith(short)) return null
     out[field] = full
@@ -857,7 +857,7 @@ ${SPEC_ARG
   ? `A spec was given: "${SPEC_ARG}" (slug or path).
 1. Resolve it: \`SPEC=$(python3 ~/.claude/skills/mold/scripts/mold.pyz artifact-path specs ${SPEC_ARG})\`, falling back to treating the arg as a literal path if it already looks like one.
 2. If the resolved file does not exist, return {"mode":"missing","usage":"Usage: /cheese-factory { spec: <slug-or-path> } — spec not found at <resolved path>"}.
-3. Otherwise read the spec's full text, then run: \`python3 ~/.claude/skills/mold/scripts/mold.pyz curd-count "$SPEC" --blast-radius medium\` (omit --blast-radius if the spec states one and use that instead). Also run \`git fetch origin main && git rev-parse origin/main\`; base_sha is its 40-hex output. Return {"mode":"resolved","base_sha":"<40 hex>","spec_path":"<resolved path>","spec_text":"<full spec text>","curd_count":{"slug":"...","candidate_curds":<n>,"blast_radius":"..."}}.`
+3. Otherwise read the spec's full text with mcp__tilth__tilth_read, then run: \`python3 ~/.claude/skills/mold/scripts/mold.pyz curd-count "$SPEC" --blast-radius medium\` (omit --blast-radius if the spec states one and use that instead). Also run \`git fetch origin main && git rev-parse origin/main\`; base_sha is its 40-hex output. Return {"mode":"resolved","base_sha":"<40 hex>","spec_path":"<resolved path>","spec_text":"<full spec text>","curd_count":{"slug":"...","candidate_curds":<n>,"blast_radius":"..."}}.`
   : `No spec was given. Scan the durable spec corpus ($XDG_DATA_HOME/cheese/<project>/specs/ or ~/.local/share/cheese/<project>/specs/) plus legacy .cheese/specs/ for candidate spec files. Return {"mode":"candidates","candidates":["<slug-or-path>", ...]}.`}
 
 Return only the structured JSON described above.`)
@@ -884,7 +884,7 @@ function miniSpecPrompt(parentSlug, curds) {
 Done means: a mini-spec file exists at its resolved path for every curd below, and you return one entry per curd.
 Scope fence: write only those mini-spec files. Do not edit source files. Do not commit, push, open a PR, or merge.
 
-For each curd below, resolve its mini-spec path with \`python3 ~/.claude/skills/mold/scripts/mold.pyz artifact-path specs ${parentSlug}--<slug>\` and write the mini-spec there using mold's agent-invoked mini-spec schema (see skills/mold/SKILL.md § Agent-invoked mini-spec mode), deriving the mini-spec content from the curd's brief and files:
+For each curd below, resolve its mini-spec path with \`python3 ~/.claude/skills/mold/scripts/mold.pyz artifact-path specs ${parentSlug}--<slug>\` and write the mini-spec there using mold's agent-invoked mini-spec schema (read ~/.claude/skills/mold/SKILL.md § Agent-invoked mini-spec mode with mcp__tilth__tilth_read), deriving the mini-spec content from the curd's brief and files:
 
 ${data('curds', curds.map((c) => ({ slug: c.slug, brief: c.brief, files: c.files })))}
 
@@ -902,7 +902,7 @@ Scope fence: work ONLY this curd's scope. Do NOT touch sibling curds' files. Do 
 // A writer therefore reads the skill file and follows it.
 const skillStep = (name, args) => [
   `Run /${name} with the arguments \`${args}\`.`,
-  `The Skill tool is not available to you. Read ~/.claude/skills/${name}/SKILL.md and follow it.`,
+  `The Skill tool is not available to you. Read ~/.claude/skills/${name}/SKILL.md with mcp__tilth__tilth_read and follow it.`,
   `Resolve a skills/${name}/ path in that file under ~/.claude/. Resolve a references/ path in it under ~/.claude/skills/${name}/.`,
 ].join(' ')
 
@@ -1730,7 +1730,7 @@ const countStatuses = (rows) => {
 
 // ---- Resolve ----
 phase('Resolve')
-const resolveCall = await typed(resolvePrompt(), { label: 'resolve', phase: 'Resolve', model: 'haiku', schema: RESOLVE_SCHEMA }, checkResolve)
+const resolveCall = await typed(resolvePrompt(), { label: 'resolve', phase: 'Resolve', agentType: 'explorer', model: 'haiku', schema: RESOLVE_SCHEMA }, checkResolve)
 if (!resolveCall.value) {
   log(`Resolve failed: ${errorText(resolveCall.errors)}`)
   return { error: `Resolve failed: ${errorText(resolveCall.errors)}` }
@@ -1779,6 +1779,38 @@ if (specAcIds.length > LIMITS.maxCriteria) {
   return { error: `Spec has ${specAcIds.length} acceptance criteria; the limit is ${LIMITS.maxCriteria}` }
 }
 
+// Criteria runs before Ground: it needs no grounding, so a criteria failure costs no grounding or research.
+const criteriaPrompt = (feedback) => prompt(
+  'You are a read-only criteria extractor for the /cheese-factory workflow. Write no file and change no state.',
+  'Return one criterion per acceptance id listed below, and no other. Copy the statement from the spec line. Pick the check_kind: command, test, inspection, or ci.',
+  'Each check that is not ci is one read-only shell command that exits 0 only when the criterion holds. A judge runs it with bash -c in the integrated worktree.',
+  'A check must not use the network, write a file, redirect output, or change git state. A negated search needs a test -e of each searched path earlier in the same && chain.',
+  'The check runs under the repository PreToolUse guards, which deny a shell file reader or searcher on a repository file. Never use grep, egrep, fgrep, rg, ag, ack, cat, head, tail, sed, awk, or less on a file. A filter on a pipe, such as git log | grep x, stays allowed.',
+  'Prefer a check that runs the repository test for the criterion: node --test --test-name-pattern <AC id or name> <file>, pytest -k, bats -f, or a just recipe. Otherwise use test -e, test ! -e, or git plumbing.',
+  'When a criterion asserts literal text in a file, the cook must add a marked test for it, and the check runs that test.',
+  'Use check_kind ci when only a CI run can verify the criterion. Its check text then describes the CI evidence.',
+  data('spec', resolved.spec_text),
+  data('acceptance_ids', specAcIds),
+  feedback && data('advisor', feedback),
+)
+
+async function extractCriteria(feedback, round = 0) {
+  const label = round ? `criteria:r${round}` : 'criteria'
+  const call = await typed(criteriaPrompt(feedback), { label, phase: 'Criteria', agentType: 'explorer', model: 'opus', schema: CRITERIA_SCHEMA }, checkCriteria(specAcIds))
+  if (!call.value) {
+    log(`Criteria failed: ${errorText(call.errors)}`)
+    return { error: `Criteria failed: ${errorText(call.errors)}` }
+  }
+  return { criteria: specAcIds.map((id) => call.value.criteria.find((c) => c.id === id)) }
+}
+
+let criteriaList = []
+if (specAcIds.length) {
+  phase('Criteria')
+  const extracted = await extractCriteria(null)
+  if (extracted.error) return { error: extracted.error }
+  criteriaList = extracted.criteria
+}
 // ---- Ground and Research (ADR-018): recorded decisions and settled facts reach every plan stage ----
 // Every gap goes to log() and the result, and the run ends partial.
 const gaps = []
@@ -1840,38 +1872,6 @@ if (researchQuestions.length) {
   if (curdCap < LIMITS.maxCurds) log(`${grounding.research.length} research child(ren) leave room for ${curdCap} curds under the ${LIMITS.agentCap}-agent cap.`)
 }
 
-const criteriaPrompt = (feedback) => prompt(
-  'You are a read-only criteria extractor for the /cheese-factory workflow. Write no file and change no state.',
-  'Return one criterion per acceptance id listed below, and no other. Copy the statement from the spec line. Pick the check_kind: command, test, inspection, or ci.',
-  'Each check that is not ci is one read-only shell command that exits 0 only when the criterion holds. A judge runs it with bash -c in the integrated worktree.',
-  'A check must not use the network, write a file, redirect output, or change git state. A negated search needs a test -e of each searched path earlier in the same && chain.',
-  'The check runs under the repository PreToolUse guards, which deny a shell file reader or searcher on a repository file. Never use grep, egrep, fgrep, rg, ag, ack, cat, head, tail, sed, awk, or less on a file. A filter on a pipe, such as git log | grep x, stays allowed.',
-  'Prefer a check that runs the repository test for the criterion: node --test --test-name-pattern <AC id or name> <file>, pytest -k, bats -f, or a just recipe. Otherwise use test -e, test ! -e, or git plumbing.',
-  'When a criterion asserts literal text in a file, the cook must add a marked test for it, and the check runs that test.',
-  'Use check_kind ci when only a CI run can verify the criterion. Its check text then describes the CI evidence.',
-  data('spec', resolved.spec_text),
-  data('acceptance_ids', specAcIds),
-  feedback && data('advisor', feedback),
-)
-
-async function extractCriteria(feedback, round = 0) {
-  const label = round ? `criteria:r${round}` : 'criteria'
-  const call = await typed(criteriaPrompt(feedback), { label, phase: 'Criteria', agentType: 'explorer', model: 'opus', schema: CRITERIA_SCHEMA }, checkCriteria(specAcIds))
-  if (!call.value) {
-    log(`Criteria failed: ${errorText(call.errors)}`)
-    return { error: `Criteria failed: ${errorText(call.errors)}` }
-  }
-  return { criteria: specAcIds.map((id) => call.value.criteria.find((c) => c.id === id)) }
-}
-
-let criteriaList = []
-if (specAcIds.length) {
-  phase('Criteria')
-  const extracted = await extractCriteria(null)
-  if (extracted.error) return { error: extracted.error }
-  criteriaList = extracted.criteria
-}
-
 // ---- Decompose (only when candidate_curds >= 2) ----
 // Returns { error } or { curds, singlePass }. A plan revision reruns it with the advisor record.
 async function decomposeCurds(feedback, round = 0) {
@@ -1879,7 +1879,7 @@ async function decomposeCurds(feedback, round = 0) {
   const single = { curds: [{ slug: parentSlug, spec_path: parentSpecPath, brief: null, files: [] }], singlePass: true }
   if (candidateCurds < 2) return single
   phase('Decompose')
-  const decomposeCall = await typed(decomposePrompt(resolved.spec_text, feedback), { label: `decompose:plan${suffix}`, phase: 'Decompose', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
+  const decomposeCall = await typed(decomposePrompt(resolved.spec_text, feedback), { label: `decompose:plan${suffix}`, phase: 'Decompose', agentType: 'explorer', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
   if (!decomposeCall.value) {
     log(`Decompose failed: ${errorText(decomposeCall.errors)}`)
     return { error: `Decompose failed: ${errorText(decomposeCall.errors)}` }
@@ -2027,7 +2027,7 @@ async function cookCurd(curd, branch) {
 
 // Returns null when the ref is absent, and { failed } when the salvage call itself failed.
 async function salvage(curd) {
-  const found = await typed(salvagePrompt(curd, baseSha), { label: `salvage:${curd.slug}`, phase: 'Cook', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA }, checkSalvage)
+  const found = await typed(salvagePrompt(curd, baseSha), { label: `salvage:${curd.slug}`, phase: 'Cook', agentType: 'explorer', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA }, checkSalvage)
   const state = found.value
   if (!state) return { failed: errorText(found.errors) }
   return state.found
