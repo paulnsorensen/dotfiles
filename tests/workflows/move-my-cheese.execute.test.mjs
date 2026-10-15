@@ -149,7 +149,7 @@ test('a branch this run rebuilt gets a full review, never an incremental one', a
     ['plan:minimal', minimalPlan()],
     ['target:T-2', built(sha(60), '/tmp/wt-t2')],
     ['integrate:pre', integrated(['T-1', 'T-2'])],
-          ['verify:pre:AC-1', { verdicts: [verified] }],
+    ['verify:pre:AC-1', { verdicts: [verified] }],
     ['publish', published('T-2', 2, sha(60))],
     ['age:2', ageFull(2, { worktree_path: '/tmp/wt-t2' })],
     ['finalize:2', finalized],

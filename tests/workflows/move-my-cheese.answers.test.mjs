@@ -177,6 +177,7 @@ test('a fold ends safely when the advisor stops, gives no advice, or the planner
   const stopped = await fold([['plan:answers', consolidatePlan()], ['advise:plan:answers', { verdict: 'stop', chosen: 'P-1', concerns: ['unsafe'], guidance: '' }]])
   assert.equal(stopped.result.status, 'stopped')
   assert.match(stopped.result.digest, /^[0-9a-f]{16}$/)
+  assert.match(stopped.result.usage, /add revise: "<change>"/)
   const silent = await fold([['plan:answers', consolidatePlan()], ['advise:plan:answers', null]])
   assert.equal(silent.result.status, 'needs-input')
   assert.match(silent.result.reason, /no valid advice/)
