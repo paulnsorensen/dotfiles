@@ -484,7 +484,9 @@ async function verifyFindings(findings, label) {
   for (const finding of contested) {
     const fingerprint = issueFingerprint(finding)
     if (refuteVotes.has(fingerprint) || reserved.some((f) => issueFingerprint(f) === fingerprint)) continue
-    if (budgetExhausted() || refuteVotes.size + reserved.length >= MAX_REFUTES) continue
+    if (budgetExhausted()) continue
+    // Count the cap at reservation time, so a budget stop during the votes is never reported as a cap hit.
+    if (refuteVotes.size + reserved.length >= MAX_REFUTES) { refuteCapHits++; continue }
     reserved.push(finding)
   }
   const votes = await runBounded(reserved, (finding) =>
@@ -502,7 +504,6 @@ async function verifyFindings(findings, label) {
     const location = `${finding.file}:${finding.line}`
     if (!vote) {
       out.unverified.push(finding)
-      if (!budgetExhausted()) refuteCapHits++
     } else if (!vote.ok) {
       const reason = `refuter failed: ${vote.error}`
       out.refuted.push({ ...finding, refute_reason: reason })

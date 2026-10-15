@@ -33,7 +33,7 @@ A deep sub-question can extract 12 sources × 4 claims, so 46 agents was a norma
 | hill-climb-threads | adopt, climb, verify, publish | 8 threads × 12 rounds | sonnet |
 | move-my-cheese | criterion judges | 24 criteria per plan, else rejected | sonnet |
 
-brie-ground recall: a cached claim past the refute cap is `unchecked`. An unchecked decision-critical claim stops the recall short-circuit, so the run does fresh research.
+brie-ground: a claim past the refute cap, or a claim whose refute agent returned nothing, is `unchecked`. An unchecked decision-critical claim stops the recall short-circuit, so the run does fresh research. The result reports `dropped_sub_questions` and `unchecked_claims`.
 
 ## Tests
 

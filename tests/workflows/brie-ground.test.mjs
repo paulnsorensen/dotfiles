@@ -33,7 +33,9 @@ test('brie-ground checks each distinct decision-critical claim once, up to the c
   ]
   const { globals, trace } = createRuntime({ respond: respondWith({ claims, verdict: 'refuted' }) })
 
-  await workflow.run({ ...globals, args: 'question?' })
+  const result = await workflow.run({ ...globals, args: 'question?' })
+  // C and F are past the cap, so the result reports them as unchecked.
+  assert.equal(result.unchecked_claims, 2)
 
   const checked = verifies(trace)
   assert.equal(checked.length, 4)
@@ -54,6 +56,7 @@ test('brie-ground caps the plan at six sub-questions', async () => {
   const result = await workflow.run({ ...globals, args: 'question?' })
 
   assert.equal(result.sub_questions, 6)
+  assert.deepEqual(result.dropped_sub_questions, ['sub q7', 'sub q8', 'sub q9'])
   assert.equal(trace.agents.filter(({ opts }) => opts.label.startsWith('web:')).length, 6)
 })
 
@@ -84,4 +87,19 @@ test('brie-ground trusts a recall answer whose decision-critical claims all surv
   await workflow.run({ ...globals, args: 'question?' })
 
   assert.equal(trace.agents.some(({ opts }) => opts.label === 'plan'), false)
+})
+
+test('a refute agent that returns nothing leaves its claim unchecked, so recall falls through', async () => {
+  const workflow = await loadWorkflow(path)
+  const recall = {
+    reusable_claims: [{ claim: 'cached', citation: 'notes.md:1', confidence: 'speculating', decision_critical: true }],
+    docs: ['notes.md'],
+    fully_answers: true,
+  }
+  const respond = respondWith({ recall })
+  const { globals, trace } = createRuntime({ respond: (call) => (call.opts.label.startsWith('verify:') ? null : respond(call)) })
+
+  await workflow.run({ ...globals, args: 'question?' })
+
+  assert.ok(trace.agents.some(({ opts }) => opts.label === 'plan'))
 })

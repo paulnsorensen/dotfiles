@@ -622,7 +622,8 @@ async function verifyEvidence(ev, sq) {
     if (!needsCheck(c)) return c
     if (!verdictOf.has(claimKey(c))) return { ...c, unchecked: true }
     const v = verdictOf.get(claimKey(c))
-    if (!v) return c
+    // A refute agent that returned nothing leaves the claim unverified, so it counts as unchecked.
+    if (!v) return { ...c, unchecked: true }
     if (v.verdict === 'refuted') return { ...c, confidence: 'dont_know', refuted: true, note: v.corrected_claim || v.reasoning }
     if (v.verdict === 'uncertain') return { ...c, confidence: 'speculating', note: v.reasoning }
     return { ...c, verified: true }
@@ -676,6 +677,7 @@ const recallHolds = recallEvidence.length && !recallEvidence[0].claims.some((c) 
 
 let plan
 let subs = []
+let droppedSubs = []
 let evidence
 
 if (recall && recall.fully_answers && recallClaims.length && recallHolds) {
@@ -691,6 +693,7 @@ if (recall && recall.fully_answers && recallClaims.length && recallHolds) {
   if (!plan) return { error: 'Planning failed — no plan produced.' }
 
   if (Array.isArray(plan.sub_questions) && plan.sub_questions.length > MAX_SUBQUESTIONS) {
+    droppedSubs = plan.sub_questions.slice(MAX_SUBQUESTIONS).map((s) => s.question)
     log(`Sub-question cap: grounding ${MAX_SUBQUESTIONS} of ${plan.sub_questions.length} sub-questions.`)
   }
   subs = (
@@ -752,4 +755,7 @@ return {
   sub_questions: subs.length,
   deep_sub_questions: subs.filter((s) => s.depth === 'deep').length,
   reused_claims: recallClaims.length,
+  // Coverage the caps dropped: questions never grounded, and decision-critical claims never checked.
+  dropped_sub_questions: droppedSubs,
+  unchecked_claims: evidence.flatMap((e) => (e && Array.isArray(e.claims) ? e.claims : [])).filter((c) => c.unchecked).length,
 }

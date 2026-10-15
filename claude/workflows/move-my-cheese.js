@@ -1073,7 +1073,7 @@ const planPrompt = (angle, context, fold = {}) => prompt(
   'Write each check as one bash command that runs from the repository root. When a tool reads its config from a subdirectory, such as a workspace member with its own pyproject.toml or package.json, start the check with cd <that directory> && and make its paths relative to that directory. Quote every glob. Put every option before --.',
   'A check must be able to fail. Every path that it reads must exist on the default branch or come from a target.',
   'grep exits 2 on a missing file, and a leading ! turns that into a pass. Put test -e <path> && before a negated search, once for each path.',
-      `Use at most ${LIMITS.maxTargets} targets and ${LIMITS.maxCriteria} acceptance criteria. Put each unresolved question in open_questions. Do not guess.`,
+  `Use at most ${LIMITS.maxTargets} targets and ${LIMITS.maxCriteria} acceptance criteria. Put each unresolved question in open_questions. Do not guess.`,
   'context.decisions are recorded constraints from the wiki. Keep the landing within them. When a PR contradicts one, resolve it in a target brief, or ask in open_questions.',
   'context.research holds settled facts; do not contradict them. Copy each context.unsettled_research question into open_questions.',
   fold.answers?.length && 'The user answered open questions of previous_plan. Apply each answer and remove its question from open_questions. Settle an unanswered question from repository evidence, or keep it in open_questions.',
