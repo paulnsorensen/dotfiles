@@ -31,7 +31,7 @@ Parse the text after the skill name.
 
 ## Flow
 
-0. **Choose the form.** A Workflow cannot pause. Keep user questions, approval gates, and run state in the calling skill. Put only independent units that each fit one fresh context into a Workflow. Use one agent, not a Workflow, for one unit of work. Done when each stage is marked skill-side or workflow-side.
+0. **Choose the form.** A Workflow cannot pause. Keep user questions, approval gates, and run state in the calling skill. Put only independent units that each fit one fresh context into a Workflow. Use one agent, not a Workflow, for one unit of work. See "Workflow versus prose fan-out" in `references/environment.md` for the cost rule. Done when each stage is marked skill-side or workflow-side.
 1. **Ground.** Load the built-in workflow-authoring skill when the target is a Workflow tool script. That skill owns the runtime API, the runtime limits, and the quality patterns. This skill does not copy them. Outside Claude Code, that skill is absent; mark its runtime checks as unverified. Read `references/environment.md` for the host hooks, tools, and agent types. Read the target or the goal. Done when you can name each stage, the data it passes, and the tools its agents use.
 2. **Model the work.** Build the ontology from `references/ontology.md`. Done when its code checks pass. Each criterion has an exact check and a task. Each reference resolves. The task graph has no cycle.
 3. **Gate the approach.** Call a read-only advisor from `references/advisor.md` when a leverage trigger fires or code cannot check the plan. The second round re-checks the first-round concerns only. Done when the advisor approves, or after one revision round.
@@ -58,6 +58,7 @@ Also check the target against `references/environment.md`:
 - An argument parser that rejects a bare string or a missing optional field before it suggests the correct form.
 - A `needs-*` or `blocked` status with no resume input. A rerun that repeats completed stages is a defect.
 - A human approval loop built from several stateless runs. Move that loop into the calling skill.
+- A fan-out that starts one agent per small item, such as a claim, a command, or a file. Batch the items into one agent.
 
 ## Output
 
