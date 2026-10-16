@@ -79,20 +79,23 @@ test('recon fails on PRs with different bases', (t) => {
 });
 
 const POLL_FIELDS = 'state,isDraft,mergeStateStatus,reviewDecision,headRefOid,baseRefName';
+const POLL_QUERY =
+  'query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$endCursor){nodes{isResolved}pageInfo{hasNextPage endCursor}}}}}';
+const POLL_JQ = '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] | length';
+const pollThreadsArgv = (n) => [
+  'api', 'graphql', '--paginate', '-F', 'owner={owner}', '-F', 'repo={repo}', '-F', `number=${n}`,
+  '-f', `query=${POLL_QUERY}`, '--jq', POLL_JQ,
+];
+const pollView = JSON.stringify({ state: 'OPEN', isDraft: false, mergeStateStatus: 'BEHIND', reviewDecision: '', headRefOid: SHA, baseRefName: 'main' });
+
 test('poll counts checks and unresolved review threads', (t) => {
-  const graphql = [
-    'api', 'graphql', '-F', 'owner={owner}', '-F', 'repo={repo}', '-F', 'number=9',
-  ];
-  const query =
-    'query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}';
-  const jq = '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)] | length';
-  const argv = [...graphql, '-f', `query=${query}`, '--jq', jq];
+  const argv = pollThreadsArgv(9);
   const checks = 'build\tpass\t1m\thttp://x/1\nlint\tfail\t2m\thttp://x/2\ndeploy\tpending\t0\thttp://x/3\ndocs\tskipping\t0\thttp://x/4\n';
   const { env, cwd, calls } = setup(
     {
       'pr checks 9': { stdout: checks, status: 1 },
       [argv.join(' ')]: { stdout: '3\n' },
-      [`pr view 9 --json ${POLL_FIELDS}`]: { stdout: JSON.stringify({ state: 'OPEN', isDraft: false, mergeStateStatus: 'BEHIND', reviewDecision: '', headRefOid: SHA, baseRefName: 'main' }) },
+      [`pr view 9 --json ${POLL_FIELDS}`]: { stdout: pollView },
     },
     t,
   );
@@ -114,8 +117,48 @@ test('poll counts checks and unresolved review threads', (t) => {
   );
 });
 
+test('poll sums unresolved threads over every page', (t) => {
+  const { env, cwd } = setup(
+    {
+      'pr checks 9': { stdout: 'build\tpass\t1m\thttp://x/1\n' },
+      [pollThreadsArgv(9).join(' ')]: { stdout: '4\n2\n1\n' },
+      [`pr view 9 --json ${POLL_FIELDS}`]: { stdout: pollView },
+    },
+    t,
+  );
+  const { status, json } = runWfx(['poll', '--pr', '9'], { cwd, env });
+  assert.equal(status, 0, JSON.stringify(json));
+  assert.equal(json.data.unresolvedThreads, 7);
+});
+
+test('poll reports checks-failed when gh pr checks fails, not an empty check list', (t) => {
+  const { env, cwd, calls } = setup(
+    { 'pr checks 9': { stderr: 'gh: To use GitHub CLI, run: gh auth login', status: 4 } },
+    t,
+  );
+  const { status, json } = runWfx(['poll', '--pr', '9'], { cwd, env });
+  assert.equal(status, 1);
+  assert.equal(json.error.code, 'checks-failed');
+  assert.match(json.error.details.stderr, /auth login/);
+  assert.deepEqual(calls(), [['pr', 'checks', '9']]);
+});
+
+test('poll keeps an empty check list when gh reports no checks', (t) => {
+  const { env, cwd } = setup(
+    {
+      'pr checks 9': { stderr: "no checks reported on the 'feat' branch\n", status: 1 },
+      [pollThreadsArgv(9).join(' ')]: { stdout: '0\n' },
+      [`pr view 9 --json ${POLL_FIELDS}`]: { stdout: pollView },
+    },
+    t,
+  );
+  const { status, json } = runWfx(['poll', '--pr', '9'], { cwd, env });
+  assert.equal(status, 0, JSON.stringify(json));
+  assert.deepEqual(json.data.checks, { passing: 0, failing: 0, pending: 0, items: [] });
+});
+
 test('poll fails with gh-failed when the thread query fails', (t) => {
-  const { env, cwd, calls } = setup({ 'pr checks 9': { status: 1 } }, t);
+  const { env, cwd, calls } = setup({ 'pr checks 9': { stdout: 'build\tpass\t1m\thttp://x/1\n' } }, t);
   const { status, json } = runWfx(['poll', '--pr', '9'], { cwd, env });
   assert.equal(status, 1);
   assert.equal(json.error.code, 'gh-failed');
