@@ -435,6 +435,32 @@ test('sync writes every block once the requirements are marked', () => {
   assert.equal(run('--check', '--modules-dir', m, f).status, 0)
 })
 
+test('sync refuses a module source that holds an END or BEGIN marker line and leaves targets unchanged', () => {
+  for (const marker of ['// END module x', '// BEGIN module x']) {
+    const m = dir()
+    put(m, 'x.js', `// module: x; provides: X; requires: none\nconst X = 1\n${marker}\n`)
+    const text = block('x', 'o\n')
+    const f = put(dir(), 'w.js', text)
+    for (const args of [['--check'], []]) {
+      const r = run(...args, '--modules-dir', m, f)
+      assert.notEqual(r.status, 0, marker)
+      assert.match(r.stderr, /module x: file holds a module marker line/)
+    }
+    assert.equal(readFileSync(f, 'utf8'), text)
+  }
+})
+
+test('sync refuses a module source without a final newline and leaves targets unchanged', () => {
+  const m = dir()
+  put(m, 'x.js', '// module: x; provides: X; requires: none\nconst X = 1')
+  const text = block('x', 'o\n')
+  const f = put(dir(), 'w.js', text)
+  const r = run('--modules-dir', m, f)
+  assert.notEqual(r.status, 0)
+  assert.match(r.stderr, /module x: file must end with a newline/)
+  assert.equal(readFileSync(f, 'utf8'), text)
+})
+
 test('sync refuses a target where a block comes before a block it requires and writes nothing', () => {
   const m = chainDir()
   const text = `${block('b', 'old\n')}${block('a', 'old\n')}`
