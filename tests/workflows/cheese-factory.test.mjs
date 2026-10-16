@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime } from './cheese-factory.fixtures.mjs'
+import { createRuntime, verifyFrom } from './cheese-factory.fixtures.mjs'
 import { loadWorkflow } from './harness.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
@@ -3162,7 +3162,6 @@ const cgMulti = {
   cleanup: () => ({ removed: [] }),
 }
 
-import { verifyFrom } from './cheese-factory.fixtures.mjs'
 // A redo or repair label maps to its base label. A verify check with no script passes.
 function cgResponder(base, over = {}) {
   const table = { ...base, ...over }
