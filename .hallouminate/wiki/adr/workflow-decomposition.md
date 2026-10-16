@@ -30,6 +30,8 @@ Decisions behind composing the saved workflows in `claude/workflows/` from share
 - **Alternatives:** Keep per-script `typed()` and accept the drift.
 - **Consequences:** A `typed()` change reaches all three scripts. One unit test per hook pins each script's path.
 
+The merge changes some retry behavior. Before the merge, cheese-factory retried each round up to `fixRounds`, and cheese-board turned every throw into a redo. Now a read-only throw retries once, and a writer throw does not retry. The move-my-cheese effect calls use `noRedo` with `nullIsFinal`.
+
 ## ADR-005: Per-module marker blocks instead of one prelude block  [status: accepted]
 
 - **Context:** `sync.mjs` pastes one prelude block per script and requires exactly one marker pair. ADR-014 requires the deployed file to equal the repo file.
