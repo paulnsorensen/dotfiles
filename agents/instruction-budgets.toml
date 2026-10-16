@@ -16,8 +16,11 @@ max_tokens = 600
 
 [[source]]
 # 740: acceptance-check lifecycle, flaky-test, plate, and wheypoint rules (2026-10-14).
+# 750: room for a 16-token harness-climb candidate that overrides built-in prompts
+# suggesting cat, grep, or sed; 14-day session analytics showed reroute blocks in
+# 194 of 208 Claude sessions (2026-10-16).
 path = "agents/AGENTS.md"
-max_tokens = 740
+max_tokens = 750
 
 [[source]]
 # 520: PR #1051 added section-read and coder re-dispatch rules (2026-09-24).
@@ -113,15 +116,16 @@ max_tokens = 5000
 # 1060: parallel-call batching and read-section handoff rules (2026-09-28).
 # 1120: preamble tilth_write and no-redirect rules (2026-10-01).
 # 1310: global AGENTS.md acceptance-check lifecycle rules (2026-10-14).
+# 1320: the agents/AGENTS.md raise to 750 (2026-10-16).
 [[stack]]
 name = "global_codex"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1310
+max_tokens = 1320
 
 [[stack]]
 name = "global_claude"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1310
+max_tokens = 1320
 
 [[stack]]
 name = "repo_codex"
