@@ -27,6 +27,9 @@ export function leasedPush(ctx, repo, { branch, sha, expect }) {
   );
   if (res.status === 0) return;
   const stderr = res.stderr.trim();
-  const code = /stale info|rejected|fetch first|non-fast-forward/i.test(stderr) ? 'lease-rejected' : 'push-failed';
+  // Only a local "[rejected]" ref marked stale info or fetch first is a lease failure.
+  // A "[remote rejected]" line (protected branch, hook) and any other error is a push-rejected failure.
+  const lease = /^\s*!?\s*\[rejected\].*\((stale info|fetch first)\)/im.test(stderr);
+  const code = lease ? 'lease-rejected' : 'push-rejected';
   throw new FxError(code, `push of ${branch} failed: ${stderr}`, { branch, sha, expect, stderr });
 }

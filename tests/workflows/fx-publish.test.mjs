@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { chmodSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { bareRemote, commitFiles, runWfx, tempDir, tempRepo } from './fx-kit.mjs';
 
@@ -64,4 +66,15 @@ test('publish rejects bad input with exit 2', (t) => {
   assert.equal(runWfx([...base, '--branch', 'topic', '--sha', sha], { cwd }).status, 2);
   assert.equal(runWfx([...base, '--branch', '--evil', '--sha', sha, '--expect', 'none'], { cwd }).status, 2);
   assert.equal(runWfx([...base, '--branch', 'topic', '--sha', sha, '--expect', 'abc'], { cwd }).status, 2);
+});
+
+test('publish maps a remote hook rejection to push-rejected with stderr, not a lease failure', (t) => {
+  const { repo, remote, sha, cwd } = setup(t);
+  const hook = join(remote, 'hooks', 'pre-receive');
+  writeFileSync(hook, '#!/bin/sh\necho protected branch >&2\nexit 1\n');
+  chmodSync(hook, 0o755);
+  const { status, json } = runWfx(['publish', '--repo', repo, '--branch', 'topic', '--sha', sha, '--expect', 'none'], { cwd });
+  assert.equal(status, 1);
+  assert.equal(json.error.code, 'push-rejected');
+  assert.match(json.error.details.stderr, /protected branch/);
 });
