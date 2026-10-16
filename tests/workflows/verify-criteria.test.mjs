@@ -63,6 +63,11 @@ test('verify-criteria preflight runs one exact wfx command in a runner and adds 
   assert.ok(runners(py.trace)[0].prompt.includes(`--need git,node,wfx,pytest\n`))
 })
 
+test('verify-criteria tells each judge to report a guard-denied check as guard_blocked', async () => {
+  const { trace } = await run(call())
+  for (const { prompt } of judges(trace)) assert.ok(prompt.includes('Set guard_blocked to true'), 'judge prompt names the guard_blocked rule')
+})
+
 test('verify-criteria blocks on a failed preflight, names the failed checks, and runs no judge', async () => {
   const failed = {
     ok: false,
