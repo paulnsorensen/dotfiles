@@ -1,7 +1,7 @@
 export const meta = {
   name: 'cheese-factory',
   description:
-    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs. Ground reads recorded wiki decisions and prior research, and brie-ground settles open external questions before any plan. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial. A run that reaches Report is ok only when every curd is clean and plated and Ground left no gap. Otherwise it is partial. Only a budget or gate block sets reason.',
+    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into PRs whose topology plate picks. Ground reads recorded wiki decisions and prior research, and brie-ground settles open external questions before any plan. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial. A run that reaches Report is ok only when every curd is clean and plated and Ground left no gap. Otherwise it is partial. Only a budget or gate block sets reason.',
   phases: [
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
     { title: 'Ground', detail: 'one read-only explorer reads the hallouminate wiki for recorded decisions and lists prior research that bears on the spec, plus external questions that nothing settles; a failure is a gap, not a block' },
@@ -18,7 +18,7 @@ export const meta = {
     { title: 'Re-age', detail: 'once, only if a cure committed: re-merge the branches, then run an incremental /age over the range from the reviewed head to the new head; a cured curd missing from reviewed_slugs is dirty' },
     { title: 'Verify', detail: 'one judge per criterion runs its check serially at the integration head; ci criteria are deferred' },
     { title: 'Done', detail: 'a judge advisor signs off on the verified work before Plate; no sign-off blocks Plate' },
-    { title: 'Plate', detail: 'one opus barrier stacks clean curd branches into (stacked) PRs; never merges' },
+    { title: 'Plate', detail: 'one opus barrier plates clean curd branches into PRs; plate picks the topology; never merges' },
     { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, excluded-curd reasons, the verification record, the grounding, the gaps, and the plan and done advice; a run that reaches Report is ok only when every curd is clean and plated and Ground left no gap. Otherwise it is partial. Only a budget or gate block sets reason. A plan-blocked run returns status blocked with its concerns and advice' },
   ],
 }
@@ -1178,7 +1178,7 @@ If no slug passes the check, do not start /plate. Return a failed row with a rea
 
 ${singlePass
   ? `Single-pass mode: then ${skillStep('plate', 'the verified branch listed above')} Open an ordinary single PR on that branch, only if its slug passed the check. Publish only the pinned SHA above. Never stage, commit, or push any other edit.`
-  : `Fan-out mode: then ${skillStep('plate', 'the verified branches listed above')} Stack the verified branches into a stacked-PR chain in slug-sorted order, stating the order in the PR bodies. The plate provider may restack the verified branches, and a restack makes new SHAs. Never stage, commit, or push any other edit.`}
+  : `Fan-out mode: then ${skillStep('plate', 'the verified branches listed above')} Let the plate skill pick the PR topology for the verified branches from their real diffs. Decompose merged the curds that declared shared files or dependencies, so expect independent PRs. Do not request a stack. If plate stacks them, the plate provider may restack the verified branches, and a restack makes new SHAs. Never stage, commit, or push any other edit.`}
 Let the plate skill commit, restack, and submit through its own provider flow.
 
 Done means: you opened or updated a PR for each verified clean curd branch listed above, and for no other branch.

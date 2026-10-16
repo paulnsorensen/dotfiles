@@ -85,6 +85,17 @@ test('#1: the fan-out plate prompt reads the plate SKILL.md too', async () => {
   assert.match(prompt, /The Skill tool is not available to you/)
 })
 
+test('the fan-out plate prompt lets plate pick the PR topology and never requests a stack', async () => {
+  const slugs = ['a', 'b']
+  const files = { a: ['src/a.js'], b: ['src/b.js'] }
+  const { trace } = await run(slugs, { integrate: integrateResult({ merged: slugs, files_by_slug: files }) }, ageResult({ reviewed: slugs }))
+  const prompt = callsOf(trace, 'plate')[0].prompt
+  assert.doesNotMatch(prompt, /stacked-PR chain/)
+  assert.doesNotMatch(prompt, /Stack the verified branches/)
+  assert.match(prompt, /Let the plate skill pick the PR topology/)
+  assert.match(prompt, /Do not request a stack/)
+})
+
 test('#15: the plate prompt publishes only the pinned SHAs and stops on a dirty checkout', async () => {
   const { trace } = await single()
   const prompt = callsOf(trace, 'plate')[0].prompt
