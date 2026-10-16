@@ -52,6 +52,22 @@ When a guard denies a check at verify time, record the verdict `unrun` with the 
 - A preserved worktree from an earlier run belongs to that run. A new writer cannot edit it. Salvage its ref, then write in a new worktree.
 - The WorktreeCreate hook must print the new worktree path. When it prints nothing, `isolation: 'worktree'` fails before the agent starts. Treat that failure as an infrastructure error, not a task failure.
 
+## Preflight
+
+A stage that needs a missing tool or a denied action fails after the planners spent their tokens. Check the environment first.
+Run preflight before the first planner. Run it in the calling skill, or as one narrow agent that runs one script. Check these items:
+
+1. The judge and builder environment: the interpreter, the test runner, and each tool on `PATH` that a check or a brief names. For example, run `pytest --version` with the interpreter that the judge uses.
+2. `gh auth status` and access to the repository, when a stage pushes, opens a PR, or merges.
+3. The worktree guard allows each planned edit path from the writer's worktree.
+4. The auto-mode classifier allows each planned merge or push operation.
+
+A failed preflight returns `blocked` with the failed item before the first planner.
+When no probe can prove that the classifier allows a merge, keep the merge in the calling skill. There, the user can approve it.
+Run preflight again on each resume, because the environment can change between runs.
+
+Evidence: in 48 move-my-cheese runs from 2026-10-12 to 2026-10-16, verify judges ran a Python without pytest and recorded 12 false criterion failures. The worktree guard blocked coder edits, and the classifier blocked `gh pr merge`.
+
 ## Agent types
 
 | Type | Writes | Use for |
@@ -119,6 +135,14 @@ Keep each task inside one context. A long task ends without its result more ofte
 - The source is `claude/workflows/<name>.js`. `dots sync` deploys it to `~/.claude/workflows/`, and the parent then calls the workflow by name.
 - The auto-mode classifier denies a relaunch of an edited copy through `scriptPath` as `[Self-Modification]`. Edit the source, run `dots sync`, and relaunch by name. Otherwise, ask the user.
 - Nesting allows one level. A workflow that calls a child workflow cannot itself run as a child.
+
+## Test at live boundaries
+
+1. An offline harness that stubs each agent by label proves the control flow, the bounds, and the status mapping only. In the dotfiles repository, that harness is `tests/workflows/harness.mjs`.
+2. Test each deterministic effect script against real temporary git repositories. Cover the rebase, the merge, the conflict probe, and a push to a local bare remote.
+3. Check preflight against the live environment, not against a stub.
+
+Evidence: the 2026-10-12 to 2026-10-16 move-my-cheese runs showed 8 failure modes. The offline tests stub every agent, so they cannot catch 5 of these modes, and they catch 2 only in part.
 
 ## Evidence
 
