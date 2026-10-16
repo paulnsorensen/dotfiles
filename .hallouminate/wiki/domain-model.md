@@ -18,7 +18,7 @@ _Code_: claude/workflows/cheese-factory.js:252-263 (`tastePrompt` lens set)
 _Avoid_: sub-spec
 _Code_: skills/mold/SKILL.md § Agent-invoked mini-spec mode
 
-**Plate barrier** — the single opus plate agent that runs once after all curd chains, stacking clean branches into a stacked-PR chain (never merges).
+**Plate barrier** — the single opus plate agent that runs once after all curd chains, plating clean branches into PRs whose topology the plate skill picks (never merges).
 _Avoid_: publish step
 _Code_: NEW ENTITY (claude/workflows/cheese-factory.js phase)
 

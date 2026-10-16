@@ -15,6 +15,7 @@ Decisions behind replacing `claude/workflows/curd-flock.js` with the spec-driven
 - **Decision:** One opus plate agent runs once after all curd chains: stacks clean `curd/<slug>` branches into a stacked-PR chain (ordinary PR in single-pass). Dirty curds (re-age still medium+) are excluded and reported. Plate never merges.
 - **Alternatives:** Per-curd independent PRs (no stacking/ordering); prepare-don't-push (kept the old contract, user declined).
 - **Consequences:** Unattended pushes/PRs from a workflow run; bounded by never-merge and dirty-curd exclusion.
+- **Amendment (2026-10-16):** The fan-out plate prompt no longer requests a stacked-PR chain. easy-cheese PR #779 made the plate skill pick the topology itself, and it never stacks independent parts. A request to stack is an explicit choice that plate must honor, so the prompt now says "Do not request a stack" and lets plate decide from the real diffs. Decompose already merges curds that declare shared files or dependencies, so independent PRs are the expected result.
 
 ## ADR-003: Reuse `mold.pyz curd-count` via agent-side Bash  [status: accepted]
 
