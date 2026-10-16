@@ -1322,7 +1322,7 @@ async function typed(text, opts, check) {
     if (!errors.length) return { value, errors }
     if (round > LIMITS.fixRounds) return { value: null, errors }
     value = errors.every((e) => e.kind === 'form')
-      ? await agent(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' })
+      ? await agent(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, agentType: 'formatter', schema: opts.schema, model: 'haiku', effort: 'low' })
       : await agent(redoPrompt(text, errors), { ...opts, label: `${opts.label}:redo${round}` })
   }
 }
@@ -1345,7 +1345,7 @@ function normalizeTask(result) {
 
 async function salvage(target) {
   const found = await agent(salvagePrompt(target),
-    { label: `salvage:${target.id}`, phase: 'Assemble', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA })
+    { label: `salvage:${target.id}`, phase: 'Assemble', agentType: 'runner', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA })
   return found && found.found && !blank(found.checkpoint)
     ? { completed: found.completed, remaining: found.remaining, checkpoint: found.checkpoint.trim() }
     : null
@@ -1429,7 +1429,7 @@ async function pollUntilReady(number, branch, prefix, phaseName, onStatus) {
   let before = null
   let last = null
   for (let round = 1; round <= LIMITS.pollRounds; round++) {
-    const checked = await typed(statusPrompt(number), { label: `${prefix}:status:${round}`, phase: phaseName, model: 'haiku', effort: 'low', schema: STATUS_SCHEMA }, checkStatus)
+    const checked = await typed(statusPrompt(number), { label: `${prefix}:status:${round}`, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: STATUS_SCHEMA }, checkStatus)
     const status = checked.value
     if (!status) return { verdict: 'failed', reason: `status failed: ${errorText(checked.errors)}`, status: last }
     last = status
@@ -1468,7 +1468,7 @@ function markerFor(t) {
 }
 
 async function runAgeFanout(m) {
-  const prep = await typed(ageFanoutPrepPrompt(m), { label: `age-fanout-prep:${m.number}`, phase: 'Review', model: 'haiku', effort: 'low', isolation: 'worktree', schema: PREP_SCHEMA }, checkPrep)
+  const prep = await typed(ageFanoutPrepPrompt(m), { label: `age-fanout-prep:${m.number}`, phase: 'Review', agentType: 'runner', model: 'haiku', effort: 'low', isolation: 'worktree', schema: PREP_SCHEMA }, checkPrep)
   if (!prep.value) throw new Error(`age-fanout prep failed: ${errorText(prep.errors)}`)
   const wt = prep.value.worktree_path.trim()
   noteWorktree(wt)
@@ -1530,7 +1530,7 @@ async function cureStage(r) {
 async function finalizeStage(r) {
   if (r.failure || r.stamped) return r
   const sha = r.cure && r.cure.committed ? r.cure.head_sha.trim() : r.m.head_sha
-  const finalized = await typed(finalizePrompt(r.m, sha, isDirtyChain(r)), { label: `finalize:${r.m.number}`, phase: 'Review', model: 'haiku', effort: 'low', schema: FINALIZE_SCHEMA }, checkFinalize)
+  const finalized = await typed(finalizePrompt(r.m, sha, isDirtyChain(r)), { label: `finalize:${r.m.number}`, phase: 'Review', agentType: 'runner', model: 'haiku', effort: 'low', schema: FINALIZE_SCHEMA }, checkFinalize)
   // The marker only lets a later run skip review, so a missing marker costs a full re-age, not this PR.
   if (!finalized.value) log(`#${r.m.number}: aged marker not written (${errorText(finalized.errors)}); the next run reviews this PR in full.`)
   return { ...r, finalize: finalized.value }
@@ -1547,7 +1547,7 @@ const draftedByThisApproval = (n) => Boolean(openByNumber.get(n)?.is_draft && by
 
 async function markPrs(items, close, label, phaseName) {
   const marked = items.map((item) => ({ ...item, comment: `${landingMarker(digest)}\n${item.comment}` }))
-  const result = await agent(markPrompt(marked, close), { label, phase: phaseName, model: 'haiku', effort: 'low', schema: MARK_SCHEMA })
+  const result = await agent(markPrompt(marked, close), { label, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: MARK_SCHEMA })
   return items.map((item) => (result && result.results.find((r) => r.pr === item.pr)) || { pr: item.pr, action: 'skipped', note: result ? 'no result reported' : 'agent returned no output' })
 }
 
@@ -1566,7 +1566,7 @@ async function stampHeads(ids) {
     .filter((item) => item.pr && FULL_SHA_RE.test(item.head))
     .map((item) => ({ ...item, marker: landingMarker(digest, item.head) }))
   if (!items.length) return
-  const result = (await typed(stampPrompt(items), { label: 'stamp', phase: 'Report', model: 'haiku', effort: 'low', schema: STAMP_SCHEMA }, noCheck)).value
+  const result = (await typed(stampPrompt(items), { label: 'stamp', phase: 'Report', agentType: 'runner', model: 'haiku', effort: 'low', schema: STAMP_SCHEMA }, noCheck)).value
   if (!result) log('stamp agent returned no output; a later run of this approval will ask to plan again')
 }
 
@@ -1619,11 +1619,11 @@ async function landOne(id, t, n) {
     const problem = await recheck(id, t, n, sha)
     if (problem) return stop(`changed-after-verify: ${problem}`)
   }
-  const merge = await agent(mergePrompt(n, sha), { label: `merge:${n}`, phase: 'Land', model: 'haiku', effort: 'low', schema: MERGE_SCHEMA })
+  const merge = await agent(mergePrompt(n, sha), { label: `merge:${n}`, phase: 'Land', agentType: 'runner', model: 'haiku', effort: 'low', schema: MERGE_SCHEMA })
   if (!merge || merge.result === 'refused') return stop(`merge refused: ${merge ? merge.note : 'no output'}`)
   let state = ''
   for (let round = 1; round <= LIMITS.mergePolls && state !== 'MERGED' && state !== 'CLOSED'; round++) {
-    const seen = await typed(mergedPrompt(n), { label: `merged:${n}:${round}`, phase: 'Land', model: 'haiku', effort: 'low', schema: STATE_SCHEMA }, noCheck)
+    const seen = await typed(mergedPrompt(n), { label: `merged:${n}:${round}`, phase: 'Land', agentType: 'runner', model: 'haiku', effort: 'low', schema: STATE_SCHEMA }, noCheck)
     state = seen.value ? seen.value.state : ''
   }
   if (state !== 'MERGED') return stop(`PR did not reach MERGED (last state ${state || 'unknown'})`)
@@ -1739,7 +1739,7 @@ if (input.revise !== undefined) {
 
 // ---- Recon ----
 phase('Recon')
-const indexed = await typed(indexPrompt(), { label: 'recon:index', phase: 'Recon', model: 'haiku', effort: 'low', schema: INDEX_SCHEMA }, checkIndex)
+const indexed = await typed(indexPrompt(), { label: 'recon:index', phase: 'Recon', agentType: 'runner', model: 'haiku', effort: 'low', schema: INDEX_SCHEMA }, checkIndex)
 if (!indexed.value) return { status: 'blocked', error: `recon index failed: ${errorText(indexed.errors)}` }
 const idx = indexed.value
 
@@ -1771,7 +1771,7 @@ const wanted = expanded.filter((n) => openByNumber.has(n) && !adoptable.includes
 if (wanted.length > LIMITS.maxPrs) return { status: 'blocked', error: `${wanted.length} PRs exceed the cap of ${LIMITS.maxPrs}. Pass fewer PRs or set expandStacks:false.`, skipped }
 if (!wanted.length) return { status: 'blocked', error: 'no open PR to land', skipped }
 
-const detailed = await typed(detailPrompt([...wanted, ...adoptable].sort(ascending), idx.viewer), { label: 'recon:detail', phase: 'Recon', model: 'haiku', schema: DETAIL_SCHEMA }, checkDetail)
+const detailed = await typed(detailPrompt([...wanted, ...adoptable].sort(ascending), idx.viewer), { label: 'recon:detail', phase: 'Recon', agentType: 'runner', model: 'haiku', schema: DETAIL_SCHEMA }, checkDetail)
 if (!detailed.value) return { status: 'blocked', error: `recon detail failed: ${errorText(detailed.errors)}`, skipped }
 // The prompt asks jq for 1500 characters; code enforces the cap.
 const details = new Map(detailed.value.prs.map((p) => [p.number, { ...p, body: p.body.slice(0, 1500) }]))
@@ -2158,10 +2158,10 @@ if (pushJobs.length) {
   phase('Publish')
   // Publish pushes and opens PRs, so it never reruns; a malformed report gets one form-only repair.
   const check = (r) => checkPublish(r, pushJobs, prNumbers)
-  let pub = await agent(publishPrompt(pushJobs), { label: 'publish', phase: 'Publish', model: 'sonnet', schema: PUBLISH_SCHEMA })
+  let pub = await agent(publishPrompt(pushJobs), { label: 'publish', phase: 'Publish', agentType: 'runner', model: 'sonnet', schema: PUBLISH_SCHEMA })
   let errors = pub ? check(pub) : [substance('agent returned no output')]
   if (pub && errors.length && errors.every((e) => e.kind === 'form')) {
-    pub = await agent(repairPrompt(pub, errors), { label: 'publish:repair1', phase: 'Publish', schema: PUBLISH_SCHEMA, model: 'haiku', effort: 'low' })
+    pub = await agent(repairPrompt(pub, errors), { label: 'publish:repair1', phase: 'Publish', agentType: 'formatter', schema: PUBLISH_SCHEMA, model: 'haiku', effort: 'low' })
     errors = pub ? check(pub) : [substance('repair returned no output')]
   }
   if (errors.length) return report('fail', `publish reported invalid results; check the remote branches and PRs before a rerun: ${errorText(errors)}`)
@@ -2254,7 +2254,7 @@ await stampOpen(order.filter((id) => landed.get(id)?.status !== 'merged' && verd
 // The runtime removes only unchanged isolated worktrees. A successful run removes the rest and its run refs;
 // a failed run keeps them for inspection and salvage.
 if (['landed', 'ready'].includes(finalStatus) && (scratchWorktrees.size || order.some(rebuilt))) {
-  const swept = (await typed(cleanupPrompt([...scratchWorktrees]), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, noCheck)).value
+  const swept = (await typed(cleanupPrompt([...scratchWorktrees]), { label: 'cleanup', phase: 'Report', agentType: 'runner', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, noCheck)).value
   if (!swept) log(`cleanup returned no output; remove the mmc/${runTag}/ refs and these worktrees by hand: ${[...scratchWorktrees].join(', ') || 'none recorded'}`)
   else if (swept.note) log(`cleanup: ${swept.note}`)
 }
