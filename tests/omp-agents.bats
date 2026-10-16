@@ -53,7 +53,7 @@ expected_omp_thinking() {
         roquefort-wrecker|coder) echo xhigh ;;
         explorer) echo high ;;
         nih-scanner|taste-tester) echo medium ;;
-        duckdb-expert|whey-drainer|worktree-content-digest) echo low ;;
+        duckdb-expert|whey-drainer|worktree-content-digest|runner|formatter) echo low ;;
         *) return 1 ;;
     esac
 }

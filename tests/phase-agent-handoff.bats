@@ -205,7 +205,47 @@ block_sha() {
         assert_success
         run grep -Fq -- 'Judge mode: verify' "$file"
         assert_success
+        # Verify mode keeps the single-check form and documents the batched list form.
+        run grep -Fq -- 'one `criterion.check`' "$file"
+        assert_success
+        run grep -Fq -- 'a `checks` list' "$file"
+        assert_success
+        run grep -Fq -- 'one verdict per check `id`' "$file"
+        assert_success
     done
+}
+
+@test "runner and formatter are narrow sonnet agents with exact tool grants on every harness" {
+    local registry="$AGENTS_DIR/registry.yaml"
+    local lib="$REAL_DOTFILES_DIR/.sync-lib.sh"
+    local out="$BATS_TEST_TMPDIR"
+    local name
+
+    [[ "$(yq -r '.agents.runner.tools | join(",")' "$registry")" == 'Bash,ToolSearch,mcp__tilth__tilth_read' ]]
+    [[ "$(yq -r '.agents.formatter | has("tools")' "$registry")" == true ]]
+    [[ "$(yq -r '.agents.formatter.tools | length' "$registry")" == 0 ]]
+    for name in runner formatter; do
+        [[ "$(yq -r ".agents.$name.models.claude" "$registry")" == sonnet ]]
+        [[ "$(yq -r ".agents.$name.disallowedTools // \"\" | length" "$registry")" == 0 ]]
+        run yq -e ".claude.agents[] | select(. == \"$name\")" "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/claude.yaml"
+        assert_success
+        run yq -e ".codex.agents[] | select(. == \"$name\")" "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/codex.yaml"
+        assert_success
+        run bash -c 'source "$1"; _cz_render_claude_agent "$2" "$3" "$4" "$5"' bash "$lib" "$registry" "$name" "$REAL_DOTFILES_DIR" "$out/$name.md"
+        assert_success
+        run bash -c 'source "$1"; _cz_render_codex_agent "$2" "$3" "$4" "$5"' bash "$lib" "$registry" "$name" "$REAL_DOTFILES_DIR" "$out/$name.toml"
+        assert_success
+    done
+    [[ "$(yq --front-matter=extract -r '.tools' "$out/runner.md")" == 'Bash, ToolSearch, mcp__tilth__tilth_read' ]]
+    # An explicit empty list grants no tools; an omitted key would inherit every tool.
+    [[ "$(yq --front-matter=extract -o=json -c '.tools' "$out/formatter.md")" == '[]' ]]
+    run grep -Fxq 'sandbox_mode = "read-only"' "$out/formatter.toml"
+    assert_success
+
+    run bash -c 'source "$1"; _cz_opencode_agents_json "$2" "$3"' bash "$lib" "$registry" "$REAL_DOTFILES_DIR"
+    assert_success
+    jq -e '.formatter.permission == {"*": "deny", "task": "deny"}' <<<"$output"
+    jq -e '.runner.permission | .["*"] == "deny" and .bash != null and .tilth_tilth_read == "allow" and .tilth_tilth_search == null and .tilth_tilth_write == null' <<<"$output"
 }
 
 @test "coder refuses a dispatch missing both Done means and Scope fence" {

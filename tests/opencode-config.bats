@@ -19,7 +19,7 @@ setup() {
     expected=$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S .)
     actual=$(jq -S 'del(.agent)' <<<"$output")
     [ "$actual" = "$expected" ]
-    [ "$(jq '.agent | length' <<<"$output")" -eq 18 ]
+    [ "$(jq '.agent | length' <<<"$output")" -eq 20 ]
 }
 
 @test "opencode config resets managed drift and keeps unknown live keys with a warning" {
@@ -228,7 +228,7 @@ TOML
     run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$CZ_SRC" apply --force --exclude=scripts
     [ "$status" -eq 0 ]
     [ "$(jq -S 'del(.agent)' "$destination/.config/opencode/opencode.json")" = "$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S .)" ]
-    [ "$(jq '.agent | length' "$destination/.config/opencode/opencode.json")" -eq 18 ]
+    [ "$(jq '.agent | length' "$destination/.config/opencode/opencode.json")" -eq 20 ]
     [ "$(jq -cS . "$destination/opencode.json")" = '{"custom":{"nested":[1,false]},"model":"kept"}' ]
     cmp -s "$CZ_SRC/dot_config/opencode/cli.json" "$destination/.config/opencode/cli.json"
     [ ! -e "$destination/.config/opencode/tui.json" ]

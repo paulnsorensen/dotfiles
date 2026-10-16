@@ -89,12 +89,14 @@ codex:
   # `powerful`, Sol = `default`, Luna = `cheap`. Agent definitions own these
   # bindings. reviewer, judge Astra; taste-tester, researcher, generalist,
   # ghostbuster, coder, explorer Sol; nih-scanner, duckdb-expert, whey-drainer,
-  # roquefort-wrecker, worktree-content-digest Luna. This config has no
-  # per-spawn model override, so a taste-test dispatches `taste-tester`.
+  # roquefort-wrecker, worktree-content-digest, runner, formatter Luna. This
+  # config has no per-spawn model override, so a taste-test dispatches
+  # `taste-tester`.
   agents:
     - coder
     - duckdb-expert
     - explorer
+    - formatter
     - generalist
     - ghostbuster
     - judge
@@ -102,6 +104,7 @@ codex:
     - researcher
     - reviewer
     - roquefort-wrecker
+    - runner
     - taste-tester
     - whey-drainer
     - worktree-content-digest

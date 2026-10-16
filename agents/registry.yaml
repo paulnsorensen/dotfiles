@@ -248,7 +248,7 @@ agents:
     # so no edit or write tool is granted. Bash remains a write path that the
     # prompt guards.
     description: >-
-      Read-only judge for Workflow scripts. `Judge mode: advise` approves, revises, or stops an approach before implementation and before done. `Judge mode: verify` independently runs one acceptance criterion's check against a named worktree. Never edits. Do NOT use for code review (use `reviewer`) or taste-tests (use `taste-tester`).
+      Read-only judge for Workflow scripts. `Judge mode: advise` approves, revises, or stops an approach before implementation and before done. `Judge mode: verify` independently runs one acceptance criterion's check, or a list of checks with one verdict per check id, against a named worktree. Never edits. Do NOT use for code review (use `reviewer`) or taste-tests (use `taste-tester`).
     models:
       claude: opus
       codex: gpt-6-astra
@@ -263,6 +263,42 @@ agents:
     skills: []
     maxTurns: 40
     body_path: agents/agent_definitions/judge.md
+  runner:
+    # Narrow command runner for Workflow steps that only run gh or git. Cheap
+    # tier: the work is mechanical. Allowlist keeps the spawn context small;
+    # no edit or write tool is granted. Bash still mutates git state, which the
+    # prompt bounds to the commands the dispatch names.
+    description: >-
+      Command runner for Workflow scripts. Use it for workflow steps that only run gh or git commands, such as PR lookup, push, or worktree cleanup. Runs only the commands its prompt names and returns their results. May change git state but never edits file contents. Do NOT use for code changes (use `coder`) or checks that need judgment (use `judge`).
+    models:
+      claude: sonnet
+      codex: gpt-6-luna
+      opencode: gpt-6-luna
+    tools:
+    - Bash
+    - ToolSearch
+    - mcp__tilth__tilth_read
+    color: cyan
+    effort: medium
+    skills: []
+    maxTurns: 20
+    body_path: agents/agent_definitions/runner.md
+  formatter:
+    # Text-to-structure formatter for Workflow repair and format steps. The
+    # explicit empty list grants no tools on every renderer; an omitted key
+    # would inherit every tool. Callers may override the model per dispatch.
+    description: >-
+      Text formatter for Workflow scripts. Use it for repair and format steps that convert the text in its prompt into the requested structured output. Has no tools, reads nothing, and never adds facts. Do NOT use for steps that must run a command (use `runner`) or read the repository.
+    models:
+      claude: sonnet
+      codex: gpt-6-luna
+      opencode: gpt-6-luna
+    tools: []
+    color: blue
+    effort: medium
+    skills: []
+    maxTurns: 5
+    body_path: agents/agent_definitions/formatter.md
   coder:
     # Codex uses Sol for medium-capability work. OMP's native coder pairs the
     # same family with xhigh thinking; registry effort selects Codex effort too.
