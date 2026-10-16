@@ -1511,7 +1511,7 @@ function findDuplicateSlugs(curds) {
 // runOverhead keeps the earlier per-criterion count of 149 as margin, so the curd limits below do not change.
 // Each brie-ground child counts toward the cap at up to BRIE_GROUND_MAX_AGENTS (ground module).
 // So 12 curds spend about 833 agents at worst without research (12 x 57 + 149). curdCap lowers the curd limit by what research and Verify reserve:
-// the verify-criteria child reserves VERIFY_CRITERIA_MAX_AGENTS (12), and 3 brie-ground children spend 105 more. floor((1000 - 149 - 3 x 35 - 12) / 57) = 12, so up to 3 children keep 12 curds. Recount before a reader raises maxCurds.
+// the verify-criteria child reserves VERIFY_CRITERIA_MAX_AGENTS (12 at the current limits), and 3 brie-ground children spend 105 more. floor((1000 - 149 - 3 x 35 - 12) / 57) = 12, so up to 3 children keep 12 curds. Recount before a reader raises maxCurds.
 const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12, maxCriteria: 24, advisorRevisions: 1, maxResearch: 3, agentCap: 1000, curdAgents: 57, runOverhead: 149 }
 // The curd limit for Decompose. Research sets it once, before any decomposer runs.
 let curdCap = LIMITS.maxCurds
@@ -2124,9 +2124,10 @@ async function advise(stage, label, payload) {
 }
 
 // The Verify phase reserves this many agents for one verify-criteria child, as brie-ground reserves BRIE_GROUND_MAX_AGENTS.
-// The bound: 3 batches of at most 8 criteria (maxCriteria is 24), 3 judge attempts each, plus 3 margin.
+// The bound: one batch of at most VERIFY_BATCH_SIZE criteria per judge, and each batch spends at most LIMITS.fixRounds + 2 agents (one first answer, the fix rounds, and one margin).
+// With maxCriteria 24 and a batch size of 8, that is 3 x 4 = 12.
 const VERIFY_BATCH_SIZE = 8
-const VERIFY_CRITERIA_MAX_AGENTS = 12
+const VERIFY_CRITERIA_MAX_AGENTS = Math.ceil(LIMITS.maxCriteria / VERIFY_BATCH_SIZE) * (LIMITS.fixRounds + 2)
 // One verify-criteria child call. Returns { verdicts } or { failure }. A thrown child, a blocked child, and an invalid answer are failures.
 // A criterion without a verdict is no failure here: the Verify phase fails it as unchecked.
 async function verifyCriteria(acs, tree) {

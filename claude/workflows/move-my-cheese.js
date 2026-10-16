@@ -2000,9 +2000,9 @@ async function buildTarget(job) {
 }
 
 // ---- Integrate and verify: criteria, not tasks. Git merges the targets; the verify-criteria child judges the result ----
-// One verify-criteria child costs at most this many agents. agentsMax reserves them in the run's agent cap.
-const VERIFY_CRITERIA_MAX_AGENTS = 12
 const VERIFY_BATCH_SIZE = LIMITS.checksPerJudge
+// One verify-criteria child costs at most this many agents: each batch spends at most LIMITS.fixRounds + 2. agentsMax reserves them in the run's agent cap.
+const VERIFY_CRITERIA_MAX_AGENTS = Math.ceil(LIMITS.maxCriteria / VERIFY_BATCH_SIZE) * (LIMITS.fixRounds + 2)
 const REPO_ARG = '"$(git rev-parse --show-toplevel)"'
 const integrationBranch = (round) => `mmc/integrate-${landingIdOf(landing)}${round === 'pre' ? '' : `-${round}`}`
 
