@@ -66,11 +66,11 @@ test('a merge queue demand retries once with --queue', async () => {
 })
 
 test('any other merge refusal stops the landing without a retry', async () => {
-  const { result, labels } = await run({ prs: [1], auto: true, land: true }, oneLand([
+  const { result, labels, allLabels } = await run({ prs: [1], auto: true, land: true }, oneLand([
     ['merge:1', failure('merge', 'merge-failed', 'Pull request is not mergeable')],
   ]))
   assert.equal(result.status, 'partial')
-  assert.equal(labels.includes('merge:1:queue'), false)
+  assert.equal(allLabels.includes('merge:1:queue'), false)
   assert.match(landReason(result), /merge refused: Pull request is not mergeable/)
 })
 
@@ -117,11 +117,11 @@ test('a restack conflict that /melt cannot resolve stops the landing', async () 
 })
 
 test('a restack error other than a conflict stops the landing without /melt', async () => {
-  const { result, labels } = await run({ prs: [1, 2], auto: true, land: true }, stackRoutes([
+  const { result, labels, allLabels } = await run({ prs: [1, 2], auto: true, land: true }, stackRoutes([
     ['restack:2', failure('restack', 'push-rejected', 'the lease failed')],
   ]))
   assert.equal(result.status, 'partial')
-  assert.equal(labels.includes('restack:2:melt'), false)
+  assert.equal(allLabels.includes('restack:2:melt'), false)
   assert.match(plain(result.targets).find((t) => t.pr === 2).reason, /restack failed: push-rejected: the lease failed/)
 })
 
@@ -175,10 +175,10 @@ test('the first poll reads at once and later rounds sleep first', async () => {
 
 test('stamps go through wfx with the digest and the head, and skip a PR whose head moved', async () => {
   const { first, args } = await approve(builtConsolidation())
-  const { call, labels, trace } = await run(args, builtConsolidation([
+  const { call, labels, trace, allLabels } = await run(args, builtConsolidation([
     ['stampcheck:10', envelope('poll', pollData({ pr: 10, headRefOid: sha(60) }))],
   ]))
-  assert.equal(labels.includes('stamp:10'), false)
+  assert.equal(allLabels.includes('stamp:10'), false)
   assert.ok(trace.logs.some((l) => /stamp skipped for #10: its head moved/.test(l)))
   const same = await run(args, builtConsolidation())
   assert.match(same.call('stamp:10').prompt, new RegExp(`wfx stamp --pr 10 --marker ${first.result.digest} --sha ${sha(50)}$`))
@@ -228,13 +228,13 @@ test('publish pushes the built head with a lease on the remote head, or none for
 
 test('an existing target whose PR sits on another base is retargeted, and one on the same base is not', async () => {
   const moved = await approve(existingPlanRoutes('feat/pr-1'))
-  const { result, call, labels } = await run(moved.args, builtExisting('feat/pr-1'))
+  const { result, call, labels, allLabels } = await run(moved.args, builtExisting('feat/pr-1'))
   assert.equal(result.status, 'ready')
   assert.match(call('publish:T-2:retarget').prompt, /wfx pr retarget --pr 2 --base 'main'$/)
-  assert.equal(labels.includes('publish:T-2:create'), false)
+  assert.equal(allLabels.includes('publish:T-2:create'), false)
   const same = await approve(existingPlanRoutes('main'))
   const unchanged = await run(same.args, builtExisting('main'))
-  assert.equal(unchanged.labels.includes('publish:T-2:retarget'), false)
+  assert.equal(unchanged.allLabels.includes('publish:T-2:retarget'), false)
 })
 
 test('a new target opens its PR with the brief and a Supersedes line for each folded PR, then comments the marker', async () => {

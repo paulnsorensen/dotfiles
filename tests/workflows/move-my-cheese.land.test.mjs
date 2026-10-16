@@ -49,18 +49,18 @@ test('land merges a stack bottom-up, restacks the child, and fully re-reviews it
 })
 
 test('a moved head with new findings stops landing before it merges', async () => {
-  const { result, labels } = await run({ prs: [1, 2], auto: true, land: true }, stackRoutes([
+  const { result, labels, allLabels } = await run({ prs: [1, 2], auto: true, land: true }, stackRoutes([
     ['recheck-age:2', ageFull(2, { has_medium_plus_findings: true })],
   ]))
   assert.equal(result.status, 'partial')
-  assert.equal(labels.includes('merge:2'), false)
+  assert.equal(allLabels.includes('merge:2'), false)
   const child = plain(result.targets).find((t) => t.pr === 2)
   assert.equal(child.land, 'failed')
   assert.match(child.reason, /changed-after-verify: new medium\+ findings/)
 })
 
 test('land is skipped when the advisor does not approve', async () => {
-  const { result, labels } = await run({ prs: [1], auto: true, land: true }, [
+  const { result, labels, allLabels } = await run({ prs: [1], auto: true, land: true }, [
     ...reconRoutes([openPr(1)], [aged(1)]),
     ['survey', survey],
     ['tensions', noTensions],
@@ -69,7 +69,7 @@ test('land is skipped when the advisor does not approve', async () => {
   ])
   assert.equal(result.status, 'partial')
   assert.match(result.note, /advisor did not approve: unsafe/)
-  assert.equal(labels.some((l) => l.startsWith('merge:')), false)
+  assert.equal(allLabels.some((l) => l.startsWith('merge:')), false)
 })
 
 // #1 is replaced by new PR #10 (T-1); #2 is kept (T-2).
@@ -94,23 +94,23 @@ const replaceRoutes = (overrides = []) => planRoutes([
 
 test('a superseded PR closes as soon as its replacement merges, even when landing stops later', async () => {
   const { args } = await approve(replaceRoutes(), { land: true })
-  const { result, labels, call } = await run(args, replaceRoutes())
+  const { result, labels, call, allLabels } = await run(args, replaceRoutes())
   assert.equal(result.status, 'partial')
   assert.ok(labels.indexOf('close:T-1') > labels.indexOf('merged:10:1'))
   assert.ok(labels.indexOf('close:T-1') < labels.indexOf('merge:2'))
-  assert.equal(labels.includes('mark'), false)
+  assert.equal(allLabels.includes('mark'), false)
   assert.match(call('close:T-1').prompt, /gh pr close <pr>/)
   assert.deepEqual(plain(result.inputs).map((i) => [i.number, i.mark]), [[1, 'closed'], [2, '']])
 })
 
 test('a stop before a replacement merges drafts the PR it supersedes instead of closing it', async () => {
   const { args } = await approve(replaceRoutes(), { land: true })
-  const { result, labels, call } = await run(args, replaceRoutes([
+  const { result, labels, call, allLabels } = await run(args, replaceRoutes([
     ['merge:10', { result: 'refused', note: 'checks changed' }],
     ['mark', { results: [{ pr: 1, action: 'drafted', note: '' }] }],
   ]))
   assert.equal(result.status, 'partial')
-  assert.equal(labels.some((l) => l.startsWith('close:')), false)
+  assert.equal(allLabels.some((l) => l.startsWith('close:')), false)
   assert.match(call('mark').prompt, /gh pr ready <pr> --undo/)
   assert.match(call('mark').prompt, /"pr": 1/)
   assert.deepEqual(plain(result.inputs).map((i) => [i.number, i.mark]), [[1, 'drafted'], [2, '']])

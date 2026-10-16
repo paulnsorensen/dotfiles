@@ -3139,11 +3139,14 @@ if (['landed', 'ready'].includes(finalStatus) && (scratchWorktrees.size || order
     const removed = await wfx(`cleanup:${i}`, 'Report', `wfx worktree remove --repo ${REPO_ARG} --path ${shq(path)}`)
     if (!removed.ok) log(`cleanup: ${path} stays: ${removed.error.message}`)
   }))
-  // One scan finds the worktrees on this run's branches, removes them, deletes the run refs, and lists what remains.
-  const prune = `git worktree list --porcelain | awk '/^worktree /{p=substr($0,10)} /^branch refs\/heads\/mmc\/${runTag}\//{print p}' | while IFS= read -r p; do wfx worktree remove --repo ${REPO_ARG} --path "$p" >/dev/null || true; done; git for-each-ref --format='%(refname)' refs/heads/mmc/${runTag}/ | while read -r ref; do git update-ref -d "$ref"; done; `
-  const swept = await wfx('cleanup:sweep', 'Report', `${prune}wfx worktree list --repo ${REPO_ARG} --landing ${landingIdOf(landing)}`)
+  // One scan removes the worktrees on this run's branches and this landing's verify worktrees, deletes the run refs, and lists what remains.
+  // It touches only worktrees below the scratch root, and only the run's own branches, refs, and <landing>@verify-* names.
+  const id = landingIdOf(landing)
+  const scratch = '/.claude/worktrees/'
+  const find = `awk '/^worktree /{p=substr($0,10); if (index(p,"${scratch}${id}@verify-")) print p} index($0,"branch refs/heads/mmc/${runTag}/")==1 && index(p,"${scratch}") {print p}'`
+  const prune = `git worktree list --porcelain | ${find} | while IFS= read -r p; do wfx worktree remove --repo ${REPO_ARG} --path "$p" >/dev/null || true; done; git for-each-ref --format='%(refname)' refs/mmc/${runTag}/ refs/heads/mmc/${runTag}/ 'refs/heads/mmc/integrate-${id}*' | while read -r ref; do git update-ref -d "$ref"; done; `
+  const swept = await wfx('cleanup:sweep', 'Report', `${prune}wfx worktree list --repo ${REPO_ARG} --landing ${id}`)
   if (!swept.ok) log(`cleanup returned no list; remove the mmc/${runTag}/ refs and these worktrees by hand: ${[...scratchWorktrees].join(', ') || 'none recorded'}`)
   else leftoverWorktrees = Array.isArray(swept.data.worktrees) ? swept.data.worktrees : []
 }
-return landingReport(finalStatus, landNote || doneNote)
 return landingReport(finalStatus, landNote || doneNote)

@@ -203,19 +203,19 @@ test('a moved default branch that changes a plan file turns the plan into needs-
 })
 
 test('auto still stops for approval when the plan reshapes another author\'s PR', async () => {
-  const { result, labels } = await run({ prs: [1, 2], auto: true }, planRoutes([['recon:index', index([openPr(1), openPr(2, { author: 'someone' })])]]))
+  const { result, labels, allLabels } = await run({ prs: [1, 2], auto: true }, planRoutes([['recon:index', index([openPr(1), openPr(2, { author: 'someone' })])]]))
   assert.equal(result.status, 'needs-approval')
   assert.match(result.reason, /other authors.*#2/)
-  assert.equal(labels.some((l) => l.startsWith('target:')), false)
+  assert.equal(allLabels.some((l) => l.startsWith('target:')), false)
 })
 
 test('auto stops for approval when any PR in the run belongs to another author, even a kept one', async () => {
-  const { result, labels } = await run({ prs: [1, 2], auto: true, land: true }, [
+  const { result, allLabels } = await run({ prs: [1, 2], auto: true, land: true }, [
     ...reconRoutes([openPr(1), openPr(2, { author: 'someone', base: 'feat/pr-1' })], [aged(1), aged(2, { base: 'feat/pr-1' })]),
     ['survey', survey],
     ['tensions', noTensions],
   ])
   assert.equal(result.status, 'needs-approval')
   assert.match(result.reason, /other authors.*#2/)
-  assert.equal(labels.some((l) => /^(review|cure|finalize|restack|merge):/.test(l)), false)
+  assert.equal(allLabels.some((l) => /^(review|cure|finalize|restack|merge):/.test(l)), false)
 })

@@ -79,7 +79,7 @@ test('a saved plan whose digest differs from approve is refused', async () => {
   )
   assert.equal(hop.result.status, 'blocked')
   assert.match(hop.result.error, /the saved plan/)
-  assert.equal(hop.labels.some((l) => l.startsWith('target:')), false)
+  assert.equal(hop.allLabels.some((l) => l.startsWith('target:')), false)
 })
 
 test('a saved plan under another landing id is refused', async () => {

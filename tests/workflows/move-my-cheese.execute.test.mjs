@@ -72,7 +72,7 @@ test('cure commits that cure could not push fail the review before re-age, final
 })
 
 test('a keep-only plan with a command criterion verifies in the pinned integration worktree without a checkout', async () => {
-  const { result, labels, call, workflowCalls } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
+  const { result, labels, call, workflowCalls, allLabels } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['worktree:add', envelope('worktree', { path: INT_WORKTREE, landing: 'lnd', name: 'verify-pre', head: sha(97) })],
   ]), null, null, (input) => ({ status: 'ok', verdicts: [{ ...passingVerdict(input.criteria[0]), evidence: 'grep printed 1 and 1' }], missing: [] }))
   assert.equal(result.status, 'ready')
@@ -83,18 +83,18 @@ test('a keep-only plan with a command criterion verifies in the pinned integrati
   assert.equal(input.criteria[0].check, 'node --test --test-name-pattern helpers tests/helper.test.mjs')
   assert.equal(call('worktree:add:pre').opts.isolation, undefined)
   assert.deepEqual(plain(result.verification.verdicts).map((v) => [v.result, v.evidence]), [['pass', 'grep printed 1 and 1']])
-  assert.equal(labels.some((l) => l.startsWith('target:') || l.startsWith('publish')), false)
+  assert.equal(allLabels.some((l) => l.startsWith('target:') || l.startsWith('publish')), false)
 })
 
 test('a target that conflicts during integration fails before verification, publish, or review', async () => {
-  const { result, labels, wfxLabels, workflowCalls } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
+  const { result, labels, wfxLabels, workflowCalls, allLabels } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['integrate:T-2', failure('integrate', 'conflict', 'x', { conflict: { target: 'T-2', files: ['a.js'] } })],
   ]))
   assert.equal(result.status, 'fail')
   assert.match(result.note, /T-2 conflicts with the targets merged before it in a\.js/)
   assert.equal(workflowCalls.length, 0)
   assert.equal(wfxLabels.some((l) => l.startsWith('worktree:')), false)
-  assert.equal(labels.some((l) => l.startsWith('review:') || l.startsWith('publish')), false)
+  assert.equal(allLabels.some((l) => l.startsWith('review:') || l.startsWith('publish')), false)
 })
 
 test('an approved consolidation builds, verifies, publishes, and drafts the superseded PRs', async () => {

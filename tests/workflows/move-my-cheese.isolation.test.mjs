@@ -43,7 +43,13 @@ test('a successful run removes every recorded scratch worktree and its run refs'
   const removed = cleanupPrompts(trace)
   for (const name of ['age', 'cure', 'reage', 'review-1-affinage-1', 'review-1-affinage-2']) assert.ok(removed.includes(`--path '${wt(name)}'`), name)
   const sweep = call('cleanup:sweep')
-  assert.ok(sweep.prompt.includes(`refs/heads/mmc/${result.digest.slice(0, 8)}/`))
+  const tag = result.digest.slice(0, 8)
+  assert.ok(sweep.prompt.includes(`refs/heads/mmc/${tag}/`))
+  // The sweep also deletes the run refs, the integrate branches, and the landing's verify worktrees, and nothing else.
+  assert.ok(sweep.prompt.includes(`refs/mmc/${tag}/`))
+  assert.match(sweep.prompt, /'refs\/heads\/mmc\/integrate-[0-9a-f]+\*'/)
+  assert.match(sweep.prompt, /\.claude\/worktrees\/[0-9a-f]+@verify-/)
+  assert.ok(sweep.prompt.includes('index(p,"/.claude/worktrees/")'))
   assert.equal(sweep.opts.isolation, undefined)
 })
 
@@ -54,13 +60,13 @@ test('a failed run keeps its worktrees for inspection', async () => {
 })
 
 test('an unsafe age report path never reaches the cure prompt', async () => {
-  const { result, labels } = await run({ prs: [1], auto: true }, [
+  const { result, labels, allLabels } = await run({ prs: [1], auto: true }, [
     ['age:1', ageFull(1, { artifact: '../../etc/x; rm -rf ~', worktree_path: wt('age'), has_medium_plus_findings: true })],
     ...curedReviewRoutes(pushedCure),
   ])
   assert.equal(result.targets[0].review, 'failed')
   assert.match(result.targets[0].reason, /no readable age report path/)
-  assert.equal(labels.includes('cure:1'), false)
+  assert.equal(allLabels.includes('cure:1'), false)
 })
 
 test('a target build continuation resumes in a fresh isolated worktree from the run-scoped ref', async () => {

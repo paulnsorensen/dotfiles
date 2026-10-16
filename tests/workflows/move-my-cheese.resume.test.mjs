@@ -62,9 +62,9 @@ const modifiedRoutes = (digest, stampHead) => planRoutes([
 test('a modified PR whose head matches this approval\'s stamp is not rebuilt again', async () => {
   const plan = planRoutes([['recon:detail', { prs: [aged(1), aged(2)] }], ['plan:minimal', minimalPlan()]])
   const { first, args } = await approve(plan)
-  const { result, labels } = await run(args, modifiedRoutes(first.result.digest, sha(2, 6)))
+  const { result, labels, allLabels } = await run(args, modifiedRoutes(first.result.digest, sha(2, 6)))
   assert.equal(result.status, 'ready')
-  assert.equal(labels.some((l) => l.startsWith('target:') || l.startsWith('publish')), false)
+  assert.equal(allLabels.some((l) => l.startsWith('target:') || l.startsWith('publish')), false)
 })
 
 test('a head that moved past this approval\'s stamp turns the plan into needs-replan', async () => {
@@ -100,9 +100,9 @@ test('a budget floor after publish still stamps the published head', async () =>
   const budget = { total: 1e6, spent: () => spent, remaining: () => 1e6 - spent }
   // No status poll ran, so the fake gh serves the published head for the stamp check.
   const routes = builtConsolidation([['stampcheck:10', envelope('poll', pollData({ headRefOid: sha(50) }))], ['publish', () => { spent = 1e6 - 1000; return published('T-1', 10, sha(50)) }]])
-  const { result, labels, call } = await run(args, routes, budget)
+  const { result, labels, call, allLabels } = await run(args, routes, budget)
   assert.equal(result.status, 'partial')
-  assert.equal(labels.some((l) => l.startsWith('age:')), false)
+  assert.equal(allLabels.some((l) => l.startsWith('age:')), false)
   assert.ok(call('stamp:10')?.prompt.includes(`wfx stamp --pr 10 --marker ${first.result.digest} --sha ${sha(50)}`))
 })
 

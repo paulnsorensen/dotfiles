@@ -73,12 +73,12 @@ test('a marker the finalizer could not write is redone, then logged without fail
 
 test('without land, the done advisor gates the draft conversions and the ready verdict', async () => {
   const { args } = await approve(planRoutes())
-  const { result, labels } = await run(args, builtConsolidation([
+  const { result, labels, allLabels } = await run(args, builtConsolidation([
     ['advise:done', { verdict: 'stop', concerns: ['wait for a human review'], guidance: '' }],
   ]))
   assert.equal(result.status, 'partial')
   assert.match(result.note, /advisor did not approve: wait for a human review/)
-  assert.equal(labels.includes('mark'), false)
+  assert.equal(allLabels.includes('mark'), false)
   assert.equal(labels.some((l) => l.startsWith('cleanup')), false)
 })
 
