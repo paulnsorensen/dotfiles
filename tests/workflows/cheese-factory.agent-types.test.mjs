@@ -94,3 +94,10 @@ test('invalidSpecArg_returnsTheUsage', async () => {
   assert.equal(result.error, 'Invalid spec arg: a/../b')
   assert.match(result.usage, /^Usage: \/cheese-factory \{ spec: <slug-or-path> \}/)
 })
+
+test('cleanup_runsAsARunner_andKeepsItsReadOnlyRetry', async () => {
+  const { call } = await run({ cleanup: () => { throw new Error('flaky') } })
+
+  assert.equal(call('cleanup').opts.agentType, 'runner')
+  assert.ok(call('cleanup:retry1'), 'a runner is not a writer, so a cleanup throw retries')
+})
