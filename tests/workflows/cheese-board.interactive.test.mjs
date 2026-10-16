@@ -497,26 +497,58 @@ test('F11: an auto run whose strategy advisor fails returns no questions, no sta
   assert.equal(result.reason, 'advisor returned no valid advice')
 })
 
-test('F15: the research cap carries across a resume through research_used', async () => {
+const RESEARCHED = { question: 'q', answer: 'Answer.', confidence: 'certain', confidence_justification: '', evidence_table: [], conflicts: [], open_questions: [], report_path: '', recommended_next_step: '', prototype: null }
+
+test('F15: a run that stops at the spec checkpoint dispatches no brie-ground child', async () => {
+  const strategy = strategyOf({ research_questions: ['Does upstream print the version?'] })
+  let calls = 0
+  const research = () => { calls++; return RESEARCHED }
+  const first = await runBoard({ strategy, research })
+  assert.equal(first.result.checkpoint, 'spec')
+  assert.equal(calls, 0)
+  assert.equal(first.result.state.research_used, 0)
+  assert.ok(!first.labels.includes('draft:version-banner:r0'))
+  const asked = first.result.questions.find((q) => q.kind === 'research')
+  assert.match(asked.question, /Does upstream print the version\?/)
+  assert.deepEqual(asked.options, ['research'])
+
+  const answered = await runBoard({ args: resumeWith(first.result, { [asked.id]: 'Yes, on stdout.' }), strategy, research })
+  assert.equal(calls, 0)
+  assert.match(promptOf(answered, 'draft:version-banner:r0'), /Yes, on stdout\./)
+
+  const approved = await runBoard({ args: resumeWith(first.result, { [asked.id]: 'research' }), strategy, research })
+  assert.equal(calls, 1)
+  assert.match(promptOf(approved, 'draft:version-banner:r0'), /<data name="research">/)
+  assert.equal(approved.result.status, 'ok')
+})
+
+test('F15: the research cap counts only approved questions and carries across a resume through research_used', async () => {
   const strategy = { ...strategyOf(), initiatives: [
     initiative('IN-1', { items: ['#1'], slug: 'version-banner', leverage_triggers: ['auth'], research_questions: ['d?'] }),
     initiative('IN-2', { items: ['IDEA-1'], slug: 'sync-cache', priority: 2, research_questions: ['a?', 'b?'] }),
     initiative('IN-3', { slug: 'third-spec', priority: 3, research_questions: ['c?', 'e?'] }),
   ] }
-  const RESEARCH = { question: 'q', answer: 'Answer.', confidence: 'certain', confidence_justification: '', evidence_table: [], conflicts: [], open_questions: [], report_path: '', recommended_next_step: '', prototype: null }
   let calls = 0
-  const research = () => { calls++; return RESEARCH }
-  const first = await runBoard({ strategy, research, overrides: { 'draft:sync-cache:r0': { ...DRAFT, open_questions: ['Which cache?'] } } })
+  const research = () => { calls++; return RESEARCHED }
+  const first = await runBoard({ strategy, research })
   assert.equal(first.result.checkpoint, 'spec')
-  assert.equal(first.result.state.research_used, 4)
-  assert.equal(calls, 4)
-  const ids = Object.fromEntries(first.result.questions.map((q) => [q.initiative, q.id]))
-  calls = 0
-  const run = await runBoard({ args: resumeWith(first.result, { [ids['IN-1']]: 'spec anyway', [ids['IN-2']]: 'In memory.' }), strategy, research })
   assert.equal(calls, 0)
-  assert.deepEqual(run.labels.filter((l) => l.startsWith('draft:')), ['draft:sync-cache:r0'])
-  const molded = run.result.mold.find((m) => m.initiative === 'IN-1')
-  assert.match(molded.reason, /research cap of 4 reached; unresearched: d\?/)
+  const idOf = (text) => first.result.questions.find((q) => q.kind === 'research' && q.question.includes(text)).id
+  const trigger = first.result.questions.find((q) => q.kind === 'trigger').id
+  const answers = { [trigger]: 'spec anyway', [idOf('d?')]: 'research', [idOf('a?')]: 'research', [idOf('b?')]: 'Research', [idOf('c?')]: 'research', [idOf('e?')]: 'research' }
+  const second = await runBoard({ args: resumeWith(first.result, answers), strategy, research, overrides: { 'draft:version-banner:r0': { ...DRAFT, open_questions: ['Which banner?'] } } })
+  assert.equal(calls, 3)
+  assert.equal(second.result.checkpoint, 'spec')
+  assert.equal(second.result.state.research_used, 3)
+  assert.doesNotMatch(promptOf(second, 'draft:sync-cache:r0'), /"answer":"research"/i)
+  const molded = second.result.state.outcomes.find((o) => o.initiative === 'IN-3')
+  assert.equal(molded.status, 'mold')
+  assert.match(molded.reason, /research cap of 4 reached; unresearched: c\? \/ e\?/)
+
+  calls = 0
+  const third = await runBoard({ args: resumeWith(second.result, { [second.result.questions[0].id]: 'The short one.' }), strategy, research })
+  assert.equal(calls, 0)
+  assert.deepEqual(third.labels.filter((l) => l.startsWith('draft:')), ['draft:version-banner:r0'])
 })
 
 const TWO_CONCERNS = { verdict: 'revise', concerns: ['Order the mold list.', 'Cite the right line.'], guidance: 'two fixes', blocking_questions: [] }
