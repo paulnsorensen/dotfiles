@@ -448,7 +448,7 @@ _cz_render_claude_agent() {
         yq -o=json ".agents.\"$name\"" "$registry" | jq -r '
             def line(k; v): if v == null then empty else k + ": " + v end;
             line("description";     .description),
-            line("tools";           (if .tools then (.tools | join(", ")) else null end)),
+            line("tools";           (if .tools == null then null elif (.tools | length) == 0 then "[]" else (.tools | join(", ")) end)),
             line("disallowedTools"; (if .disallowedTools then "[" + (.disallowedTools | join(", ")) + "]" else null end)),
             line("model";           .models.claude),
             line("color";           .color),
@@ -736,9 +736,9 @@ _cz_render_codex_agent() {
                 or (($entry | endswith("*")) and ($tool | startswith($entry[0:-1])));
             def available($tool; $tools; $dis):
                 (($dis | any(covers(.; $tool))) | not)
-                and (($tools | length) == 0 or ($tools | any(covers(.; $tool))));
+                and ($tools == null or ($tools | any(covers(.; $tool))));
             def read_only:
-                ((.tools // [])) as $tools
+                .tools as $tools
                 | ((.disallowedTools // [])) as $dis
                 | (wt | any(available(.; $tools; $dis))) | not;
             { name: $name, description: (.description // "") }
@@ -779,14 +779,14 @@ _cz_opencode_agents_json() {
         fi
         body=$(<"$root/$body_path") || return 1
         entry=$(jq -c --arg name "$name" --arg body "$body" --arg model "$model" --argjson bash_rules "$bash_rules" '
-            .[$name] | (.tools // []) as $tools | (.disallowedTools // []) as $dis |
+            .[$name] | .tools as $tools | (.disallowedTools // []) as $dis |
             def covers($entry; $tool):
                 $entry == $tool or
                 ($entry == "mcp__tilth" and ($tool | startswith("mcp__tilth__"))) or
                 (($entry | endswith("*")) and ($tool | startswith($entry[0:-1])));
             def available($tool):
                 ($dis | any(covers(.; $tool)) | not) and
-                (($tools | length) == 0 or ($tools | any(covers(.; $tool))));
+                ($tools == null or ($tools | any(covers(.; $tool))));
             def mcp_key($tool):
                 ($tool | split("__")) as $parts |
                 if ($parts | length) == 2 then $parts[1] + "_*"
@@ -814,7 +814,7 @@ _cz_opencode_agents_json() {
                     model: ("openai/" + $model),
                     steps: .maxTurns,
                     prompt: $body,
-                    permission: (if ($tools | length) > 0 then {"*": "deny", task: "deny"} + grants
+                    permission: (if $tools != null then {"*": "deny", task: "deny"} + grants
                                  else {task: "deny"} + denied_tools end)
                 }
             }

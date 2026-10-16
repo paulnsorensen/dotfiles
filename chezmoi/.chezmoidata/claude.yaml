@@ -399,6 +399,7 @@ claude:
     - coder
     - duckdb-expert
     - explorer
+    - formatter
     - generalist
     - ghostbuster
     - judge
@@ -406,6 +407,7 @@ claude:
     - researcher
     - reviewer
     - roquefort-wrecker
+    - runner
     - taste-tester
     - whey-drainer
     - worktree-content-digest

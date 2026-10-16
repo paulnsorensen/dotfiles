@@ -476,7 +476,7 @@ const [mapOutcome, setupOutcome] = await parallel([
   async () => RESUME
     ? { ok: true, value: { layout: 'resumed from file_findings', slices: [] } }
     : safeAgent(mapPrompt(), { label: 'map:slices', phase: 'Map', schema: SLICE_MAP_SCHEMA, model: 'sonnet', effort: 'medium', agentType: 'explorer' }),
-  () => safeAgent(setupPrompt(), { label: 'map:gh-setup', phase: 'Map', schema: SETUP_SCHEMA, model: 'haiku', effort: 'low' }),
+  () => safeAgent(setupPrompt(), { label: 'map:gh-setup', phase: 'Map', agentType: 'runner', schema: SETUP_SCHEMA, model: 'haiku', effort: 'low' }),
 ])
 const sliceMap = mapOutcome && mapOutcome.ok ? mapOutcome.value : null
 const setup = setupOutcome && setupOutcome.ok

@@ -663,6 +663,7 @@ test('dispatches each audit stage on its selected model and effort tier', async 
   assert.deepEqual([byLabel.get('cite:batch-1').model, byLabel.get('cite:batch-1').effort], ['sonnet', 'low'])
   assert.equal(byLabel.get('cite:batch-1').agentType, 'explorer')
   assert.equal(byLabel.get('map:slices').agentType, 'explorer')
+  assert.equal(byLabel.get('map:gh-setup').agentType, 'runner')
   const refuter = [...byLabel.entries()].find(([label]) => label.startsWith('refute:'))[1]
   assert.deepEqual([refuter.model, refuter.effort], ['opus', 'high'])
   assert.deepEqual([byLabel.get('issues:batch-1').model, byLabel.get('issues:batch-1').effort], ['haiku', 'low'])

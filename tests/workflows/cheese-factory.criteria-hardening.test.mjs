@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import test from 'node:test'
 
 import { createRuntime, loadWorkflow } from './harness.mjs'
+import { verifyFrom } from './cheese-factory.fixtures.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
@@ -32,10 +33,11 @@ function table(over) {
     cleanup: () => ({ removed: [] }),
     ...over,
   }
-  return ({ opts }) => {
-    const fn = base[opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')]
-    if (!fn) throw new Error(`unexpected agent ${opts.label}`)
-    return fn()
+  return (call) => {
+    const key = call.opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')
+    const fn = base[key] || (key === 'verify' && verifyFrom(base, () => null))
+    if (!fn) throw new Error(`unexpected agent ${call.opts.label}`)
+    return fn(call)
   }
 }
 

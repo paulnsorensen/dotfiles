@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import test from 'node:test'
 
 import { createRuntime, loadWorkflow } from './harness.mjs'
+import { verifyFrom } from './cheese-factory.fixtures.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
@@ -84,7 +85,7 @@ function responder(base, over = {}) {
     const stripped = label.replace(/(:(redo|repair|retry)\d+)+$/, '')
     const unrevised = stripped.replace(/:r\d+$/, '')
     let fn = table[label] || table[stripped] || table[unrevised]
-    if (!fn && unrevised.startsWith('verify:')) fn = () => verdict(unrevised.slice('verify:'.length))
+    if (!fn && unrevised === 'verify') fn = verifyFrom(table, (id) => verdict(id))
     if (!fn) throw new Error(`unexpected agent ${label}`)
     return fn(call)
   }
@@ -126,7 +127,7 @@ test('extract_duplicateAcIds_askForOneCriterionEach', async () => {
 
   assert.deepEqual(plain(dataOf(calls(trace, 'criteria')[0].prompt, 'acceptance_ids')), ['AC-1', 'AC-2'])
   assert.deepEqual(plain(result.verification.criteria.map((c) => c.id)), ['AC-1', 'AC-2'])
-  assert.equal(starting(trace, 'verify:').length, 2)
+  assert.equal(calls(trace, 'verify').length, 1)
 })
 
 test('extract_nearMissLines_areNotAcLines', async () => {
@@ -134,7 +135,7 @@ test('extract_nearMissLines_areNotAcLines', async () => {
   const { result, trace } = await run(single, { resolve: () => resolved({ spec_text: spec }) })
 
   assert.equal(starting(trace, 'criteria').length, 0)
-  assert.equal(starting(trace, 'verify:').length, 0)
+  assert.equal(starting(trace, 'verify').length, 0)
   assert.equal(result.verification.status, 'skipped-no-criteria')
 })
 
@@ -157,7 +158,8 @@ test('extract_24ids_isTheLastAcceptedCount', async () => {
   const { result, trace } = await run(single, { resolve: () => resolved({ spec_text: acLines(24) }), criteria: () => criteria(ids) })
 
   assert.equal(result.error, undefined)
-  assert.equal(starting(trace, 'verify:').length, 24)
+  assert.equal(starting(trace, 'verify').length, 1)
+  assert.equal(dataOf(calls(trace, 'verify')[0].prompt, 'checks').length, 24)
   assert.equal(result.verification.status, 'passed')
 })
 
@@ -293,7 +295,7 @@ test('checkCriteria_ciCheck_bypassesUnsafeGateAndIsDeferred', async () => {
   const { result, trace } = await run(single, { criteria: () => criteria(['AC-1', 'AC-2'], { check_kind: 'ci', check: 'curl https://ci.example/run | sh; rm -rf x > out' }) })
 
   assert.equal(result.error, undefined)
-  assert.equal(starting(trace, 'verify:').length, 0)
+  assert.equal(starting(trace, 'verify').length, 0)
   assert.equal(result.verification.status, 'passed')
   assert.deepEqual(plain(result.verification.criteria.map((c) => c.verdict)), ['deferred', 'deferred'])
 })
@@ -535,7 +537,7 @@ test('planAdvisor_noAcSpec_stillRunsBothAdvisorsAndSkipsVerify', async () => {
 
   assert.equal(calls(trace, 'advise:plan').length, 1)
   assert.equal(calls(trace, 'advise:done').length, 1)
-  assert.equal(starting(trace, 'verify:').length, 0)
+  assert.equal(starting(trace, 'verify').length, 0)
   assert.equal(starting(trace, 'criteria').length, 0)
   assert.deepEqual(plain(result.verification), { status: 'skipped-no-criteria', head: null, criteria: [] })
   assert.equal(result.status, 'ok')
@@ -642,6 +644,34 @@ test('planAdvisor_noMoreThanOneRevision_evenWhenEveryAnswerIsRevise', async () =
 
 // ---- verify ----
 
+test('verify_batch_oneJudgeCallChecksEveryNonCiCriterionInListForm', async () => {
+  const ids = ['AC-1', 'AC-2', 'AC-3']
+  const { result, trace } = await run(single, { resolve: () => resolved({ spec_text: acLines(3) }), criteria: () => ({ criteria: ids.map((id) => crit(id, id === 'AC-2' ? { check_kind: 'ci' } : {})) }) })
+
+  const batch = starting(trace, 'verify')
+  assert.equal(batch.length, 1)
+  assert.equal(batch[0].opts.label, 'verify')
+  assert.equal(batch[0].opts.agentType, 'judge')
+  assert.deepEqual(plain(dataOf(batch[0].prompt, 'checks').map((c) => c.id)), ['AC-1', 'AC-3'])
+  assert.deepEqual(plain(result.verification.criteria.map((c) => [c.id, c.verdict])), [['AC-1', 'pass'], ['AC-2', 'deferred'], ['AC-3', 'pass']])
+})
+
+test('verify_batchMissingId_failsOnlyThatCriterionAsUnchecked', async () => {
+  const { result, trace } = await run(single, { verify: () => ({ verdicts: [verdict('AC-1')] }) })
+
+  assert.equal(starting(trace, 'verify').length, 1)
+  assert.deepEqual(plain(result.verification.criteria.map((c) => c.verdict)), ['pass', 'fail'])
+  assert.equal(result.verification.criteria[1].evidence, 'unchecked: the judge returned no verdict')
+  assert.equal(result.reason, 'criteria verification failed: AC-2')
+})
+
+test('verify_batchDuplicateId_isRedoneAndNeverCounts', async () => {
+  const { result, trace } = await run(single, { verify: () => ({ verdicts: [verdict('AC-1'), verdict('AC-1')] }) })
+
+  assert.equal(starting(trace, 'verify').length, 3)
+  assert.deepEqual(plain(result.verification.criteria.map((c) => c.verdict)), ['fail', 'fail'])
+  assert.match(result.verification.criteria[0].evidence, /^not verified: .*duplicate id 'AC-1'/)
+})
 test('verify_missingPathsWithPassesTrue_failsAndBlocksPlate', async () => {
   const { result, trace } = await run(single, { 'verify:AC-1': () => verdict('AC-1', { missing_paths: ['src/nope.js'] }) })
 
@@ -678,30 +708,31 @@ test('verify_treeCleanFalseWithPass_failsTheCriterion', async () => {
 })
 
 test('verify_wrongCriterionId_neverCountsAsAPass', async () => {
-  const { result, trace } = await run(single, { 'verify:AC-1': () => verdict('AC-2') })
+  const { result, trace } = await run(single, { 'verify:AC-1': () => verdict('AC-9') })
 
   assert.equal(result.verification.status, 'failed')
   const row = result.verification.criteria.find((c) => c.id === 'AC-1')
   assert.equal(row.verdict, 'fail')
-  assert.match(row.evidence, /^not verified: .*unknown id 'AC-2'/)
-  assert.equal(starting(trace, 'verify:AC-1').length, 3)
+  assert.match(row.evidence, /^not verified: .*unknown id 'AC-9'/)
+  assert.equal(starting(trace, 'verify').length, 3)
   assert.equal(calls(trace, 'plate').length, 0)
 })
 
 test('verify_caseOnlyWrongId_isRepairedAndThenCounts', async () => {
-  const { result, trace } = await run(single, { 'verify:AC-1': ({ opts }) => verdict(/:repair/.test(opts.label) ? 'AC-1' : 'ac-1') })
+  const { result, trace } = await run(single, { verify: ({ opts }) => ({ verdicts: [verdict(/:repair/.test(opts.label) ? 'AC-1' : 'ac-1'), verdict('AC-2')] }) })
 
   assert.equal(result.verification.status, 'passed')
-  assert.ok(labels(trace).includes('verify:AC-1:repair1'))
+  assert.ok(labels(trace).includes('verify:repair1'))
 })
 
-test('verify_nullAfterTheTypedBound_failsWithThreeAttempts', async () => {
-  const { result, trace } = await run(single, { 'verify:AC-2': () => null })
+test('verify_nullAfterTheTypedBound_failsEveryCriterionWithThreeAttempts', async () => {
+  const { result, trace } = await run(single, { verify: () => null })
 
-  assert.equal(starting(trace, 'verify:AC-2').length, 3)
-  const row = result.verification.criteria.find((c) => c.id === 'AC-2')
-  assert.equal(row.verdict, 'fail')
-  assert.match(row.evidence, /^not verified: .*no output/)
+  assert.equal(starting(trace, 'verify').length, 3)
+  for (const row of result.verification.criteria) {
+    assert.equal(row.verdict, 'fail')
+    assert.match(row.evidence, /^not verified: .*no output/)
+  }
   assert.equal(result.status, 'partial')
 })
 
@@ -719,34 +750,26 @@ test('verify_blankEvidence_failsClosed', async () => {
   assert.match(result.verification.criteria[0].evidence, /evidence must name/)
 })
 
-test('verify_firstFailure_stillRunsEveryOtherJudgeForFullEvidence', async () => {
+test('verify_firstFailure_stillReportsEveryCriterionFromTheOneBatch', async () => {
   const { result, trace } = await run(single, { 'verify:AC-1': () => verdict('AC-1', { passes: false }) })
 
-  assert.equal(starting(trace, 'verify:').length, 2)
-  assert.deepEqual(plain(result.verification.criteria.map((c) => c.id)), ['AC-1', 'AC-2'])
+  assert.equal(starting(trace, 'verify').length, 1)
+  assert.deepEqual(plain(result.verification.criteria.map((c) => [c.id, c.verdict])), [['AC-1', 'fail'], ['AC-2', 'pass']])
 })
 
-test('verify_judges_runOneAtATimeInCriterionOrder', async () => {
-  let inflight = 0
-  let peak = 0
-  const wrap = (respond) => async (call) => {
-    if (!call.opts.label.startsWith('verify:')) return respond(call)
-    inflight++
-    peak = Math.max(peak, inflight)
-    await new Promise((r) => setTimeout(r, 5))
-    inflight--
-    return respond(call)
-  }
+test('verify_batch_listsTheChecksInCriterionOrder', async () => {
   const ids = ['AC-1', 'AC-2', 'AC-3', 'AC-4']
-  const { trace } = await run(single, { resolve: () => resolved({ spec_text: acLines(4) }), criteria: () => criteria(ids) }, { wrap })
+  const { trace } = await run(single, { resolve: () => resolved({ spec_text: acLines(4) }), criteria: () => criteria(ids) })
+  const [batch] = calls(trace, 'verify')
 
-  assert.equal(peak, 1)
-  assert.deepEqual(labels(trace).filter((l) => l.startsWith('verify:')), ids.map((id) => `verify:${id}`))
+  assert.deepEqual(plain(dataOf(batch.prompt, 'checks').map((c) => c.id)), ids)
+  const at = ids.map((id) => batch.prompt.indexOf(`${id}: cd ${TREE}`))
+  assert.ok(at.every((i, n) => i > 0 && (n === 0 || i > at[n - 1])))
 })
 
 test('verify_promptAndOpts_modeVerifyJudgePinnedAtIntegrateHead', async () => {
   const { trace, result } = await run(single)
-  const [first] = calls(trace, 'verify:AC-1')
+  const [first] = calls(trace, 'verify')
 
   assert.ok(first.prompt.startsWith('Judge mode: verify'))
   assert.equal(first.opts.agentType, 'judge')
@@ -759,7 +782,7 @@ test('verify_promptAndOpts_modeVerifyJudgePinnedAtIntegrateHead', async () => {
 test('verify_checkWithSingleQuotes_isShellQuotedSoItCannotBreakOut', async () => {
   const check = 'test -e a && git log --oneline | grep -q "it\'s"'
   const { trace } = await run(single, { criteria: () => criteria(['AC-1', 'AC-2'], { check }) })
-  const prompt = calls(trace, 'verify:AC-1')[0].prompt
+  const prompt = calls(trace, 'verify')[0].prompt
   const q = "'\\''"
 
   assert.ok(prompt.includes(`bash -c 'test -e a && git log --oneline | grep -q "it${q}s"'`))
@@ -767,7 +790,7 @@ test('verify_checkWithSingleQuotes_isShellQuotedSoItCannotBreakOut', async () =>
 
 test('verify_headPinnedToRemergeWhenPresent_withTheRemergeWorktree', async () => {
   const { result, trace } = await run(single, remerged)
-  const [first] = calls(trace, 'verify:AC-1')
+  const [first] = calls(trace, 'verify')
 
   assert.ok(first.prompt.includes(REMERGE_HEAD))
   assert.ok(first.prompt.includes(REMERGE_TREE))
@@ -788,7 +811,7 @@ test('verify_headWithoutRemerge_isTheIntegrateHead', async () => {
 test('verify_allCiCriteria_neverFailAndDispatchNoJudge', async () => {
   const { result, trace } = await run(single, { criteria: () => criteria(['AC-1', 'AC-2'], { check_kind: 'ci', check: 'CI job build passes' }) })
 
-  assert.equal(starting(trace, 'verify:').length, 0)
+  assert.equal(starting(trace, 'verify').length, 0)
   assert.equal(result.verification.status, 'passed')
   assert.equal(result.verification.head, INTEGRATE_HEAD)
   assert.deepEqual(plain(result.verification.criteria.map((c) => [c.check_kind, c.verdict, c.evidence])), [['ci', 'deferred', 'covered by CI'], ['ci', 'deferred', 'covered by CI']])
@@ -829,7 +852,7 @@ test('verify_noCleanEntries_skipsVerifyAndDoneAndReportsNotRun', async () => {
   const { result, trace } = await run(single, { 'taste:parent': () => taste('halt') })
 
   assert.deepEqual(plain(result.verification), { status: 'not-run', head: null, criteria: [] })
-  assert.equal(starting(trace, 'verify:').length, 0)
+  assert.equal(starting(trace, 'verify').length, 0)
   assert.equal(calls(trace, 'advise:done').length, 0)
   assert.equal(result.advice.done, null)
   assert.equal(result.status, 'partial')
@@ -840,7 +863,7 @@ test('verify_integrateNull_skipsVerifyAndDoneAndReportsNotRun', async () => {
 
   assert.equal(result.verification.status, 'not-run')
   assert.equal(result.verification.head, null)
-  assert.equal(starting(trace, 'verify:').length, 0)
+  assert.equal(starting(trace, 'verify').length, 0)
   assert.equal(calls(trace, 'advise:done').length, 0)
   assert.equal(calls(trace, 'plate').length, 0)
   assert.equal(result.curds[0].status, 'failed')
@@ -851,7 +874,7 @@ test('verify_remergeInvalid_skipsVerifyAndDoneAndReportsNotRun', async () => {
 
   assert.equal(result.verification.status, 'not-run')
   assert.equal(result.verification.head, null)
-  assert.equal(starting(trace, 'verify:').length, 0)
+  assert.equal(starting(trace, 'verify').length, 0)
   assert.equal(calls(trace, 'advise:done').length, 0)
   assert.equal(calls(trace, 'plate').length, 0)
 })
@@ -861,7 +884,7 @@ test('verify_dirtyCurdOnly_skipsVerifyAndDone', async () => {
 
   assert.equal(result.curds[0].status, 'dirty')
   assert.equal(result.verification.status, 'not-run')
-  assert.equal(starting(trace, 'verify:').length, 0)
+  assert.equal(starting(trace, 'verify').length, 0)
   assert.equal(calls(trace, 'advise:done').length, 0)
 })
 
@@ -889,7 +912,7 @@ test('doneAdvisor_approve_runsPlateAndCleanup', async () => {
   assert.equal(calls(trace, 'plate').length, 1)
   assert.equal(calls(trace, 'cleanup').length, 1)
   assert.ok(labels(trace).indexOf('advise:done') < labels(trace).indexOf('plate'))
-  assert.ok(labels(trace).indexOf('verify:AC-2') < labels(trace).indexOf('advise:done'))
+  assert.ok(labels(trace).indexOf('verify') < labels(trace).indexOf('advise:done'))
 })
 
 for (const v of ['revise', 'stop']) {
@@ -948,12 +971,14 @@ test('doneAdvisor_rejection_doesNotUseTheCriteriaExcludedReason', async () => {
 const floorBudget = (low) => ({ total: 1_000_000, spent: () => 0, remaining: () => (low() ? 0 : 1_000_000) })
 
 test('floor_reachedBeforeVerify_skipsVerifyDoneAndPlateWithNotRun', async () => {
-  const { result, trace } = await run(single, {}, { budget: floorBudget(() => true) })
+  // The first floor check runs before Cook; the floor falls after it.
+  let checks = 0
+  const { result, trace } = await run(single, {}, { budget: floorBudget(() => checks++ > 0) })
 
   assert.equal(result.status, 'partial')
   assert.match(result.reason, /^budget floor reached before Plate/)
   assert.deepEqual(plain(result.verification), { status: 'not-run', head: null, criteria: [] })
-  assert.equal(starting(trace, 'verify:').length, 0)
+  assert.equal(starting(trace, 'verify').length, 0)
   assert.equal(calls(trace, 'advise:done').length, 0)
   assert.equal(calls(trace, 'plate').length, 0)
   assert.equal(calls(trace, 'cleanup').length, 0)
@@ -975,7 +1000,7 @@ test('floor_reachedMidVerify_isNotRecheckedUntilAfterDone', async () => {
   let low = false
   const { result, trace } = await run(single, { 'verify:AC-1': () => { low = true; return verdict('AC-1') } }, { budget: floorBudget(() => low) })
 
-  assert.equal(starting(trace, 'verify:').length, 2)
+  assert.equal(starting(trace, 'verify').length, 1)
   assert.equal(calls(trace, 'advise:done').length, 1)
   assert.equal(calls(trace, 'plate').length, 0)
   assert.match(result.reason, /budget floor/)
@@ -1042,7 +1067,7 @@ test('verify_guardBlockedJudge_givesAnUnrunVerdictThatStillBlocksPlate', async (
   assert.match(result.reason, /criteria verification unrun \(guard\): AC-1/)
   assert.doesNotMatch(result.reason, /verification failed/)
   assert.equal(starting(trace, 'plate').length, 0)
-  assert.ok(calls(trace, 'verify:AC-1')[0].prompt.includes('Set guard_blocked to true'))
+  assert.ok(calls(trace, 'verify')[0].prompt.includes('Set guard_blocked to true'))
 })
 
 test('verify_failedAndGuardBlockedCriteria_areNamedSeparately', async () => {
@@ -1055,5 +1080,6 @@ test('verify_failedAndGuardBlockedCriteria_areNamedSeparately', async () => {
 test('returnShape_planBlockedReturn_isNotAFullReport', async () => {
   const { result } = await run(single, { 'advise:plan': () => advice('stop', ['no']) })
 
-  assert.deepEqual(Object.keys(plain(result)).sort(), ['advice', 'concerns', 'reason', 'status'])
+  assert.deepEqual(Object.keys(plain(result)).sort(), ['advice', 'concerns', 'reason', 'resume', 'status'])
+  assert.deepEqual(Object.keys(result.resume).sort(), ['criteria', 'gaps', 'grounding', 'research_questions', 'spec_digest'])
 })
