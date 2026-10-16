@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import test from 'node:test'
 
 import { createRuntime, loadWorkflow } from './harness.mjs'
+import { verifyFrom } from './cheese-factory.fixtures.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
@@ -34,10 +35,11 @@ async function run(over = {}, child = () => { throw new Error('no research expec
   const full = { ...table, ...over }
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      const fn = full[opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')]
-      if (!fn) throw new Error(`unexpected agent ${opts.label}`)
-      return fn()
+    respond: (call) => {
+      const key = call.opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')
+      const fn = full[key] || (key === 'verify' && verifyFrom(full, () => null))
+      if (!fn) throw new Error(`unexpected agent ${call.opts.label}`)
+      return fn(call)
     },
   })
   const research = []
@@ -223,10 +225,11 @@ async function runArgs(args, { over = {}, child = () => { throw new Error('no re
   const full = { ...table, ...over }
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      const fn = full[opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')]
-      if (!fn) throw new Error(`unexpected agent ${opts.label}`)
-      return fn()
+    respond: (call) => {
+      const key = call.opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')
+      const fn = full[key] || (key === 'verify' && verifyFrom(full, () => null))
+      if (!fn) throw new Error(`unexpected agent ${call.opts.label}`)
+      return fn(call)
     },
     budgetTotal,
     budgetSpent,

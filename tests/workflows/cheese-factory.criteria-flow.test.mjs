@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import test from 'node:test'
 
 import { createRuntime, loadWorkflow } from './harness.mjs'
+import { verifyFrom } from './cheese-factory.fixtures.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
@@ -76,7 +77,7 @@ async function run(table, over = {}, { budget } = {}) {
   // Exact label wins, then the label minus a redo, repair, or retry suffix, then the label minus a revision suffix.
   const scriptFor = (label) => {
     const stripped = label.replace(/(:(redo|repair|retry)\d+)+$/, '')
-    return full[label] || full[stripped] || full[stripped.replace(/:r\d+$/, '')]
+    return full[label] || full[stripped] || full[stripped.replace(/:r\d+$/, '')] || (stripped === 'verify' && verifyFrom(full, (id) => verdict(id)))
   }
   const agent = async (prompt, opts = {}) => {
     trace.agents.push({ prompt, opts, index: trace.agents.length })
@@ -144,7 +145,8 @@ test('verify_treeCleanFalseOnCiCriterion_keepsTheCiDeferral', async () => {
   const { result, trace } = await run(single, { criteria: () => ({ criteria: [crit('AC-1', { check_kind: 'ci', check: 'CI job build is green' }), crit('AC-2')] }) })
 
   assert.equal(result.verification.criteria[0].verdict, 'deferred')
-  assert.equal(calls(trace, 'verify:AC-1').length, 0)
+  assert.equal(calls(trace, 'verify')[0].prompt.includes('AC-1: cd '), false)
+  assert.ok(calls(trace, 'verify')[0].prompt.includes('AC-2: cd '))
   assert.equal(result.verification.status, 'passed')
 })
 
@@ -152,12 +154,15 @@ test('verify_treeCleanFalseOnCiCriterion_keepsTheCiDeferral', async () => {
 
 const without = (obj, key) => { const copy = { ...obj }; delete copy[key]; return copy }
 
+// Verify sends both criteria in one batch, so each verdict case breaks the first verdict of the batch.
+const batch = { verdicts: [verdict('AC-1'), verdict('AC-2')] }
+const first = (fn) => (v) => ({ verdicts: [fn(v.verdicts[0]), v.verdicts[1]] })
 for (const [name, label, good, bad] of [
-  ['verdict.passes missing', 'verify:AC-1', verdict('AC-1'), (v) => without(v, 'passes')],
-  ['verdict.passes mistyped', 'verify:AC-1', verdict('AC-1'), (v) => ({ ...v, passes: 'yes' })],
-  ['verdict.tree_clean missing', 'verify:AC-1', verdict('AC-1'), (v) => without(v, 'tree_clean')],
-  ['verdict.missing_paths missing', 'verify:AC-1', verdict('AC-1'), (v) => without(v, 'missing_paths')],
-  ['verdict.missing_paths mistyped', 'verify:AC-1', verdict('AC-1'), (v) => ({ ...v, missing_paths: 'none' })],
+  ['verdict.passes missing', 'verify', batch, first((v) => without(v, 'passes'))],
+  ['verdict.passes mistyped', 'verify', batch, first((v) => ({ ...v, passes: 'yes' }))],
+  ['verdict.tree_clean missing', 'verify', batch, first((v) => without(v, 'tree_clean'))],
+  ['verdict.missing_paths missing', 'verify', batch, first((v) => without(v, 'missing_paths'))],
+  ['verdict.missing_paths mistyped', 'verify', batch, first((v) => ({ ...v, missing_paths: 'none' }))],
   ['advice.verdict missing', 'advise:plan', advice('approve'), (v) => without(v, 'verdict')],
   ['advice.verdict out of enum', 'advise:plan', advice('approve'), (v) => ({ ...v, verdict: 'maybe' })],
   ['criteria.check_kind missing', 'criteria', criteria(), (v) => ({ criteria: [without(v.criteria[0], 'check_kind'), v.criteria[1]] })],
@@ -175,10 +180,10 @@ for (const [name, label, good, bad] of [
 
 test('decisionField_nonDecisionShapeError_isStillRepairedByTheFormatter', async () => {
   let n = 0
-  const { trace } = await run(single, { 'verify:AC-1': () => (n++ === 0 ? verdict('AC-1', { evidence: 42 }) : verdict('AC-1')) })
+  const { trace } = await run(single, { verify: () => (n++ === 0 ? first((v) => ({ ...v, evidence: 42 }))(batch) : batch) })
 
-  assert.equal(calls(trace, 'verify:AC-1:repair1').length, 1)
-  assert.equal(calls(trace, 'verify:AC-1:redo1').length, 0)
+  assert.equal(calls(trace, 'verify:repair1').length, 1)
+  assert.equal(calls(trace, 'verify:redo1').length, 0)
 })
 
 test('decisionField_otherSchemaVerdictShapeError_isStillRepaired', async () => {
