@@ -1,6 +1,8 @@
-// wfx restack --repo <path> --branch <b> --onto <ref> [--from <old-base>] [--push] [--expect <sha>]
+// wfx restack --repo <path> --branch <b> --onto <ref> [--from <old-base>] [--push] [--expect <sha>] [--source <ref>]
 // wfx restack --stack [--repo <path>] [-- <gh stack rebase flags>]
 // Rebases b onto a ref inside a temporary worktree. The caller's checkout stays untouched.
+// --source <ref> rebases from a fetched run-scoped ref (such as refs/mmc/<tag>/<b>) instead of refs/heads/<b>.
+// With --source, refs/heads/<b> never moves, and --push needs --expect because no local branch gives the lease.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -33,14 +35,20 @@ function stackMode(argv, ctx) {
 
 export async function run(argv, ctx) {
   if (argv.includes('--stack')) return stackMode(argv, ctx);
-  const { flags } = parseFlags(argv, { value: ['repo', 'branch', 'onto', 'from', 'expect'], bool: ['push'] });
+  const { flags } = parseFlags(argv, { value: ['repo', 'branch', 'onto', 'from', 'expect', 'source'], bool: ['push'] });
   if (!flags.branch) throw badInput('restack needs --branch');
   if (!flags.onto) throw badInput('restack needs --onto');
   const repo = resolve(ctx.cwd, flags.repo ?? '.');
   const branch = assertBranch(flags.branch);
   if (flags.expect) assertSha(flags.expect, 'expect');
+  if (flags.source !== undefined) {
+    if (!flags.source || flags.source.startsWith('-') || ctx.git(['check-ref-format', flags.source], { cwd: repo }).status !== 0) {
+      throw badInput(`invalid --source ref: ${flags.source}`);
+    }
+    if (flags.push && !flags.expect) throw badInput('restack --source with --push needs --expect');
+  }
 
-  const old = revParse(ctx, repo, `refs/heads/${branch}`);
+  const old = revParse(ctx, repo, flags.source ?? `refs/heads/${branch}`);
   const onto = revParse(ctx, repo, flags.onto);
   const from = flags.from
     ? revParse(ctx, repo, flags.from)
@@ -70,7 +78,7 @@ export async function run(argv, ctx) {
   // A branch that another checkout holds keeps its ref, so no checkout drifts from its HEAD.
   const held = checkedOutBranches(ctx, repo).has(`refs/heads/${branch}`);
   let localUpdated = false;
-  if (!held && next !== old) {
+  if (!flags.source && !held && next !== old) {
     const upd = ctx.git(['update-ref', `refs/heads/${branch}`, next, old], { cwd: repo });
     if (upd.status !== 0) throw new FxError('ref-update-failed', upd.stderr.trim());
     localUpdated = true;

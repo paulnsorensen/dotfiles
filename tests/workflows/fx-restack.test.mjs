@@ -110,6 +110,43 @@ test('restack keeps the ref of a branch that a checkout holds', (t) => {
   assert.equal(git(repo, ['status', '--porcelain']), '');
 });
 
+test('restack --source rebases a run-scoped ref and never moves refs/heads/<b>', (t) => {
+  const { repo, remote } = movedBase(t);
+  const feat = git(repo, ['rev-parse', 'feat']);
+  // The remote branch moves, and the caller fetched that head into a run-scoped ref.
+  const other = tempDir(t, 'wfx-other-');
+  git(other, ['clone', '-q', remote, '.']);
+  git(other, ['config', 'user.name', 'Other']);
+  git(other, ['config', 'user.email', 'o@example.invalid']);
+  git(other, ['checkout', '-q', 'feat']);
+  const theirs = commitFiles(other, { 'other.txt': 'x\n' }, 'other work');
+  git(other, ['push', '-q', 'origin', 'feat']);
+  git(repo, ['fetch', '-q', 'origin', 'feat:refs/mmc/t1/feat']);
+  const main = git(repo, ['rev-parse', 'main']);
+  const { status, json } = runWfx(
+    ['restack', '--repo', repo, '--branch', 'feat', '--onto', 'main', '--source', 'refs/mmc/t1/feat', '--push', '--expect', theirs],
+    { cwd: tempDir(t) },
+  );
+  assert.equal(status, 0, JSON.stringify(json));
+  assert.equal(json.data.old, theirs);
+  assert.equal(json.data.localUpdated, false);
+  assert.equal(json.data.pushed, true);
+  assert.equal(git(repo, ['rev-parse', 'feat']), feat);
+  assert.equal(git(remote, ['rev-parse', 'refs/heads/feat']), json.data.new);
+  assert.equal(git(repo, ['rev-parse', `${json.data.new}~2`]), main);
+});
+
+test('restack --source rejects a leading dash, a bad ref, and --push without --expect', (t) => {
+  const { repo } = movedBase(t);
+  const base = ['restack', '--repo', repo, '--branch', 'feat', '--onto', 'main'];
+  assert.equal(runWfx([...base, '--source', '--evil'], { cwd: repo }).status, 2);
+  assert.equal(runWfx([...base, '--source', 'refs/a..b'], { cwd: repo }).status, 2);
+  assert.equal(runWfx([...base, '--source', 'refs/mmc/t1/feat', '--push'], { cwd: repo }).status, 2);
+  const missing = runWfx([...base, '--source', 'refs/mmc/none/feat'], { cwd: repo });
+  assert.equal(missing.status, 1);
+  assert.equal(missing.json.error.code, 'not-found');
+});
+
 test('restack rejects bad input', (t) => {
   const repo = tempRepo(t);
   assert.equal(runWfx(['restack', '--repo', repo, '--onto', 'main'], { cwd: repo }).status, 2);
