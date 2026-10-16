@@ -651,7 +651,7 @@ log(`Gathering open ${scope} (limit ${limit} each)${repo ? ` for ${repo}` : ''}.
 let gathered = null
 for (let round = 0; round <= LIMITS.gatherRedo && !gathered; round++) {
   const label = round ? `gather:redo${round}` : 'gather'
-  gathered = await agent(gatherPrompt(), { schema: GATHER_SCHEMA, phase: 'Gather', label, agentType: 'explorer', model: 'haiku', effort: 'low' }).catch(() => null)
+  gathered = await agent(gatherPrompt(), { schema: GATHER_SCHEMA, phase: 'Gather', label, agentType: 'runner', model: 'haiku', effort: 'low' }).catch(() => null)
 }
 if (!gathered) {
   log('The gather agent returned no item list after a redo; stopping before Ground.')
@@ -734,7 +734,7 @@ if (budgetLow()) {
   gaps.push('Route skipped: the token budget fell below the floor')
 } else {
   phase('Route')
-  const out = await agent(routePrompt(grounded, lenses, links), { schema: ROUTE_SCHEMA, phase: 'Route', label: 'route', agentType: 'explorer', model: 'opus', effort: 'high' }).catch(() => null)
+  const out = await agent(routePrompt(grounded, lenses, links), { schema: ROUTE_SCHEMA, phase: 'Route', label: 'route', agentType: 'formatter', model: 'opus', effort: 'high' }).catch(() => null)
   if (out) {
     routing = checkRouting(out, grounded, links)
   } else {

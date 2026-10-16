@@ -252,9 +252,9 @@ test('triage-sweep drops repeated items, caps each kind at the limit, and pins s
   const grounds = trace.agents.filter(({ opts }) => opts.label.startsWith('ground:'))
   assert.deepEqual(grounds.map(({ prompt }) => readData(prompt, 'items').map((i) => i.number)), [[1, 2], [11, 12]])
   const gather = trace.agents.find(({ opts }) => opts.label === 'gather').opts
-  assert.deepEqual([gather.agentType, gather.model, gather.effort], ['explorer', 'haiku', 'low'])
+  assert.deepEqual([gather.agentType, gather.model, gather.effort], ['runner', 'haiku', 'low'])
   const route = trace.agents.find(({ opts }) => opts.label === 'route').opts
-  assert.deepEqual([route.agentType, route.model], ['explorer', 'opus'])
+  assert.deepEqual([route.agentType, route.model], ['formatter', 'opus'])
 })
 
 test('GitHub text reaches prompts only inside an escaped <data> fence', async () => {
