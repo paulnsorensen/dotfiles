@@ -1,5 +1,5 @@
 // wfx worktree add    --repo <path> --landing <id> --name <n> --ref <ref>
-// wfx worktree remove --repo <path> --path <p>
+// wfx worktree remove --repo <path> --path <p>   (any worktree that git lists below the scratch root)
 // wfx worktree list   --repo <path> [--landing <id>]
 // Worktrees live under <main checkout>/.claude/worktrees, the scratch root that the workflow
 // stale module (SCRATCH_PATH_SRC) accepts. SCRATCH_WORKTREE_RE allows one path segment under the root,
@@ -36,6 +36,17 @@ function listUnder(ctx, repo, root) {
   return out;
 }
 
+// Every worktree that git lists below the scratch root, whatever its name.
+// remove uses it, so it also cleans worktrees that the runtime made without a landing id.
+function registeredUnder(ctx, repo, root) {
+  const res = ctx.git(['worktree', 'list', '--porcelain'], { cwd: repo });
+  return res.stdout
+    .split('\n')
+    .filter((l) => l.startsWith('worktree '))
+    .map((l) => l.slice(9))
+    .filter((p) => p.startsWith(`${root}/`));
+}
+
 export async function run(argv, ctx) {
   const sub = argv[0];
   const rest = argv.slice(1);
@@ -67,8 +78,8 @@ function remove(argv, ctx) {
   const repo = resolve(ctx.cwd, flags.repo ?? '.');
   const root = scratchRoot(ctx, repo);
   const path = resolve(ctx.cwd, flags.path);
-  if (!listUnder(ctx, repo, root).some((w) => w.path === path)) {
-    throw badInput(`not a wfx worktree under ${root}: ${path}`);
+  if (!registeredUnder(ctx, repo, root).includes(path)) {
+    throw badInput(`not a registered worktree under ${root}: ${path}`);
   }
   const res = ctx.git(['worktree', 'remove', '--force', path], { cwd: repo });
   if (res.status !== 0) throw new FxError('worktree-failed', res.stderr.trim(), { path });

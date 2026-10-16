@@ -78,6 +78,7 @@ test('recon fails on PRs with different bases', (t) => {
   assert.equal(json.error.code, 'mixed-bases');
 });
 
+const POLL_FIELDS = 'state,isDraft,mergeStateStatus,reviewDecision,headRefOid,baseRefName';
 test('poll counts checks and unresolved review threads', (t) => {
   const graphql = [
     'api', 'graphql', '-F', 'owner={owner}', '-F', 'repo={repo}', '-F', 'number=9',
@@ -91,6 +92,7 @@ test('poll counts checks and unresolved review threads', (t) => {
     {
       'pr checks 9': { stdout: checks, status: 1 },
       [argv.join(' ')]: { stdout: '3\n' },
+      [`pr view 9 --json ${POLL_FIELDS}`]: { stdout: JSON.stringify({ state: 'OPEN', isDraft: false, mergeStateStatus: 'BEHIND', reviewDecision: '', headRefOid: SHA, baseRefName: 'main' }) },
     },
     t,
   );
@@ -105,7 +107,11 @@ test('poll counts checks and unresolved review threads', (t) => {
     ['deploy', 'pending', 'http://x/3'],
     ['docs', 'skipping', 'http://x/4'],
   ]);
-  assert.deepEqual(calls(), [['pr', 'checks', '9'], argv]);
+  assert.deepEqual(calls(), [['pr', 'checks', '9'], argv, ['pr', 'view', '9', '--json', POLL_FIELDS]]);
+  assert.deepEqual(
+    { ...json.data, checks: undefined },
+    { pr: 9, state: 'OPEN', isDraft: false, mergeStateStatus: 'BEHIND', reviewDecision: 'NONE', headRefOid: SHA, baseRefName: 'main', checks: undefined, unresolvedThreads: 3 },
+  );
 });
 
 test('poll fails with gh-failed when the thread query fails', (t) => {
@@ -120,7 +126,7 @@ test('merge passes --match-head-commit with the checked head SHA', (t) => {
   const { env, cwd, calls } = setup({ [`pr merge 12 --squash --match-head-commit ${SHA}`]: { stdout: 'merged\n' } }, t);
   const { status, json } = runWfx(['merge', '--pr', '12', '--head', SHA], { cwd, env });
   assert.equal(status, 0, JSON.stringify(json));
-  assert.deepEqual(json.data, { pr: 12, method: 'squash', head: SHA });
+  assert.deepEqual(json.data, { pr: 12, method: 'squash', head: SHA, queued: false });
   assert.deepEqual(calls(), [['pr', 'merge', '12', '--squash', '--match-head-commit', SHA]]);
 });
 
@@ -131,6 +137,14 @@ test('merge honors --method and never passes --admin or --auto', (t) => {
   const argv = calls()[0];
   assert.ok(argv.includes('--rebase'));
   assert.ok(!argv.includes('--admin') && !argv.includes('--auto'));
+});
+
+test('merge --queue passes --auto with the pinned head and never --admin', (t) => {
+  const { env, cwd, calls } = setup({ [`pr merge 12 --squash --auto --match-head-commit ${SHA}`]: {} }, t);
+  const { status, json } = runWfx(['merge', '--pr', '12', '--head', SHA, '--queue'], { cwd, env });
+  assert.equal(status, 0, JSON.stringify(json));
+  assert.deepEqual(json.data, { pr: 12, method: 'squash', head: SHA, queued: true });
+  assert.deepEqual(calls(), [['pr', 'merge', '12', '--squash', '--auto', '--match-head-commit', SHA]]);
 });
 
 test('merge maps gh failure to merge-failed with stderr', (t) => {

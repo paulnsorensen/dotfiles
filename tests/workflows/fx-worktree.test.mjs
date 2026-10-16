@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { loadModule } from '../../claude/workflow-prelude/load.mjs';
@@ -71,6 +71,25 @@ test('worktree remove refuses paths outside the scratch root', (t) => {
   const cwd = tempDir(t);
   assert.equal(runWfx(['worktree', 'remove', '--repo', repo, '--path', repo], { cwd }).status, 2);
   assert.ok(existsSync(join(repo, 'README.md')));
+});
+
+test('worktree remove also removes a runtime worktree without a landing id', (t) => {
+  const repo = tempRepo(t);
+  const cwd = tempDir(t);
+  const path = join(repo, '.claude', 'worktrees', 'wf_abc-1');
+  git(repo, ['worktree', 'add', '--detach', path, 'main']);
+  const { status, json } = runWfx(['worktree', 'remove', '--repo', repo, '--path', path], { cwd });
+  assert.equal(status, 0, JSON.stringify(json));
+  assert.equal(existsSync(path), false);
+});
+
+test('worktree remove refuses an unregistered path below the scratch root', (t) => {
+  const repo = tempRepo(t);
+  const cwd = tempDir(t);
+  const stray = join(repo, '.claude', 'worktrees', 'plain-dir');
+  mkdirSync(stray, { recursive: true });
+  assert.equal(runWfx(['worktree', 'remove', '--repo', repo, '--path', stray], { cwd }).status, 2);
+  assert.ok(existsSync(stray));
 });
 
 test('worktree rejects bad ids, unknown subcommands, and bad refs', (t) => {
