@@ -397,7 +397,32 @@ test('brieGround_answer_returnsFoundWithCappedCitations', async () => {
   const evidence_table = Array.from({ length: 7 }, (_, i) => ({ citation: `c${i}` }))
   const { fn } = brieWith((name, q) => ({ answer: `a:${q}`, confidence: 'certain', report_path: '/r.md', evidence_table }))
   const r = await fn('q1')
-  assert.deepEqual(JSON.parse(JSON.stringify(r)), { found: { question: 'q1', answer: 'a:q1', confidence: 'certain', report_path: '/r.md', citations: ['c0', 'c1', 'c2', 'c3', 'c4'] } })
+  assert.deepEqual(JSON.parse(JSON.stringify(r)), { found: { question: 'q1', answer: 'a:q1', confidence: 'certain', report_path: '/r.md', citations: ['c0', 'c1', 'c2', 'c3', 'c4'] }, dropped: 2 })
+})
+
+test('brieGround_capDrops_areLoggedAndReturned', async () => {
+  const cited = brieWith(() => ({ answer: 'a', confidence: 'certain', evidence_table: Array.from({ length: 8 }, (_, i) => ({ citation: `c${i}` })) }))
+  assert.equal((await cited.fn('q1')).dropped, 3)
+  assert.match(cited.logs.join('\n'), /dropped 3 citation/)
+  const open = brieWith(() => ({ answer: 'unclear', confidence: 'dont_know', open_questions: ['a', 'b', 'c', 'd', 'e'] }))
+  assert.equal((await open.fn('q1')).dropped, 3)
+  assert.match(open.logs.join('\n'), /dropped 3 follow-up/)
+  const none = brieWith(() => ({ answer: 'a', confidence: 'certain', evidence_table: [{ citation: 'c0' }] }))
+  assert.equal('dropped' in (await none.fn('q1')), false)
+  assert.deepEqual(none.logs, [])
+})
+
+test('brieGroundMaxAgents_equalsBrieGroundWorstCase', () => {
+  const src = read('claude/workflows/brie-ground.js')
+  const num = (re) => Number(src.match(re)[1])
+  const subs = num(/^const MAX_SUBQUESTIONS = (\d+)$/m)
+  const redo = num(/^const REDO_ROUNDS = (\d+)$/m)
+  const deep = num(/^\s+MAX_DEEP_SUBQUESTIONS: (\d+),$/m)
+  const extracts = Math.ceil(num(/^\s+MAX_FETCH: (\d+),$/m) / num(/^\s+EXTRACT_BATCH: (\d+),$/m))
+  // recall + its verify, plan + redo, deep mixed (wiki, search, extracts, code, verify), shallow mixed (wiki, web, verify), synthesis + redo, prototype 2.
+  const worst = 2 + (1 + redo) + deep * (4 + extracts) + (subs - deep) * 3 + (1 + redo) + 2
+  assert.equal(worst, 35)
+  assert.equal(runInNewContext(`${prelude}\n;BRIE_GROUND_MAX_AGENTS`, {}), worst)
 })
 
 test('brieGround_blankDontKnow_isUnsettledNotFailed', async () => {
@@ -407,7 +432,7 @@ test('brieGround_blankDontKnow_isUnsettledNotFailed', async () => {
 
 test('brieGround_dontKnow_keepsAtMostTwoFollowUps', async () => {
   const { fn } = brieWith(() => ({ answer: 'unclear', confidence: 'dont_know', open_questions: ['a', 'b', 'c', 'd'] }))
-  assert.deepEqual(JSON.parse(JSON.stringify(await fn('q1'))), { unsettled: ['q1', 'a', 'b'] })
+  assert.deepEqual(JSON.parse(JSON.stringify(await fn('q1'))), { unsettled: ['q1', 'a', 'b'], dropped: 2 })
 })
 
 test('brieGround_blankSettledAnswer_stillFails', async () => {
