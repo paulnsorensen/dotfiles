@@ -120,3 +120,26 @@ test('a checked-out integration branch is refused', (t) => {
   assert.equal(res.status, 1);
   assert.equal(res.json.error.code, 'branch-checked-out');
 });
+
+test('an integration branch checked out in a linked worktree is refused', (t) => {
+  const repo = fixture(t);
+  git(repo, 'branch', 'int', 'main');
+  const other = join(tempDir(t), 'linked');
+  git(repo, 'worktree', 'add', '-q', other, 'int');
+  const before = git(repo, 'rev-parse', 'int');
+  const res = runWfx(['integrate', '--branch', 'int', '--base', 'main', '--target', 't1'], { cwd: repo });
+  assert.equal(res.status, 1);
+  assert.equal(res.json.error.code, 'branch-checked-out');
+  assert.equal(git(repo, 'rev-parse', 'int'), before);
+});
+
+test('an existing integration branch must contain the base', (t) => {
+  const repo = fixture(t);
+  // t2 does not contain t1, so it cannot serve as an integration branch for base t1.
+  git(repo, 'branch', 'int', 't2');
+  const before = git(repo, 'rev-parse', 'int');
+  const res = runWfx(['integrate', '--branch', 'int', '--base', 't1', '--target', 't3'], { cwd: repo });
+  assert.equal(res.status, 1);
+  assert.equal(res.json.error.code, 'base-not-contained');
+  assert.equal(git(repo, 'rev-parse', 'int'), before);
+});

@@ -36,13 +36,21 @@ function ensureBranch(ctx, repo, branch, base) {
     throw badInput(`invalid branch name: ${branch}`);
   }
   const ref = `refs/heads/${branch}`;
+  // Any linked worktree can hold the branch, so the list covers more than the current HEAD.
+  const listed = ctx.git(['worktree', 'list', '--porcelain'], { cwd: repo }).stdout.split('\n');
   const head = ctx.git(['symbolic-ref', '-q', 'HEAD'], { cwd: repo }).stdout.trim();
-  if (head === ref) {
+  if (head === ref || listed.includes(`branch ${ref}`)) {
     throw new FxError('branch-checked-out', `branch is checked out: ${branch}`, { branch });
   }
-  const existing = ctx.git(['rev-parse', '--verify', '--quiet', ref], { cwd: repo });
-  if (existing.status === 0) return { ref, sha: existing.stdout.trim() };
   const sha = resolveCommit(ctx, repo, base);
+  const existing = ctx.git(['rev-parse', '--verify', '--quiet', ref], { cwd: repo });
+  if (existing.status === 0) {
+    const tip = existing.stdout.trim();
+    if (ctx.git(['merge-base', '--is-ancestor', sha, tip], { cwd: repo }).status !== 0) {
+      throw new FxError('base-not-contained', `branch ${branch} does not contain base ${base}`, { branch, base, sha: tip });
+    }
+    return { ref, sha: tip };
+  }
   const made = ctx.git(['update-ref', ref, sha, ''], { cwd: repo });
   if (made.status !== 0) throw new FxError('git-failed', `cannot create ${branch}: ${made.stderr.trim()}`);
   return { ref, sha };
