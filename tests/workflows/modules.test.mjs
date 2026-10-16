@@ -12,19 +12,24 @@ const syncScript = join(repo, 'claude/workflow-prelude/sync.mjs')
 const WORKFLOWS = ['claude/workflows/cheese-board.js', 'claude/workflows/cheese-factory.js', 'claude/workflows/move-my-cheese.js']
 const PROVIDES = {
   stale: ['SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE'],
-  budget: ['floorReached'],
+  budget: ['DEFAULT_LIMITS', 'floorReached', 'floorReason'],
   call: ['form', 'substance', 'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt', 'isWriter', 'attempt', 'typed'],
   ground: ['MOLD', 'DECISION_KINDS', 'RESEARCH_CONFIDENCE', 'GROUNDING_SCHEMA', 'GROUND_RESEARCH_SCHEMA', 'GROUND_RULES', 'researchRule', 'BRIE_GROUND_MAX_AGENTS', 'brieGround'],
-  checkpoint: ['stable', 'fnv1a', 'digestOf', 'matchAnswers'],
+  checkpoint: ['stable', 'fnv1a', 'digestOf', 'matchAnswers', 'isObject', 'plain', 'stateShapeErrors', 'askCheckpoint', 'needsInputResult', 'approveError', 'digestError', 'approveUsage'],
   guard: ['UNSAFE_CHECKS', 'GUARD_PREFERRED', 'unsafeCheck', 'guardedReaderReason', 'vacuousReason', 'shellWords'],
+  fanout: ['errorMessage', 'safeAgent', 'runBounded', 'chunk', 'dedupe', 'capList', 'withRedo'],
+  args: ['parseArgs'],
+  status: ['STATUS', 'finish', 'blockedResult', 'gapField', 'report', 'donePayload', 'runStatus', 'countStatuses'],
 }
-// The guard module is not marked in any workflow yet; a later change adopts it.
-const UNMARKED = ['guard']
+// These modules are not marked in any workflow yet; a later change adopts them.
+const UNMARKED = ['guard', 'fanout', 'args', 'status']
 // The guard module keeps private helpers next to the names it provides.
 const PRIVATE = {
   guard: ['hit', 'maskQuotes', 'structuralHit', 'ASSIGN_RE', 'WRAPPERS', 'WRAPPER_VALUE_OPTS', 'SHELL_KEYWORDS', 'MUTATION_COMMANDS', 'NETWORK_COMMANDS', 'FETCH_RUNNERS', 'PACKAGE_MANAGERS', 'INSTALL_SUBCOMMANDS', 'SHELL_HEAD_RE', 'CODE_HEAD_RE', 'AWK_HEAD_RE', 'AWK_DANGER_RE', 'SED_WRITE_RE', 'GIT_VALUE_OPTS', 'GIT_MUTATIONS', 'unwrap', 'gitHit', 'sedHit', 'commandHit', 'GUARD_READERS', 'GUARD_SCRIPTED', 'GUARD_VALUED_LONG', 'GUARD_WRAPPERS', 'GUARD_LISTING', 'guardedFiles', 'SEARCH_TOOLS', 'VALUE_LETTERS', 'LONG_VALUE_OPTS', 'REDIRECT_RE', 'BARE_REDIRECT_RE', 'samePath', 'guardedPath', 'searchOf', 'COMMAND_OPS', 'PIPE_SINKS', 'unparen', 'withoutRedirects', 'pipelineStages', 'exitsZero', 'cannotFail'],
 }
+// Modules that the scripts mark with a BEGIN block. A module joins this list when a script adopts it.
 const MODULES = Object.keys(PROVIDES).filter((m) => !UNMARKED.includes(m))
+const MARKED = MODULES
 
 const roots = []
 after(() => {
@@ -103,7 +108,7 @@ test('sync --check exits 0 on the repo and leaves the workflows unmodified', () 
 test('each real workflow holds one block per module and every block equals its module file', () => {
   for (const file of WORKFLOWS) {
     const text = read(file)
-    for (const name of MODULES) {
+    for (const name of MARKED) {
       const b = text.indexOf(BEGIN(name))
       const e = text.indexOf(END(name))
       assert.ok(b >= 0 && e > b, `${file} ${name}`)
@@ -117,8 +122,8 @@ test('each real workflow holds one block per module and every block equals its m
 test('each workflow declares every provided name once, inside its module block, after meta', () => {
   for (const file of WORKFLOWS) {
     const text = read(file)
-    assert.ok(text.indexOf('export const meta') < text.indexOf(BEGIN(MODULES[0])), file)
-    for (const name of MODULES) {
+    assert.ok(text.indexOf('export const meta') < text.indexOf(BEGIN(MARKED[0])), file)
+    for (const name of MARKED) {
       const b = text.indexOf(BEGIN(name))
       const e = text.indexOf(END(name))
       for (const provided of PROVIDES[name]) {
@@ -388,7 +393,7 @@ test('drift_byteInsertedInsideRealBlock_checkFailsNamingFileAndModule', () => {
   let n = 0
   for (const rel of WORKFLOWS) {
     const text = read(rel)
-    for (const name of MODULES) {
+    for (const name of MARKED) {
       const at = text.indexOf(BEGIN(name)) + BEGIN(name).length + 5
       const f = put(d, `${n++}.js`, `${text.slice(0, at)}Z${text.slice(at)}`)
       const r = run('--check', f)

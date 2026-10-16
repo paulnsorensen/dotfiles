@@ -1,4 +1,4 @@
-// module: checkpoint; provides: stable, fnv1a, digestOf, matchAnswers; requires: none
+// module: checkpoint; provides: stable, fnv1a, digestOf, matchAnswers, isObject, plain, stateShapeErrors, askCheckpoint, needsInputResult, approveError, digestError, approveUsage; requires: none
 // Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
@@ -38,4 +38,70 @@ function matchAnswers(questions, raw) {
   if (!errors.length && !byIndex.size) errors.push('answers holds no answer')
   const answers = [...byIndex.keys()].sort((a, b) => a - b).map((i) => ({ id: questions[i].id, question: questions[i].question, answer: byIndex.get(i) }))
   return { errors, answers }
+}
+
+// True for a plain object: not null and not an array.
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+// A deep copy through JSON, so a checkpoint state holds plain data only.
+const plain = (v) => JSON.parse(JSON.stringify(v))
+
+// Checks the shape of a resumed state. shape maps a key to 'array', 'object', 'string', 'boolean', 'integer', a '?' variant of one (null or undefined passes), or {type: 'integer', min, max}. Returns the error texts; none means the shape holds.
+function stateShapeErrors(state, shape, prefix = 'args.state') {
+  if (!isObject(state)) return [`${prefix} must be an object`]
+  const errors = []
+  for (const [key, spec] of Object.entries(shape)) {
+    const raw = typeof spec === 'string' ? spec : spec.type
+    const optional = raw.endsWith('?')
+    const type = optional ? raw.slice(0, -1) : raw
+    const value = state[key]
+    if (optional && value == null) continue
+    const where = `${prefix}.${key}`
+    if (type === 'array') {
+      if (!Array.isArray(value)) errors.push(`${where} must be an array`)
+    } else if (type === 'object') {
+      if (!isObject(value)) errors.push(`${where} must be an object`)
+    } else if (type === 'string') {
+      if (typeof value !== 'string') errors.push(optional ? `${where} must be a string or null` : `${where} must be a string`)
+    } else if (type === 'boolean') {
+      if (typeof value !== 'boolean') errors.push(`${where} must be a boolean`)
+    } else if (type === 'integer') {
+      const min = typeof spec === 'object' ? spec.min : undefined
+      const max = typeof spec === 'object' ? spec.max : undefined
+      if (!Number.isInteger(value) || (min !== undefined && value < min) || (max !== undefined && value > max)) {
+        const range = min !== undefined && max !== undefined ? ` from ${min} to ${max}` : min !== undefined ? ` of at least ${min}` : max !== undefined ? ` of at most ${max}` : ''
+        errors.push(`${where} must be an integer${range}`)
+      }
+    } else {
+      errors.push(`${where} has the unknown shape type ${type}`)
+    }
+  }
+  return errors
+}
+
+// Builds a needs-input checkpoint result. A checkpoint with no question cannot resume, so it carries no state or digest. stamp binds the digest to the run.
+function askCheckpoint(checkpoint, questions, state, { stamp, usage, extra = {} } = {}) {
+  const full = plain({ ...state, checkpoint, questions })
+  const resumable = full.questions.length ? { state: full, digest: digestOf({ stamp, checkpoint, state: full }) } : {}
+  return { status: 'needs-input', checkpoint, questions: full.questions, ...resumable, usage, ...extra }
+}
+
+// Builds a needs-input result for a run that resumes from a plan and its digest. fields come before usage in the result.
+function needsInputResult(questions, fields = {}, usage = '') {
+  return { status: 'needs-input', questions, ...fields, usage }
+}
+
+// The error text when a resumed plan has no approve digest, or an empty string.
+function approveError(approve, plan = 'args.plan') {
+  return approve ? '' : `${plan} needs args.approve set to the digest that the same result returned`
+}
+
+// The error text when approve is not the digest of the value, or an empty string.
+function digestError(value, approve, plan = 'args.plan') {
+  return digestOf(value) === approve ? '' : `approve does not match the digest of ${plan}; the plan changed after approval`
+}
+
+// The usage text for an approval re-run. fields names the argument fields to pass back.
+function approveUsage({ fields = 'prs: landing.inputs, plan: landing, approve: digest', land = true, revise = true } = {}) {
+  return `To execute, re-run with { ${fields} }.${land ? ' Add land:true to merge.' : ''}${revise ? ` To change the plan first, re-run with the same fields and revise: "<change>".` : ''}`
 }
