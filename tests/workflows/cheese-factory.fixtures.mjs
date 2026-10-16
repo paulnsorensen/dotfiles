@@ -16,6 +16,12 @@ export const withAdvisors = (respond) => async (call) => {
   }
 }
 
+// Verify sends every non-ci check to one judge call labeled verify, with the checks in a data block.
+// The batch answer takes each check id's verdict from table['verify:<id>'], else from fallback(id). A null leaves that id without a verdict.
+export const verifyFrom = (table, fallback) => (call) => {
+  const checks = JSON.parse(/<data name="checks">\n([\s\S]*?)\n<\/data>/.exec(call.prompt)[1])
+  return { verdicts: checks.map(({ id }) => (table[`verify:${id}`] || (() => fallback(id)))(call)).filter((v) => v != null) }
+}
 export function createRuntime({ respond, ...rest } = {}) {
   return baseRuntime({ ...rest, respond: withAdvisors(respond) })
 }

@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import test from 'node:test'
 
 import { createRuntime, loadWorkflow } from './harness.mjs'
+import { verifyFrom } from './cheese-factory.fixtures.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
@@ -34,10 +35,11 @@ async function run(over = {}, child = () => { throw new Error('no research expec
   const full = { ...table, ...over }
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({
-    respond: ({ opts }) => {
-      const fn = full[opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')]
-      if (!fn) throw new Error(`unexpected agent ${opts.label}`)
-      return fn()
+    respond: (call) => {
+      const key = call.opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')
+      const fn = full[key] || (key === 'verify' && verifyFrom(full, () => null))
+      if (!fn) throw new Error(`unexpected agent ${call.opts.label}`)
+      return fn(call)
     },
   })
   const research = []
@@ -216,4 +218,66 @@ test('research_oneChild_keepsTheFullCurdCap', async () => {
   const { promptOf } = await run({ ...multi, ground: () => ground({ research_questions: ['q1'] }) }, (q) => answer(q))
 
   assert.match(promptOf('decompose:plan'), /Return at most 12 curds/)
+})
+
+// Resume input: a blocked or budget-stopped result carries resume, and a rerun with it skips Criteria and Ground.
+async function runArgs(args, { over = {}, child = () => { throw new Error('no research expected') }, budgetTotal = null, budgetSpent = 0 } = {}) {
+  const full = { ...table, ...over }
+  const workflow = await loadWorkflow(path)
+  const { globals, trace } = createRuntime({
+    respond: (call) => {
+      const key = call.opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')
+      const fn = full[key] || (key === 'verify' && verifyFrom(full, () => null))
+      if (!fn) throw new Error(`unexpected agent ${call.opts.label}`)
+      return fn(call)
+    },
+    budgetTotal,
+    budgetSpent,
+  })
+  const research = []
+  const result = await workflow.run({ ...globals, args, workflow: async (name, q) => { research.push(q); return child(q) } })
+  return { result: JSON.parse(JSON.stringify(result)), labels: trace.agents.map(({ opts }) => opts.label), research }
+}
+
+test('resume_failedResearch_returnsResume_andTheRerunSkipsGroundButRetriesTheQuestion', async () => {
+  const blocked = await runArgs({ spec: 'parent' }, { over: { ground: () => ground({ decisions: [decision], research_questions: ['Is X current?'] }) }, child: () => { throw new Error('tavily down') } })
+
+  assert.equal(blocked.result.status, 'blocked')
+  const { resume } = blocked.result
+  assert.deepEqual(resume.research_questions, ['Is X current?'])
+  assert.deepEqual(resume.grounding.decisions, [{ id: 'D-1', ...decision }])
+  assert.deepEqual(resume.criteria.map((c) => c.id), ['AC-1'])
+
+  const rerun = await runArgs({ spec: 'parent', resume }, { child: (q) => answer(q) })
+  assert.equal(rerun.result.status, 'ok')
+  assert.deepEqual(rerun.research, ['Is X current?'])
+  assert.ok(!rerun.labels.includes('ground') && !rerun.labels.includes('criteria'), rerun.labels.join(','))
+  assert.deepEqual(rerun.result.grounding.decisions, [{ id: 'D-1', ...decision }])
+})
+
+test('resume_preCookFloor_returnsResume_andTheRerunSkipsGround', async () => {
+  const stopped = await runArgs({ spec: 'parent' }, { budgetTotal: 100000, budgetSpent: 60000 })
+
+  assert.match(stopped.result.reason, /budget floor reached before Cook/)
+  assert.deepEqual(stopped.result.resume.research_questions, [])
+
+  const rerun = await runArgs({ spec: 'parent', resume: stopped.result.resume })
+  assert.equal(rerun.result.status, 'ok')
+  assert.deepEqual(rerun.labels.slice(0, 2), ['resolve', 'advise:plan'])
+})
+
+test('resume_forAChangedSpec_isRejectedBeforeAnyAgentButResolve', async () => {
+  const stopped = await runArgs({ spec: 'parent' }, { budgetTotal: 100000, budgetSpent: 60000 })
+  const rerun = await runArgs({ spec: 'parent', resume: { ...stopped.result.resume, spec_digest: 'stale' } })
+
+  assert.match(rerun.result.error, /resume does not match the spec/)
+  assert.deepEqual(rerun.labels, ['resolve'])
+})
+
+test('resume_malformed_returnsUsage', async () => {
+  const { result, labels } = await runArgs({ spec: 'parent', resume: { criteria: 'x' } })
+
+  assert.match(result.error, /resume must be the resume object/)
+  assert.match(result.usage, /resume/)
+  assert.deepEqual(labels, [])
 })
