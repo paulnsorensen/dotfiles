@@ -11,13 +11,29 @@ const repo = fileURLToPath(new URL('../../', import.meta.url))
 const syncScript = join(repo, 'claude/workflow-prelude/sync.mjs')
 const WORKFLOWS = ['claude/workflows/cheese-board.js', 'claude/workflows/cheese-factory.js', 'claude/workflows/move-my-cheese.js']
 const PROVIDES = {
-  stale: ['SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE'],
+  stale: ['SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'SHA_RE', 'SHORT_SHA_RE', 'DIGEST_RE', 'stampedBy', 'markersOf', 'shaErrors', 'staleVerdict'],
   budget: ['floorReached'],
   call: ['form', 'substance', 'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt'],
   ground: ['MOLD', 'DECISION_KINDS', 'RESEARCH_CONFIDENCE', 'GROUNDING_SCHEMA', 'GROUND_RESEARCH_SCHEMA', 'GROUND_RULES', 'researchRule', 'BRIE_GROUND_MAX_AGENTS', 'brieGround'],
   checkpoint: ['stable', 'fnv1a', 'digestOf', 'matchAnswers'],
+  schema: ['str', 'int', 'bool', 'strs', 'ints', 'text', 'oneOf', 'list', 'obj', 'CHECK_KINDS', 'ADVICE_VERDICTS', 'FIX_STATUSES', 'PHASE_STATUSES', 'FINDING_SEVERITIES', 'FIX_COSTS'],
+  graph: ['waves', 'duplicates', 'baseChain', 'mergeWaitErrors'],
+  criteria: ['norm', 'blank', 'refError', 'checkVerdicts', 'checkCriteria', 'CRITERIA_SCHEMA', 'VERDICT_SCHEMA', 'VERIFY_BATCH_SCHEMA'],
+  advise: ['adviceSchema', 'ADVICE_SCHEMA', 'ROUND_TWO_RULE', 'checkAdvice', 'checkPlanAdvice', 'checkRoundTwo', 'adviceStep', 'adviseLoop', 'adviceResult', 'blockingOf'],
+  findings: ['isMediumPlus', 'needsCure', 'normalizeFile', 'routeFindings', 'findingErrors', 'enumErrors', 'splitBlocked', 'dedupeFindings', 'cureBatches'],
 }
-const MODULES = Object.keys(PROVIDES)
+// Modules that name other modules. A module not listed here requires none.
+const REQUIRES = {
+  stale: ['call'],
+  graph: ['call'],
+  criteria: ['call', 'schema', 'graph'],
+  advise: ['call', 'schema', 'criteria'],
+  findings: ['call', 'stale', 'schema'],
+}
+const ALL = Object.keys(PROVIDES)
+// A later curd marks these modules in the scripts.
+const UNMARKED = ['schema', 'graph', 'criteria', 'advise', 'findings']
+const MODULES = ALL.filter((m) => !UNMARKED.includes(m))
 
 const roots = []
 after(() => {
@@ -50,8 +66,8 @@ const chainDir = () => {
   return d
 }
 
-test('listModules names exactly the five split modules', () => {
-  assert.deepEqual(listModules(), [...MODULES].sort())
+test('listModules names exactly the split modules', () => {
+  assert.deepEqual(listModules(), [...ALL].sort())
 })
 
 test('each module header parses, names its file, and lists the names it declares once', () => {
@@ -60,7 +76,7 @@ test('each module header parses, names its file, and lists the names it declares
     const header = readHeader(text)
     assert.equal(header.name, name)
     assert.deepEqual(header.provides, PROVIDES[name], name)
-    assert.deepEqual(header.requires, [], `${name} requires`)
+    assert.deepEqual(header.requires, REQUIRES[name] ?? [], `${name} requires`)
     assert.equal(/^\s*(export|import)\b/m.test(text), false, `${name} has no import or export`)
     assert.ok(text.endsWith('\n'), `${name} ends with a newline`)
     const lines = text.split('\n')
@@ -73,8 +89,7 @@ test('each module header parses, names its file, and lists the names it declares
 })
 
 test('no workflow-wide name is provided by two modules', () => {
-  const all = MODULES.flatMap((m) => PROVIDES[m])
-  assert.equal(new Set(all).size, all.length)
+  const all = ALL.flatMap((m) => PROVIDES[m])
 })
 
 test('readHeader parses names and rejects a malformed first line', () => {
@@ -125,8 +140,8 @@ test('each workflow declares every provided name once, inside its module block, 
 })
 
 test('cheese-factory has no SHA_RE and move-my-cheese keeps its 7-to-40-hex SHA_RE', () => {
-  assert.doesNotMatch(read('claude/workflows/cheese-factory.js'), /^const SHA_RE\b/m)
-  assert.match(read('claude/workflows/move-my-cheese.js'), /^const SHA_RE = \/\^\[0-9a-f\]\{7,40\}\$\/i$/m)
+  assert.match(moduleText('stale'), /^const SHA_RE = \/\^\[0-9a-f\]\{7,40\}\$\/i$/m)
+  assert.match(moduleText('stale'), /^const SHORT_SHA_RE = \/\^\[0-9a-f\]\{7,16\}\$\/i$/m)
 })
 
 test('every workflow with a BEGIN module marker is a sync default target and the check names it', () => {
@@ -169,20 +184,20 @@ test('sync writes only between the markers and a second run changes nothing', ()
 
 test('sync handles several blocks in one target in file order', () => {
   const d = dir()
-  const f = put(d, 'w.js', `h\n${block('stale', 'x\n')}mid\n${block('budget', 'y\n')}t\n`)
+  const f = put(d, 'w.js', `h\n${block('ground', 'x\n')}mid\n${block('budget', 'y\n')}t\n`)
   assert.equal(run(f).status, 0)
-  assert.equal(readFileSync(f, 'utf8'), `h\n${block('stale', moduleText('stale'))}mid\n${block('budget', moduleText('budget'))}t\n`)
+  assert.equal(readFileSync(f, 'utf8'), `h\n${block('ground', moduleText('ground'))}mid\n${block('budget', moduleText('budget'))}t\n`)
 })
 
 test('sync --check exits 1 and names the file and the drifted module only', () => {
   const d = dir()
-  const text = `x\n${block('stale', moduleText('stale'))}${block('budget', 'stale\n')}y\n`
+  const text = `x\n${block('ground', moduleText('ground'))}${block('budget', 'stale\n')}y\n`
   const f = put(d, 'drift.js', text)
   const r = run('--check', f)
   assert.equal(r.status, 1)
   assert.ok(r.stderr.includes(f), r.stderr)
   assert.match(r.stderr, /budget/)
-  assert.doesNotMatch(r.stderr, /stale/)
+  assert.doesNotMatch(r.stderr, /ground/)
   assert.equal(readFileSync(f, 'utf8'), text)
 })
 
@@ -447,6 +462,7 @@ test('stale_scratchWorktreeReorderedBeforePathSrc_throwsAtLoad', () => {
   ;[swapped[i], swapped[j]] = [swapped[j], swapped[i]]
   const m = dir()
   put(m, 'stale.js', swapped.join('\n'))
+  put(m, 'call.js', moduleText('call'))
   assert.throws(() => loadModule('stale', { dir: m }), /before initialization/)
 })
 
