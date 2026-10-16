@@ -119,7 +119,7 @@ test('no workflow-wide name is provided by two modules', () => {
 test('readHeader parses names and rejects a malformed first line', () => {
   assert.deepEqual(readHeader('// module: m; provides: a, b; requires: x, y\nconst a = 1\n'), { name: 'm', provides: ['a', 'b'], requires: ['x', 'y'] })
   assert.deepEqual(readHeader('// module: m; provides: a; requires: none\n').requires, [])
-  for (const bad of ['', 'const a = 1', '// module: m; provides: a', '// module: m; provides: ; requires: none', '\n// module: m; provides: a; requires: none']) {
+  for (const bad of ['', 'const a = 1', '// module: m; provides: a', '// module: m; provides: ; requires: none', '\n// module: m; provides: a; requires: none', '// module: m; provides: a-b; requires: none']) {
     assert.throws(() => readHeader(bad), /module header/, JSON.stringify(bad))
   }
 })

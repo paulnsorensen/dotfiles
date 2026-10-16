@@ -20,7 +20,8 @@ export function readHeader(src) {
   if (!m) throw new Error('module header must be: // module: <name>; provides: a, b; requires: x, y (or requires: none)')
   const provides = names(m[2])
   const requires = names(m[3])
-  if (!provides.length || [...provides, ...requires].some((n) => !/^[A-Za-z_$][\w$]*$|^[A-Za-z][\w-]*$/.test(n))) {
+  // provides names are JS identifiers; requires names are module names, which may hold a dash.
+  if (!provides.length || provides.some((n) => !/^[A-Za-z_$][\w$]*$/.test(n)) || requires.some((n) => !/^[A-Za-z][\w-]*$/.test(n))) {
     throw new Error(`module header lists a bad name: ${m[0]}`)
   }
   return { name: m[1], provides, requires }
