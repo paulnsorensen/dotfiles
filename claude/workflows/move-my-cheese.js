@@ -1462,22 +1462,6 @@ function checkLanding(landing) {
   return errors
 }
 
-// A moved head is stale unless this approval's own stamp names it. A keep-only plan survives a moved
-// default branch, and so does a plan this approval already started.
-function staleReasons(landing, prs, baseSha, digest) {
-  const reasons = []
-  const current = prs.map((p) => p.number).sort(ascending)
-  if (stable(current) !== stable([...landing.inputs].sort(ascending))) reasons.push(`the landable PR set is now ${current.join(', ') || 'empty'}`)
-  for (const p of prs) {
-    const planned = landing.recon.heads[String(p.number)]
-    if (planned !== p.head_sha && !stampedBy(p, digest)) reasons.push(`#${p.number} head moved from ${planned || 'unknown'} to ${p.head_sha}`)
-  }
-  const reshapes = landing.plan.dispositions.some((d) => d.action !== 'keep') || landing.plan.targets.some((t) => t.kind === 'new')
-  const started = prs.some((p) => p.landing_digest === digest)
-  if (reshapes && !started && landing.recon.base_sha !== baseSha) reasons.push(`the default branch moved from ${landing.recon.base_sha} to ${baseSha}`)
-  return reasons
-}
-
 // ---- Stack and overlap facts, computed in code ----
 function expandStacks(seed, openPrs) {
   const byNumber = new Map(openPrs.map((p) => [p.number, p]))
@@ -1945,6 +1929,45 @@ async function advise(stage, label, payload) {
   return value
 }
 
+// ---- wfx calls: a runner agent runs one fixed command and returns the JSON envelope that it prints ----
+const ENVELOPE_SCHEMA = {
+  type: 'object',
+  required: ['ok', 'cmd'],
+  properties: {
+    ok: bool,
+    cmd: str,
+    data: { type: 'object' },
+    error: { type: 'object', required: ['code', 'message'], properties: { code: str, message: str } },
+  },
+}
+
+function checkEnvelope(env) {
+  if (env.ok === true && !isObject(env.data)) return [substance('an ok envelope needs a data object')]
+  if (env.ok === false && !(isObject(env.error) && typeof env.error.code === 'string')) return [substance('a failed envelope needs a string error.code')]
+  return []
+}
+
+const wfxPrompt = (command) => prompt('Run exactly this one command and nothing else, in the repository checkout. Return the JSON envelope it prints, unchanged.', 'Command: ' + command)
+
+// Returns the envelope. A call that yields no valid envelope becomes a failed envelope with code no-envelope.
+async function wfx(label, phaseName, command) {
+  const { value, errors } = await typed(wfxPrompt(command),
+    { label, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: ENVELOPE_SCHEMA }, checkEnvelope)
+  return value || { ok: false, cmd: label, error: { code: 'no-envelope', message: errorText(errors) } }
+}
+
+// The landing id names the saved plan: a digest of the PR set and the base, so a fold keeps it.
+const landingIdOf = (l) => digestOf({ prs: [...l.inputs].sort(ascending), base: l.recon.base_sha })
+
+// Saves the landing for a later { prs, landing, approve } hop. Returns the landing id, or '' when the save fails.
+async function saveLanding(landingObj) {
+  const id = landingIdOf(landingObj)
+  const saved = await wfx('state:put', 'Plan', `printf '%s' ${shq(JSON.stringify(landingObj))} | wfx run-state put --landing ${id} --key plan`)
+  if (saved.ok) return id
+  log(`state:put failed: ${saved.error.message}`)
+  return ''
+}
+
 // ---- Target builds: checkpoint continuation with a no-progress guard ----
 function normalizeTask(result) {
   if (result == null) return { status: 'missing' }
@@ -2328,14 +2351,38 @@ const EXPAND_STACKS = input.expandStacks !== false
 const ALLOW_NO_CHECKS = input.allowNoChecks === true
 const MERGE_METHOD = input.mergeMethod === undefined ? 'squash' : input.mergeMethod
 if (!MERGE_METHODS.includes(MERGE_METHOD)) return { status: 'blocked', error: `mergeMethod must be one of ${MERGE_METHODS.join(', ')}` }
-const APPROVED = input.plan === undefined ? null : input.plan
+let APPROVED = input.plan === undefined ? null : input.plan
+const LANDING_ID = typeof input.landing === 'string' ? input.landing.trim() : ''
+if (input.landing !== undefined && !DIGEST_RE.test(LANDING_ID)) return { status: 'blocked', error: 'args.landing must be the landing_id of a needs-approval result: 16 lowercase hex digits' }
+if (LANDING_ID && input.plan !== undefined) return { status: 'blocked', error: 'pass args.landing or args.plan, not both' }
 const APPROVE = typeof input.approve === 'string' ? input.approve.trim() : ''
+
+// ---- Preflight: the tools and the checkout must work before any other agent runs ----
+if (requested.length || DESCRIPTION || input.plan !== undefined || input.landing !== undefined) {
+  phase('Recon')
+  const pre = await wfx('preflight', 'Recon', 'wfx preflight --worktree "$(git rev-parse --show-toplevel)" --need git,node,wfx,gh')
+  if (!pre.ok) {
+    const failed = ((pre.error.details && pre.error.details.checks) || []).filter((c) => !c.ok).map((c) => c.name)
+    if (!failed.length) failed.push(pre.error.code)
+    return { status: 'blocked', reason: `preflight failed: ${failed.join(', ')}`, preflight: { ok: false, failed } }
+  }
+}
+
+// The landing hop reads the plan that an earlier needs-approval result saved.
+if (LANDING_ID) {
+  const saved = await wfx('state:get', 'Recon', `wfx run-state get --landing ${LANDING_ID} --key plan`)
+  if (!saved.ok) return { status: 'blocked', error: `the saved plan for landing ${LANDING_ID} is unavailable: ${saved.error.message}` }
+  if (!isObject(saved.data.value)) return { status: 'blocked', error: `the saved plan for landing ${LANDING_ID} is not an object` }
+  APPROVED = saved.data.value
+}
+const PLAN_NAME = LANDING_ID ? 'the saved plan' : 'args.plan'
 if (APPROVED !== null) {
   if (DESCRIPTION) return { status: 'blocked', error: 'args.plan takes PR numbers, not a description; pass prs: landing.inputs' }
   const shapeErrors = checkLanding(APPROVED)
-  if (shapeErrors.length) return { status: 'blocked', error: `args.plan is not a landing object from a needs-approval or needs-input result: ${shapeErrors.slice(0, 5).join('; ')}` }
-  const approveProblem = approveError(APPROVE) || digestError(APPROVED, APPROVE)
+  if (shapeErrors.length) return { status: 'blocked', error: `${PLAN_NAME} is not a landing object from a needs-approval or needs-input result: ${shapeErrors.slice(0, 5).join('; ')}` }
+  const approveProblem = approveError(APPROVE) || digestError(APPROVED, APPROVE, PLAN_NAME)
   if (approveProblem) return { status: 'blocked', error: approveProblem }
+  if (LANDING_ID && landingIdOf(APPROVED) !== LANDING_ID) return { status: 'blocked', error: 'the saved plan does not match args.landing' }
   if (requested.length && stable(requested) !== stable([...APPROVED.inputs].sort(ascending))) return { status: 'blocked', error: 'args.prs differs from the inputs of the approved plan' }
 }
 const ANSWERS = input.answers === undefined ? null : input.answers
@@ -2465,7 +2512,7 @@ const groundingContext = (g) => (g ? {
 const STOP_USAGE = 'The advisor stopped the run; advice lists its concerns. Fix the cause, then re-run with { prs } for a new plan, or add revise: "<change>" to a re-run with { prs: landing.inputs, plan: landing, approve: digest }.'
 // A stop on the first plan has no landing yet, so the only resume is a new plan.
 const PLAN_STOP_USAGE = 'The advisor stopped the run; advice lists its concerns and candidates holds the drafted plans. Fix the cause, then re-run with { prs } for a new plan.'
-const APPROVE_USAGE = approveUsage()
+const APPROVE_USAGE = `${approveUsage({ fields: 'prs: landing.inputs, landing: landing_id, approve: digest' })} The long form { prs: landing.inputs, plan: landing, approve: digest } still works.`
 const needsInput = (questions) => needsInputResult(
   questions,
   { plan_source: planSource, digest, landing, advice: adviceLog, skipped, ...gapField() },
@@ -2506,16 +2553,61 @@ async function advisePlans(pool, context, ctx, labelPrefix, user) {
   }
 }
 
+// Checks the approved plan against the live repo. Returns the reasons that need a new plan; an empty list means go on.
+// A moved head or PR set needs a new plan. A moved default branch needs one only when it touches a plan file.
+// A moved branch that touches no plan file is restacked, and the PR heads update in place; APPROVED stays unchanged.
+// A keep-only plan, and a plan that this approval already started, ignore a moved default branch.
+async function checkFresh(started, keepOnly) {
+  const repo = '"$(git rev-parse --show-toplevel)"'
+  const snapshot = { base: APPROVED.recon.base_sha, heads: APPROVED.recon.heads, files: [...new Set(active.flatMap((p) => p.files))] }
+  const liveHeads = new Map(active.map((p) => [String(p.number), p.head_sha]))
+  let liveBase = idx.base_sha.trim()
+  const direct = active.filter((p) => p.base === idx.default_branch)
+  if (direct.length) {
+    const env = await wfx('stale:recon', 'Recon', `wfx recon --prs ${direct.map((p) => p.number).join(',')}`)
+    if (!env.ok) return [`the live recon failed: ${env.error.message}`]
+    liveBase = env.data.base.sha
+    for (const p of env.data.prs) liveHeads.set(String(p.number), p.head.sha)
+  }
+  // The stamp of this approval records a head that the approval itself published.
+  for (const p of active) if (stampedBy(p, APPROVE)) liveHeads.set(String(p.number), snapshot.heads[String(p.number)] ?? p.head_sha)
+  const heads = Object.fromEntries(liveHeads)
+  const first = staleVerdict(snapshot, { base: snapshot.base, heads }, null)
+  if (first.verdict === 'replan') return first.reasons
+  if (keepOnly || started || liveBase === snapshot.base) return []
+  if (!FULL_SHA_RE.test(liveBase) || !FULL_SHA_RE.test(snapshot.base)) return [`the base moved from ${snapshot.base} to ${liveBase}; a SHA is malformed`]
+  const probed = await wfx('stale:probe', 'Recon', `git fetch --quiet origin && wfx probe --repo ${repo} --range ${snapshot.base}..${liveBase}`)
+  const verdict = staleVerdict(snapshot, { base: liveBase, heads }, probed.ok && Array.isArray(probed.data.files) ? probed.data.files : null)
+  if (verdict.verdict === 'replan') return verdict.reasons
+  const targets = APPROVED.plan.targets.filter((t) => t.kind === 'existing')
+  if (targets.some((t) => t.base !== idx.default_branch)) return [`the base moved from ${snapshot.base} to ${liveBase}; a stacked PR needs a restack, so plan again`]
+  const moved = []
+  for (const t of targets) {
+    const pr = byNumber.get(t.pr)
+    const res = await wfx(`stale:restack:${t.branch}`, 'Recon', `git fetch --quiet origin ${shq(`${t.branch}:${t.branch}`)} && wfx restack --repo ${repo} --branch ${shq(t.branch)} --onto ${liveBase} --push --expect ${pr.head_sha}`)
+    if (!res.ok) return [`restack of ${t.branch} failed (${res.error.code}): ${res.error.message}`]
+    if (!FULL_SHA_RE.test(res.data.new)) return [`restack of ${t.branch} returned no full head SHA`]
+    moved.push({ pr, sha: res.data.new })
+  }
+  if (moved.length) {
+    const conflict = await wfx('stale:probe:conflict', 'Recon', `wfx probe --repo ${repo} --base ${liveBase} ${moved.map((m) => `--head ${m.sha}`).join(' ')}`)
+    if (!conflict.ok) return [`the conflict probe failed: ${conflict.error.message}`]
+    if (conflict.data.conflicts.length) return [`the restacked heads conflict: ${conflict.data.conflicts.map((c) => `${c.a} with ${c.b}`).join('; ')}`]
+    for (const m of moved) m.pr.head_sha = m.sha
+  }
+  return []
+}
+
 if (APPROVED) {
   digest = APPROVE
-  // An adopted PR means this approval already started, so a moved default branch is expected.
-  const stale = staleReasons(APPROVED, active, adopted.size ? APPROVED.recon.base_sha : idx.base_sha.trim(), APPROVE)
+  const started = adopted.size > 0 || active.some((p) => p.landing_digest === APPROVE)
+  const keepOnly = !APPROVED.plan.dispositions.some((d) => d.action !== 'keep') && !APPROVED.plan.targets.some((t) => t.kind === 'new')
+  const stale = await checkFresh(started, keepOnly)
   if (stale.length) return { status: 'needs-replan', reasons: stale, skipped, usage: 'Re-run with { prs } to plan against the current state.' }
   const ctx = planCtx(APPROVED.tensions.map((t) => t.id))
   const flaws = checkPlan(APPROVED.plan, ctx)
   const folding = answered.length > 0 || Boolean(REVISION)
   // A fold mints a new digest, but the stamps and adoption of a started approval name this one.
-  const started = adopted.size > 0 || active.some((p) => p.landing_digest === APPROVE)
   if (folding && started) return { status: 'blocked', error: 'this approval already started; resume without revise or answers, or plan again with { prs }', skipped }
   // A fold never executes and its result passes checkPlan, so it may repair a plan that a newer check rejects.
   if (flaws.length && !folding) return { status: 'blocked', error: `the approved plan no longer validates: ${errorText(flaws)}. Re-run with revise: "<change>" to repair it, or with { prs } to plan again.`, skipped }
@@ -2551,7 +2643,7 @@ if (APPROVED) {
     if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
     if (plan.open_questions.length) return needsInput(plan.open_questions)
     const reason = 'review the revised plan; the advisor approved it'
-    return { status: 'needs-approval', reason, plan_source: planSource, digest, landing, answers: answered, revision: REVISION, estimate: estimateOf(plan), advice: adviceLog, skipped, usage: APPROVE_USAGE }
+    return { status: 'needs-approval', reason, plan_source: planSource, digest, landing, landing_id: await saveLanding(landing), answers: answered, revision: REVISION, estimate: estimateOf(plan), advice: adviceLog, skipped, usage: APPROVE_USAGE }
   }
 } else {
   phase('Survey')
@@ -2661,7 +2753,7 @@ if (APPROVED) {
     return {
       status: 'needs-approval',
       reason: AUTO ? `auto does not push to or merge PRs by other authors without approval: #${othersTouched.join(', #')}` : 'review the landing plan',
-      plan_source: planSource, digest, landing, estimate: estimateOf(chosenPlan), advice: adviceLog, skipped, ...gapField(),
+      plan_source: planSource, digest, landing, landing_id: await saveLanding(landing), estimate: estimateOf(chosenPlan), advice: adviceLog, skipped, ...gapField(),
       usage: APPROVE_USAGE,
     }
   }

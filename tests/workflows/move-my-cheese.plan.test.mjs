@@ -4,7 +4,7 @@ import test from 'node:test'
 
 import {
   aged, approve, consolidatePlan, detail, index, keepPlan, minimalPlan, noTensions, openPr, plain, planRoutes,
-  reconRoutes, run, sha, survey, tension,
+  envelope, liveRecon, reconRoutes, run, sha, survey, tension,
 } from './move-my-cheese.fixtures.mjs'
 
 test('invalid args block before any agent runs', async () => {
@@ -185,16 +185,21 @@ test('an approved plan edited after approval is refused before any agent runs', 
 
 test('a moved head turns an approved plan into needs-replan', async () => {
   const { args } = await approve(planRoutes())
-  const { result } = await run(args, planRoutes([['recon:detail', { prs: [detail(1, { head_sha: sha(1, 9) }), detail(2)] }]]))
+  // The live recon is the source for the heads, so the move shows there.
+  const { result } = await run(args, planRoutes([['stale:recon', liveRecon({ heads: { 1: sha(1, 9) } })]]))
   assert.equal(result.status, 'needs-replan')
   assert.match(result.reasons.join(' '), /#1 head moved/)
 })
 
-test('a moved default branch turns a reshaping plan into needs-replan', async () => {
+// The old rule replanned on every base move of a reshaping plan; the new rule replans only when the move touches a plan file.
+test('a moved default branch that changes a plan file turns the plan into needs-replan', async () => {
   const { args } = await approve(planRoutes())
-  const { result } = await run(args, planRoutes([['recon:index', index([openPr(1), openPr(2)], { base_sha: 'c'.repeat(40) })]]))
+  const { result } = await run(args, planRoutes([
+    ['stale:recon', liveRecon({ base: 'c'.repeat(40) })],
+    ['stale:probe', envelope('probe', { files: ['src/1.js'] })],
+  ]))
   assert.equal(result.status, 'needs-replan')
-  assert.match(result.reasons.join(' '), /default branch moved/)
+  assert.match(result.reasons.join(' '), /base moved.*plan files: src\/1\.js/)
 })
 
 test('auto still stops for approval when the plan reshapes another author\'s PR', async () => {
