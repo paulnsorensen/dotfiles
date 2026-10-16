@@ -45,7 +45,7 @@ Source of truth is `claude/workflows/*.js`. `dots sync` copies the whole dir int
 - 19 of 28 move-my-cheese runs were gate hops with no build, because a Workflow cannot pause and the caller round-trips the plan.
 - The auto-mode classifier denies a relaunch of an edited `scriptPath` copy as `[Self-Modification]`. Edit the source, `dots sync`, and relaunch by name.
 
-**Parallel writers and checkpoint cost (session analytics, 2026-10-12 to 2026-10-16):** 48 move-my-cheese runs over 7 sessions landed no plan end to end. 27 of 48 runs (56%) were gate hops, and each hop reran survey, the planners, and the advisor. The skill's fan-out sources cover read-heavy work, so they did not cover parallel writers on shared git state. The skill now asks for these rules:
+**Parallel writers and checkpoint cost (session analytics, 2026-10-12 to 2026-10-16):** 48 move-my-cheese runs over 7 sessions landed no plan end to end. From 2026-10-12 to 2026-10-15, 20 of 36 runs that returned a result (56%) were gate hops, and each hop reran survey, the planners, and the advisor. The skill's fan-out sources cover read-heavy work, so they did not cover parallel writers on shared git state. The skill now asks for these rules:
 
 - A preflight stage checks the interpreter, the test runner, `gh` auth, and the host guards before the first planner. Judges ran a Python without pytest and recorded 12 false failures.
 - Writers integrate in task-graph order, with a conflict probe after each target, not at one final barrier. A plan that waits for a merge after publish is rejected.

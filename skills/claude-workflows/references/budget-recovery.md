@@ -43,7 +43,7 @@ The default branch or a PR head can move during a run or between runs. Do not re
 3. An unrelated merge to the default branch does not make an approved plan stale.
 
 Evidence: from 2026-10-11 to 2026-10-14, 19 of 28 move-my-cheese runs ended at a gate before any build. Each rerun repeated Recon, and the caller sent the full plan object back each time.
-From 2026-10-12 to 2026-10-16, 27 of 48 runs (56%) were designed gate hops. Each hop was a new run that reran survey, the planners, and the advisor. Approved plans returned `needs-replan` when the default branch or a PR head SHA moved, also for unrelated merges. Background runs died with the parent session.
+From 2026-10-12 to 2026-10-15, 20 of 36 runs that returned a result (56%) were designed gate hops. Each hop was a new run that reran survey, the planners, and the advisor. Approved plans returned `needs-replan` when the default branch or a PR head SHA moved, also for unrelated merges. Background runs died with the parent session.
 
 ## Status contract
 
