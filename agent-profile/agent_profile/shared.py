@@ -80,12 +80,13 @@ def _covers(entry: str, tool: str) -> bool:
     return entry.endswith("*") and tool.startswith(entry[:-1])
 
 
-def _write_tool_available(tool: str, tools: tuple, disallowed: tuple) -> bool:
+def _write_tool_available(tool: str, tools: tuple | None, disallowed: tuple) -> bool:
     """True when ``tool`` is still reachable under an agent's tool config."""
     if any(_covers(d, tool) for d in disallowed):
         return False
     # A whitelist, when present, is exhaustive: anything unlisted is denied.
-    return not tools or any(_covers(t, tool) for t in tools)
+    # An explicit empty whitelist grants no tools.
+    return tools is None or any(_covers(t, tool) for t in tools)
 
 
 def agent_is_read_only(item: dict[str, Any]) -> bool:
@@ -102,7 +103,7 @@ def agent_is_read_only(item: dict[str, Any]) -> bool:
     An agent that declares neither signal keeps every write tool, so it is
     writable and no sandbox is imposed."""
     disallowed = tuple(item.get("disallowedTools") or ())
-    tools = tuple(item.get("tools") or ())
+    tools = None if item.get("tools") is None else tuple(item["tools"])
     return not any(
         _write_tool_available(w, tools, disallowed) for w in _WRITE_TOOLS
     )
@@ -130,9 +131,10 @@ def claude_agent_frontmatter(item: dict[str, Any]) -> dict[str, str]:
     desc = item.get("description") or ""
     if desc:
         fm["description"] = desc
-    tools = item.get("tools") or []
-    if tools:
-        fm["tools"] = ", ".join(tools)
+    tools = item.get("tools")
+    if tools is not None:
+        # An explicit empty list grants no tools; an omitted key inherits all.
+        fm["tools"] = ", ".join(tools) if tools else "[]"
     disallowed = item.get("disallowedTools") or []
     if disallowed:
         fm["disallowedTools"] = f"[{', '.join(disallowed)}]"
