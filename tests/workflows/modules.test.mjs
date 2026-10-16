@@ -16,7 +16,7 @@ const SLIM = ['claude/workflows/verify-criteria.js']
 const ADOPTED = {
   'claude/workflows/cheese-board.js': ['schema', 'graph', 'criteria', 'advise', 'status'],
   'claude/workflows/sliced-bread-audit.js': ['budget', 'fanout'],
-  'claude/workflows/brie-ground.js': ['budget', 'fanout', 'ground'],
+  'claude/workflows/brie-ground.js': ['budget', 'fanout', 'mold'],
   'claude/workflows/age-fanout.js': ['budget', 'call', 'schema', 'fanin'],
   'claude/workflows/cheese-factory.js': ['guard', 'schema', 'graph', 'criteria', 'advise', 'findings', 'status'],
   'claude/workflows/hill-climb-threads.js': ['fanout'],
@@ -27,7 +27,8 @@ const PROVIDES = {
   stale: ['SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'SHA_RE', 'SHORT_SHA_RE', 'DIGEST_RE', 'stampedBy', 'markersOf', 'shaErrors', 'staleVerdict'],
   budget: ['DEFAULT_LIMITS', 'floorReached', 'floorReason'],
   call: ['form', 'substance', 'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt', 'isWriter', 'attempt', 'typed', 'unwrapEnvelope', 'wfxCommandOf'],
-  ground: ['MOLD', 'DECISION_KINDS', 'RESEARCH_CONFIDENCE', 'GROUNDING_SCHEMA', 'GROUND_RESEARCH_SCHEMA', 'GROUND_RULES', 'researchRule', 'BRIE_GROUND_MAX_AGENTS', 'brieGround'],
+  mold: ['MOLD', 'DECISION_KINDS', 'RESEARCH_CONFIDENCE'],
+  ground: ['GROUNDING_SCHEMA', 'GROUND_RESEARCH_SCHEMA', 'GROUND_RULES', 'researchRule', 'BRIE_GROUND_MAX_AGENTS', 'brieGround'],
   checkpoint: ['stable', 'fnv1a', 'digestOf', 'matchAnswers', 'isObject', 'plain', 'stateShapeErrors', 'askCheckpoint', 'needsInputResult', 'approveError', 'digestError', 'approveUsage'],
   guard: ['UNSAFE_CHECKS', 'GUARD_PREFERRED', 'unsafeCheck', 'guardedReaderReason', 'vacuousReason', 'shellWords'],
   fanout: ['errorMessage', 'safeAgent', 'runBounded', 'chunk', 'dedupe', 'capList', 'withRedo'],
@@ -47,6 +48,7 @@ const REQUIRES = {
   criteria: ['call', 'schema', 'graph'],
   advise: ['call', 'schema', 'criteria'],
   findings: ['call', 'stale', 'schema'],
+  ground: ['mold'],
 }
 const ALL = Object.keys(PROVIDES)
 // These modules are not marked in any workflow yet; a later change adopts them.
@@ -241,14 +243,14 @@ test('sync writes only between the markers and a second run changes nothing', ()
 
 test('sync handles several blocks in one target in file order', () => {
   const d = dir()
-  const f = put(d, 'w.js', `h\n${block('ground', 'x\n')}mid\n${block('budget', 'y\n')}t\n`)
+  const f = put(d, 'w.js', `h\n${block('mold', 'x\n')}mid\n${block('budget', 'y\n')}t\n`)
   assert.equal(run(f).status, 0)
-  assert.equal(readFileSync(f, 'utf8'), `h\n${block('ground', moduleText('ground'))}mid\n${block('budget', moduleText('budget'))}t\n`)
+  assert.equal(readFileSync(f, 'utf8'), `h\n${block('mold', moduleText('mold'))}mid\n${block('budget', moduleText('budget'))}t\n`)
 })
 
 test('sync --check exits 1 and names the file and the drifted module only', () => {
   const d = dir()
-  const text = `x\n${block('ground', moduleText('ground'))}${block('budget', 'stale\n')}y\n`
+  const text = `x\n${block('mold', moduleText('mold'))}${block('budget', 'stale\n')}y\n`
   const f = put(d, 'drift.js', text)
   const r = run('--check', f)
   assert.equal(r.status, 1)

@@ -15,7 +15,7 @@ const plain = (v) => JSON.parse(JSON.stringify(v))
 test('groundingSchema_requiresDecisionsAndPriorResearchWithKnownKinds', () => {
   const { m } = load(() => null)
   assert.deepEqual(m.GROUNDING_SCHEMA.required, ['decisions', 'prior_research'])
-  assert.deepEqual(m.GROUNDING_SCHEMA.properties.decisions.items.properties.kind.enum, m.DECISION_KINDS)
+  assert.deepEqual(m.GROUNDING_SCHEMA.properties.decisions.items.properties.kind.enum, loadModule('mold').DECISION_KINDS)
   assert.deepEqual(m.GROUND_RESEARCH_SCHEMA.required, ['decisions', 'prior_research', 'research_questions'])
   assert.equal(m.GROUND_RESEARCH_SCHEMA.properties.decisions, m.GROUNDING_SCHEMA.properties.decisions)
 })

@@ -1,10 +1,4 @@
-// module: ground; provides: MOLD, DECISION_KINDS, RESEARCH_CONFIDENCE, GROUNDING_SCHEMA, GROUND_RESEARCH_SCHEMA, GROUND_RULES, researchRule, BRIE_GROUND_MAX_AGENTS, brieGround; requires: none
-// mold resolves the spec, research, and notes artifact paths.
-const MOLD = 'python3 ~/.claude/skills/mold/scripts/mold.pyz'
-// A Ground explorer sorts each recorded wiki decision into one of these kinds.
-const DECISION_KINDS = ['adr', 'locked', 'roadmap', 'gotcha', 'strategy']
-// brie-ground returns one of these confidence values.
-const RESEARCH_CONFIDENCE = ['certain', 'speculating', 'dont_know']
+// module: ground; provides: GROUNDING_SCHEMA, GROUND_RESEARCH_SCHEMA, GROUND_RULES, researchRule, BRIE_GROUND_MAX_AGENTS, brieGround; requires: mold
 // The Ground contract: wiki decisions and prior research, each tied to the item refs it constrains.
 const GROUNDING_SCHEMA = {
   type: 'object',
