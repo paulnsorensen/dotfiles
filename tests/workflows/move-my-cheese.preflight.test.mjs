@@ -28,6 +28,13 @@ test('preflight runs once, first, and asks for git, node, wfx, and gh', async ()
   assert.match(raw.agents[0].prompt, /wfx preflight --worktree .* --need git,node,wfx,gh/)
 })
 
+test('preflight adds pytest when a pasted criterion check runs pytest, and never otherwise', async () => {
+  const withPytest = await run({ prs: [1, 2], plan: { plan: { criteria: [{ id: 'AC-1', check: 'python -m pytest tests -q' }] } } }, [['preflight', failure('preflight', 'preflight-failed', 'x', { checks: [] })]])
+  assert.match(withPytest.raw.agents[0].prompt, /--need git,node,wfx,gh,pytest/)
+  const without = await run({ prs: [1, 2], plan: { plan: { criteria: [{ id: 'AC-1', check: 'node --test' }] } } }, [['preflight', failure('preflight', 'preflight-failed', 'x', { checks: [] })]])
+  assert.doesNotMatch(without.raw.agents[0].prompt, /pytest/)
+})
+
 test('a run with no PR selector and no plan skips preflight and returns candidates', async () => {
   const { result, wfxLabels } = await run({}, planRoutes())
   assert.equal(result.status, 'candidates')

@@ -111,3 +111,14 @@ test('a landing id that is not 16 hex digits, or that comes with a plan, blocks 
   assert.equal(both.result.status, 'blocked')
   assert.equal(both.raw.agents.length, 0)
 })
+
+test('a saved plan with a short base or head SHA is refused', async () => {
+  for (const mutate of [(l) => { l.recon.base_sha = 'abc1234' }, (l) => { l.recon.heads[1] = 'abc1234' }]) {
+    const { first } = await planned()
+    const landing = plain(first.result.landing)
+    mutate(landing)
+    const hop = await run({ prs: [1, 2], landing: first.result.landing_id, approve: first.result.digest }, builtConsolidation([['state:get', envelope('run-state', { value: landing })]]))
+    assert.equal(hop.result.status, 'blocked')
+    assert.match(hop.result.error, /40-digit/)
+  }
+})

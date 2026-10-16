@@ -1475,7 +1475,8 @@ function checkLanding(landing) {
   const errors = schemaErrors(landing, LANDING_SCHEMA, 'plan')
   if (errors.length) return errors
   if (!landing.inputs.length || landing.inputs.some((n) => n <= 0)) errors.push('plan.inputs must hold positive PR numbers')
-  if (Object.values(landing.recon.heads).some((sha) => typeof sha !== 'string')) errors.push('plan.recon.heads must map PR numbers to SHAs')
+  if (Object.values(landing.recon.heads).some((sha) => typeof sha !== 'string' || !FULL_SHA_RE.test(sha))) errors.push('plan.recon.heads must map PR numbers to full 40-digit SHAs')
+  if (!FULL_SHA_RE.test(landing.recon.base_sha)) errors.push('plan.recon.base_sha must be a full 40-digit SHA')
   return errors
 }
 
@@ -2428,7 +2429,11 @@ const APPROVE = typeof input.approve === 'string' ? input.approve.trim() : ''
 // ---- Preflight: the tools and the checkout must work before any other agent runs ----
 if (requested.length || DESCRIPTION || input.plan !== undefined || input.landing !== undefined) {
   phase('Recon')
-  const pre = await wfx('preflight', 'Recon', 'wfx preflight --worktree "$(git rev-parse --show-toplevel)" --need git,node,wfx,gh')
+  // A pasted plan shows its checks here. A saved plan loads later, and its verify-criteria child checks pytest itself.
+  // Preflight needs an existing directory, so it gets the repo root and not the scratch root, which the runtime creates on demand.
+  const pastedCriteria = input.plan && input.plan.plan && Array.isArray(input.plan.plan.criteria) ? input.plan.plan.criteria : []
+  const needPytest = pastedCriteria.some((c) => c && typeof c.check === 'string' && /pytest/i.test(c.check))
+  const pre = await wfx('preflight', 'Recon', `wfx preflight --worktree "$(git rev-parse --show-toplevel)" --need git,node,wfx,gh${needPytest ? ',pytest' : ''}`)
   if (!pre.ok) {
     const failed = ((pre.error.details && pre.error.details.checks) || []).filter((c) => !c.ok).map((c) => c.name)
     if (!failed.length) failed.push(pre.error.code)
