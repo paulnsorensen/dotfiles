@@ -12,6 +12,13 @@ const syncScript = join(repo, 'claude/workflow-prelude/sync.mjs')
 const WORKFLOWS = ['claude/workflows/cheese-board.js', 'claude/workflows/cheese-factory.js', 'claude/workflows/move-my-cheese.js']
 // Scripts that mark only the modules they need, so the per-block checks below skip them.
 const SLIM = ['claude/workflows/verify-criteria.js']
+// Modules that a script marks beyond the shared set. Add a script here when it adopts a module.
+const ADOPTED = {
+  'claude/workflows/cheese-board.js': ['schema', 'graph', 'criteria', 'advise', 'status'],
+  'claude/workflows/sliced-bread-audit.js': ['budget', 'fanout'],
+  'claude/workflows/brie-ground.js': ['budget', 'fanout', 'ground'],
+  'claude/workflows/age-fanout.js': ['budget', 'call', 'stale', 'schema', 'findings'],
+}
 const PROVIDES = {
   stale: ['SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'SHA_RE', 'SHORT_SHA_RE', 'DIGEST_RE', 'stampedBy', 'markersOf', 'shaErrors', 'staleVerdict'],
   budget: ['DEFAULT_LIMITS', 'floorReached', 'floorReason'],
@@ -187,7 +194,7 @@ test('every workflow with a BEGIN module marker is a sync default target and the
     .map((f) => `claude/workflows/${f}`)
     .filter((f) => /^\/\/ BEGIN module /m.test(read(f)))
     .sort()
-  assert.deepEqual(marked, [...WORKFLOWS, ...SLIM].sort())
+  assert.deepEqual(marked, [...new Set([...WORKFLOWS, ...SLIM, ...Object.keys(ADOPTED)])].sort())
   // Drift in a marked workflow that is not in argv fails the argument-free check: copy the repo layout is heavy, so test a flipped copy by path.
   const d = dir()
   const text = read(WORKFLOWS[0])
@@ -195,6 +202,19 @@ test('every workflow with a BEGIN module marker is a sync default target and the
   const r = run('--check', f)
   assert.equal(r.status, 1)
   assert.ok(r.stderr.includes(f) && r.stderr.includes('budget'), r.stderr)
+})
+
+test('each adopting script holds one block per adopted module and every block equals its module file', () => {
+  for (const [file, names] of Object.entries(ADOPTED)) {
+    const text = read(file)
+    for (const name of names) {
+      const b = text.indexOf(BEGIN(name))
+      const e = text.indexOf(END(name))
+      assert.ok(b >= 0 && e > b, `${file} ${name}`)
+      assert.equal(text.indexOf(BEGIN(name), b + 1), -1, `${file} ${name} once`)
+      assert.equal(text.slice(b + BEGIN(name).length, e), moduleText(name), `${file} ${name}`)
+    }
+  }
 })
 
 test('each consumer declares a top-level PREAMBLE and a LIMITS object with minBudget', () => {

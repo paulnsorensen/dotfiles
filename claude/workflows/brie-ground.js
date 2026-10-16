@@ -33,8 +33,157 @@ export const meta = {
 // narrow `explorer` type, not the default workflow agent. Web sub-questions
 // use `researcher`. Both types ship in the global agent registry.
 
-// Same command as the workflow prelude: it resolves the durable artifact store.
+// BEGIN module budget
+// module: budget; provides: DEFAULT_LIMITS, floorReached, floorReason; requires: none
+// The LIMITS values that every workflow shares. A workflow spreads these into its own LIMITS.
+const DEFAULT_LIMITS = { minBudget: 50000, agentCap: 1000 }
+
+// True when the budget is known and less than the floor remains. budget and LIMITS resolve at call time.
+const floorReached = (floor = LIMITS.minBudget) => Boolean(budget.total && budget.remaining() < floor)
+
+// The text that names the stage a budget floor stopped.
+const floorReason = (stage, floor = LIMITS.minBudget) => `budget floor reached before ${stage}: ${budget.remaining()} remaining, below ${floor}`
+// END module budget
+// BEGIN module fanout
+// module: fanout; provides: errorMessage, safeAgent, runBounded, chunk, dedupe, capList, withRedo; requires: none
+// The message of a thrown value, or its text when it has none.
+const errorMessage = (e) => (e && e.message ? e.message : String(e))
+
+// agent() resolves to null when the agent ends without a structured result. Treat null as a failure so a caller never dereferences a missing value. agent resolves at call time.
+const safeAgent = async (prompt, opts) => {
+  try {
+    const value = await agent(prompt, opts)
+    if (value === null || value === undefined) return { ok: false, error: `agent ${(opts && opts.label) || 'call'} returned no result` }
+    return { ok: true, value }
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) }
+  }
+}
+
+// Runs task(item, index) for each item with at most limit tasks at once. Results keep the item order.
+const runBounded = async (items, task, limit = 4) => {
+  const results = new Array(items.length)
+  let next = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await task(items[index], index)
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
+// Splits items into groups of at most size.
+const chunk = (items, size) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size))
+
+// Keeps the first item for each key. dropped holds the later items with a key that was already seen.
+function dedupe(items, keyOf) {
+  const seen = new Set()
+  const kept = []
+  const dropped = []
+  for (const item of items) {
+    const key = keyOf(item)
+    if (seen.has(key)) dropped.push(item)
+    else {
+      seen.add(key)
+      kept.push(item)
+    }
+  }
+  return { kept, dropped }
+}
+
+// Keeps the first max items. dropped holds the rest.
+const capList = (items, max) => ({ kept: items.slice(0, max), dropped: items.slice(max) })
+
+// Runs an expensive agent call, and redoes it up to rounds times when it returns no result. agent and log resolve at call time.
+const withRedo = async (prompt, opts, rounds = 1) => {
+  for (let round = 0; round <= rounds; round++) {
+    const out = await agent(prompt, round ? { ...opts, label: `${opts.label}:redo${round}` } : opts)
+    if (out) return out
+    log(`${opts.label}: no result${round < rounds ? '; redoing once' : ''}.`)
+  }
+  return null
+}
+// END module fanout
+// BEGIN module ground
+// module: ground; provides: MOLD, DECISION_KINDS, RESEARCH_CONFIDENCE, GROUNDING_SCHEMA, GROUND_RESEARCH_SCHEMA, GROUND_RULES, researchRule, BRIE_GROUND_MAX_AGENTS, brieGround; requires: none
+// mold resolves the spec, research, and notes artifact paths.
 const MOLD = 'python3 ~/.claude/skills/mold/scripts/mold.pyz'
+// A Ground explorer sorts each recorded wiki decision into one of these kinds.
+const DECISION_KINDS = ['adr', 'locked', 'roadmap', 'gotcha', 'strategy']
+// brie-ground returns one of these confidence values.
+const RESEARCH_CONFIDENCE = ['certain', 'speculating', 'dont_know']
+// The Ground contract: wiki decisions and prior research, each tied to the item refs it constrains.
+const GROUNDING_SCHEMA = {
+  type: 'object',
+  required: ['decisions', 'prior_research'],
+  properties: {
+    decisions: { type: 'array', items: {
+      type: 'object',
+      required: ['statement', 'kind', 'citation', 'items'],
+      properties: {
+        statement: { type: 'string', description: 'The recorded decision or constraint, in one sentence' },
+        kind: { type: 'string', enum: DECISION_KINDS },
+        citation: { type: 'string', description: 'wiki path:line' },
+        items: { type: 'array', items: { type: 'string' }, description: 'refs of the items it constrains; empty when it is repo-wide' },
+      },
+    } },
+    prior_research: { type: 'array', items: {
+      type: 'object',
+      required: ['path', 'topic', 'items'],
+      properties: {
+        path: { type: 'string', description: 'absolute path of the research document' },
+        topic: { type: 'string' },
+        items: { type: 'array', items: { type: 'string' } },
+      },
+    } },
+  },
+}
+// A Ground stage that also collects open external questions for brie-ground.
+const GROUND_RESEARCH_SCHEMA = {
+  ...GROUNDING_SCHEMA,
+  required: [...GROUNDING_SCHEMA.required, 'research_questions'],
+  properties: {
+    ...GROUNDING_SCHEMA.properties,
+    research_questions: { type: 'array', items: { type: 'string' }, description: 'external-fact questions that the inputs, the code, the wiki, and prior research leave open; empty when they settle the work' },
+  },
+}
+// The Ground explorer rules. Each workflow adds its subject line and its item data.
+const GROUND_RULES = [
+  'Use hallouminate with cwd set to your checkout. Run ground queries for the topics the items share, then read the hits. Cover ADRs and recorded decisions (kind adr), locked contracts and conventions (kind locked), roadmap direction (kind roadmap), gotchas that constrain a fix (kind gotcha), and earlier cheese-board pages under strategy/ (kind strategy).',
+  'Return a decision only when a wiki page states it. Cite it as wiki path:line. List the refs of the items it constrains; use an empty list when it is repo-wide. Do not restate an item as a decision.',
+  `List prior research: run \`${MOLD} artifact-path research probe\` and list the *.md files in the directory of the returned path, plus any legacy .cheese/research/*.md. Return each document that bears on an item, with its absolute path, its topic, and the item refs.`,
+].join('\n')
+// The rule for research_questions. max resolves at call time.
+const researchRule = (max) => `research_questions: at most ${max} questions about external facts (a library, an API, upstream behavior) that the work needs settled. Ask a question only when the item text, the code, the wiki, and prior research all leave it open. Leave it empty otherwise.`
+// Worst case of one brie-ground child (see its fan-out caps): recall 2, plan 2, 3 deep sub-questions x 7, 2 shallow x 3, synthesis 2, prototype 2.
+const BRIE_GROUND_MAX_AGENTS = 35
+// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. A capped result also logs and returns its dropped count. workflow and log resolve at call time.
+const brieGround = async (question) => {
+  let r = null
+  try {
+    r = await workflow('brie-ground', question)
+  } catch (e) {
+    log(`brie-ground failed for "${question}": ${e && e.message}`)
+  }
+  if (!r || r.error || typeof r.answer !== 'string' || !RESEARCH_CONFIDENCE.includes(r.confidence)) return { failed: `research failed: ${question}` }
+  const capped = (result, items, max, what) => {
+    if (items.length <= max) return result
+    log(`brie-ground for "${question}" dropped ${items.length - max} ${what} past the cap of ${max}`)
+    return { ...result, dropped: items.length - max }
+  }
+  // A dont_know answer may be blank. It keeps at most 2 follow-ups, so one child cannot flood the open questions.
+  if (r.confidence === 'dont_know') {
+    const followUps = Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()) : []
+    return capped({ unsettled: [question, ...followUps.slice(0, 2)] }, followUps, 2, 'follow-up question(s)')
+  }
+  if (!r.answer.trim()) return { failed: `research failed: ${question}` }
+  const evidence = Array.isArray(r.evidence_table) ? r.evidence_table : []
+  const citations = evidence.slice(0, 5).map((e) => e && e.citation).filter(Boolean)
+  return capped({ found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }, evidence, 5, 'citation row(s)')
+}
+// END module ground
 
 const CONFIDENCE = ['certain', 'speculating', 'dont_know']
 const ROUTES = ['wiki', 'web', 'code', 'mixed']
@@ -562,8 +711,6 @@ function webClaimToEvidence(c, src, quality) {
   }
 }
 
-const chunk = (items, size) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size))
-
 // Deep web engine, hard-coded to Tavily: one search agent (angles + searches) →
 // code caps, URL dedup, and relevance sort → batched extract agents. Returns
 // EVIDENCE-shaped claims for the shared Verify pass.
@@ -711,18 +858,6 @@ async function verifyEvidence(ev, sq) {
   return ev
 }
 
-// One bounded redo for a null result from an expensive single stage.
-async function withRedo(prompt, opts) {
-  for (let round = 0; round <= REDO_ROUNDS; round++) {
-    const out = await agent(prompt, round ? { ...opts, label: `${opts.label}:redo${round}` } : opts)
-    if (out) return out
-    log(`${opts.label}: no result${round < REDO_ROUNDS ? '; redoing once' : ''}.`)
-  }
-  return null
-}
-
-const lowBudget = (floor) => !!budget.total && budget.remaining() < floor
-
 // ── run ───────────────────────────────────────────────────────────────────
 
 const USAGE = 'Usage: /brie-ground <question>. Pass args as the question string, or as { question: "<question>" }.'
@@ -788,7 +923,7 @@ if (recall && recall.fully_answers && recallClaims.length) {
 if (!evidence) {
   phase('Plan')
   log(`Planning research for: ${question}`)
-  plan = await withRedo(planPrompt(question, recall), { schema: PLAN_SCHEMA, label: 'plan' })
+  plan = await withRedo(planPrompt(question, recall), { schema: PLAN_SCHEMA, label: 'plan' }, REDO_ROUNDS)
   if (!plan) return { error: 'Planning failed — no plan produced.' }
 
   const proposed = Array.isArray(plan.sub_questions) ? plan.sub_questions.filter((s) => s && typeof s.question === 'string' && s.question.trim()) : []
@@ -805,7 +940,7 @@ if (!evidence) {
   }))
 
   // Enforce the deep-escalation ceiling in code, not just prompt wording.
-  const deepFloor = lowBudget(MIN_BUDGET.deep)
+  const deepFloor = floorReached(MIN_BUDGET.deep)
   let deepBudget = deepFloor ? 0 : DEEP.MAX_DEEP_SUBQUESTIONS
   for (const s of subs) {
     if (s.depth !== 'deep') continue
@@ -837,13 +972,13 @@ if (!evidence) {
 const ungrounded = [...droppedSubs, ...failedSubs]
 
 phase('Synthesize')
-const synth = await withRedo(synthPrompt(question, plan, evidence, ungrounded), { schema: SYNTHESIS_SCHEMA, label: 'synthesize' })
+const synth = await withRedo(synthPrompt(question, plan, evidence, ungrounded), { schema: SYNTHESIS_SCHEMA, label: 'synthesize' }, REDO_ROUNDS)
 if (!synth) return { error: 'Synthesis failed.', evidence }
 
 let prototype = null
 const decision = synth.prototype_decision || {}
 if (decision.warranted && decision.spec && decision.spec.what_to_build) {
-  if (lowBudget(MIN_BUDGET.prototype)) {
+  if (floorReached(MIN_BUDGET.prototype)) {
     log(`Prototype warranted but skipped: under ${MIN_BUDGET.prototype} output tokens left.`)
   } else {
     phase('Prototype')
