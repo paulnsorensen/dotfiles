@@ -16,6 +16,7 @@ const SLIM = ['claude/workflows/verify-criteria.js']
 const ADOPTED = {
   'claude/workflows/cheese-board.js': ['schema', 'graph', 'criteria', 'advise', 'status'],
   'claude/workflows/sliced-bread-audit.js': ['budget', 'fanout'],
+  'claude/workflows/brie-ground.js': ['budget', 'fanout', 'ground'],
 }
 const PROVIDES = {
   stale: ['SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'SHA_RE', 'SHORT_SHA_RE', 'DIGEST_RE', 'stampedBy', 'markersOf', 'shaErrors', 'staleVerdict'],
