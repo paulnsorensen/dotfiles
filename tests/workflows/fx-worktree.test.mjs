@@ -1,16 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { loadModule } from '../../claude/workflow-prelude/load.mjs';
 import { runWfx, tempDir, tempRepo } from './fx-kit.mjs';
 
-const SCRATCH_SRC = (() => {
-  const text = readFileSync(new URL('../../claude/workflow-prelude/prelude.js', import.meta.url), 'utf8');
-  const m = text.match(/const SCRATCH_PATH_SRC = String\.raw`([^`]+)`/);
-  assert.ok(m, 'prelude defines SCRATCH_PATH_SRC');
-  return new RegExp(`^${m[1]}$`);
-})();
+const SCRATCH_SRC = new RegExp(`^${loadModule('stale').SCRATCH_PATH_SRC}$`);
 
 function git(cwd, args) {
   const res = spawnSync('git', args, { cwd, encoding: 'utf8' });

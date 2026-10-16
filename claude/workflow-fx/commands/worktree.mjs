@@ -2,7 +2,7 @@
 // wfx worktree remove --repo <path> --path <p>
 // wfx worktree list   --repo <path> [--landing <id>]
 // Worktrees live under <main checkout>/.claude/worktrees, the scratch root that the workflow
-// prelude (SCRATCH_PATH_SRC) accepts. SCRATCH_WORKTREE_RE allows one path segment under the root,
+// stale module (SCRATCH_PATH_SRC) accepts. SCRATCH_WORKTREE_RE allows one path segment under the root,
 // so the directory name is <landing>@<name>. An '@' never occurs in an id, so the split is exact.
 import { dirname, join, resolve } from 'node:path';
 import { FxError, badInput } from '../lib/envelope.mjs';
