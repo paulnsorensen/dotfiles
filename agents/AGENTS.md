@@ -72,4 +72,4 @@ An unrun or skipped check, unexpected error, or infrastructure failure is not a 
 Do not dismiss a failing test as flaky; reproduce it and find the cause.
 If the cause is outside your change's critical path, have an isolated sub-agent fix it in a separate PR.
 End implementation and prototype work by opening a PR with the `plate` skill.
-End every turn with the `wheypoint` skill.
+On stop, run the `wheypoint` skill if the session did work or had a significant conversation.
