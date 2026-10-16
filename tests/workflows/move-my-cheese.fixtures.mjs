@@ -177,7 +177,20 @@ export const grounded = (overrides = {}) => ({ decisions: [], prior_research: []
 
 // Fallbacks after each test's own routes: every planning run grounds in the wiki, every executing run ends
 // with stamp and cleanup agents, and the done advisor approves unless a test routes it first.
-const DEFAULT_ROUTES = [['ground', grounded()], ['stamp', { results: [] }], ['cleanup', { removed: [], note: '' }], ['advise:done', approveDone]]
+// The wfx runner routes answer with ok envelopes: preflight passes, a save works, and a live recon repeats the detail() heads and BASE_SHA.
+export const envelope = (cmd, data) => ({ ok: true, cmd, data })
+export const failure = (cmd, code, message, details) => ({ ok: false, cmd, error: { code, message, ...(details ? { details } : {}) } })
+// A live recon route. heads maps a PR number to a moved head SHA; base is the live default-branch SHA.
+export const liveRecon = ({ heads = {}, base = BASE_SHA } = {}) => ({ prompt }) => {
+  const csv = /--prs ([0-9,]+)/.exec(prompt)[1]
+  const prs = csv.split(',').map(Number).map((n) => ({ number: n, head: { ref: `feat/pr-${n}`, sha: heads[n] ?? sha(n) }, base: 'main', state: 'OPEN', mergeable: 'MERGEABLE' }))
+  return envelope('recon', { prs, base: { ref: 'main', sha: base } })
+}
+const WFX_LABEL_RE = /^(preflight|state:|stale:)/
+const DEFAULT_ROUTES = [
+  ['ground', grounded()], ['stamp', { results: [] }], ['cleanup', { removed: [], note: '' }], ['advise:done', approveDone],
+  ['preflight', envelope('preflight', { checks: [] })], ['state:put', envelope('run-state', {})], ['stale:recon', liveRecon()],
+]
 
 // A test may pass its own budget object; the harness default has no total, so the floor never applies.
 // child stands in for workflow(): brie-ground research and the age-fanout child.
@@ -185,9 +198,13 @@ export async function run(args, routes, budget = null, child = null) {
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({ respond: router([...routes, ...DEFAULT_ROUTES]) })
   const result = await workflow.run({ ...globals, ...(budget ? { budget } : {}), ...(child ? { workflow: child } : {}), args })
-  const labels = trace.agents.map(({ opts }) => opts.label)
+  // trace, labels, and call show the planning and build agents. The wfx runner calls sit in raw and wfxLabels.
+  const isWfx = ({ opts }) => WFX_LABEL_RE.test(opts.label)
+  const shown = { ...trace, agents: trace.agents.filter((a) => !isWfx(a)) }
+  const labels = shown.agents.map(({ opts }) => opts.label)
+  const wfxLabels = trace.agents.filter(isWfx).map(({ opts }) => opts.label)
   const call = (label) => trace.agents.find(({ opts }) => opts.label === label)
-  return { result, trace, labels, call }
+  return { result, trace: shown, raw: trace, labels, wfxLabels, call }
 }
 
 // Plan once, then return the args that approve that plan.

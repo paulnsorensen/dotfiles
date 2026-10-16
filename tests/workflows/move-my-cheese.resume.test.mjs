@@ -4,7 +4,7 @@ import test from 'node:test'
 
 import {
   ageFull, aged, approve, approveDone, builtConsolidation, detail, finalized, index, integrated, merged, minimalPlan, openPr, plain, planRoutes,
-  published, ready, run, sha, stateMerged, verified,
+  liveRecon, published, ready, run, sha, stateMerged, verified,
 } from './move-my-cheese.fixtures.mjs'
 
 // After a non-land run: #1 and #2 are drafts with this approval's marker, and #10 is open on the
@@ -74,7 +74,8 @@ test('a modified PR whose head matches this approval\'s stamp is not rebuilt aga
 test('a head that moved past this approval\'s stamp turns the plan into needs-replan', async () => {
   const plan = planRoutes([['recon:detail', { prs: [aged(1), aged(2)] }], ['plan:minimal', minimalPlan()]])
   const { first, args } = await approve(plan)
-  const { result } = await run(args, modifiedRoutes(first.result.digest, sha(2, 5)))
+  // The live recon is the source for the heads, so the move shows there.
+  const { result } = await run(args, [['stale:recon', liveRecon({ heads: { 2: sha(2, 6) } })], ...modifiedRoutes(first.result.digest, sha(2, 5))])
   assert.equal(result.status, 'needs-replan')
   assert.match(result.reasons.join(' '), /#2 head moved/)
 })
