@@ -10,6 +10,8 @@ import { MODULES_DIR, listModules, loadModule, readHeader } from '../../claude/w
 const repo = fileURLToPath(new URL('../../', import.meta.url))
 const syncScript = join(repo, 'claude/workflow-prelude/sync.mjs')
 const WORKFLOWS = ['claude/workflows/cheese-board.js', 'claude/workflows/cheese-factory.js', 'claude/workflows/move-my-cheese.js']
+// Scripts that mark only the modules they need, so the per-block checks below skip them.
+const SLIM = ['claude/workflows/verify-criteria.js']
 const PROVIDES = {
   stale: ['SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'SHA_RE', 'SHORT_SHA_RE', 'DIGEST_RE', 'stampedBy', 'markersOf', 'shaErrors', 'staleVerdict'],
   budget: ['DEFAULT_LIMITS', 'floorReached', 'floorReason'],
@@ -161,7 +163,7 @@ test('every workflow with a BEGIN module marker is a sync default target and the
     .map((f) => `claude/workflows/${f}`)
     .filter((f) => /^\/\/ BEGIN module /m.test(read(f)))
     .sort()
-  assert.deepEqual(marked, [...WORKFLOWS].sort())
+  assert.deepEqual(marked, [...WORKFLOWS, ...SLIM].sort())
   // Drift in a marked workflow that is not in argv fails the argument-free check: copy the repo layout is heavy, so test a flipped copy by path.
   const d = dir()
   const text = read(WORKFLOWS[0])
