@@ -66,8 +66,36 @@ test('the plan check accepts checks that run under the PreToolUse guards', async
     'node --test tests/x.test.mjs | grep -q ok',
     'git show HEAD:src/1.js | grep -c helper',
     'rg --files | grep -q x',
-    'grep -q x <<< "$(git log)"',
   ]) assert.equal((await checkPlanWith(check)).result.status, 'needs-approval', check)
+})
+
+// The stricter cheese-factory guard rejects a here-string (an unsafe shape) and a pipeline that ends in head (vacuous).
+test('the plan check rejects a here-string and a pipeline that ends in head', async () => {
+  for (const [check, reason] of [
+    ['grep -q x <<< "$(git log)"', /unsafe: here document/],
+    ['git log --oneline | head -n 1', /pipeline ends in head/],
+  ]) {
+    const { result, trace } = await checkPlanWith(check)
+    assert.equal(result.status, 'blocked', check)
+    assert.ok(trace.logs.some((l) => reason.test(l)), check)
+  }
+})
+
+test('the plan check rejects a target that waits for a merge before publish', async () => {
+  const plan = keepPlan()
+  plan.targets[1].depends_on = ['T-1']
+  const { result, trace } = await run({ prs: [1, 2] }, planRoutes([['plan:minimal', plan]]))
+  assert.equal(result.status, 'blocked')
+  assert.ok(trace.logs.some((l) => /T-2 waits for T-1's merge before publish/.test(l)))
+})
+
+test('the plan check accepts a stacked target that depends on its base', async () => {
+  const plan = keepPlan()
+  plan.targets[1] = { ...plan.targets[1], kind: 'new', pr: 0, branch: 'land/two', base: 'T-1', depends_on: ['T-1'], title: 'feat: two' }
+  plan.dispositions[1] = { pr: 2, action: 'supersede', target: 'T-2', reason: 'rebuilt on T-1' }
+  plan.targets[1].sources = [2]
+  const { result } = await run({ prs: [1, 2] }, planRoutes([['plan:minimal', plan]]))
+  assert.equal(result.status, 'needs-approval')
 })
 
 test('the plan check rejects a shell reader or searcher on a file and names the guard', async () => {

@@ -89,7 +89,7 @@ export function keepPlan() {
     dispositions: [{ pr: 1, action: 'keep', target: 'T-1', reason: 'fine' }, { pr: 2, action: 'keep', target: 'T-2', reason: 'fine after #1' }],
     targets: [
       { id: 'T-1', kind: 'existing', pr: 1, branch: 'feat/pr-1', base: 'main', title: 'pr 1', sources: [], brief: 'keep', resolves: [], satisfies: ['AC-1'], depends_on: [] },
-      { id: 'T-2', kind: 'existing', pr: 2, branch: 'feat/pr-2', base: 'main', title: 'pr 2', sources: [], brief: 'keep', resolves: ['TN-1'], satisfies: ['AC-1'], depends_on: ['T-1'] },
+      { id: 'T-2', kind: 'existing', pr: 2, branch: 'feat/pr-2', base: 'main', title: 'pr 2', sources: [], brief: 'keep', resolves: ['TN-1'], satisfies: ['AC-1'], depends_on: [] },
     ],
     criteria: [{ id: 'AC-1', statement: 'both helpers load', check_kind: 'command', check: 'node --test --test-name-pattern helpers tests/helper.test.mjs' }],
     open_questions: [],
