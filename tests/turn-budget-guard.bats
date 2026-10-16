@@ -161,6 +161,12 @@ handback_event() {
         '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"SubagentHandback", tool_input:{message:"status: ok"}}'
 }
 
+structured_output_event() {
+    local session="$1" agent="$2" type="$3"
+    jq -nc --arg s "$session" --arg a "$agent" --arg t "$type" --arg p "$PROJ/$session.jsonl" \
+        '{hook_event_name:"PreToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"StructuredOutput", tool_input:{status:"done"}}'
+}
+
 multiple_checkpoint_event() {
     local session="$1" agent="$2" type="$3"
     jq -nc --arg s "$session" --arg a "$agent" --arg t "$type" --arg p "$PROJ/$session.jsonl" --arg cwd "$PROJ" \
@@ -356,6 +362,26 @@ post_event() {
     fire "$(pre_event s2c handback2 reviewer)"
     [[ "$(verdict)" == "deny" ]]
     [[ "$output" == *"SubagentHandback stays allowed"* ]]
+}
+
+@test "A2d: StructuredOutput is allowed over the context-hard ceiling and other tools stay denied" {
+    seed_usage_transcript s2d so_ctx "$((180000 + 1)):0:0"
+    fire "$(structured_output_event s2d so_ctx coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "structured-output" ]]
+    [[ "$(log_record | jq -r '.action')" == "allow" ]]
+    fire "$(pre_event s2d so_ctx coder)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$(log_record | jq -r '.reason')" == "hard-ceiling" ]]
+}
+
+@test "A2d: StructuredOutput is allowed over the turn-hard ceiling and other tools stay denied" {
+    seed_turns s2d so_turn 100
+    fire "$(structured_output_event s2d so_turn coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "structured-output" ]]
+    fire "$(pre_event s2d so_turn coder)"
+    [[ "$(verdict)" == "deny" ]]
 }
 
 @test "A2b: a second valid checkpoint is denied after the allowance is spent" {

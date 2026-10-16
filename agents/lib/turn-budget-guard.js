@@ -567,6 +567,10 @@ const CHECKPOINT_SHAPE =
 // SubagentHandback 114 times). These tools end the agent, so they stay allowed.
 const HANDBACK_TOOLS = new Set(['SubagentHandback']);
 
+// A workflow agent returns its final result through this tool. Denying it past
+// a hard wall loses the agent's whole result, so it stays allowed.
+const STRUCTURED_OUTPUT_TOOL = 'StructuredOutput';
+
 function checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent) {
   const exceeded = [];
   if (turns > budget.turnHard) exceeded.push(`turns ${turns}/${budget.turnHard}`);
@@ -711,6 +715,10 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
       if (HANDBACK_TOOLS.has(event.tool_name)) {
         writeDecision(event, { ...fields, action: 'allow', reason: 'handback' });
         return { action: 'allow', reason: 'handback' };
+      }
+      if (event.tool_name === STRUCTURED_OUTPUT_TOOL) {
+        writeDecision(event, { ...fields, action: 'allow', reason: 'structured-output' });
+        return { action: 'allow', reason: 'structured-output' };
       }
       if (isCheckpointWrite(event) && !state.checkpointSpent) {
         if (markOnce(dir, checkpointSpentFile(dir))) {
