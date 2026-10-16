@@ -507,6 +507,21 @@ function sedHit(args) {
   return bad === undefined ? null : hit('sed command that writes or runs', bad)
 }
 
+// These commands take a pattern or text as data, so a quoted "git push" operand is not a command.
+const DATA_HEADS = new Set(['echo', 'printf', 'test', '[', '[[', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'awk', 'gawk', 'mawk', 'sed', 'gsed', 'find'])
+
+// Finds git at any word position after an unlisted wrapper (watch, gtimeout, su -c, strace).
+// A word that holds spaces, such as "git push" after su -c, splits into its own tokens.
+function embeddedGit(args) {
+  for (let i = 0; i < args.length; i++) {
+    const tokens = args[i].split(/\s+/).filter(Boolean)
+    if (tokens[0]?.toLowerCase() !== 'git') continue
+    const found = gitHit([...tokens.slice(1), ...args.slice(i + 1)])
+    if (found) return found
+  }
+  return null
+}
+
 // Classifies one simple command. Returns a hit or null.
 function commandHit(raw) {
   const words = unparen(raw)
@@ -524,6 +539,10 @@ function commandHit(raw) {
   if (PACKAGE_MANAGERS.has(head) && INSTALL_SUBCOMMANDS.has(args[0])) return hit('package install or execution', `${head} ${args[0]}`)
   // A case-insensitive file system runs GIT as git, so the head match ignores case.
   if (head.toLowerCase() === 'git') return gitHit(args)
+  if (!DATA_HEADS.has(head)) {
+    const embedded = embeddedGit(args)
+    if (embedded) return embedded
+  }
   if (head === 'find') {
     const action = args.find((a) => /^-(?:exec|execdir|ok|okdir|delete|fprint0?|fprintf|fls)$/.test(a))
     return action ? hit('find action that writes or runs a command', action) : null
