@@ -273,10 +273,11 @@ test('cheese-board redoes a synthesis that leaves an item unplaced', async () =>
 
 test('cheese-board repairs a bare issue number as a form error', async () => {
   const bare = { ...STRATEGY, initiatives: STRATEGY.initiatives.map((i) => (i.id === 'IN-1' ? { ...i, items: ['1'] } : i)) }
-  const { labels } = await runBoard({ overrides: { 'synthesize:r0': bare } })
+  const { labels, trace } = await runBoard({ overrides: { 'synthesize:r0': bare } })
 
   assert.ok(labels.includes('synthesize:r0:repair1'), labels.join(', '))
   assert.equal(labels.includes('synthesize:r0:redo1'), false)
+  assert.equal(trace.agents.find(({ opts }) => opts.label === 'synthesize:r0:repair1').opts.agentType, 'formatter')
 })
 
 test('cheese-board blocks a dependent spec when its prerequisite goes to mold', async () => {
@@ -367,6 +368,31 @@ test('cheese-board reports a partial run when the triage child fails', async () 
   assert.equal(result.status, 'partial')
   assert.deepEqual(result.gaps, ['triage-sweep failed; no issue was triaged'])
   assert.deepEqual(result.factory_queue.map((wave) => wave.map((q) => q.slug)), [['sync-cache']])
+})
+
+const BLOCKED_TRIAGE = { status: 'blocked', items: [], grounded: [], lenses: [], routing: null, gaps: [], reason: 'The gather agent returned no item list. Rerun with the same args.' }
+
+test('cheese-board reports a blocked triage run as a gap, not as an empty backlog', async () => {
+  const { result, trace } = await runBoard({ triage: BLOCKED_TRIAGE, overrides: ideasOnly() })
+
+  assert.equal(result.status, 'partial')
+  assert.deepEqual(result.gaps, ['triage-sweep blocked: The gather agent returned no item list. Rerun with the same args.; no issue was triaged'])
+  assert.match(reportOf(trace), /triage-sweep blocked: The gather agent returned no item list/)
+})
+
+test('cheese-board carries the gaps of a partial triage run into its own gaps', async () => {
+  const triage = { ...TRIAGE, status: 'partial', gaps: ['Route returned no routing table', '  '] }
+  const { result } = await runBoard({ triage })
+
+  assert.equal(result.status, 'partial')
+  assert.ok(result.gaps.includes('triage-sweep: Route returned no routing table'), result.gaps.join(' | '))
+  assert.equal(result.gaps.filter((g) => g.startsWith('triage-sweep: ')).length, 1)
+})
+
+test('cheese-board reports a partial triage run with no gap list as a gap', async () => {
+  const { result } = await runBoard({ triage: { ...TRIAGE, status: 'partial', gaps: [] } })
+
+  assert.ok(result.gaps.includes('triage-sweep returned partial with no gap list'), result.gaps.join(' | '))
 })
 
 test('cheese-board researches a spec initiative through brie-ground and records it in Provenance', async () => {
