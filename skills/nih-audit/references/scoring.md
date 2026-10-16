@@ -15,7 +15,7 @@ For each candidate with a library recommendation, apply the full 4-step chain.
 
 | Evidence | Modifier |
 |----------|----------|
-| Serena-verified usage count (exact caller list) | +15 |
+| tilth-verified usage count (exact caller list) | +15 |
 | Library has >10K weekly downloads + MIT/Apache | +20 |
 | ast-grep pattern match + code read confirms NIH | +15 |
 | NIH code has recent bug fixes (git blame) | +10 |

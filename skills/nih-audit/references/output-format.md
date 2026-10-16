@@ -48,7 +48,7 @@ transitive deps you don't want, coupling risk, etc.>
 
 Return everything inline — no temp files. Include the summary table, specs
 consulted, and the full detailed findings (one ### Finding block per
-recommendation above threshold):
+candidate):
 
 ```
 ## NIH Audit: <scope>
