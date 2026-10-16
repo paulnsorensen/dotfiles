@@ -435,6 +435,18 @@ test('sync writes every block once the requirements are marked', () => {
   assert.equal(run('--check', '--modules-dir', m, f).status, 0)
 })
 
+test('sync refuses a target where a block comes before a block it requires and writes nothing', () => {
+  const m = chainDir()
+  const text = `${block('b', 'old\n')}${block('a', 'old\n')}`
+  const f = put(dir(), 'w.js', text)
+  for (const args of [['--check'], []]) {
+    const r = run(...args, '--modules-dir', m, f)
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /module b comes before module a, which it requires/)
+  }
+  assert.equal(readFileSync(f, 'utf8'), text)
+})
+
 test('sync refuses a module file whose header name differs from its file name', () => {
   const m = dir()
   put(m, 'x.js', '// module: y; provides: X; requires: none\nconst X = 1\n')

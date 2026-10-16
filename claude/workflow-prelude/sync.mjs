@@ -91,9 +91,12 @@ function scan(file, text) {
     if (!known.has(name)) problems.push(`${file}: unknown module ${name}`)
   }
   if (!blocks.length) problems.push(`${file}: expected at least one "// BEGIN module <name>" and "// END module <name>" pair`)
+  // A block that reads a required name at load time fails with a TDZ error when it comes first.
+  const order = blocks.map((b) => b.name)
   for (const { name } of blocks) {
     for (const need of sources.get(name)?.header.requires ?? []) {
       if (!seen.has(need)) problems.push(`${file}: module ${name} requires module ${need}, which the target does not mark`)
+      else if (order.indexOf(need) > order.indexOf(name)) problems.push(`${file}: module ${name} comes before module ${need}, which it requires; move ${need} first`)
     }
   }
   return { lines, blocks }
