@@ -81,7 +81,7 @@ const floorReached = (floor = LIMITS.minBudget) => Boolean(budget.total && budge
 const floorReason = (stage, floor = LIMITS.minBudget) => `budget floor reached before ${stage}: ${budget.remaining()} remaining, below ${floor}`
 // END module budget
 // BEGIN module call
-// module: call; provides: form, substance, errorText, schemaErrors, data, prompt, redoPrompt, repairPrompt, isWriter, attempt, typed; requires: none
+// module: call; provides: form, substance, errorText, schemaErrors, data, prompt, redoPrompt, repairPrompt, isWriter, attempt, typed, unwrapEnvelope, wfxCommandOf; requires: none
 const form = (msg) => ({ kind: 'form', msg })
 // A substance error needs new facts, so the producer redoes the answer.
 const substance = (msg) => ({ kind: 'substance', msg })
@@ -187,6 +187,18 @@ const typed = async (text, opts, check, hooks = {}) => {
       : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
     ;({ value, threw } = await attempt(sent.text, sent.opts))
   }
+}
+// A runner can wrap the envelope that wfx printed in a second envelope of its own.
+// Returns the innermost envelope: an object whose data is itself an envelope gives that data.
+function unwrapEnvelope(value) {
+  let env = value
+  while (env && typeof env === 'object' && env.data && typeof env.data === 'object' && typeof env.data.ok === 'boolean' && typeof env.data.cmd === 'string') env = env.data
+  return env
+}
+// The wfx command name in a command line: the word after the last 'wfx '. A wfx envelope carries it as cmd.
+function wfxCommandOf(command) {
+  const names = [...String(command).matchAll(/(?:^|[\s|&;(])wfx\s+([a-z][a-z-]*)/g)].map((m) => m[1])
+  return names.length ? names[names.length - 1] : ''
 }
 // END module call
 // BEGIN module ground
@@ -1883,12 +1895,15 @@ function checkEnvelope(env) {
   return []
 }
 
-const wfxPrompt = (command) => prompt('Run exactly this one command and nothing else, in the repository checkout. Return the JSON envelope it prints, unchanged.', 'Command: ' + command)
+const wfxPrompt = (command) => prompt('Run exactly this one command and nothing else, in the repository checkout. Return the JSON envelope it prints, unchanged. Its top-level keys are ok, cmd, and data or error; do not wrap it in another object.', 'Command: ' + command)
 
 // Returns the envelope. A call that yields no valid envelope becomes a failed envelope with code no-envelope.
+// A runner can wrap the printed envelope in its own, so normalize unwraps it, and the check requires the cmd of the command that ran.
 async function wfx(label, phaseName, command) {
+  const want = wfxCommandOf(command)
+  const check = (env) => [...checkEnvelope(env), ...(want && env.cmd !== want ? [substance(`cmd is ${JSON.stringify(env.cmd)}, but wfx ${want} prints cmd ${JSON.stringify(want)}`)] : [])]
   const { value, errors } = await typed(wfxPrompt(command),
-    { label, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: ENVELOPE_SCHEMA }, checkEnvelope)
+    { label, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: ENVELOPE_SCHEMA }, check, { normalize: unwrapEnvelope })
   return value || { ok: false, cmd: label, error: { code: 'no-envelope', message: errorText(errors) } }
 }
 

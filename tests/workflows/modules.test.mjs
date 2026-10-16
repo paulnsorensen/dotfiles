@@ -26,7 +26,7 @@ const ADOPTED = {
 const PROVIDES = {
   stale: ['SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'SHA_RE', 'SHORT_SHA_RE', 'DIGEST_RE', 'stampedBy', 'markersOf', 'shaErrors', 'staleVerdict'],
   budget: ['DEFAULT_LIMITS', 'floorReached', 'floorReason'],
-  call: ['form', 'substance', 'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt', 'isWriter', 'attempt', 'typed'],
+  call: ['form', 'substance', 'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt', 'isWriter', 'attempt', 'typed', 'unwrapEnvelope', 'wfxCommandOf'],
   ground: ['MOLD', 'DECISION_KINDS', 'RESEARCH_CONFIDENCE', 'GROUNDING_SCHEMA', 'GROUND_RESEARCH_SCHEMA', 'GROUND_RULES', 'researchRule', 'BRIE_GROUND_MAX_AGENTS', 'brieGround'],
   checkpoint: ['stable', 'fnv1a', 'digestOf', 'matchAnswers', 'isObject', 'plain', 'stateShapeErrors', 'askCheckpoint', 'needsInputResult', 'approveError', 'digestError', 'approveUsage'],
   guard: ['UNSAFE_CHECKS', 'GUARD_PREFERRED', 'unsafeCheck', 'guardedReaderReason', 'vacuousReason', 'shellWords'],

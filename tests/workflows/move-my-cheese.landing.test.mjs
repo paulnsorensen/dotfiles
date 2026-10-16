@@ -44,6 +44,18 @@ test('the landing hop reads the saved plan and runs no planner or advisor', asyn
   assert.equal(hop.labels.some((l) => l.startsWith('target:')), true)
 })
 
+// Live run 2026-10-16: the haiku runner wrapped the printed envelope in an envelope of its own, so data.value was absent.
+test('the landing hop unwraps an envelope that the runner nested inside its own', async () => {
+  const { first, landing } = await planned()
+  const nested = { ok: true, cmd: `wfx run-state get --landing ${first.result.landing_id} --key plan`, data: envelope('run-state', { landing: first.result.landing_id, key: 'plan', value: landing }) }
+  const hop = await run(
+    { prs: [1, 2], landing: first.result.landing_id, approve: first.result.digest },
+    builtConsolidation([['state:get', nested]]),
+  )
+  assert.notEqual(hop.result.status, 'blocked', JSON.stringify(hop.result))
+  assert.equal(hop.labels.some((l) => l.startsWith('target:')), true)
+})
+
 test('the long form with the plan object still works and reads no saved state', async () => {
   const { args } = await planned()
   const hop = await run(args, builtConsolidation())

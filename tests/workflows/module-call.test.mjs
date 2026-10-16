@@ -22,6 +22,25 @@ const WRITE = { ...READ, agentType: 'coder' }
 const ok = () => []
 const boom = () => { throw new Error('boom') }
 
+test('unwrapEnvelope returns the innermost wfx envelope and leaves a plain one alone', () => {
+  const { unwrapEnvelope } = setup(ok)
+  const inner = { ok: true, cmd: 'run-state', data: { value: { a: 1 } } }
+  assert.deepEqual(plain(unwrapEnvelope({ ok: true, cmd: 'wfx run-state get', data: inner })), inner)
+  assert.deepEqual(plain(unwrapEnvelope({ ok: true, cmd: 'x', data: { ok: true, cmd: 'y', data: inner } })), inner)
+  assert.deepEqual(plain(unwrapEnvelope(inner)), inner)
+  assert.equal(unwrapEnvelope(null), null)
+})
+
+test('wfxCommandOf names the last wfx command in a command line', () => {
+  const { wfxCommandOf } = setup(ok)
+  assert.equal(wfxCommandOf('wfx preflight --worktree /x'), 'preflight')
+  assert.equal(wfxCommandOf("printf '%s' 'a b' | wfx run-state put --landing 1 --key plan"), 'run-state')
+  assert.equal(wfxCommandOf('git fetch --quiet origin && wfx restack --repo r'), 'restack')
+  assert.equal(wfxCommandOf('sleep 540 && wfx poll --pr 2'), 'poll')
+  assert.equal(wfxCommandOf('gh pr list --head x'), '')
+  assert.equal(wfxCommandOf('echo nowfx thing'), '')
+})
+
 // AC-5
 test('typed_readOnlyThrowThenAnswer_retriesOnceAndKeepsTheAnswer', async () => {
   const t = setup((text, opts, n) => (n === 1 ? boom() : { v: 1 }))
