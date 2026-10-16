@@ -155,6 +155,21 @@ test('typed_nullIsFinalHook_stillRedoesAnInvalidValueAndSkipsExpansion', async (
   assert.deepEqual(plain(r.value), { good: 1 })
 })
 
+test('typed_noRedoHook_endsOnASubstanceErrorButStillRepairsForm', async () => {
+  const t = setup(() => ({ bad: 1 }))
+  const r = await t.typed('q', WRITE, () => [t.substance('no')], { noRedo: true })
+  assert.equal(r.value, null)
+  assert.equal(t.calls.length, 1, 'no redo after a substance error')
+  const lost = setup(() => null)
+  const l = await lost.typed('q', WRITE, ok, { noRedo: true })
+  assert.equal(l.lost, 'missing')
+  assert.equal(lost.calls.length, 1)
+  const fixed = setup((text, opts, n) => (n === 1 ? { bad: 1 } : { good: 1 }))
+  const f = await fixed.typed('q', WRITE, (v) => (v.good ? [] : [t.form('shape')]), { noRedo: true })
+  assert.deepEqual(plain(f.value), { good: 1 })
+  assert.deepEqual(fixed.labels(), ['x', 'x:repair1'])
+})
+
 test('typed_retryOnThrowHook_predicateOrFlagReplacesTheReadOnlyRule', async () => {
   const never = setup(boom)
   await never.typed('q', READ, ok, { retryOnThrow: () => false })

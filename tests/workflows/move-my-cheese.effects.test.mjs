@@ -29,7 +29,18 @@ test('merge passes the head the poll checked, and runs only with land', async ()
   assert.equal(landed.call('merge:1').opts.agentType, 'runner')
   const reviewOnly = await run({ prs: [1], auto: true }, oneLand())
   assert.equal(reviewOnly.result.status, 'ready')
-  assert.equal(reviewOnly.labels.some((l) => /^merged?:/.test(l)), false)
+  assert.equal(reviewOnly.allLabels.some((l) => /^merged?:/.test(l)), false)
+})
+
+test('a merge whose envelope is lost never runs again; the poll decides the outcome', async () => {
+  for (const lost of [null, () => { throw new Error('runner died') }]) {
+    const { result, allLabels } = await run({ prs: [1], auto: true, land: true }, oneLand([['merge:1', lost]]))
+    assert.equal(result.status, 'landed', 'the poll saw MERGED')
+    assert.deepEqual(allLabels.filter((l) => l.startsWith('merge:')), ['merge:1'], 'no redo and no retry of the merge')
+  }
+  const open = await run({ prs: [1], auto: true, land: true }, oneLand([['merge:1', null], ['merged:1', () => ({ state: 'OPEN' })]]))
+  assert.notEqual(open.result.status, 'landed')
+  assert.deepEqual(open.allLabels.filter((l) => /^merge:/.test(l)), ['merge:1'])
 })
 
 test('the merged wait sleeps between reads and stops at MERGED', async () => {
@@ -238,26 +249,36 @@ test('a new target opens its PR with the brief and a Supersedes line for each fo
   assert.ok(call('publish:T-1:comment').prompt.includes(`move-my-cheese:landing digest=${first.result.digest}`))
 })
 
-test('a lease-rejected new target adopts the one open PR of its branch', async () => {
+// The in-run adopt force-pushes over an open PR, so it needs the ownership checks of the earlier adopt path.
+test('a lease-rejected new target does not adopt a PR that this approval did not open', async () => {
   const { args } = await approve(planRoutes())
-  const { result, call, labels } = await run(args, builtConsolidation([
+  const { result, call, allLabels } = await run(args, builtConsolidation([
     ['publish:T-1:push', failure('publish', 'lease-rejected', 'the remote branch exists')],
     ['publish:T-1:adopt', [{ number: 10, url: 'https://example.test/pr/10', headRefOid: sha(40) }]],
   ]))
-  assert.equal(result.status, 'ready')
+  assert.equal(result.status, 'fail')
   assert.match(call('publish:T-1:adopt').prompt, /gh pr list --head 'land\/combined' --state open --json number,url,headRefOid/)
-  assert.match(call('publish:T-1:adopt:push').prompt, new RegExp(`--sha ${sha(50)} --expect ${sha(40)}$`))
-  assert.equal(labels.includes('publish:T-1:create'), false)
-  assert.match(call('publish:T-1:comment').prompt, /wfx pr comment --pr 10 /)
+  assert.match(result.note, /publish T-1 failed at adopt: .*PR #10, which this approval did not open/)
+  assert.equal(allLabels.some((l) => l === 'publish:T-1:adopt:push' || l === 'publish:T-1:create' || l === 'publish:T-1:comment'), false, 'no force-push, no new PR, no comment on the stranger PR')
+})
+
+test('a publish push whose envelope is lost is never run again', async () => {
+  const { args } = await approve(planRoutes())
+  for (const lost of [{ ok: true, cmd: 'publish' }, () => { throw new Error('runner died') }]) {
+    const { result, allLabels } = await run(args, builtConsolidation([['publish:T-1:push', lost]]))
+    assert.equal(result.status, 'fail')
+    assert.deepEqual(allLabels.filter((l) => l.startsWith('publish:T-1:push')), ['publish:T-1:push'], 'one push, no retry, no redo')
+    assert.equal(allLabels.includes('publish:T-1:create'), false)
+  }
 })
 
 test('a lease-rejected new target with no open PR fails and says to check the remote', async () => {
   const { args } = await approve(planRoutes())
-  const { result, labels } = await run(args, builtConsolidation([['publish:T-1:push', failure('publish', 'lease-rejected', 'the remote branch exists')]]))
+  const { result, allLabels } = await run(args, builtConsolidation([['publish:T-1:push', failure('publish', 'lease-rejected', 'the remote branch exists')]]))
   assert.equal(result.status, 'fail')
   assert.match(result.note, /publish T-1 failed at push: lease-rejected/)
   assert.match(result.note, /not one; check the remote branches and PRs before a rerun/)
-  assert.equal(labels.some((l) => l === 'publish:T-1:create' || l === 'publish:T-1:adopt:push'), false)
+  assert.equal(allLabels.some((l) => l === 'publish:T-1:create' || l === 'publish:T-1:adopt:push'), false)
 })
 
 test('a failed stats call reports zero changes and does not stop the run', async () => {

@@ -104,11 +104,12 @@ const attempt = async (text, opts) => {
 //   expandShas(value, opts) returns a fixed copy of the value, or null, when the check fails once.
 //   onWorktree(value, opts) runs for each answer of a call with isolation 'worktree'.
 //   nullIsFinal makes a null answer final at once, with no redo.
+//   noRedo makes an answer that fails with substance errors final at once. A formatter repair of form errors still runs.
 //   retryOnThrow is a flag, or a predicate on the call options, that replaces the default read-only rule.
 //   driftOf(before, after, schema) names a decision field that a formatter repair changed, or returns null.
 // Returns { value, errors, lost, threw }. lost is 'threw' or 'missing' when the value is null for that reason.
 const typed = async (text, opts, check, hooks = {}) => {
-  const { normalize = (v) => v, expandShas, onWorktree, nullIsFinal = false, retryOnThrow, driftOf } = hooks
+  const { normalize = (v) => v, expandShas, onWorktree, nullIsFinal = false, noRedo = false, retryOnThrow, driftOf } = hooks
   const mayRetry = (o) => (typeof retryOnThrow === 'function' ? retryOnThrow(o) : (retryOnThrow ?? !isWriter(o)))
   let sent = { text, opts }
   let { value, threw } = await attempt(sent.text, sent.opts)
@@ -147,6 +148,7 @@ const typed = async (text, opts, check, hooks = {}) => {
     if (!errors.length) return { value, errors, lost: null, threw: false }
     if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
     const formOnly = errors.every((e) => e.kind === 'form')
+    if (noRedo && !formOnly) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
     repairedFrom = formOnly ? value : null
     repairErrors = formOnly ? errors : []
     sent = formOnly

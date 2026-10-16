@@ -36,8 +36,11 @@ test('land merges a stack bottom-up, restacks the child, and fully re-reviews it
   // merge and restack run through wfx now: the command carries the checked head, not a prompt sentence.
   assert.match(call('merge:2').prompt, new RegExp(`wfx merge --pr 2 --head ${sha(2, 3)} --method squash`))
   const restack = call('restack:2').prompt
-  assert.ok(restack.includes("git fetch --quiet origin 'feat/pr-2:feat/pr-2'"))
-  assert.ok(restack.includes("--branch 'feat/pr-2' --onto 'origin/main' --from 'origin/feat/pr-1' --push"))
+  const runRef = `refs/mmc/${result.digest.slice(0, 8)}/feat/pr-2`
+  assert.ok(restack.includes(`git fetch --quiet origin '+refs/heads/feat/pr-2:${runRef}'`))
+  assert.ok(restack.includes(`--branch 'feat/pr-2' --onto 'origin/main' --from 'origin/feat/pr-1' --source '${runRef}'`))
+  assert.ok(restack.includes(`--expect "$(git rev-parse '${runRef}')"`))
+  assert.ok(restack.includes('--push'))
   assert.match(call('restack:2:retarget').prompt, /wfx pr retarget --pr 2 --base 'main'/)
   const recheck = call('recheck-age:2').prompt
   assert.ok(recheck.includes('/age origin/main...HEAD --auto'))

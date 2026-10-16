@@ -191,6 +191,18 @@ export const integrateOk = ({ prompt }) => envelope('integrate', { branch: /--br
 export const passingVerdict = (ac) => ({ criterion: ac.id, passes: true, evidence: `ran ${ac.id}`, tree_clean: true, missing_paths: [] })
 export const defaultVerify = (input) => ({ status: 'ok', verdicts: input.criteria.map(passingVerdict), missing: [] })
 export const INT_WORKTREE = '/repo/.claude/worktrees/lnd@verify'
+// state:put keeps the JSON that the prompt carries, and state:verify reads it back, as a real run-state would.
+const savedPlans = new Map()
+const planOf = (prompt) => JSON.parse(/printf '%s' '(.*)' \| wfx run-state put/s.exec(prompt)[1].replaceAll("'\\''", "'"))
+const savePlan = ({ prompt }) => {
+  const id = /--landing (\w+) --key (\S+)/.exec(prompt)
+  savedPlans.set(`${id[1]}/${id[2]}`, planOf(prompt))
+  return envelope('run-state', {})
+}
+const savedPlan = (prompt) => {
+  const id = /--landing (\w+) --key (\S+)/.exec(prompt)
+  return savedPlans.get(`${id[1]}/${id[2]}`)
+}
 // A stamp check answers with the head the fake gh last served for that PR (see legacyAdapter), else sha(n).
 const DEFAULT_ROUTES = [
   ['ground', grounded()], ['advise:done', approveDone],
@@ -198,7 +210,7 @@ const DEFAULT_ROUTES = [
   ['stamp', envelope('stamp', { stamped: true })],
   ['cleanup:sweep', envelope('worktree', { root: '/repo', worktrees: [] })],
   ['cleanup', ({ prompt }) => envelope('worktree', { path: /--path '?([^' ]+)/.exec(prompt)[1], removed: true })],
-  ['preflight', envelope('preflight', { checks: [] })], ['state:put', envelope('run-state', {})], ['stale:recon', liveRecon()],
+  ['preflight', envelope('preflight', { checks: [] })], ['state:put', savePlan], ['state:verify', ({ prompt }) => envelope('run-state', { value: savedPlan(prompt) })], ['stale:recon', liveRecon()],
   ['integrate', integrateOk],
   ['worktree:add', envelope('worktree', { path: INT_WORKTREE, landing: 'lnd', name: 'verify', head: sha(98) })],
   ['worktree:remove', envelope('worktree', { path: INT_WORKTREE, removed: true })],
@@ -297,7 +309,9 @@ export async function run(args, routes, budget = null, child = null, verify = de
   const labels = shown.agents.map(({ opts }) => opts.label)
   const wfxLabels = trace.agents.filter(isWfx).map(({ opts }) => opts.label)
   const call = (label) => trace.agents.find(({ opts }) => opts.label === label)
-  return { result, trace: shown, raw: trace, labels, wfxLabels, call, workflowCalls }
+  // allLabels lists every agent call in call order, wfx runner calls included. An absence assertion (no merge, no push) reads it.
+  const allLabels = trace.agents.map(({ opts }) => opts.label)
+  return { result, trace: shown, raw: trace, labels, wfxLabels, allLabels, call, workflowCalls }
 }
 
 // Plan once, then return the args that approve that plan.

@@ -137,11 +137,12 @@ const attempt = async (text, opts) => {
 //   expandShas(value, opts) returns a fixed copy of the value, or null, when the check fails once.
 //   onWorktree(value, opts) runs for each answer of a call with isolation 'worktree'.
 //   nullIsFinal makes a null answer final at once, with no redo.
+//   noRedo makes an answer that fails with substance errors final at once. A formatter repair of form errors still runs.
 //   retryOnThrow is a flag, or a predicate on the call options, that replaces the default read-only rule.
 //   driftOf(before, after, schema) names a decision field that a formatter repair changed, or returns null.
 // Returns { value, errors, lost, threw }. lost is 'threw' or 'missing' when the value is null for that reason.
 const typed = async (text, opts, check, hooks = {}) => {
-  const { normalize = (v) => v, expandShas, onWorktree, nullIsFinal = false, retryOnThrow, driftOf } = hooks
+  const { normalize = (v) => v, expandShas, onWorktree, nullIsFinal = false, noRedo = false, retryOnThrow, driftOf } = hooks
   const mayRetry = (o) => (typeof retryOnThrow === 'function' ? retryOnThrow(o) : (retryOnThrow ?? !isWriter(o)))
   let sent = { text, opts }
   let { value, threw } = await attempt(sent.text, sent.opts)
@@ -180,6 +181,7 @@ const typed = async (text, opts, check, hooks = {}) => {
     if (!errors.length) return { value, errors, lost: null, threw: false }
     if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
     const formOnly = errors.every((e) => e.kind === 'form')
+    if (noRedo && !formOnly) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
     repairedFrom = formOnly ? value : null
     repairErrors = formOnly ? errors : []
     sent = formOnly
@@ -1601,6 +1603,9 @@ const threadsCmd = (n) => `gh api graphql -F owner='{owner}' -F name='{repo}' -F
 // That keeps the user's local branches and checkouts out of reach. runTag is set once the digest exists.
 let runTag = 'unset'
 const localOf = (branch) => `mmc/${runTag}/${branch}`
+// A fetch of a PR branch goes to this ref, never to refs/heads, so the user's own branch stays as it is.
+// The run tag is the first 8 digits of the approval digest, so a stage before the tag is set uses the digest.
+const runRefOf = (branch) => `refs/mmc/${runTag === 'unset' ? APPROVE.slice(0, 8) : runTag}/${branch}`
 // Each stage starts in its own fresh worktree. Git refuses a branch that another worktree has
 // checked out, so no stage holds a shared branch: read-only stages and most writers detach.
 const pinStep = (branch, sha) => `You are in a fresh isolated worktree. Run git fetch origin ${branch} && git checkout --detach ${sha}. Never check out a branch.`
@@ -1898,25 +1903,40 @@ function checkEnvelope(env) {
 const wfxPrompt = (command) => prompt('Run exactly this one command and nothing else, in the repository checkout. Return the JSON envelope it prints, unchanged. Its top-level keys are ok, cmd, and data or error; do not wrap it in another object.', 'Command: ' + command)
 
 // Returns the envelope. A call that yields no valid envelope becomes a failed envelope with code no-envelope.
+// An effect command changes the remote or the repository. It never runs twice: a throw does not retry, and a lost or bad
+// envelope is final (only a formatter repair of the same answer runs). The caller reads the state back with a read-only call.
 // A runner can wrap the printed envelope in its own, so normalize unwraps it, and the check requires the cmd of the command that ran.
-async function wfx(label, phaseName, command) {
+async function wfx(label, phaseName, command, { effect = false } = {}) {
   const want = wfxCommandOf(command)
   const check = (env) => [...checkEnvelope(env), ...(want && env.cmd !== want ? [substance(`cmd is ${JSON.stringify(env.cmd)}, but wfx ${want} prints cmd ${JSON.stringify(want)}`)] : [])]
   const { value, errors } = await typed(wfxPrompt(command),
-    { label, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: ENVELOPE_SCHEMA }, check, { normalize: unwrapEnvelope })
+    { label, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: ENVELOPE_SCHEMA }, check,
+    effect ? { normalize: unwrapEnvelope, retryOnThrow: false, nullIsFinal: true, noRedo: true } : { normalize: unwrapEnvelope })
   return value || { ok: false, cmd: label, error: { code: 'no-envelope', message: errorText(errors) } }
 }
 
 // The landing id names the saved plan: a digest of the PR set and the base, so a fold keeps it.
 const landingIdOf = (l) => digestOf({ prs: [...l.inputs].sort(ascending), base: l.recon.base_sha })
 
+// The key holds the approval digest, so a revise or fold of the same PR set never overwrites an older approval.
+const planKey = (approveDigest) => `plan-${approveDigest}`
+
 // Saves the landing for a later { prs, landing, approve } hop. Returns the landing id, or '' when the save fails.
+// A read-back compares the stored value with the approval digest, because a runner copies the JSON by hand.
 async function saveLanding(landingObj) {
   const id = landingIdOf(landingObj)
-  const saved = await wfx('state:put', 'Plan', `printf '%s' ${shq(JSON.stringify(landingObj))} | wfx run-state put --landing ${id} --key plan`)
-  if (saved.ok) return id
-  log(`state:put failed: ${saved.error.message}`)
-  return ''
+  const key = planKey(digestOf(landingObj))
+  const saved = await wfx('state:put', 'Plan', `printf '%s' ${shq(JSON.stringify(landingObj))} | wfx run-state put --landing ${id} --key ${key}`, { effect: true })
+  if (!saved.ok) {
+    log(`state:put failed: ${saved.error.message}`)
+    return ''
+  }
+  const back = await wfx('state:verify', 'Plan', `wfx run-state get --landing ${id} --key ${key}`)
+  if (!back.ok || !isObject(back.data.value) || digestOf(back.data.value) !== digestOf(landingObj)) {
+    log(`state:put read-back does not match the plan (${back.ok ? 'digest differs' : back.error.message}); the plan is not saved`)
+    return ''
+  }
+  return id
 }
 
 // ---- Target builds: checkpoint continuation with a no-progress guard ----
@@ -1975,7 +1995,7 @@ function integrateRef(branch, id, ref, label, phaseName) {
     const reset = startedBranches.has(branch) ? '' : `git update-ref -d refs/heads/${branch}; `
     startedBranches.add(branch)
     const pull = ref.startsWith('origin/') ? 'git fetch --quiet origin && ' : ''
-    const env = await wfx(label, phaseName, `${reset}${pull}wfx integrate --repo ${REPO_ARG} --branch ${shq(branch)} --base ${landing.recon.base_sha.trim()} --target ${shq(ref)}`)
+    const env = await wfx(label, phaseName, `${reset}${pull}wfx integrate --repo ${REPO_ARG} --branch ${shq(branch)} --base ${shq(landing.recon.base_sha.trim())} --target ${shq(ref)}`, { effect: true })
     if (env.ok) return { ok: true }
     const conflict = env.error.code === 'conflict' && isObject(env.error.details) && isObject(env.error.details.conflict) ? env.error.details.conflict : null
     if (conflict) return { ok: false, reason: `${id} conflicts with the targets merged before it in ${(Array.isArray(conflict.files) ? conflict.files : []).join(', ') || 'unknown files'}` }
@@ -2019,7 +2039,7 @@ async function integrateAndVerify(round, refs, criteria = plan.criteria) {
       if (!res.ok) return { ok: false, reason: `targets conflict when combined: ${res.reason}`, verdicts: [] }
     }
   }
-  const added = await wfx(`worktree:add:${round}`, 'Verify', `wfx worktree add --repo ${REPO_ARG} --landing ${landingIdOf(landing)} --name verify-${round.toLowerCase()} --ref ${shq(branch)}`)
+  const added = await wfx(`worktree:add:${round}`, 'Verify', `wfx worktree add --repo ${REPO_ARG} --landing ${landingIdOf(landing)} --name verify-${round.toLowerCase()} --ref ${shq(branch)}`, { effect: true })
   if (!added.ok) return { ok: false, reason: `integration worktree failed: ${added.error.message}`, verdicts: [] }
   const tree = { path: String(added.data.path).trim(), head: String(added.data.head).trim() }
   try {
@@ -2058,7 +2078,7 @@ async function integrateAndVerify(round, refs, criteria = plan.criteria) {
     const reason = [failed.length && `criteria failed: ${failed.join(', ')}`, unrun.length && `criteria verification unrun (guard): ${unrun.join(', ')}`].filter(Boolean).join('; ')
     return { ok: !failed.length && !unrun.length, reason, verdicts }
   } finally {
-    const removed = await wfx(`worktree:remove:${round}`, 'Verify', `wfx worktree remove --repo ${REPO_ARG} --path ${shq(tree.path)}`)
+    const removed = await wfx(`worktree:remove:${round}`, 'Verify', `wfx worktree remove --repo ${REPO_ARG} --path ${shq(tree.path)}`, { effect: true })
     if (!removed.ok) {
       log(`worktree:remove:${round} failed: ${removed.error.message}`)
       noteWorktree(tree.path)
@@ -2223,7 +2243,7 @@ async function stampHeads(ids) {
     const live = await wfx(`stampcheck:${pr}`, 'Report', `wfx poll --pr ${pr}`)
     if (!live.ok) return log(`stamp skipped for #${pr}: ${live.error.message}`)
     if (String(live.data.headRefOid || '').trim() !== head) return log(`stamp skipped for #${pr}: its head moved after this run saw ${head}`)
-    const stamped = await wfx(`stamp:${pr}`, 'Report', `wfx stamp --pr ${pr} --marker ${digest} --sha ${head}`)
+    const stamped = await wfx(`stamp:${pr}`, 'Report', `wfx stamp --pr ${pr} --marker ${digest} --sha ${head}`, { effect: true })
     if (!stamped.ok) log(`stamp failed for #${pr}: ${stamped.error.message}; a later run of this approval will ask to plan again`)
   }))
 }
@@ -2263,10 +2283,10 @@ const stopAt = (id, reason) => { landed.set(id, { status: 'failed', reason }); r
 async function restackOne(n, t) {
   const parent = targetsById.get(t.base).branch
   const base = idx.default_branch
-  const fetchRefs = `git fetch --quiet origin && git fetch --quiet origin ${shq(`${t.branch}:${t.branch}`)}`
-  const moved = await wfx(`restack:${n}`, 'Land', `${fetchRefs} && wfx restack --repo ${REPO_ARG} --branch ${shq(t.branch)} --onto ${shq(`origin/${base}`)} --from ${shq(`origin/${parent}`)} --push`)
+  const fetchRefs = `git fetch --quiet origin && git fetch --quiet origin ${shq(`+refs/heads/${t.branch}:${runRefOf(t.branch)}`)}`
+  const moved = await wfx(`restack:${n}`, 'Land', `${fetchRefs} && wfx restack --repo ${REPO_ARG} --branch ${shq(t.branch)} --onto ${shq(`origin/${base}`)} --from ${shq(`origin/${parent}`)} --source ${shq(runRefOf(t.branch))} --expect "$(git rev-parse ${shq(runRefOf(t.branch))})" --push`, { effect: true })
   if (moved.ok) {
-    const retarget = await wfx(`restack:${n}:retarget`, 'Land', `wfx pr retarget --pr ${n} --base ${shq(base)}`)
+    const retarget = await wfx(`restack:${n}:retarget`, 'Land', `wfx pr retarget --pr ${n} --base ${shq(base)}`, { effect: true })
     return retarget.ok ? '' : `restack retarget failed: ${retarget.error.code}: ${retarget.error.message}`
   }
   if (moved.error.code !== 'conflict') return `restack failed: ${moved.error.code}: ${moved.error.message}`
@@ -2295,15 +2315,18 @@ async function landOne(id, t, n) {
     if (problem) return stop(`changed-after-verify: ${problem}`)
   }
   const mergeCmd = `wfx merge --pr ${n} --head ${sha} --method ${MERGE_METHOD}`
-  let merge = await wfx(`merge:${n}`, 'Land', mergeCmd)
+  let merge = await wfx(`merge:${n}`, 'Land', mergeCmd, { effect: true })
   // Queue only when GitHub demands it.
-  if (!merge.ok && /merge queue/i.test(merge.error.message)) merge = await wfx(`merge:${n}:queue`, 'Land', `${mergeCmd} --queue`)
-  if (!merge.ok) return stop(`merge refused: ${merge.error.message}`)
+  if (!merge.ok && /merge queue/i.test(merge.error.message)) merge = await wfx(`merge:${n}:queue`, 'Land', `${mergeCmd} --queue`, { effect: true })
+  // A lost envelope leaves the merge unknown. The poll below reads the PR state, and the merge never runs again.
+  const mergeLost = !merge.ok && merge.error.code === 'no-envelope'
+  if (!merge.ok && !mergeLost) return stop(`merge refused: ${merge.error.message}`)
   let state = ''
   for (let round = 1; round <= LIMITS.mergePolls && state !== 'MERGED' && state !== 'CLOSED'; round++) {
     const seen = await wfx(`merged:${n}:${round}`, 'Land', `${round > 1 ? `sleep ${MERGED_SLEEP_SECONDS} && ` : ''}wfx poll --pr ${n}`)
     state = seen.ok && typeof seen.data.state === 'string' ? seen.data.state : ''
   }
+  if (state !== 'MERGED' && mergeLost) return stop(`merge refused: ${merge.error.message} (last state ${state || 'unknown'})`)
   if (state !== 'MERGED') return stop(`PR did not reach MERGED (last state ${state || 'unknown'})`)
   landed.set(id, { status: 'merged', reason: moved ? 'merged after a re-check of the moved head' : '' })
   return ''
@@ -2415,7 +2438,9 @@ if (requested.length || DESCRIPTION || input.plan !== undefined || input.landing
 
 // The landing hop reads the plan that an earlier needs-approval result saved.
 if (LANDING_ID) {
-  const saved = await wfx('state:get', 'Recon', `wfx run-state get --landing ${LANDING_ID} --key plan`)
+  const approveProblem = approveError(APPROVE)
+  if (approveProblem) return { status: 'blocked', error: approveProblem }
+  const saved = await wfx('state:get', 'Recon', `wfx run-state get --landing ${LANDING_ID} --key ${planKey(APPROVE)}`)
   if (!saved.ok) return { status: 'blocked', error: `the saved plan for landing ${LANDING_ID} is unavailable: ${saved.error.message}` }
   if (!isObject(saved.data.value)) return { status: 'blocked', error: `the saved plan for landing ${LANDING_ID} is not an object` }
   APPROVED = saved.data.value
@@ -2935,13 +2960,13 @@ if (pushJobs.length && floorReached()) return landingReport('partial', 'budget f
 if (pushJobs.length) {
   phase('Publish')
   // Publish pushes and opens PRs, so no step reruns. A failed step stops the run and names the remote state to check.
-  const pubStep = (job, name, command) => wfx(`publish:${job.target}:${name}`, 'Publish', command)
+  const pubStep = (job, name, command, effect = true) => wfx(`publish:${job.target}:${name}`, 'Publish', command, { effect })
   const pubFail = (job, name, text) => ({ ok: false, note: `publish ${job.target} failed at ${name}: ${text}; check the remote branches and PRs before a rerun` })
   const envText = (env) => `${env.error.code}: ${env.error.message}`
   // Expands a short SHA through wfx rev-parse. Returns '' when no full SHA results.
   const fullSha = async (job, sha) => {
     if (FULL_SHA_RE.test(sha)) return sha
-    const env = await pubStep(job, 'rev-parse', `wfx rev-parse --repo ${REPO_ARG} ${shq(sha)}`)
+    const env = await pubStep(job, 'rev-parse', `wfx rev-parse --repo ${REPO_ARG} ${shq(sha)}`, false)
     const full = env.ok && isObject(env.data.shas) ? String(env.data.shas[sha] || '').trim() : ''
     return FULL_SHA_RE.test(full) ? full : ''
   }
@@ -2972,6 +2997,12 @@ if (pushJobs.length) {
       const open = listed && Array.isArray(listed.prs) ? listed.prs : null
       if (!open || open.length !== 1) return pubFail(job, 'push', `${envText(pushed)}, and the branch has ${open ? open.length : 'an unknown number of'} open PRs, not one`)
       taken = open[0]
+      // Only the PR that the earlier adopt step accepted may be overwritten: opened by the viewer in this repository and stamped by this approval.
+      // A PR that appeared after recon fails the run, and nothing is pushed over it.
+      const known = adopted.get(job.target)
+      if (!known || known.number !== taken.number || String(taken.headRefOid).trim() !== known.head_sha) {
+        return pubFail(job, 'adopt', `branch ${job.branch} has open PR #${taken.number}, which this approval did not open or which moved after its last run; nothing was pushed over it`)
+      }
       const lease = await fullSha(job, String(taken.headRefOid).trim())
       if (!lease) return pubFail(job, 'adopt', 'the open PR has no full head SHA')
       const again = await pubStep(job, 'adopt:push', pushCmd(lease))

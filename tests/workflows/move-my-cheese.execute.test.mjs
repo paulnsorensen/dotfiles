@@ -121,7 +121,7 @@ test('builders and integration use a run-scoped local branch, and publish pushes
   assert.ok(!target.includes('git checkout -B'))
   const merge = call('integrate:T-1').prompt
   assert.ok(merge.includes(`--target '${sha(50)}'`))
-  assert.ok(merge.includes(`--base ${BASE_SHA}`))
+  assert.ok(merge.includes(`--base '${BASE_SHA}'`))
   assert.match(merge, /--branch 'mmc\/integrate-/)
   assert.ok(!merge.includes(local))
   const push = call('publish:T-1:push').prompt
