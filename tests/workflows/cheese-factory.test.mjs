@@ -3,8 +3,8 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime, verifyFrom } from './cheese-factory.fixtures.mjs'
-import { loadWorkflow } from './harness.mjs'
+import { createRuntime, revParse, verifyFrom } from './cheese-factory.fixtures.mjs'
+import { loadWorkflow } from './cheese-factory.fixtures.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
@@ -2656,13 +2656,14 @@ test('a writer that returns a short head_sha gets a haiku expansion, never a wri
   const full = `abc1234${'0'.repeat(33)}`
   const { result, trace } = await runParent({
     'press:parent': () => phaseOk('parent', 'press', { head_sha: full.slice(0, 7) }),
-    'press:parent:sha': () => ({ sha: full }),
+    'press:parent:sha': () => revParse(full.slice(0, 7), full),
   })
   const expand = callsOf(trace, 'press:parent:sha')[0]
 
   assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('press')), ['press:parent', 'press:parent:sha'])
   assert.equal(expand.opts.model, 'haiku')
-  assert.equal(expand.opts.agentType, 'explorer')
+  assert.equal(expand.opts.agentType, 'runner')
+  assert.ok(expand.prompt.includes('wfx rev-parse'))
   assert.equal(expand.opts.isolation, undefined)
   assert.ok(callsOf(trace, 'integrate')[0].prompt.includes(full))
   assert.equal(result.curds[0].status, 'clean')
@@ -2672,7 +2673,7 @@ test('a short head_sha stays strict: an expansion that does not extend the short
   const short = 'abc1234'
   const { result, trace } = await runParent({
     'press:parent': () => phaseOk('parent', 'press', { head_sha: short }),
-    'press:parent:sha': () => ({ sha: `def5678${'0'.repeat(33)}` }),
+    'press:parent:sha': () => revParse(short, `def5678${'0'.repeat(33)}`),
   })
 
   assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('press')), ['press:parent', 'press:parent:sha', 'press:parent:redo1', 'press:parent:redo2'])
@@ -2735,13 +2736,13 @@ test('a short head_sha on an ok cook gets a read-only expansion, never a cook re
   const full = `abcdef1${'0'.repeat(33)}`
   const { result, trace } = await runParent({
     'cook:parent': () => cook('parent', { head_sha: full.slice(0, 10), worktree_path: SCRATCH('cook') }),
-    'cook:parent:sha': () => ({ sha: full }),
+    'cook:parent:sha': () => revParse(full.slice(0, 10), full),
   })
   const expand = callsOf(trace, 'cook:parent:sha')[0]
 
   assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('cook:parent')), ['cook:parent', 'cook:parent:sha'])
   assert.equal(expand.opts.model, 'haiku')
-  assert.equal(expand.opts.agentType, 'explorer')
+  assert.equal(expand.opts.agentType, 'runner')
   assert.equal(result.curds[0].status, 'clean')
   assert.ok(callsOf(trace, 'taste:parent')[0].prompt.includes(full))
 })

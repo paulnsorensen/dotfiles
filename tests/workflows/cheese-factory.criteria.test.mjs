@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime, loadWorkflow } from './harness.mjs'
+import { createRuntime } from './harness.mjs'
+import { loadWorkflow } from './cheese-factory.fixtures.mjs'
 import { verifyFrom } from './cheese-factory.fixtures.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
@@ -666,12 +667,12 @@ test('verify_batchMissingId_failsOnlyThatCriterionAsUnchecked', async () => {
   assert.equal(result.reason, 'criteria verification failed: AC-2')
 })
 
-test('verify_batchDuplicateId_isRedoneAndNeverCounts', async () => {
+test('verify_batchDuplicateId_neverCountsAndIsNotRedoneByTheFactory', async () => {
   const { result, trace } = await run(single, { verify: () => ({ verdicts: [verdict('AC-1'), verdict('AC-1')] }) })
 
-  assert.equal(starting(trace, 'verify').length, 3)
+  assert.equal(starting(trace, 'verify').length, 1)
   assert.deepEqual(plain(result.verification.criteria.map((c) => c.verdict)), ['fail', 'fail'])
-  assert.match(result.verification.criteria[0].evidence, /^not verified: .*duplicate id 'AC-1'/)
+  assert.match(result.verification.criteria[0].evidence, /^not verified: verify-criteria returned invalid verdicts: .*verdicts lists AC-1 twice/)
 })
 test('verify_missingPathsWithPassesTrue_failsAndBlocksPlate', async () => {
   const { result, trace } = await run(single, { 'verify:AC-1': () => verdict('AC-1', { missing_paths: ['src/nope.js'] }) })
@@ -714,25 +715,26 @@ test('verify_wrongCriterionId_neverCountsAsAPass', async () => {
   assert.equal(result.verification.status, 'failed')
   const row = result.verification.criteria.find((c) => c.id === 'AC-1')
   assert.equal(row.verdict, 'fail')
-  assert.match(row.evidence, /^not verified: .*unknown id 'AC-9'/)
-  assert.equal(starting(trace, 'verify').length, 3)
+  assert.match(row.evidence, /^not verified: verify-criteria returned invalid verdicts: .*unknown id 'AC-9'/)
+  assert.equal(starting(trace, 'verify').length, 1)
   assert.equal(calls(trace, 'plate').length, 0)
 })
 
-test('verify_caseOnlyWrongId_isRepairedAndThenCounts', async () => {
-  const { result, trace } = await run(single, { verify: ({ opts }) => ({ verdicts: [verdict(/:repair/.test(opts.label) ? 'AC-1' : 'ac-1'), verdict('AC-2')] }) })
+test('verify_caseOnlyWrongId_isNotVerifiedBecauseTheChildOwnsRepair', async () => {
+  const { result, trace } = await run(single, { verify: () => ({ verdicts: [verdict('ac-1'), verdict('AC-2')] }) })
 
-  assert.equal(result.verification.status, 'passed')
-  assert.ok(labels(trace).includes('verify:repair1'))
+  assert.equal(result.verification.status, 'failed')
+  assert.match(result.verification.criteria[0].evidence, /^not verified: verify-criteria returned invalid verdicts: .*should be 'AC-1'/)
+  assert.equal(labels(trace).includes('verify:repair1'), false)
 })
 
-test('verify_nullAfterTheTypedBound_failsEveryCriterionWithThreeAttempts', async () => {
+test('verify_nullJudge_failsEveryCriterionAsNoVerdict', async () => {
   const { result, trace } = await run(single, { verify: () => null })
 
-  assert.equal(starting(trace, 'verify').length, 3)
+  assert.equal(starting(trace, 'verify').length, 1)
   for (const row of result.verification.criteria) {
     assert.equal(row.verdict, 'fail')
-    assert.match(row.evidence, /^not verified: .*no output/)
+    assert.match(row.evidence, /^unchecked: the judge returned no verdict/)
   }
   assert.equal(result.status, 'partial')
 })
@@ -1068,7 +1070,6 @@ test('verify_guardBlockedJudge_givesAnUnrunVerdictThatStillBlocksPlate', async (
   assert.match(result.reason, /criteria verification unrun \(guard\): AC-1/)
   assert.doesNotMatch(result.reason, /verification failed/)
   assert.equal(starting(trace, 'plate').length, 0)
-  assert.ok(calls(trace, 'verify')[0].prompt.includes('Set guard_blocked to true'))
 })
 
 test('verify_failedAndGuardBlockedCriteria_areNamedSeparately', async () => {
