@@ -262,7 +262,9 @@ test('planBlocked_stopVerdict_returnsTheAdviceRecord', async () => {
 const floorBudget = (low) => ({ total: 1_000_000, spent: () => 0, remaining: () => (low() ? 0 : 1_000_000) })
 
 test('floor_beforeVerify_cleanCurdCarriesTheFloorReason', async () => {
-  const { result } = await run(single, {}, { budget: floorBudget(() => true) })
+  // The first floor check runs before Cook; the floor falls after it.
+  let checks = 0
+  const { result } = await run(single, {}, { budget: floorBudget(() => checks++ > 0) })
 
   assert.match(result.curds[0].excluded_reason, /^budget floor reached before Plate/)
   assert.equal(result.curds[0].pr_url, undefined)

@@ -2385,11 +2385,12 @@ test('AC-11: a fallback severity outside the enum never reaches routing after th
   assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cure:')), false)
 })
 
-test('AC-15: below the budget floor, Plate is not dispatched and the run returns partial with the reason', async () => {
+test('AC-15: below the budget floor, Cook is not dispatched and the run returns partial with the reason', async () => {
   const { result, trace } = await runParent({}, { budgetTotal: 100000, budgetSpent: 60000 })
 
   assert.equal(result.status, 'partial')
-  assert.match(result.reason, /budget floor/)
+  assert.match(result.reason, /budget floor reached before Cook/)
+  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cook:')), false)
   assert.match(result.reason, /40000/)
   assert.equal(callsOf(trace, 'plate').length, 0)
   assert.equal(callsOf(trace, 'cleanup').length, 0)

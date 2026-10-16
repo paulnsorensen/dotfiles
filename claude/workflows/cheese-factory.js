@@ -1988,6 +1988,12 @@ if (!planAdvice.approved) {
   return { status: 'blocked', reason, concerns: lastAdvice ? lastAdvice.concerns : [], advice: { plan: kept } }
 }
 
+// Cook is the largest stage, so the budget floor stops the run before it starts.
+if (floorReached()) {
+  const reason = `budget floor reached before Cook: ${budget.remaining()} remaining, below ${LIMITS.minBudget}`
+  log(`${reason} — no cook runs.`)
+  return { status: 'partial', reason, curds: curds.map((c) => ({ slug: c.slug, status: 'not-run' })), grounding, gaps }
+}
 // ---- Per-curd chain (pipelined) ----
 phase('Cook')
 log(`Running ${curds.length} curd chain(s)${singlePass ? ' (single-pass)' : ''}: ${curds.map((c) => c.slug).join(', ')}`)

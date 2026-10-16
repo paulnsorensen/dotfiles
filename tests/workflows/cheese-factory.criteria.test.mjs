@@ -948,7 +948,9 @@ test('doneAdvisor_rejection_doesNotUseTheCriteriaExcludedReason', async () => {
 const floorBudget = (low) => ({ total: 1_000_000, spent: () => 0, remaining: () => (low() ? 0 : 1_000_000) })
 
 test('floor_reachedBeforeVerify_skipsVerifyDoneAndPlateWithNotRun', async () => {
-  const { result, trace } = await run(single, {}, { budget: floorBudget(() => true) })
+  // The first floor check runs before Cook; the floor falls after it.
+  let checks = 0
+  const { result, trace } = await run(single, {}, { budget: floorBudget(() => checks++ > 0) })
 
   assert.equal(result.status, 'partial')
   assert.match(result.reason, /^budget floor reached before Plate/)
