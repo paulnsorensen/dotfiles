@@ -6,7 +6,7 @@ import {
   aged, approve, approveDone, builtConsolidation, merged, noTensions, openPr, planRoutes, published, ready, reconRoutes, run, sha, stateMerged, survey,
 } from './move-my-cheese.fixtures.mjs'
 
-const RUNNER = /^(recon:index|recon:detail|publish|mark|stamp|cleanup|salvage:T-\d+|age-fanout-prep:\d+|finalize:\d+|merge:\d+|merged:\d+:\d+|(review|land):\d+:status(:\d+)?)$/
+const RUNNER = /^(recon:index|recon:detail|publish:T-\d+:[a-z:-]+|mark|stamp|cleanup|salvage:T-\d+|age-fanout-prep:\d+|finalize:\d+|merge:\d+|merged:\d+:\d+|(review|land):\d+:status(:\d+)?)$/
 const FORMATTER = /:repair\d+$/
 
 const typesOf = (trace) => trace.agents.map(({ opts }) => [opts.label, opts.agentType])
@@ -20,20 +20,17 @@ function assertTypes(trace) {
 
 const seen = (trace, re) => typesOf(trace).filter(([label]) => re.test(label)).map(([label]) => label)
 
-test('publish, its form repair, age-fanout prep, finalize, mark, stamp, cleanup, and recon start the narrow types', async () => {
+test('publish steps, age-fanout prep, finalize, mark, stamp, cleanup, and recon start the narrow types', async () => {
   const { args } = await approve(planRoutes())
-  const big = published('T-1', 10, sha(50))
-  big.results[0].changed_files = 40
-  const bad = { results: [...big.results, { ...big.results[0], target: 't-1' }] }
   const fanout = async () => ({ status: 'ok', artifact: '.cheese/age/pr-10.md', has_medium_plus_findings: false, has_cheap_lows: false })
   const { result, trace } = await run(args, builtConsolidation([
-    ['publish', ({ opts }) => (opts.label === 'publish' ? bad : big)],
+    ['publish:T-1:stats', { changed_files: 40, lines_changed: 30 }],
     ['age-fanout-prep', { worktree_path: '/tmp/fan-10' }],
   ]), null, fanout)
   assert.equal(result.status, 'ready', result.note)
   assertTypes(trace)
   const labels = seen(trace, /./)
-  for (const label of ['recon:index', 'recon:detail', 'publish', 'publish:repair1', 'age-fanout-prep:10', 'finalize:10', 'mark', 'stamp:10', 'cleanup:sweep']) {
+  for (const label of ['recon:index', 'recon:detail', 'publish:T-1:push', 'publish:T-1:create', 'publish:T-1:comment', 'publish:T-1:stats', 'age-fanout-prep:10', 'finalize:10', 'mark', 'stamp:10', 'cleanup:sweep']) {
     assert.ok(labels.includes(label), `${label} ran`)
   }
   assert.ok(labels.some((l) => /^review:10:status/.test(l)))

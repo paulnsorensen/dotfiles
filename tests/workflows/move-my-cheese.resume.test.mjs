@@ -30,7 +30,7 @@ test('a land run of the same approval resumes after a non-land run instead of st
   assert.equal(result.status, 'landed')
   assert.match(call('recon:detail').prompt, /PRs 1, 2, 10\./)
   assert.match(call('recon:detail').prompt, /never the PR body/)
-  assert.equal(labels.some((l) => /^(target|age|finalize):/.test(l) || l === 'publish'), false)
+  assert.equal(labels.some((l) => /^(target|age|finalize|publish):/.test(l)), false)
   assert.ok(call('integrate:T-1').prompt.includes("--target 'origin/land/combined'"))
   assert.deepEqual(plain(result.inputs).map((i) => [i.number, i.mark]), [[1, 'closed'], [2, 'closed']])
 })
@@ -64,7 +64,7 @@ test('a modified PR whose head matches this approval\'s stamp is not rebuilt aga
   const { first, args } = await approve(plan)
   const { result, labels } = await run(args, modifiedRoutes(first.result.digest, sha(2, 6)))
   assert.equal(result.status, 'ready')
-  assert.equal(labels.some((l) => l.startsWith('target:') || l === 'publish'), false)
+  assert.equal(labels.some((l) => l.startsWith('target:') || l.startsWith('publish')), false)
 })
 
 test('a head that moved past this approval\'s stamp turns the plan into needs-replan', async () => {

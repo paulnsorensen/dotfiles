@@ -83,7 +83,7 @@ test('a keep-only plan with a command criterion verifies in the pinned integrati
   assert.equal(input.criteria[0].check, 'node --test --test-name-pattern helpers tests/helper.test.mjs')
   assert.equal(call('worktree:add:pre').opts.isolation, undefined)
   assert.deepEqual(plain(result.verification.verdicts).map((v) => [v.result, v.evidence]), [['pass', 'grep printed 1 and 1']])
-  assert.equal(labels.some((l) => l.startsWith('target:') || l === 'publish'), false)
+  assert.equal(labels.some((l) => l.startsWith('target:') || l.startsWith('publish')), false)
 })
 
 test('a target that conflicts during integration fails before verification, publish, or review', async () => {
@@ -94,7 +94,7 @@ test('a target that conflicts during integration fails before verification, publ
   assert.match(result.note, /T-2 conflicts with the targets merged before it in a\.js/)
   assert.equal(workflowCalls.length, 0)
   assert.equal(wfxLabels.some((l) => l.startsWith('worktree:')), false)
-  assert.equal(labels.some((l) => l.startsWith('review:') || l === 'publish'), false)
+  assert.equal(labels.some((l) => l.startsWith('review:') || l.startsWith('publish')), false)
 })
 
 test('an approved consolidation builds, verifies, publishes, and drafts the superseded PRs', async () => {
@@ -102,14 +102,15 @@ test('an approved consolidation builds, verifies, publishes, and drafts the supe
   const { result, labels, call } = await run(args, builtConsolidation())
   assert.equal(result.status, 'ready')
   assert.equal(labels.some((l) => l.startsWith('survey') || l.startsWith('plan:')), false)
-  assert.equal(call('publish').opts.model, 'sonnet')
+  assert.equal(call('publish:T-1:push').opts.model, 'haiku')
+  assert.equal(call('publish:T-1:push').opts.agentType, 'runner')
   assert.match(call('mark').prompt, /gh pr ready <pr> --undo/)
   assert.match(call('mark').prompt, /move-my-cheese:landing digest=/)
   assert.doesNotMatch(call('mark').prompt, /gh pr close/)
   assert.deepEqual(plain(result.inputs).map((i) => [i.number, i.action, i.mark]), [[1, 'supersede', 'drafted'], [2, 'supersede', 'drafted']])
 })
 
-test('builders, integration, and publish use a run-scoped local branch, never the PR branch itself', async () => {
+test('builders and integration use a run-scoped local branch, and publish pushes the built head by SHA', async () => {
   const { first, args } = await approve(planRoutes())
   const local = `mmc/${first.result.digest.slice(0, 8)}/land/combined`
   const { result, call } = await run(args, builtConsolidation())
@@ -123,10 +124,10 @@ test('builders, integration, and publish use a run-scoped local branch, never th
   assert.ok(merge.includes(`--base ${BASE_SHA}`))
   assert.match(merge, /--branch 'mmc\/integrate-/)
   assert.ok(!merge.includes(local))
-  assert.ok(call('publish').prompt.includes(`"local_branch": "${local}"`))
-  assert.ok(call('publish').prompt.includes('<local_branch>:refs/heads/<branch>'))
-  assert.ok(call('publish').prompt.includes(`move-my-cheese:landing digest=${first.result.digest}`))
-  assert.doesNotMatch(call('publish').prompt, /worktree_path|\bcd /)
+  const push = call('publish:T-1:push').prompt
+  assert.ok(push.includes(`--branch 'land/combined' --sha ${sha(50)} --expect none`))
+  assert.ok(call('publish:T-1:comment').prompt.includes(`move-my-cheese:landing digest=${first.result.digest}`))
+  assert.ok(!push.includes(local))
 })
 
 test('a failed target build stops the run before anything is pushed', async () => {
@@ -135,15 +136,15 @@ test('a failed target build stops the run before anything is pushed', async () =
   const { result, labels } = await run(args, planRoutes([['target:T-1', blocked]]))
   assert.equal(result.status, 'fail')
   assert.match(result.note, /T-1 \(blocked\).*nothing was pushed/)
-  assert.equal(labels.some((l) => l === 'publish' || l.startsWith('integrate:')), false)
+  assert.equal(labels.some((l) => l.startsWith('publish') || l.startsWith('integrate:')), false)
 })
 
-test('publish never reruns after an invalid report', async () => {
+test('publish never reruns after a failed step', async () => {
   const { args } = await approve(planRoutes())
-  const { result, labels } = await run(args, builtConsolidation([['publish', published('T-1', 1, sha(50))]]))
+  const { result, labels } = await run(args, builtConsolidation([['publish:T-1:push', failure('publish', 'push-failed', 'network down')]]))
   assert.equal(result.status, 'fail')
-  assert.match(result.note, /check the remote branches/)
-  assert.deepEqual(labels.filter((l) => l.startsWith('publish')), ['publish'])
+  assert.match(result.note, /publish T-1 failed at push: push-failed: network down; check the remote branches and PRs before a rerun/)
+  assert.deepEqual(labels.filter((l) => l.startsWith('publish')), ['publish:T-1:push'])
 })
 
 test('a branch this run rebuilt gets a full review, never an incremental one', async () => {

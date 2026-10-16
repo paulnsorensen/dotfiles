@@ -221,8 +221,35 @@ const CHECKS_OF = {
   pass: { passing: 1, failing: 0, pending: 0, items: [{}] },
 }
 const isEnvelope = (v) => Boolean(v) && typeof v === 'object' && 'ok' in v && 'cmd' in v
+// ---- Publish adapter ----
+// Publish now runs one wfx step per call, with the label publish:<id>:<step>. The step shows in the command text.
+// A route value of the removed agent shape, published(id, n, head), supplies the PR number, url, and stats.
+// A null route value gives a null answer, which a stat call reads as a failed call.
+function publishAnswer(prompt, label, value) {
+  const id = label.split(':')[1]
+  const result = value && Array.isArray(value.results) ? value.results.find((r) => r.target === id) : null
+  if (prompt.includes('wfx pr create')) {
+    return result ? envelope('pr', { number: result.pr_number, url: result.url }) : failure('pr', 'pr-create-failed', 'no published result for ' + id)
+  }
+  if (prompt.includes('wfx pr comment') || prompt.includes('wfx pr retarget')) return envelope('pr', {})
+  if (prompt.includes('wfx publish')) {
+    const flag = (name) => new RegExp(`--${name} '?([^' ]+)`).exec(prompt)[1]
+    return envelope('publish', { branch: flag('branch'), sha: flag('sha'), expect: flag('expect'), pushed: true })
+  }
+  if (prompt.includes('wfx rev-parse')) {
+    const prefix = /wfx rev-parse --repo "[^"]*" '?([^' ]+)/.exec(prompt)[1]
+    return envelope('rev-parse', { shas: { [prefix]: prefix.padEnd(40, '0') } })
+  }
+  if (prompt.includes('gh pr view')) {
+    if (value && 'changed_files' in value) return value
+    return result ? { changed_files: result.changed_files, lines_changed: result.lines_changed } : null
+  }
+  if (prompt.includes('gh pr list --head')) return Array.isArray(value) ? value : []
+  return value
+}
 function legacyToEnvelope({ opts, prompt }, value) {
   const label = opts.label
+  if (label.startsWith('publish:')) return publishAnswer(prompt, label, value)
   const pr = Number(/--pr (\d+)/.exec(prompt)?.[1] ?? 0)
   if (/:status:\d+/.test(label) && value && 'merge_state' in value) {
     const draft = value.merge_state === 'DRAFT'

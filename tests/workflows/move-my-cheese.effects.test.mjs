@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  ageFull, aged, approve, approveDone, builtConsolidation, curedReviewRoutes, envelope, failure, merged, noTensions, openPr, plain,
-  pollData, pushedCure, ready, reconRoutes, run, sha, stateMerged, survey, wt,
+  ageFull, aged, approve, approveDone, built, builtConsolidation, curedReviewRoutes, envelope, failure, finalized, merged, minimalPlan, noTensions, openPr,
+  plain, planRoutes, pollData, published, pushedCure, ready, reconRoutes, run, sha, stateMerged, survey, wt,
 } from './move-my-cheese.fixtures.mjs'
 
 // One aged PR whose review, pre-merge poll, merge, and merged wait all succeed.
@@ -186,4 +186,83 @@ test('a worktree the cleanup scan cannot remove is reported as leftover_worktree
   assert.match(call('cleanup:sweep').prompt, /wfx worktree list --repo .* --landing [0-9a-f]+$/)
   const clean = await run({ prs: [1], auto: true }, curedReviewRoutes(pushedCure))
   assert.equal('leftover_worktrees' in plain(clean.result), false)
+})
+
+// ---- Publish: one wfx step per call ----
+// The PR 2 on the remote sits on prBase, a stacked base inside the run; the plan moves it to main.
+const existingPlanRoutes = (prBase, extra = []) => planRoutes([
+  ['recon:detail', { prs: [aged(1), aged(2, { base: prBase })] }], ['plan:minimal', minimalPlan()], ...extra,
+])
+const builtExisting = (base, extra = []) => existingPlanRoutes(base, [
+  ['target:T-2', built(sha(60), '/tmp/wt-t2')],
+  ['publish', published('T-2', 2, sha(60))],
+  ['age:2', ageFull(2, { worktree_path: '/tmp/wt-t2' })],
+  ['finalize:2', finalized],
+  ['review:1:status', ready(1)],
+  ['review:2:status', ready(2, { head_sha: sha(60) })],
+  ...extra,
+])
+
+test('publish pushes the built head with a lease on the remote head, or none for a new branch', async () => {
+  const { args } = await approve(planRoutes())
+  const fresh = await run(args, builtConsolidation())
+  assert.equal(fresh.result.status, 'ready')
+  assert.match(fresh.call('publish:T-1:push').prompt, new RegExp(`wfx publish --repo .* --branch 'land/combined' --sha ${sha(50)} --expect none$`))
+  const plan = existingPlanRoutes('main')
+  const existing = await approve(plan)
+  const kept = await run(existing.args, builtExisting('main'))
+  assert.equal(kept.result.status, 'ready')
+  assert.match(kept.call('publish:T-2:push').prompt, new RegExp(`--branch 'feat/pr-2' --sha ${sha(60)} --expect ${sha(2)}$`))
+})
+
+test('an existing target whose PR sits on another base is retargeted, and one on the same base is not', async () => {
+  const moved = await approve(existingPlanRoutes('feat/pr-1'))
+  const { result, call, labels } = await run(moved.args, builtExisting('feat/pr-1'))
+  assert.equal(result.status, 'ready')
+  assert.match(call('publish:T-2:retarget').prompt, /wfx pr retarget --pr 2 --base 'main'$/)
+  assert.equal(labels.includes('publish:T-2:create'), false)
+  const same = await approve(existingPlanRoutes('main'))
+  const unchanged = await run(same.args, builtExisting('main'))
+  assert.equal(unchanged.labels.includes('publish:T-2:retarget'), false)
+})
+
+test('a new target opens its PR with the brief and a Supersedes line for each folded PR, then comments the marker', async () => {
+  const { first, args } = await approve(planRoutes())
+  const { result, call } = await run(args, builtConsolidation())
+  assert.equal(result.status, 'ready')
+  const create = call('publish:T-1:create').prompt
+  assert.match(create, /wfx pr create --base 'main' --head 'land\/combined' --title 'feat: combined' --body-file /)
+  assert.ok(create.includes('combine both'))
+  assert.ok(create.includes('Supersedes #1') && create.includes('Supersedes #2'))
+  assert.match(call('publish:T-1:comment').prompt, /wfx pr comment --pr 10 --body-file /)
+  assert.ok(call('publish:T-1:comment').prompt.includes(`move-my-cheese:landing digest=${first.result.digest}`))
+})
+
+test('a lease-rejected new target adopts the one open PR of its branch', async () => {
+  const { args } = await approve(planRoutes())
+  const { result, call, labels } = await run(args, builtConsolidation([
+    ['publish:T-1:push', failure('publish', 'lease-rejected', 'the remote branch exists')],
+    ['publish:T-1:adopt', [{ number: 10, url: 'https://example.test/pr/10', headRefOid: sha(40) }]],
+  ]))
+  assert.equal(result.status, 'ready')
+  assert.match(call('publish:T-1:adopt').prompt, /gh pr list --head 'land\/combined' --state open --json number,url,headRefOid/)
+  assert.match(call('publish:T-1:adopt:push').prompt, new RegExp(`--sha ${sha(50)} --expect ${sha(40)}$`))
+  assert.equal(labels.includes('publish:T-1:create'), false)
+  assert.match(call('publish:T-1:comment').prompt, /wfx pr comment --pr 10 /)
+})
+
+test('a lease-rejected new target with no open PR fails and says to check the remote', async () => {
+  const { args } = await approve(planRoutes())
+  const { result, labels } = await run(args, builtConsolidation([['publish:T-1:push', failure('publish', 'lease-rejected', 'the remote branch exists')]]))
+  assert.equal(result.status, 'fail')
+  assert.match(result.note, /publish T-1 failed at push: lease-rejected/)
+  assert.match(result.note, /not one; check the remote branches and PRs before a rerun/)
+  assert.equal(labels.some((l) => l === 'publish:T-1:create' || l === 'publish:T-1:adopt:push'), false)
+})
+
+test('a failed stats call reports zero changes and does not stop the run', async () => {
+  const { args } = await approve(planRoutes())
+  const { result, labels } = await run(args, builtConsolidation([['publish:T-1:stats', null]]))
+  assert.equal(result.status, 'ready')
+  assert.ok(labels.includes('publish:T-1:stats'))
 })

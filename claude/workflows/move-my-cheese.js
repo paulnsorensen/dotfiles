@@ -1292,7 +1292,7 @@ const LANDING_SCHEMA = { ...obj(LANDING_FIELDS), properties: { ...LANDING_FIELDS
 const PLAN_ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), chosen: { type: 'string', pattern: '^P-[0-9]+$' }, concerns: strs, guidance: text('Under 80 words') })
 const TARGET_SCHEMA = obj({ status: oneOf(TASK_STATUSES), completed: strs, remaining: strs, checkpoint: text('Last commit SHA, or empty'), head_sha: str, worktree_path: str, note: str })
 const SALVAGE_SCHEMA = obj({ found: bool, checkpoint: str, completed: strs, remaining: strs })
-const PUBLISH_SCHEMA = obj({ results: list(obj({ target: str, pr_number: int, url: str, head_sha: str, changed_files: int, lines_changed: int })) })
+const STAT_SCHEMA = obj({ changed_files: int, lines_changed: int })
 const AGE_SCHEMA = obj({ mode: oneOf(AGE_MODES), scope: text('The exact ref range reviewed, empty when skipped'), slug: text('The /age handoff slug, empty when skipped'), artifact: str, worktree_path: str, has_medium_plus_findings: bool, has_cheap_lows: bool })
 const CURE_SCHEMA = obj({ status: oneOf(PHASE_STATUSES), committed: bool, pushed: bool, head_sha: str, worktree_path: str, artifact: str, note: str })
 const PREP_SCHEMA = obj({ worktree_path: str })
@@ -1455,22 +1455,6 @@ function checkTarget(result) {
   const errors = []
   if (!SHA_RE.test(result.head_sha.trim())) errors.push(substance('head_sha must be the commit SHA of the target branch'))
   return errors
-}
-
-function checkPublish(result, jobs, inputNumbers) {
-  const errors = []
-  const ids = jobs.map((j) => j.target)
-  for (const r of result.results) {
-    const job = jobs.find((j) => j.target === r.target)
-    if (!job) { errors.push(refError(r.target, ids, 'results.target')); continue }
-    if (job.kind === 'existing' && r.pr_number !== job.pr) errors.push(substance(`${r.target} must stay on #${job.pr}, not #${r.pr_number}`))
-    if (job.kind === 'new' && (r.pr_number <= 0 || inputNumbers.includes(r.pr_number))) errors.push(substance(`${r.target} is new, so it needs its own new PR number`))
-    if (!SHA_RE.test(r.head_sha.trim())) errors.push(substance(`${r.target}.head_sha must be a commit SHA`))
-    if (blank(r.url)) errors.push(substance(`${r.target} needs its PR url`))
-  }
-  for (const id of duplicates(result.results.map((r) => r.target))) errors.push(substance(`results lists ${id} twice`))
-  for (const id of ids) if (!result.results.some((r) => r.target === id)) errors.push(substance(`no result for ${id}`))
-  return errors.filter(Boolean)
 }
 
 function checkLanding(landing) {
@@ -1778,17 +1762,6 @@ const salvagePrompt = (target) => prompt(
   `Target ${target.id} ended without a result. Recover its durable state. Do not continue the work or change anything.`,
   `Run git rev-parse --verify refs/heads/${localOf(target.branch)}. Return found=false when that ref does not exist. Otherwise set checkpoint to its SHA.`,
   'Fill completed from git log of the ref. Leave remaining empty when you cannot tell.',
-)
-
-const publishPrompt = (jobs) => prompt(
-  'Publish the landing targets. Use Bash. Never merge anything.',
-  'Work through the targets in the listed order from the current directory. Worktrees share refs, so each local_branch is visible here. Each target was built on its local_branch, which stands in for branch; never check out branch itself.',
-  `Existing target: run git push --force-with-lease=<branch>:<expected_remote_sha> origin <local_branch>:refs/heads/<branch>. When base_branch differs from the current PR base, run gh pr edit <pr> --base <base_branch>. Then upsert your comment that contains ${LANDING_PREFIX}: PATCH it through gh api when it exists, else post it with gh pr comment <pr> --body-file - fed by a quoted heredoc (<<'EOF'). Its whole body is ${landingMarker(digest)}. Never open a second PR for an existing target.`,
-  `New target: when gh pr list --head <branch> --state open shows a PR, report it and push nothing. Otherwise run git push origin <local_branch>:refs/heads/<branch>, then gh pr create --head <branch> --base <base_branch> --title <title> --body-file - fed by a quoted heredoc (<<'EOF'). Name each superseded PR in the body as Supersedes #<n>. Then post one comment whose whole body is ${landingMarker(digest)}, the same way.`,
-  'Push only the listed branches. Never use --force without a lease, --admin, or --no-verify.',
-  'Report each target: pr_number, url, head_sha from git rev-parse origin/<branch>, and changed_files and lines_changed (additions plus deletions) from gh pr view.',
-  NO_CHAIN,
-  data('targets', jobs),
 )
 
 function agePrompt(m) {
@@ -2946,16 +2919,79 @@ const pushJobs = order.filter(rebuilt).map((id) => {
 if (pushJobs.length && floorReached()) return landingReport('partial', 'budget floor reached before publish; nothing was pushed')
 if (pushJobs.length) {
   phase('Publish')
-  // Publish pushes and opens PRs, so it never reruns; a malformed report gets one form-only repair.
-  const check = (r) => checkPublish(r, pushJobs, prNumbers)
-  let pub = await agent(publishPrompt(pushJobs), { label: 'publish', phase: 'Publish', agentType: 'runner', model: 'sonnet', schema: PUBLISH_SCHEMA })
-  let errors = pub ? check(pub) : [substance('agent returned no output')]
-  if (pub && errors.length && errors.every((e) => e.kind === 'form')) {
-    pub = await agent(repairPrompt(pub, errors), { label: 'publish:repair1', phase: 'Publish', agentType: 'formatter', schema: PUBLISH_SCHEMA, model: 'haiku', effort: 'low' })
-    errors = pub ? check(pub) : [substance('repair returned no output')]
+  // Publish pushes and opens PRs, so no step reruns. A failed step stops the run and names the remote state to check.
+  const pubStep = (job, name, command) => wfx(`publish:${job.target}:${name}`, 'Publish', command)
+  const pubFail = (job, name, text) => ({ ok: false, note: `publish ${job.target} failed at ${name}: ${text}; check the remote branches and PRs before a rerun` })
+  const envText = (env) => `${env.error.code}: ${env.error.message}`
+  // Expands a short SHA through wfx rev-parse. Returns '' when no full SHA results.
+  const fullSha = async (job, sha) => {
+    if (FULL_SHA_RE.test(sha)) return sha
+    const env = await pubStep(job, 'rev-parse', `wfx rev-parse --repo ${REPO_ARG} ${shq(sha)}`)
+    const full = env.ok && isObject(env.data.shas) ? String(env.data.shas[sha] || '').trim() : ''
+    return FULL_SHA_RE.test(full) ? full : ''
   }
-  if (errors.length) return landingReport('fail', `publish reported invalid results; check the remote branches and PRs before a rerun: ${errorText(errors)}`)
-  for (const r of pub.results) published.set(r.target, { ...r, head_sha: r.head_sha.trim() })
+  const statsOf = async (job, number) => {
+    const cmd = `gh pr view ${number} --json changedFiles,additions,deletions --jq '{changed_files: .changedFiles, lines_changed: (.additions + .deletions)}'`
+    const { value } = await typed(prompt('Run exactly this one command and nothing else, in the repository checkout. Return the JSON object it prints, unchanged.', 'Command: ' + cmd),
+      { label: `publish:${job.target}:stats`, phase: 'Publish', agentType: 'runner', model: 'haiku', effort: 'low', schema: STAT_SCHEMA }, () => [])
+    if (value) return value
+    log(`publish:${job.target}:stats failed; the report shows 0 changed files and 0 changed lines`)
+    return { changed_files: 0, lines_changed: 0 }
+  }
+  async function publishOne(job) {
+    const head = await fullSha(job, String(outcomes.get(job.target).head_sha || '').trim())
+    if (!head) return pubFail(job, 'rev-parse', 'the built head has no full SHA')
+    const remote = job.expected_remote_sha.trim()
+    const expect = remote ? await fullSha(job, remote) : 'none'
+    if (!expect) return pubFail(job, 'rev-parse', 'the remote head has no full SHA')
+    const pushCmd = (lease) => `wfx publish --repo ${REPO_ARG} --branch ${shq(job.branch)} --sha ${head} --expect ${lease}`
+    const pushed = await pubStep(job, 'push', pushCmd(expect))
+    let taken = null
+    if (!pushed.ok) {
+      // A new target whose branch already exists on the remote adopts the one open PR of that head. Anything else fails.
+      if (job.kind !== 'new' || pushed.error.code !== 'lease-rejected') return pubFail(job, 'push', envText(pushed))
+      const { value: open } = await typed(prompt('Run exactly this one command and nothing else, in the repository checkout. Return the JSON array it prints, unchanged.',
+        `Command: gh pr list --head ${shq(job.branch)} --state open --json number,url,headRefOid`),
+      { label: `publish:${job.target}:adopt`, phase: 'Publish', agentType: 'runner', model: 'haiku', effort: 'low', schema: list(obj({ number: int, url: str, headRefOid: str })) }, () => [])
+      if (!Array.isArray(open) || open.length !== 1) return pubFail(job, 'push', `${envText(pushed)}, and the branch has ${Array.isArray(open) ? open.length : 'an unknown number of'} open PRs, not one`)
+      taken = open[0]
+      const lease = await fullSha(job, String(taken.headRefOid).trim())
+      if (!lease) return pubFail(job, 'adopt', 'the open PR has no full head SHA')
+      const again = await pubStep(job, 'adopt:push', pushCmd(lease))
+      if (!again.ok) return pubFail(job, 'adopt:push', envText(again))
+    }
+    let number = 0
+    let url = ''
+    if (taken) ({ number, url } = taken)
+    else if (job.kind === 'existing') {
+      const pr = byNumber.get(job.pr)
+      if (pr.base !== job.base_branch) {
+        const retarget = await pubStep(job, 'retarget', `wfx pr retarget --pr ${job.pr} --base ${shq(job.base_branch)}`)
+        if (!retarget.ok) return pubFail(job, 'retarget', envText(retarget))
+      }
+      number = job.pr
+      url = pr.url
+    } else {
+      const body = [targetsById.get(job.target).brief, ...job.supersedes.map((n) => `Supersedes #${n}`)].join('\n\n')
+      const file = `/tmp/mmc-body-${job.target}.md`
+      const created = await pubStep(job, 'create', `printf '%s' ${shq(body)} > ${shq(file)} && wfx pr create --base ${shq(job.base_branch)} --head ${shq(job.branch)} --title ${shq(job.title)} --body-file ${shq(file)}`)
+      if (!created.ok) return pubFail(job, 'create', envText(created))
+      if (!Number.isInteger(created.data.number) || created.data.number <= 0 || blank(created.data.url)) return pubFail(job, 'create', 'wfx pr create returned no PR number or url')
+      number = created.data.number
+      url = created.data.url
+    }
+    // The reader takes the last landing marker comment, so a new comment replaces the old one.
+    const noteFile = `/tmp/mmc-landing-${job.target}.md`
+    const noted = await pubStep(job, 'comment', `printf '%s' ${shq(landingMarker(digest))} > ${shq(noteFile)} && wfx pr comment --pr ${number} --body-file ${shq(noteFile)}`)
+    if (!noted.ok) return pubFail(job, 'comment', envText(noted))
+    const stats = await statsOf(job, number)
+    return { ok: true, result: { target: job.target, pr_number: number, url, head_sha: head, changed_files: stats.changed_files, lines_changed: stats.lines_changed } }
+  }
+  for (const job of pushJobs) {
+    const done = await publishOne(job)
+    if (!done.ok) return landingReport('fail', done.note)
+    published.set(job.target, done.result)
+  }
 }
 // A stop before the first poll still stamps the head that publish left.
 for (const [id, p] of published) lastHead.set(id, p.head_sha)
