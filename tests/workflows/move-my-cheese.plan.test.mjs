@@ -31,6 +31,77 @@ test('no prs returns my non-draft, same-repo candidates from one index agent', a
   assert.deepEqual(labels, ['recon:index'])
 })
 
+const SELECT_OPENS = [openPr(1353, { author: 'renovate' }), openPr(1358), openPr(1360, { author: 'someone' }), openPr(1361)]
+
+test('a free-text PR description resolves through one haiku select agent after the index', async () => {
+  const { result, labels, call } = await run('1358 and above', [
+    ['recon:index', index(SELECT_OPENS)],
+    ['recon:select', { prs: [1358, 1360, 1361], note: 'every open PR numbered 1358 or higher' }],
+    ['recon:detail', { prs: [detail(1358), detail(1360), detail(1361)] }],
+    ['survey', survey],
+    ['tensions', noTensions],
+  ])
+  assert.deepEqual(labels.slice(0, 3), ['recon:index', 'recon:select', 'recon:detail'])
+  assert.equal(call('recon:select').opts.model, 'haiku')
+  const select = call('recon:select').prompt
+  assert.ok(select.includes('<data name="description">\n"1358 and above"'))
+  assert.ok(select.includes('"number": 1353') && select.includes('<data name="viewer">\n"me"'))
+  assert.match(call('recon:detail').prompt, /PRs 1358, 1360, 1361\./)
+  assert.equal(result.status, 'needs-approval')
+  assert.deepEqual(plain(result.landing.inputs), [1358, 1360, 1361])
+})
+
+test('a description inside an object arg combines with the numbers in the other selectors', async () => {
+  const { labels, call } = await run({ prs: 'the renovate PRs', stacks: [1361] }, [
+    ['recon:index', index(SELECT_OPENS)],
+    ['recon:select', { prs: [1353], note: 'author renovate' }],
+    ['recon:detail', { prs: [detail(1353), detail(1361)] }],
+    ['survey', survey],
+    ['tensions', noTensions],
+  ])
+  assert.ok(labels.includes('recon:select'))
+  assert.match(call('recon:detail').prompt, /PRs 1353, 1361\./)
+})
+
+test('numeric selectors keep the code parser and run no select agent', async () => {
+  const { labels, call } = await run('#1358, 1361', [
+    ['recon:index', index(SELECT_OPENS)],
+    ['recon:detail', { prs: [detail(1358), detail(1361)] }],
+    ['survey', survey],
+    ['tensions', noTensions],
+  ])
+  assert.equal(labels.includes('recon:select'), false)
+  assert.match(call('recon:detail').prompt, /PRs 1358, 1361\./)
+})
+
+test('a select answer outside the open PRs gets a redo, and an empty match blocks with the note', async () => {
+  const redo = await run('1358 and above', [
+    ['recon:index', index(SELECT_OPENS)],
+    ['recon:select:redo1', { prs: [1358, 1360, 1361], note: 'fixed' }],
+    ['recon:select', { prs: [1358, 1359], note: 'guessed 1359' }],
+    ['recon:detail', { prs: [detail(1358), detail(1360), detail(1361)] }],
+    ['survey', survey],
+    ['tensions', noTensions],
+  ])
+  assert.match(redo.call('recon:select:redo1').prompt, /#1359 is not an open PR/)
+  assert.match(redo.call('recon:detail').prompt, /PRs 1358, 1360, 1361\./)
+  const none = await run('the docs PRs', [['recon:index', index(SELECT_OPENS)], ['recon:select', { prs: [], note: 'no title or branch mentions docs' }]])
+  assert.equal(none.result.status, 'blocked')
+  assert.match(none.result.error, /no open PR matches 'the docs PRs': no title or branch mentions docs/)
+  assert.deepEqual(none.labels, ['recon:index', 'recon:select'])
+})
+
+test('a description with an approved plan, or over the length cap, blocks before any agent runs', async () => {
+  const { first } = await approve(planRoutes())
+  const approved = await run({ prs: 'my PRs', plan: plain(first.result.landing), approve: first.result.digest }, [])
+  assert.equal(approved.result.status, 'blocked')
+  assert.match(approved.result.error, /landing\.inputs/)
+  assert.equal(approved.trace.agents.length, 0)
+  const long = await run('x'.repeat(501), [])
+  assert.match(long.result.error, /500 characters/)
+  assert.equal(long.trace.agents.length, 0)
+})
+
 test('a stack expands from one member and gets a keep-all plan without planners', async () => {
   const opens = [openPr(1), openPr(2, { base: 'feat/pr-1' }), openPr(3, { base: 'feat/pr-2' }), openPr(4)]
   const { result, labels, call } = await run({ prs: [2] }, [
