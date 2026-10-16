@@ -2950,10 +2950,12 @@ if (pushJobs.length) {
     if (!pushed.ok) {
       // A new target whose branch already exists on the remote adopts the one open PR of that head. Anything else fails.
       if (job.kind !== 'new' || pushed.error.code !== 'lease-rejected') return pubFail(job, 'push', envText(pushed))
-      const { value: open } = await typed(prompt('Run exactly this one command and nothing else, in the repository checkout. Return the JSON array it prints, unchanged.',
-        `Command: gh pr list --head ${shq(job.branch)} --state open --json number,url,headRefOid`),
-      { label: `publish:${job.target}:adopt`, phase: 'Publish', agentType: 'runner', model: 'haiku', effort: 'low', schema: list(obj({ number: int, url: str, headRefOid: str })) }, () => [])
-      if (!Array.isArray(open) || open.length !== 1) return pubFail(job, 'push', `${envText(pushed)}, and the branch has ${Array.isArray(open) ? open.length : 'an unknown number of'} open PRs, not one`)
+      // The jq filter wraps the list in an object, because a structured answer must be an object.
+      const { value: listed } = await typed(prompt('Run exactly this one command and nothing else, in the repository checkout. Return the JSON object it prints, unchanged.',
+        `Command: gh pr list --head ${shq(job.branch)} --state open --json number,url,headRefOid --jq '{prs: .}'`),
+      { label: `publish:${job.target}:adopt`, phase: 'Publish', agentType: 'runner', model: 'haiku', effort: 'low', schema: obj({ prs: list(obj({ number: int, url: str, headRefOid: str })) }) }, () => [])
+      const open = listed && Array.isArray(listed.prs) ? listed.prs : null
+      if (!open || open.length !== 1) return pubFail(job, 'push', `${envText(pushed)}, and the branch has ${open ? open.length : 'an unknown number of'} open PRs, not one`)
       taken = open[0]
       const lease = await fullSha(job, String(taken.headRefOid).trim())
       if (!lease) return pubFail(job, 'adopt', 'the open PR has no full head SHA')

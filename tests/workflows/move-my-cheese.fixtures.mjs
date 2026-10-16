@@ -244,7 +244,7 @@ function publishAnswer(prompt, label, value) {
     if (value && 'changed_files' in value) return value
     return result ? { changed_files: result.changed_files, lines_changed: result.lines_changed } : null
   }
-  if (prompt.includes('gh pr list --head')) return Array.isArray(value) ? value : []
+  if (prompt.includes('gh pr list --head')) return { prs: Array.isArray(value) ? value : value && Array.isArray(value.prs) ? value.prs : [] }
   return value
 }
 function legacyToEnvelope({ opts, prompt }, value) {
