@@ -4,8 +4,8 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime, withAdvisors } from './cheese-factory.fixtures.mjs'
-import { loadWorkflow } from './harness.mjs'
+import { createRuntime, revParse, withAdvisors } from './cheese-factory.fixtures.mjs'
+import { loadWorkflow } from './cheese-factory.fixtures.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
@@ -68,7 +68,7 @@ const fence = (prompt, name) => new RegExp(`<data name="${name}">\\n([\\s\\S]*?)
 test('typed_shortShaWithFormError_repairsTheExpandedValueWithoutARedo', async () => {
   const { result, trace } = await run({
     'press:parent': { status: 'ok', head_sha: SHORT, artifact: '.cheese/press/parent.md', orientation: 42 },
-    'press:parent:sha': { sha: FULL },
+    'press:parent:sha': revParse(SHORT, FULL),
     'press:parent:repair1': ({ prompt }) => ({ ...JSON.parse(fence(prompt, 'object')), orientation: 'ok' }),
   }, { lenient: true })
 
@@ -86,7 +86,7 @@ test('typed_shortShaWithFormError_repairsTheExpandedValueWithoutARedo', async ()
 test('cookCurd_shortHeadSha_expandsOnceAndPassesTheFullShaDownstream', async () => {
   const { trace } = await run({
     'cook:parent': () => cookOk(SHORT),
-    'cook:parent:sha': { sha: FULL },
+    'cook:parent:sha': revParse(SHORT, FULL),
   })
 
   assert.equal(labelsOf(trace).filter((l) => l === 'cook:parent:sha').length, 1)

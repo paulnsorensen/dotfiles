@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime, loadWorkflow } from './harness.mjs'
+import { createRuntime } from './harness.mjs'
+import { loadWorkflow } from './cheese-factory.fixtures.mjs'
 import { verifyFrom } from './cheese-factory.fixtures.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
@@ -69,7 +70,7 @@ const multi = {
 }
 
 // The agent global skips schema validation, so a test can return a shape error that the real runtime would let through.
-async function run(table, over = {}, { budget } = {}) {
+async function run(table, over = {}, { budget, child } = {}) {
   const workflow = await loadWorkflow(path)
   const full = { ...table, ...over }
   const { globals, trace } = createRuntime()
@@ -89,7 +90,7 @@ async function run(table, over = {}, { budget } = {}) {
     return fn({ prompt, opts })
   }
   agent.unscripted = unscripted
-  const result = await workflow.run({ ...globals, agent, ...(budget ? { budget } : {}), args: { spec: 'parent' } })
+  const result = await workflow.run({ ...globals, agent, ...(budget ? { budget } : {}), ...(child ? { verifyChild: child } : {}), args: { spec: 'parent' } })
   return { result, trace }
 }
 
@@ -158,11 +159,6 @@ const without = (obj, key) => { const copy = { ...obj }; delete copy[key]; retur
 const batch = { verdicts: [verdict('AC-1'), verdict('AC-2')] }
 const first = (fn) => (v) => ({ verdicts: [fn(v.verdicts[0]), v.verdicts[1]] })
 for (const [name, label, good, bad] of [
-  ['verdict.passes missing', 'verify', batch, first((v) => without(v, 'passes'))],
-  ['verdict.passes mistyped', 'verify', batch, first((v) => ({ ...v, passes: 'yes' }))],
-  ['verdict.tree_clean missing', 'verify', batch, first((v) => without(v, 'tree_clean'))],
-  ['verdict.missing_paths missing', 'verify', batch, first((v) => without(v, 'missing_paths'))],
-  ['verdict.missing_paths mistyped', 'verify', batch, first((v) => ({ ...v, missing_paths: 'none' }))],
   ['advice.verdict missing', 'advise:plan', advice('approve'), (v) => without(v, 'verdict')],
   ['advice.verdict out of enum', 'advise:plan', advice('approve'), (v) => ({ ...v, verdict: 'maybe' })],
   ['criteria.check_kind missing', 'criteria', criteria(), (v) => ({ criteria: [without(v.criteria[0], 'check_kind'), v.criteria[1]] })],
@@ -178,12 +174,53 @@ for (const [name, label, good, bad] of [
   })
 }
 
-test('decisionField_nonDecisionShapeError_isStillRepairedByTheFormatter', async () => {
-  let n = 0
-  const { trace } = await run(single, { verify: () => (n++ === 0 ? first((v) => ({ ...v, evidence: 42 }))(batch) : batch) })
+// The verify-criteria child owns verdict repair and redo. The factory only validates the child's verdicts and reports a bad shape as not verified.
+for (const [name, bad] of [
+  ['passes missing', first((v) => without(v, 'passes'))],
+  ['passes mistyped', first((v) => ({ ...v, passes: 'yes' }))],
+  ['tree_clean missing', first((v) => without(v, 'tree_clean'))],
+  ['missing_paths missing', first((v) => without(v, 'missing_paths'))],
+  ['missing_paths mistyped', first((v) => ({ ...v, missing_paths: 'none' }))],
+  ['evidence mistyped', first((v) => ({ ...v, evidence: 42 }))],
+]) {
+  test(`verify_childVerdictShapeError_${name.replaceAll(/\W+/g, '_')}_isReportedNotVerifiedWithoutRedoOrRepair`, async () => {
+    const { result, trace } = await run(single, { verify: () => bad(batch) })
 
-  assert.equal(calls(trace, 'verify:repair1').length, 1)
-  assert.equal(calls(trace, 'verify:redo1').length, 0)
+    assert.match(result.verification.criteria[0].evidence, /^not verified: verify-criteria returned invalid verdicts/)
+    assert.equal(result.verification.criteria[0].verdict, 'fail')
+    assert.equal(calls(trace, 'verify:redo1').length + calls(trace, 'verify:repair1').length, 0)
+  })
+}
+
+// ---- the verify-criteria child fails, blocks, or answers in part ----
+
+test('verify_childThrows_failsEveryJudgedCriterionAsNotVerified', async () => {
+  const { result, trace } = await run(single, {}, { child: () => { throw new Error('child exploded') } })
+
+  assert.equal(result.verification.status, 'failed')
+  for (const row of result.verification.criteria) {
+    assert.equal(row.verdict, 'fail')
+    assert.equal(row.evidence, 'not verified: verify-criteria failed: child exploded')
+  }
+  assert.equal(calls(trace, 'plate').length, 0)
+})
+
+test('verify_childBlocked_failsEveryJudgedCriterionAsNotVerifiedWithItsReason', async () => {
+  const { result, trace } = await run(single, {}, { child: () => ({ status: 'blocked', verdicts: [], missing: [], reason: 'preflight failed: git' }) })
+
+  assert.equal(result.verification.status, 'failed')
+  for (const row of result.verification.criteria) assert.equal(row.evidence, 'not verified: verify-criteria blocked: preflight failed: git')
+  assert.equal(calls(trace, 'plate').length, 0)
+})
+
+test('verify_childPartial_failsOnlyTheCriteriaItMissed', async () => {
+  let sent
+  const { result, trace } = await run(single, {}, { child: (q) => { sent = q; return { status: 'partial', verdicts: [verdict('AC-1')], missing: ['AC-2'] } } })
+
+  assert.deepEqual(plain(result.verification.criteria.map((c) => [c.id, c.verdict])), [['AC-1', 'pass'], ['AC-2', 'fail']])
+  assert.match(result.verification.criteria[1].evidence, /^unchecked: the judge returned no verdict/)
+  assert.equal(calls(trace, 'plate').length, 0)
+  assert.deepEqual(plain({ ...sent, criteria: sent.criteria.map((c) => c.id) }), { worktree_path: TREE, head: INTEGRATE_HEAD, criteria: ['AC-1', 'AC-2'], batch_size: 8, preflight: false })
 })
 
 test('decisionField_otherSchemaVerdictShapeError_isStillRepaired', async () => {

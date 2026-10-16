@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import test from 'node:test'
 
 import { createRuntime } from './cheese-factory.fixtures.mjs'
-import { loadWorkflow } from './harness.mjs'
+import { loadWorkflow } from './cheese-factory.fixtures.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 const fanoutPath = resolve(import.meta.dirname, '../../claude/workflows/age-fanout.js')

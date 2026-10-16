@@ -3,8 +3,9 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime, loadWorkflow } from './harness.mjs'
-import { verifyFrom } from './cheese-factory.fixtures.mjs'
+import { createRuntime } from './harness.mjs'
+import { loadWorkflow } from './cheese-factory.fixtures.mjs'
+import { revParse, verifyFrom } from './cheese-factory.fixtures.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
 
@@ -58,13 +59,13 @@ test('skillStep_namesTheTilthReaderForTheSkillFile', async () => {
   assert.match(call('cook:parent').prompt, /SKILL\.md with mcp__tilth__tilth_read and follow it/)
 })
 
-test('shortSha_expansion_runsAsAnExplorer', async () => {
+test('shortSha_expansion_runsAsARunner', async () => {
   const { call } = await run({
     'cook:parent': () => ({ status: 'ok', head_sha: 'abc1234', worktree_path: '/tmp/worktrees/parent', artifact: '.cheese/cook/parent.md', orientation: 'x' }),
-    'cook:parent:sha': () => ({ sha: `abc1234${'0'.repeat(33)}` }),
+    'cook:parent:sha': () => revParse('abc1234', `abc1234${'0'.repeat(33)}`),
   })
 
-  assert.equal(call('cook:parent:sha').opts.agentType, 'explorer')
+  assert.equal(call('cook:parent:sha').opts.agentType, 'runner')
 })
 
 test('salvage_runsAsAnExplorer', async () => {

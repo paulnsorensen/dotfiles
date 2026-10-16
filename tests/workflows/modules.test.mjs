@@ -152,6 +152,30 @@ test('each workflow declares every provided name once, inside its module block, 
   }
 })
 
+// Modules that one script adopted ahead of the shared MARKED list.
+const ADOPTED = {
+  'claude/workflows/cheese-factory.js': ['guard', 'schema', 'graph', 'criteria', 'advise', 'findings', 'status'],
+}
+
+test('each adopted module sits once in its script, inside its block, and equals its module file', () => {
+  for (const [file, names] of Object.entries(ADOPTED)) {
+    const text = read(file)
+    for (const name of names) {
+      const b = text.indexOf(BEGIN(name))
+      const e = text.indexOf(END(name))
+      assert.ok(b >= 0 && e > b, `${file} ${name}`)
+      assert.equal(text.indexOf(BEGIN(name), b + 1), -1, `${file} ${name} once`)
+      assert.equal(text.slice(b + BEGIN(name).length, e), moduleText(name), `${file} ${name}`)
+      for (const provided of PROVIDES[name]) {
+        const all = text.match(new RegExp(declaration(provided).source, 'gm')) ?? []
+        assert.equal(all.length, 1, `${file} ${provided}`)
+        const at = text.search(declaration(provided))
+        assert.ok(at > b && at < e, `${file} ${provided} inside ${name} block`)
+      }
+    }
+  }
+})
+
 test('cheese-factory has no SHA_RE and move-my-cheese keeps its 7-to-40-hex SHA_RE', () => {
   assert.match(moduleText('stale'), /^const SHA_RE = \/\^\[0-9a-f\]\{7,40\}\$\/i$/m)
   assert.match(moduleText('stale'), /^const SHORT_SHA_RE = \/\^\[0-9a-f\]\{7,16\}\$\/i$/m)
