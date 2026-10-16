@@ -21,6 +21,7 @@ const ADOPTED = {
   'claude/workflows/cheese-factory.js': ['guard', 'schema', 'graph', 'criteria', 'advise', 'findings', 'status'],
   'claude/workflows/hill-climb-threads.js': ['fanout'],
   'claude/workflows/triage-sweep.js': ['budget', 'status'],
+  'claude/workflows/move-my-cheese.js': ['guard', 'schema', 'graph', 'criteria', 'advise', 'findings', 'status'],
 }
 const PROVIDES = {
   stale: ['SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'SHA_RE', 'SHORT_SHA_RE', 'DIGEST_RE', 'stampedBy', 'markersOf', 'shaErrors', 'staleVerdict'],

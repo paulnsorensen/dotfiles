@@ -9,7 +9,7 @@ const repo = fileURLToPath(new URL('../../', import.meta.url))
 
 // These scripts still hold local copies of module names.
 // The integrator removes each entry after its curd merges and adopts the modules.
-const PENDING_ADOPTION = ['claude/workflows/move-my-cheese.js']
+const PENDING_ADOPTION = []
 
 const BEGIN = /^\/\/ BEGIN module (\S+)$/
 const END = /^\/\/ END module (\S+)$/

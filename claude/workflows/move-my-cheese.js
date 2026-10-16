@@ -1080,6 +1080,44 @@ function cureBatches(bySlug, cap) {
   return batches
 }
 // END module findings
+// BEGIN module status
+// module: status; provides: STATUS, finish, blockedResult, gapField, report, donePayload, runStatus, countStatuses; requires: none
+// The status values that a workflow result carries.
+const STATUS = Object.freeze({ ok: 'ok', partial: 'partial', blocked: 'blocked', needsInput: 'needs-input', needsApproval: 'needs-approval' })
+
+// A result with a status. base holds the keys that every result of the workflow carries; extra overrides them.
+const finish = (status, extra = {}, base = {}) => ({ ...base, status, ...extra })
+
+// A blocked result. The key reason holds the cause.
+const blockedResult = (reason, extra = {}, base = {}) => finish(STATUS.blocked, { reason, ...extra }, base)
+
+// The gaps key of a result, or nothing when there is no gap.
+const gapField = (gaps) => (gaps.length ? { gaps } : {})
+
+// A report result. The note is logged and returned, as an empty string when absent. log resolves at call time.
+function report(status, note, fields = {}) {
+  if (note) log(note)
+  return { status, note: note || '', ...fields }
+}
+
+// A done payload: fields and extra merged, without the keys whose value is undefined.
+function donePayload(fields, extra = {}) {
+  const merged = { ...fields, ...extra }
+  return Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== undefined))
+}
+
+// A run is ok only when something was produced, every row has the clean status, nothing stopped it, and no gap remains.
+function runStatus({ stopped = '', gaps = [], produced = 0, rows = [], clean = 'clean' } = {}) {
+  return stopped || gaps.length || !produced || rows.some((r) => r.status !== clean) ? STATUS.partial : STATUS.ok
+}
+
+// Counts the rows for each status. A status in seed starts at its seed count.
+function countStatuses(rows, seed = { clean: 0, dirty: 0, failed: 0 }) {
+  const counts = { ...seed }
+  for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1
+  return counts
+}
+// END module status
 
 // Tracked source: claude/workflows/move-my-cheese.js in the dotfiles repo.
 // Design notes: .hallouminate/wiki/architecture/move-my-cheese-workflow.md.
@@ -2312,8 +2350,8 @@ async function landAll() {
   return stopped
 }
 
-function report(status, note) {
-  if (note) log(note)
+// The landing result. The status module report() logs the note and adds the status and note keys.
+function landingReport(status, note) {
   const targets = order.map((id) => {
     const t = targetsById.get(id)
     const built = outcomes.get(id) || {}
@@ -2333,7 +2371,7 @@ function report(status, note) {
     const mark = marks.find((m) => m.pr === n)
     return { number: n, action: d.action, target: d.target, reason: d.reason, mark: mark ? mark.action : '' }
   })
-  return { status, note: note || '', digest, plan_source: planSource, plan_summary: plan.summary, inputs, targets, tensions: landing.tensions, verification, skipped, advice: adviceLog, ...gapField() }
+  return report(status, note, { digest, plan_source: planSource, plan_summary: plan.summary, inputs, targets, tensions: landing.tensions, verification, skipped, advice: adviceLog, ...gapField(gaps) })
 }
 
 // The action an approved plan gives a PR, or '' on a planning run.
@@ -2517,7 +2555,6 @@ let planSource = 'approved'
 const adviceLog = []
 // Every Ground gap goes to log() and to each later result.
 const gaps = []
-const gapField = () => (gaps.length ? { gaps } : {})
 // Agents that this run spent on brie-ground children; the runtime cap counts them.
 let researchAgents = 0
 // Ground output enters a planner context only when it holds something, so a run without it keeps the old context.
@@ -2533,12 +2570,12 @@ const PLAN_STOP_USAGE = 'The advisor stopped the run; advice lists its concerns 
 const APPROVE_USAGE = `${approveUsage({ fields: 'prs: landing.inputs, landing: landing_id, approve: digest' })} The long form { prs: landing.inputs, plan: landing, approve: digest } still works.`
 const needsInput = (questions) => needsInputResult(
   questions,
-  { plan_source: planSource, digest, landing, advice: adviceLog, skipped, ...gapField() },
+  { plan_source: planSource, digest, landing, advice: adviceLog, skipped, ...gapField(gaps) },
   'Answer with { prs: landing.inputs, plan: landing, approve: digest, answers: { "<question text or 1-based number>": "<answer>" } }. Add revise: "<change>" to change the plan in the same run. One planner folds the input in, and the run returns needs-approval.',
 )
 // When the advisor cannot settle, the user picks: each candidate carries its own landing and digest.
 const choose = (reason, pool, landingOf) => ({
-  status: 'needs-input', reason, advice: adviceLog, skipped, ...gapField(),
+  status: 'needs-input', reason, advice: adviceLog, skipped, ...gapField(gaps),
   candidates: pool.map((c) => { const l = landingOf(c.plan); return { id: c.id, angle: c.angle, digest: digestOf(l), landing: l } }),
   usage: 'Pick one candidate. To execute it, re-run with { prs: landing.inputs, plan: <candidate>.landing, approve: <candidate>.digest }. To change it first, add revise: "<change>". A candidate with open questions takes args.answers first.',
 })
@@ -2704,11 +2741,11 @@ if (APPROVED) {
   if (researchNow && questions.length) {
     phase('Research')
     for (const question of questions.slice(0, LIMITS.maxResearch)) {
-      if (floorReached()) return { status: 'blocked', error: 'budget floor reached before research', skipped, ...gapField() }
+      if (floorReached()) return { status: 'blocked', error: 'budget floor reached before research', skipped, ...gapField(gaps) }
       researchAgents += BRIE_GROUND_MAX_AGENTS
       const r = await brieGround(question)
       // Fail closed: a landing never plans on research that failed.
-      if (r.failed) return { status: 'blocked', error: r.failed, skipped, ...gapField() }
+      if (r.failed) return { status: 'blocked', error: r.failed, skipped, ...gapField(gaps) }
       if (r.unsettled) unsettled.push(...r.unsettled.filter((q) => !unsettled.includes(q)))
       else research.push(r.found)
     }
@@ -2751,11 +2788,11 @@ if (APPROVED) {
       if (drafted[i] && drafted[i].value) pool.push({ id: `P-${pool.length + 1}`, angle: angle.id, plan: drafted[i].value })
       else log(`plan:${angle.id} dropped: ${drafted[i] ? errorText(drafted[i].errors) : 'no output'}`)
     })
-    if (!pool.length) return { status: 'blocked', error: 'no planner produced a valid plan', tensions, skipped, ...gapField() }
+    if (!pool.length) return { status: 'blocked', error: 'no planner produced a valid plan', tensions, skipped, ...gapField(gaps) }
 
     phase('Advise')
     const settled = await advisePlans(pool, context, ctx, 'advise:plan', null)
-    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped, ...gapField(), usage: PLAN_STOP_USAGE }
+    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped, ...gapField(gaps), usage: PLAN_STOP_USAGE }
     if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
     chosenPlan = settled.pool[0].plan
     planSource = settled.pool[0].angle
@@ -2771,7 +2808,7 @@ if (APPROVED) {
     return {
       status: 'needs-approval',
       reason: AUTO ? `auto does not push to or merge PRs by other authors without approval: #${othersTouched.join(', #')}` : 'review the landing plan',
-      plan_source: planSource, digest, landing, landing_id: await saveLanding(landing), estimate: estimateOf(chosenPlan), advice: adviceLog, skipped, ...gapField(),
+      plan_source: planSource, digest, landing, landing_id: await saveLanding(landing), estimate: estimateOf(chosenPlan), advice: adviceLog, skipped, ...gapField(gaps),
       usage: APPROVE_USAGE,
     }
   }
@@ -2876,15 +2913,15 @@ const notBuiltText = (id) => {
   const o = outcomes.get(id)
   return `${id} (${o.status}${o.status === 'failed' ? `: ${o.reason}` : ''})`
 }
-if (notBuilt.length) return report('fail', `targets not built: ${notBuilt.map(notBuiltText).join(', ')}; nothing was pushed`)
+if (notBuilt.length) return landingReport('fail', `targets not built: ${notBuilt.map(notBuiltText).join(', ')}; nothing was pushed`)
 
 // ---- Verify: criteria run in the integration worktree; the targets merged during Assemble ----
 const refsOf = (afterPublish) => order.map((id) => ({ id, ref: afterPublish || !rebuilt(id) ? `origin/${targetsById.get(id).branch}` : localOf(targetsById.get(id).branch) }))
-if (floorReached()) return report('partial', 'budget floor reached before verification; nothing was pushed')
+if (floorReached()) return landingReport('partial', 'budget floor reached before verification; nothing was pushed')
 if (needVerify) {
   phase('Verify')
   verification = await integrateAndVerify('pre', refsOf(false))
-  if (!verification.ok) return report('fail', `verification failed before publish: ${verification.reason}; nothing was pushed`)
+  if (!verification.ok) return landingReport('fail', `verification failed before publish: ${verification.reason}; nothing was pushed`)
 } else {
   verification = { ok: true, reason: 'skipped: one stack of kept PRs is its own integration', verdicts: [] }
 }
@@ -2903,7 +2940,7 @@ const pushJobs = order.filter(rebuilt).map((id) => {
     supersedes: plan.dispositions.filter((d) => d.action === 'supersede' && d.target === id).map((d) => d.pr),
   }
 })
-if (pushJobs.length && floorReached()) return report('partial', 'budget floor reached before publish; nothing was pushed')
+if (pushJobs.length && floorReached()) return landingReport('partial', 'budget floor reached before publish; nothing was pushed')
 if (pushJobs.length) {
   phase('Publish')
   // Publish pushes and opens PRs, so it never reruns; a malformed report gets one form-only repair.
@@ -2914,7 +2951,7 @@ if (pushJobs.length) {
     pub = await agent(repairPrompt(pub, errors), { label: 'publish:repair1', phase: 'Publish', agentType: 'formatter', schema: PUBLISH_SCHEMA, model: 'haiku', effort: 'low' })
     errors = pub ? check(pub) : [substance('repair returned no output')]
   }
-  if (errors.length) return report('fail', `publish reported invalid results; check the remote branches and PRs before a rerun: ${errorText(errors)}`)
+  if (errors.length) return landingReport('fail', `publish reported invalid results; check the remote branches and PRs before a rerun: ${errorText(errors)}`)
   for (const r of pub.results) published.set(r.target, { ...r, head_sha: r.head_sha.trim() })
 }
 // A stop before the first poll still stamps the head that publish left.
@@ -2923,7 +2960,7 @@ for (const [id, p] of published) lastHead.set(id, p.head_sha)
 // ---- Review: pipelined per PR ----
 if (floorReached()) {
   await stampOpen(order)
-  return report('partial', 'budget floor reached before review')
+  return landingReport('partial', 'budget floor reached before review')
 }
 phase('Review')
 const reviewed = await pipeline(order.map((id) => targetsById.get(id)), ageStage, cureStage, finalizeStage, pollStage)
@@ -2931,13 +2968,13 @@ order.forEach((id, i) => reviewById.set(id, reviewed[i] || { verdict: 'failed', 
 const verdictOf = (id) => reviewById.get(id).verdict
 const allReady = order.every((id) => ['ready', 'merged'].includes(verdictOf(id)))
 
-const donePayload = () => ({
+// The advisor payload of the done stage. donePayload() drops the grounding key when the landing has none.
+const doneFields = () => donePayload({
   summary: plan.summary,
   targets: order.map((id) => ({ id, pr: published.get(id).pr_number, review: verdictOf(id) })),
   verdicts: verification.verdicts,
   dispositions: plan.dispositions,
-  ...(landing.grounding ? { grounding: landing.grounding } : {}),
-})
+}, { grounding: landing.grounding || undefined })
 let doneApproved = false
 let doneNote = ''
 
@@ -2958,7 +2995,7 @@ if (!LAND) {
   if (items.length || allReady) {
     let advice = null
     try {
-      advice = floorReached() ? null : await advise('done', 'advise:done', donePayload())
+      advice = floorReached() ? null : await advise('done', 'advise:done', doneFields())
     } catch (e) {
       log(`advise:done failed: ${e.message}`)
     }
@@ -2984,7 +3021,7 @@ if (LAND) {
       if (needVerify) verification = await integrateAndVerify('final', refsOf(true))
       if (!verification.ok) landNote = `land skipped: final verification failed: ${verification.reason}`
       else {
-        const advice = await advise('done', 'advise:done', donePayload())
+        const advice = await advise('done', 'advise:done', doneFields())
         if (advice) adviceLog.push(advice)
         if (!advice || advice.verdict !== 'approve') landNote = `land skipped: the advisor did not approve${advice ? `: ${advice.concerns.join('; ')}` : ''}`
         else landNote = await landAll()
@@ -3008,4 +3045,4 @@ if (['landed', 'ready'].includes(finalStatus) && (scratchWorktrees.size || order
   if (!swept) log(`cleanup returned no output; remove the mmc/${runTag}/ refs and these worktrees by hand: ${[...scratchWorktrees].join(', ') || 'none recorded'}`)
   else if (swept.note) log(`cleanup: ${swept.note}`)
 }
-return report(finalStatus, landNote || doneNote)
+return landingReport(finalStatus, landNote || doneNote)
