@@ -38,7 +38,7 @@ const FULL_SHA_RE = /^[0-9a-f]{40}$/i
 const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
 // END module budget
 // BEGIN module call
-// module: call; provides: form, substance, errorText, schemaErrors, data, prompt, redoPrompt, repairPrompt; requires: none
+// module: call; provides: form, substance, errorText, schemaErrors, data, prompt, redoPrompt, repairPrompt, isWriter, attempt, typed; requires: none
 const form = (msg) => ({ kind: 'form', msg })
 // A substance error needs new facts, so the producer redoes the answer.
 const substance = (msg) => ({ kind: 'substance', msg })
@@ -76,6 +76,75 @@ const repairPrompt = (value, errors) => prompt(
   data('errors', errors.map((e) => e.msg)),
   data('object', value),
 )
+// A writer call may change the tree, so a throw from it never retries. A reviewer worktree only holds reports.
+const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'worktree' && opts.agentType !== 'reviewer')
+// An agent call can throw, for example at the budget ceiling. The throw becomes a value, so the caller decides what to do.
+const attempt = async (text, opts) => {
+  try {
+    return { value: await agent(text, opts), threw: null }
+  } catch (e) {
+    const message = e && e.message ? e.message : String(e)
+    log(`${opts.label}: agent threw: ${message}`)
+    return { value: null, threw: message }
+  }
+}
+// One validated agent call: check the answer, then repair form errors or redo substance errors, each up to LIMITS.fixRounds.
+// A throw from a read-only call retries once. A throw from a writer call never retries.
+// hooks: normalize(value) cleans an answer before the check.
+//   expandShas(value, opts) returns a fixed copy of the value, or null, when the check fails once.
+//   onWorktree(value, opts) runs for each answer of a call with isolation 'worktree'.
+//   nullIsFinal makes a null answer final at once, with no redo.
+//   retryOnThrow is a flag, or a predicate on the call options, that replaces the default read-only rule.
+//   driftOf(before, after, schema) names a decision field that a formatter repair changed, or returns null.
+// Returns { value, errors, lost, threw }. lost is 'threw' or 'missing' when the value is null for that reason.
+const typed = async (text, opts, check, hooks = {}) => {
+  const { normalize = (v) => v, expandShas, onWorktree, nullIsFinal = false, retryOnThrow, driftOf } = hooks
+  const mayRetry = (o) => (typeof retryOnThrow === 'function' ? retryOnThrow(o) : (retryOnThrow ?? !isWriter(o)))
+  let sent = { text, opts }
+  let { value, threw } = await attempt(sent.text, sent.opts)
+  let retried = false
+  let expanded = false
+  let repairedFrom = null
+  let repairErrors = []
+  for (let round = 1; ; round++) {
+    if (threw != null) {
+      if (retried || !mayRetry(sent.opts)) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw', threw: true }
+      retried = true
+      sent = { text: sent.text, opts: { ...sent.opts, label: `${opts.label}:retry${round}` } }
+      ;({ value, threw } = await attempt(sent.text, sent.opts))
+      continue
+    }
+    if (value != null) {
+      value = normalize(value)
+      if (opts.isolation === 'worktree' && onWorktree) onWorktree(value, opts)
+    }
+    let errors = value == null ? [substance('agent returned no output')] : check(value)
+    if (errors.length && expandShas && !expanded && !nullIsFinal && value != null) {
+      expanded = true
+      const full = await expandShas(value, opts)
+      // A repair or redo then starts from the expanded value, so only the remaining errors drive it.
+      if (full) {
+        value = full
+        errors = check(value)
+      }
+    }
+    // A formatter repairs form only. A repair that rewrites a decision field changes the answer, so the producer redoes the call.
+    if (driftOf && repairedFrom && value != null) {
+      const changed = driftOf(repairedFrom, value, opts.schema)
+      if (changed) errors = [substance(`a formatter repair changed ${changed}; fix the original errors yourself`), ...repairErrors.map((e) => substance(e.msg)), ...errors]
+    }
+    repairedFrom = null
+    if (!errors.length) return { value, errors, lost: null, threw: false }
+    if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
+    const formOnly = errors.every((e) => e.kind === 'form')
+    repairedFrom = formOnly ? value : null
+    repairErrors = formOnly ? errors : []
+    sent = formOnly
+      ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low', agentType: 'formatter' } }
+      : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
+    ;({ value, threw } = await attempt(sent.text, sent.opts))
+  }
+}
 // END module call
 // BEGIN module ground
 // module: ground; provides: MOLD, DECISION_KINDS, RESEARCH_CONFIDENCE, GROUNDING_SCHEMA, GROUND_RESEARCH_SCHEMA, GROUND_RULES, researchRule, BRIE_GROUND_MAX_AGENTS, brieGround; requires: none
@@ -771,18 +840,6 @@ function routeFindings(result, filesBySlug, slugs, worktreePath) {
 // With nullIsFinal, a missing answer returns at once, because a redo of a writer can overwrite the work ref.
 // The Plate call and the cook calls use it. Plate never redoes, because a redo repeats publication.
 // Every non-null isolated attempt records its worktree, so a rejected attempt that a redo replaces still gets cleaned up.
-async function attempt(text, opts) {
-  try {
-    return { value: await agent(text, opts), threw: null }
-  } catch (e) {
-    return { value: null, threw: e && e.message ? e.message : String(e) }
-  }
-}
-
-// A writer is a coder call, or an isolated worktree call that is not a reviewer. All other calls are read-only.
-// A writer throw is final, because the work ref may have moved. A read-only throw retries within LIMITS.fixRounds.
-const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'worktree' && opts.agentType !== 'reviewer')
-
 // A status or verdict that differs only by case or spaces is the same answer. A field in TRIM_FIELDS loses its surrounding spaces and its case. Callers read the normalized value.
 const normalizeEnums = (v) => {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return v
@@ -826,53 +883,17 @@ async function expandShortShas(value, opts) {
   return changed ? out : null
 }
 
-async function typed(text, opts, check, nullIsFinal = false) {
-  let sent = { text, opts }
-  let { value, threw } = await attempt(sent.text, sent.opts)
-  let expanded = false
-  let repairedFrom = null
-  let repairErrors = []
-  for (let round = 1; ; round++) {
-    if (threw != null) {
-      if (isWriter(sent.opts) || round > LIMITS.fixRounds) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw' }
-      sent = { text: sent.text, opts: { ...sent.opts, label: `${opts.label}:retry${round}` } }
-      ;({ value, threw } = await attempt(sent.text, sent.opts))
-      continue
-    }
-    if (value != null) {
-      value = normalizeEnums(value)
-      if (opts.isolation === 'worktree') {
-        noteWorktree(value.worktree_path, opts.agentType === 'reviewer' ? reportWorktrees : scratchWorktrees)
-        if (opts.agentType !== 'reviewer') { noteHead(value.head_sha); noteHead(value.checkpoint) }
-      }
-    }
-    let errors = value == null ? [substance('agent returned no output')] : check(value)
-    if (errors.length && !expanded && !nullIsFinal && value != null) {
-      expanded = true
-      const full = await expandShortShas(value, opts)
-      // A repair or redo then starts from the expanded value, so only the remaining errors drive it.
-      if (full) {
-        value = full
-        errors = check(value)
-      }
-    }
-    // A formatter repairs form only. A repair that rewrites a decision field changes the review, so the producer redoes the call.
-    if (repairedFrom && value != null) {
-      const changed = decisionDrift(repairedFrom, value, opts.schema)
-      if (changed) errors = [substance(`a formatter repair changed ${changed}; fix the original errors yourself`), ...repairErrors.map((e) => substance(e.msg)), ...errors]
-    }
-    repairedFrom = null
-    if (!errors.length) return { value, errors, lost: null }
-    if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null }
-    const formOnly = errors.every((e) => e.kind === 'form')
-    repairedFrom = formOnly ? value : null
-    repairErrors = formOnly ? errors : []
-    sent = formOnly
-      ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low', agentType: 'formatter' } }
-      : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
-    ;({ value, threw } = await attempt(sent.text, sent.opts))
-  }
+// The shared typed() core runs every call. These hooks plug in the cheese-factory steps.
+const factoryHooks = {
+  normalize: normalizeEnums,
+  expandShas: expandShortShas,
+  driftOf: decisionDrift,
+  onWorktree: (value, opts) => {
+    noteWorktree(value.worktree_path, opts.agentType === 'reviewer' ? reportWorktrees : scratchWorktrees)
+    if (opts.agentType !== 'reviewer') { noteHead(value.head_sha); noteHead(value.checkpoint) }
+  },
 }
+const typedCall = (text, opts, check, nullIsFinal = false) => typed(text, opts, check, { ...factoryHooks, nullIsFinal })
 
 // ---- prompts: stable preamble first, stage rules next, variable data last ----
 // Ground output enters a prompt only when it holds a decision or a research answer. grounding resolves at call time.
@@ -1774,7 +1795,7 @@ const verifyPrompt = (acs, integration) => {
 
 // One advisor call. Returns { advice, approved, reason, concerns, guidance }. Without valid advice, advice is null and approved is false.
 async function advise(stage, label, payload) {
-  const call = await typed(advisorPrompt(stage, payload), { label, phase: stage === 'plan' ? 'Advise' : 'Done', agentType: 'judge', model: 'opus', schema: ADVICE_SCHEMA }, checkWith(ADVICE_SCHEMA, checkAdvice))
+  const call = await typedCall(advisorPrompt(stage, payload), { label, phase: stage === 'plan' ? 'Advise' : 'Done', agentType: 'judge', model: 'opus', schema: ADVICE_SCHEMA }, checkWith(ADVICE_SCHEMA, checkAdvice))
   const advice = call.value
   if (!advice) return { advice: null, approved: false, reason: `no valid advice: ${errorText(call.errors)}`, concerns: [`${stage} advisor returned no valid advice`], guidance: '' }
   const approved = advice.verdict === 'approve'
@@ -1789,7 +1810,7 @@ const countStatuses = (rows) => {
 
 // ---- Resolve ----
 phase('Resolve')
-const resolveCall = await typed(resolvePrompt(), { label: 'resolve', phase: 'Resolve', agentType: 'explorer', model: 'haiku', schema: RESOLVE_SCHEMA }, checkResolve)
+const resolveCall = await typedCall(resolvePrompt(), { label: 'resolve', phase: 'Resolve', agentType: 'explorer', model: 'haiku', schema: RESOLVE_SCHEMA }, checkResolve)
 if (!resolveCall.value) {
   log(`Resolve failed: ${errorText(resolveCall.errors)}`)
   return { error: `Resolve failed: ${errorText(resolveCall.errors)}` }
@@ -1856,7 +1877,7 @@ const criteriaPrompt = (feedback) => prompt(
 
 async function extractCriteria(feedback, round = 0) {
   const label = round ? `criteria:r${round}` : 'criteria'
-  const call = await typed(criteriaPrompt(feedback), { label, phase: 'Criteria', agentType: 'explorer', model: 'opus', schema: CRITERIA_SCHEMA }, checkCriteria(specAcIds))
+  const call = await typedCall(criteriaPrompt(feedback), { label, phase: 'Criteria', agentType: 'explorer', model: 'opus', schema: CRITERIA_SCHEMA }, checkCriteria(specAcIds))
   if (!call.value) {
     log(`Criteria failed: ${errorText(call.errors)}`)
     return { error: `Criteria failed: ${errorText(call.errors)}` }
@@ -1907,7 +1928,7 @@ function checkGrounding(g) {
 }
 
 if (!RESUME) phase('Ground')
-const grounded = RESUME ? null : await typed(groundPrompt(), { label: 'ground', phase: 'Ground', agentType: 'explorer', schema: GROUND_RESEARCH_SCHEMA }, checkWith(GROUND_RESEARCH_SCHEMA, checkGrounding))
+const grounded = RESUME ? null : await typedCall(groundPrompt(), { label: 'ground', phase: 'Ground', agentType: 'explorer', schema: GROUND_RESEARCH_SCHEMA }, checkWith(GROUND_RESEARCH_SCHEMA, checkGrounding))
 if (grounded && !grounded.value) {
   log(`Wiki grounding failed (${errorText(grounded.errors)}): the run plans without recorded decisions.`)
   gaps.push('wiki grounding failed; the run planned without recorded decisions')
@@ -1952,7 +1973,7 @@ async function decomposeCurds(feedback, round = 0) {
   const single = { curds: [{ slug: parentSlug, spec_path: parentSpecPath, brief: null, files: [] }], singlePass: true }
   if (candidateCurds < 2) return single
   phase('Decompose')
-  const decomposeCall = await typed(decomposePrompt(resolved.spec_text, feedback), { label: `decompose:plan${suffix}`, phase: 'Decompose', agentType: 'explorer', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
+  const decomposeCall = await typedCall(decomposePrompt(resolved.spec_text, feedback), { label: `decompose:plan${suffix}`, phase: 'Decompose', agentType: 'explorer', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
   if (!decomposeCall.value) {
     log(`Decompose failed: ${errorText(decomposeCall.errors)}`)
     return { error: `Decompose failed: ${errorText(decomposeCall.errors)}` }
@@ -1978,7 +1999,7 @@ async function decomposeCurds(feedback, round = 0) {
     return { error: `Duplicate curd slug(s): ${duplicateSlugs.join(', ')}` }
   }
 
-  const miniSpecCall = await typed(miniSpecPrompt(parentSlug, merged), { label: `decompose:write-minispecs${suffix}`, phase: 'Decompose', agentType: 'coder', model: 'opus', schema: MINISPEC_SCHEMA }, checkMiniSpecs)
+  const miniSpecCall = await typedCall(miniSpecPrompt(parentSlug, merged), { label: `decompose:write-minispecs${suffix}`, phase: 'Decompose', agentType: 'coder', model: 'opus', schema: MINISPEC_SCHEMA }, checkMiniSpecs)
   if (!miniSpecCall.value) {
     log(`Mini-spec writing failed: ${errorText(miniSpecCall.errors)}`)
     return { error: `Mini-spec writing failed: ${errorText(miniSpecCall.errors)}` }
@@ -2071,7 +2092,7 @@ async function cookCurd(curd, branch) {
   const opts = { phase: 'Cook', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: COOK_SCHEMA }
   const stop = (message) => ({ curd, branch, cook: null, sha: null, failure: { stage: 'cook', message } })
   let callLabel = `cook:${curd.slug}`
-  let call = await typed(cookPrompt(curd, baseSha), { ...opts, label: callLabel }, checkCook, true)
+  let call = await typedCall(cookPrompt(curd, baseSha), { ...opts, label: callLabel }, checkCook, true)
   let lastCheckpoint = null
   for (let round = 1; ; round++) {
     // "blocked: <reason>" is a blocked cook with a reason. Every other out-of-enum status is salvaged (user decision B).
@@ -2102,13 +2123,13 @@ async function cookCurd(curd, branch) {
     noteHead(lastCheckpoint)
     log(`${curd.slug}: resuming cook from ${lastCheckpoint} (continuation ${round})`)
     callLabel = `cook:${curd.slug}:c${round}`
-    call = await typed(cookContinuationPrompt(curd, resume), { ...opts, label: callLabel }, checkCook, true)
+    call = await typedCall(cookContinuationPrompt(curd, resume), { ...opts, label: callLabel }, checkCook, true)
   }
 }
 
 // Returns null when the ref is absent, and { failed } when the salvage call itself failed.
 async function salvage(curd) {
-  const found = await typed(salvagePrompt(curd, baseSha), { label: `salvage:${curd.slug}`, phase: 'Cook', agentType: 'explorer', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA }, checkSalvage)
+  const found = await typedCall(salvagePrompt(curd, baseSha), { label: `salvage:${curd.slug}`, phase: 'Cook', agentType: 'explorer', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA }, checkSalvage)
   const state = found.value
   if (!state) return { failed: errorText(found.errors) }
   return state.found
@@ -2122,7 +2143,7 @@ const stageFailure = (stage, message) => ({ stage, message })
 
 // One taste call. Returns { taste } or { failure }. A blocked answer and a halt are final: no redo and no corrective round follows.
 async function tasteAt(curd, sha, label) {
-  const tasted = await typed(tastePrompt(curd, sha), { label, phase: 'Taste', agentType: 'taste-tester', schema: TASTE_SCHEMA }, checkTaste)
+  const tasted = await typedCall(tastePrompt(curd, sha), { label, phase: 'Taste', agentType: 'taste-tester', schema: TASTE_SCHEMA }, checkTaste)
   if (!tasted.value) return { failure: errorText(tasted.errors) }
   const answer = splitBlocked(tasted.value)
   if (answer.status === 'blocked') return { failure: `taste reviewer is blocked: ${sanitizeReason(answer.reason || 'no reason given')}` }
@@ -2147,7 +2168,7 @@ const chainResults = await pipeline(
     let taste = tasted.taste
     let round = 0
     while (taste.verdict === 'revise' && round < CORRECTIVE_ROUNDS) {
-      const corrected = await typed(correctivePrompt(curd, current, taste), { label: `correct:${curd.slug}:r${round + 1}`, phase: 'Taste', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CORRECT_SCHEMA }, checkCorrect)
+      const corrected = await typedCall(correctivePrompt(curd, current, taste), { label: `correct:${curd.slug}:r${round + 1}`, phase: 'Taste', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CORRECT_SCHEMA }, checkCorrect)
       if (!corrected.value) return stageRecord(prev, { sha: current, taste }, stageFailure('taste-correct', errorText(corrected.errors)))
       const correction = corrected.value
       if (writerStopped(correction)) return stageRecord(prev, { sha: current, taste }, stageFailure('taste-correct', `corrective pass stopped: ${stopText(correction)}`))
@@ -2168,7 +2189,7 @@ const chainResults = await pipeline(
   async (prev) => {
     const { curd, sha, taste, cook } = prev
     if (prev.failure || !taste || taste.verdict === 'revise') return stageRecord(prev, {}, prev.failure || stageFailure('taste', 'taste did not reach pass within correctiveRounds'))
-    const pressed = await typed(pressPrompt(curd, sha, cookHandoff(cook, curd.slug)), { label: `press:${curd.slug}`, phase: 'Press', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: PHASE_SCHEMA }, checkPress)
+    const pressed = await typedCall(pressPrompt(curd, sha, cookHandoff(cook, curd.slug)), { label: `press:${curd.slug}`, phase: 'Press', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: PHASE_SCHEMA }, checkPress)
     if (!pressed.value) return stageRecord(prev, {}, stageFailure('press', errorText(pressed.errors)))
     const press = pressed.value
     if (writerStopped(press)) return stageRecord(prev, { press }, stageFailure('press', `press stopped: ${stopText(press)}`))
@@ -2188,7 +2209,7 @@ if (surviving.length) {
   const refs = surviving
     .map((r) => ({ slug: r.curd.slug, branch: r.branch, sha: r.sha }))
     .sort((a, b) => (a.slug < b.slug ? -1 : 1))
-  const integrated = await typed(integratePrompt(baseSha, refs), { label: 'integrate', phase: 'Integrate', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA }, checkIntegrate(refs.map((r) => r.slug)))
+  const integrated = await typedCall(integratePrompt(baseSha, refs), { label: 'integrate', phase: 'Integrate', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA }, checkIntegrate(refs.map((r) => r.slug)))
   integrate = integrated.value
   if (!integrate) integrateReason = errorText(integrated.errors)
   if (integrate) {
@@ -2224,7 +2245,7 @@ if (integrate && integratedRefs.length) {
     }
   }
   if (!ageResult) {
-    const aged = await typed(ageBarrierPrompt(integrate.head), { label: 'age:barrier', phase: 'Age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: AGE_BARRIER_SCHEMA }, checkAge)
+    const aged = await typedCall(ageBarrierPrompt(integrate.head), { label: 'age:barrier', phase: 'Age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: AGE_BARRIER_SCHEMA }, checkAge)
     if (!aged.value) log(`Barrier age returned no valid result (${errorText(aged.errors)}) — integrated curds cannot be verified; excluding them from plate.`)
     else if (aged.value.status !== 'ok') {
       ageBlocked = sanitizeReason(aged.value.reason || aged.value.status)
@@ -2249,7 +2270,7 @@ if (routing && !routing.unrouted && routing.bySlug.size) {
   toCure = integratedRefs.map((r) => r.slug).filter((slug) => routing.bySlug.has(slug))
   const cures = await parallel(toCure.map((slug) => () => {
     const entry = surviving.find((r) => r.curd.slug === slug)
-    return typed(curePrompt(entry.curd, entry.sha, routing.bySlug.get(slug), integrate.head), { label: `cure:${slug}`, phase: 'Cure', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CURE_SCHEMA }, checkCure)
+    return typedCall(curePrompt(entry.curd, entry.sha, routing.bySlug.get(slug), integrate.head), { label: `cure:${slug}`, phase: 'Cure', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CURE_SCHEMA }, checkCure)
       .then(({ value, errors }) => (value && writerStopped(value) ? { slug, cure: null, errors: [substance(`cure stopped: ${stopText(value)}`)] } : { slug, cure: value, errors }))
   }))
   cureBySlug = new Map(cures.filter(Boolean).map((c) => [c.slug, c.cure]))
@@ -2270,7 +2291,7 @@ if ([...cureBySlug.values()].some((c) => c && c.committed)) {
     const cure = cureBySlug.get(ref.slug)
     return cure && cure.committed ? { ...ref, sha: cure.head_sha } : ref
   })
-  const remerged = await typed(remergePrompt(baseSha, remergeRefs), { label: 're-merge', phase: 'Re-age', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA }, checkIntegrate(integratedRefs.map((r) => r.slug)))
+  const remerged = await typedCall(remergePrompt(baseSha, remergeRefs), { label: 're-merge', phase: 'Re-age', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA }, checkIntegrate(integratedRefs.map((r) => r.slug)))
   remerge = remerged.value
   if (!remerge) {
     remergeInvalid = errorText(remerged.errors)
@@ -2278,7 +2299,7 @@ if ([...cureBySlug.values()].some((c) => c && c.committed)) {
   }
   if (remerge) {
     const prior = toCure.flatMap((slug) => routing.bySlug.get(slug))
-    const reaged = await typed(reagePrompt(integrate.head, remerge.head, integratedRefs, prior), { label: 'age:reage', phase: 'Re-age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: AGE_BARRIER_SCHEMA }, checkReage)
+    const reaged = await typedCall(reagePrompt(integrate.head, remerge.head, integratedRefs, prior), { label: 'age:reage', phase: 'Re-age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: AGE_BARRIER_SCHEMA }, checkReage)
     if (!reaged.value) {
       reageBlocked = sanitizeReason(`no valid result (${errorText(reaged.errors)})`)
       log(`Re-age returned no valid result (${errorText(reaged.errors)}) — the re-merged head has no ok review; integrated curds stay dirty.`)
@@ -2374,7 +2395,7 @@ if (cleanEntries.length && floorReached()) {
   let byId = new Map()
   let lost = null
   if (judgedAcs.length) {
-    const judged = await typed(verifyPrompt(judgedAcs, { worktree_path: tree.worktree_path, head: tree.head }), { label: 'verify', phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERIFY_BATCH_SCHEMA }, checkWith(VERIFY_BATCH_SCHEMA, (v) => checkVerdicts(v, judgedAcs)))
+    const judged = await typedCall(verifyPrompt(judgedAcs, { worktree_path: tree.worktree_path, head: tree.head }), { label: 'verify', phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERIFY_BATCH_SCHEMA }, checkWith(VERIFY_BATCH_SCHEMA, (v) => checkVerdicts(v, judgedAcs)))
     if (judged.value) byId = new Map(judged.value.verdicts.map((v) => [v.criterion, v]))
     else lost = `not verified: ${errorText(judged.errors)}`
   }
@@ -2429,7 +2450,7 @@ let plateRows = []
 let plateRan = false
 let plateFailure = null
 if (cleanEntries.length && !budgetReason && !blockReason) {
-  const plated = await typed(platePrompt(cleanEntries.map((r) => ({ slug: r.curd.slug, sha: r.sha })), singlePass), { label: 'plate', phase: 'Plate', agentType: 'coder', model: 'opus', schema: PLATE_SCHEMA }, checkPlate, true)
+  const plated = await typedCall(platePrompt(cleanEntries.map((r) => ({ slug: r.curd.slug, sha: r.sha })), singlePass), { label: 'plate', phase: 'Plate', agentType: 'coder', model: 'opus', schema: PLATE_SCHEMA }, checkPlate, true)
   if (plated.value) {
     plateRows = plated.value.results
     plateRan = true
@@ -2478,7 +2499,7 @@ log(`Report: ${curdsOut.length} curd(s) — clean:${summary.clean} dirty:${summa
 const removable = [...scratchWorktrees].filter((p) => !reportWorktrees.has(p)).sort()
 if (curdsOut.length && curdsOut.every((c) => c.status === 'clean' && platedBySlug.has(c.slug)) && removable.length) {
   const recordedShas = [...new Set([integrate && integrate.head, remerge && remerge.head, ...chainResults.map((r) => r && r.sha), ...[...cureBySlug.values()].map((c) => c && c.head_sha), ...withStatus.map((r) => r && r.sha), ...chainHeads].filter((s) => typeof s === 'string' && s))].sort()
-  const cleaned = await typed(cleanupPrompt(removable, recordedShas), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', agentType: 'runner', schema: CLEANUP_SCHEMA }, checkCleanup)
+  const cleaned = await typedCall(cleanupPrompt(removable, recordedShas), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', agentType: 'runner', schema: CLEANUP_SCHEMA }, checkCleanup)
   if (!cleaned.value) log(`Worktree cleanup returned no valid result (${errorText(cleaned.errors)}).`)
 }
 

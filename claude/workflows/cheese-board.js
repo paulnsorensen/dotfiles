@@ -61,7 +61,7 @@ const FULL_SHA_RE = /^[0-9a-f]{40}$/i
 const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
 // END module budget
 // BEGIN module call
-// module: call; provides: form, substance, errorText, schemaErrors, data, prompt, redoPrompt, repairPrompt; requires: none
+// module: call; provides: form, substance, errorText, schemaErrors, data, prompt, redoPrompt, repairPrompt, isWriter, attempt, typed; requires: none
 const form = (msg) => ({ kind: 'form', msg })
 // A substance error needs new facts, so the producer redoes the answer.
 const substance = (msg) => ({ kind: 'substance', msg })
@@ -99,6 +99,75 @@ const repairPrompt = (value, errors) => prompt(
   data('errors', errors.map((e) => e.msg)),
   data('object', value),
 )
+// A writer call may change the tree, so a throw from it never retries. A reviewer worktree only holds reports.
+const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'worktree' && opts.agentType !== 'reviewer')
+// An agent call can throw, for example at the budget ceiling. The throw becomes a value, so the caller decides what to do.
+const attempt = async (text, opts) => {
+  try {
+    return { value: await agent(text, opts), threw: null }
+  } catch (e) {
+    const message = e && e.message ? e.message : String(e)
+    log(`${opts.label}: agent threw: ${message}`)
+    return { value: null, threw: message }
+  }
+}
+// One validated agent call: check the answer, then repair form errors or redo substance errors, each up to LIMITS.fixRounds.
+// A throw from a read-only call retries once. A throw from a writer call never retries.
+// hooks: normalize(value) cleans an answer before the check.
+//   expandShas(value, opts) returns a fixed copy of the value, or null, when the check fails once.
+//   onWorktree(value, opts) runs for each answer of a call with isolation 'worktree'.
+//   nullIsFinal makes a null answer final at once, with no redo.
+//   retryOnThrow is a flag, or a predicate on the call options, that replaces the default read-only rule.
+//   driftOf(before, after, schema) names a decision field that a formatter repair changed, or returns null.
+// Returns { value, errors, lost, threw }. lost is 'threw' or 'missing' when the value is null for that reason.
+const typed = async (text, opts, check, hooks = {}) => {
+  const { normalize = (v) => v, expandShas, onWorktree, nullIsFinal = false, retryOnThrow, driftOf } = hooks
+  const mayRetry = (o) => (typeof retryOnThrow === 'function' ? retryOnThrow(o) : (retryOnThrow ?? !isWriter(o)))
+  let sent = { text, opts }
+  let { value, threw } = await attempt(sent.text, sent.opts)
+  let retried = false
+  let expanded = false
+  let repairedFrom = null
+  let repairErrors = []
+  for (let round = 1; ; round++) {
+    if (threw != null) {
+      if (retried || !mayRetry(sent.opts)) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw', threw: true }
+      retried = true
+      sent = { text: sent.text, opts: { ...sent.opts, label: `${opts.label}:retry${round}` } }
+      ;({ value, threw } = await attempt(sent.text, sent.opts))
+      continue
+    }
+    if (value != null) {
+      value = normalize(value)
+      if (opts.isolation === 'worktree' && onWorktree) onWorktree(value, opts)
+    }
+    let errors = value == null ? [substance('agent returned no output')] : check(value)
+    if (errors.length && expandShas && !expanded && !nullIsFinal && value != null) {
+      expanded = true
+      const full = await expandShas(value, opts)
+      // A repair or redo then starts from the expanded value, so only the remaining errors drive it.
+      if (full) {
+        value = full
+        errors = check(value)
+      }
+    }
+    // A formatter repairs form only. A repair that rewrites a decision field changes the answer, so the producer redoes the call.
+    if (driftOf && repairedFrom && value != null) {
+      const changed = driftOf(repairedFrom, value, opts.schema)
+      if (changed) errors = [substance(`a formatter repair changed ${changed}; fix the original errors yourself`), ...repairErrors.map((e) => substance(e.msg)), ...errors]
+    }
+    repairedFrom = null
+    if (!errors.length) return { value, errors, lost: null, threw: false }
+    if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
+    const formOnly = errors.every((e) => e.kind === 'form')
+    repairedFrom = formOnly ? value : null
+    repairErrors = formOnly ? errors : []
+    sent = formOnly
+      ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low', agentType: 'formatter' } }
+      : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
+    ;({ value, threw } = await attempt(sent.text, sent.opts))
+  }
+}
 // END module call
 // BEGIN module ground
 // module: ground; provides: MOLD, DECISION_KINDS, RESEARCH_CONFIDENCE, GROUNDING_SCHEMA, GROUND_RESEARCH_SCHEMA, GROUND_RULES, researchRule, BRIE_GROUND_MAX_AGENTS, brieGround; requires: none
@@ -503,28 +572,7 @@ function waves(nodes) {
   return { order: out, cycle: [] }
 }
 
-// ---- Typed call: validate, then repair (form) or redo (substance), bounded ----
-// An agent call can throw, for example at the budget ceiling. A throw counts as no output.
-async function attempt(text, opts) {
-  try {
-    return await agent(text, opts)
-  } catch (e) {
-    log(`${opts.label}: agent threw: ${e && e.message}`)
-    return null
-  }
-}
-
-async function typed(text, opts, check) {
-  let value = await attempt(text, opts)
-  for (let round = 1; ; round++) {
-    const errors = value == null ? [substance('agent returned no output')] : check(value)
-    if (!errors.length) return { value, errors }
-    if (round > LIMITS.fixRounds) return { value: null, errors }
-    value = errors.every((e) => e.kind === 'form')
-      ? await attempt(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, agentType: 'formatter', schema: opts.schema, model: 'haiku', effort: 'low' })
-      : await attempt(redoPrompt(text, errors), { ...opts, label: `${opts.label}:redo${round}` })
-  }
-}
+// ---- Typed call: the shared typed() in the call module validates, then repairs (form) or redoes (substance), bounded ----
 
 function checkAdvice(advice) {
   return advice.verdict !== 'approve' && !advice.concerns.length

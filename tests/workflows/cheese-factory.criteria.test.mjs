@@ -503,7 +503,8 @@ test('planAdvisor_throwsOnEveryAttempt_blocksAfterTheRetryBound', async () => {
 
   assert.equal(result.status, 'blocked')
   assert.match(result.reason, /agent threw: boom/)
-  assert.equal(starting(trace, 'advise:plan').length, 3)
+  // A read-only throw retries once: the first call and one retry.
+  assert.equal(starting(trace, 'advise:plan').length, 2)
 })
 
 test('planAdvisor_secondReviseAnswer_decidesTheConcernsReported', async () => {
