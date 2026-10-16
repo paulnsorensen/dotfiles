@@ -1,7 +1,7 @@
 export const meta = {
   name: 'cheese-factory',
   description:
-    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs. Ground reads recorded wiki decisions and prior research, and brie-ground settles open external questions before any plan. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial. A run that reaches Report is ok only when every curd is clean and plated and Ground left no gap. Otherwise it is partial. Only a budget or gate block sets reason.',
+    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into PRs whose topology plate picks. Ground reads recorded wiki decisions and prior research, and brie-ground settles open external questions before any plan. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial. A run that reaches Report is ok only when every curd is clean and plated and Ground left no gap. Otherwise it is partial. Only a budget or gate block sets reason.',
   phases: [
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
     { title: 'Ground', detail: 'one read-only explorer reads the hallouminate wiki for recorded decisions and lists prior research that bears on the spec, plus external questions that nothing settles; a failure is a gap, not a block' },
@@ -18,7 +18,7 @@ export const meta = {
     { title: 'Re-age', detail: 'once, only if a cure committed: re-merge the branches, then run an incremental /age over the range from the reviewed head to the new head; a cured curd missing from reviewed_slugs is dirty' },
     { title: 'Verify', detail: 'one judge call runs every non-ci check in list order at the integration head; ci criteria are deferred' },
     { title: 'Done', detail: 'a judge advisor signs off on the verified work before Plate; no sign-off blocks Plate' },
-    { title: 'Plate', detail: 'one opus barrier stacks clean curd branches into (stacked) PRs; never merges' },
+    { title: 'Plate', detail: 'one opus barrier plates clean curd branches into PRs; plate picks the topology; never merges' },
     { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, excluded-curd reasons, the verification record, the grounding, the gaps, and the plan and done advice; a run that reaches Report is ok only when every curd is clean and plated and Ground left no gap. Otherwise it is partial. Only a budget or gate block sets reason. A plan-blocked run returns status blocked with its concerns and advice' },
   ],
 }
@@ -120,9 +120,9 @@ const GROUND_RULES = [
 ].join('\n')
 // The rule for research_questions. max resolves at call time.
 const researchRule = (max) => `research_questions: at most ${max} questions about external facts (a library, an API, upstream behavior) that the work needs settled. Ask a question only when the item text, the code, the wiki, and prior research all leave it open. Leave it empty otherwise.`
-// Upper bound for one brie-ground child: plan, recall, and synthesis, plus up to 3 deep sub-questions of scope, 6 angles, 12 fetches, and verify votes.
-const BRIE_GROUND_MAX_AGENTS = 100
-// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. workflow and log resolve at call time.
+// Worst case of one brie-ground child (see its fan-out caps): recall 2, plan 2, 3 deep sub-questions x 7, 2 shallow x 3, synthesis 2, prototype 2.
+const BRIE_GROUND_MAX_AGENTS = 35
+// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. A capped result also logs and returns its dropped count. workflow and log resolve at call time.
 const brieGround = async (question) => {
   let r = null
   try {
@@ -131,11 +131,20 @@ const brieGround = async (question) => {
     log(`brie-ground failed for "${question}": ${e && e.message}`)
   }
   if (!r || r.error || typeof r.answer !== 'string' || !RESEARCH_CONFIDENCE.includes(r.confidence)) return { failed: `research failed: ${question}` }
+  const capped = (result, items, max, what) => {
+    if (items.length <= max) return result
+    log(`brie-ground for "${question}" dropped ${items.length - max} ${what} past the cap of ${max}`)
+    return { ...result, dropped: items.length - max }
+  }
   // A dont_know answer may be blank. It keeps at most 2 follow-ups, so one child cannot flood the open questions.
-  if (r.confidence === 'dont_know') return { unsettled: [question, ...(Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()).slice(0, 2) : [])] }
+  if (r.confidence === 'dont_know') {
+    const followUps = Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()) : []
+    return capped({ unsettled: [question, ...followUps.slice(0, 2)] }, followUps, 2, 'follow-up question(s)')
+  }
   if (!r.answer.trim()) return { failed: `research failed: ${question}` }
-  const citations = (Array.isArray(r.evidence_table) ? r.evidence_table : []).slice(0, 5).map((e) => e && e.citation).filter(Boolean)
-  return { found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }
+  const evidence = Array.isArray(r.evidence_table) ? r.evidence_table : []
+  const citations = evidence.slice(0, 5).map((e) => e && e.citation).filter(Boolean)
+  return capped({ found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }, evidence, 5, 'citation row(s)')
 }
 
 // Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
@@ -528,7 +537,7 @@ function findDuplicateSlugs(curds) {
 // runOverhead keeps the earlier per-criterion count of 149 as margin, so the curd limits below do not change.
 // Each brie-ground child counts toward the cap at up to BRIE_GROUND_MAX_AGENTS (shared prelude).
 // So 12 curds spend about 833 agents at worst without research (12 x 57 + 149). curdCap lowers the curd limit by what research spent:
-// 0 or 1 children keep 12 curds, 2 children allow 11, and 3 children allow 9. Recount before a reader raises maxCurds.
+// 3 children spend 105 more (938 total), so up to 3 children keep 12 curds. Recount before a reader raises maxCurds.
 const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12, maxCriteria: 24, advisorRevisions: 1, maxResearch: 3, agentCap: 1000, curdAgents: 57, runOverhead: 149 }
 // The curd limit for Decompose. Research sets it once, before any decomposer runs.
 let curdCap = LIMITS.maxCurds
@@ -1191,7 +1200,7 @@ If no slug passes the check, do not start /plate. Return a failed row with a rea
 
 ${singlePass
   ? `Single-pass mode: then ${skillStep('plate', 'the verified branch listed above')} Open an ordinary single PR on that branch, only if its slug passed the check. Publish only the pinned SHA above. Never stage, commit, or push any other edit.`
-  : `Fan-out mode: then ${skillStep('plate', 'the verified branches listed above')} Stack the verified branches into a stacked-PR chain in slug-sorted order, stating the order in the PR bodies. The plate provider may restack the verified branches, and a restack makes new SHAs. Never stage, commit, or push any other edit.`}
+  : `Fan-out mode: then ${skillStep('plate', 'the verified branches listed above')} Let the plate skill pick the PR topology for the verified branches from their real diffs. Decompose merged the curds that declared shared files or dependencies, so expect independent PRs. Do not request a stack. If plate stacks them, the plate provider may restack the verified branches, and a restack makes new SHAs. Never stage, commit, or push any other edit.`}
 Let the plate skill commit, restack, and submit through its own provider flow.
 
 Done means: you opened or updated a PR for each verified clean curd branch listed above, and for no other branch.

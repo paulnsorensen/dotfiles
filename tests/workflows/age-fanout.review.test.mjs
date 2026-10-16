@@ -9,16 +9,17 @@ const path = resolve(import.meta.dirname, '../../claude/workflows/age-fanout.js'
 const BASE_ARGS = { worktree_path: '/tmp/worktrees/parent', range: 'origin/main...HEAD', slug: 'parent' }
 const ROUTE_ARGS = { ...BASE_ARGS, route_curds: [{ slug: 'alpha', branch: 'curd/alpha' }] }
 const DIMS = ['correctness', 'security']
+const PACKET = { skill_files_ok: true, blocked_reason: '', assignments: DIMS.map((d) => ({ id: d, subjects: [d], targets: ['src/a.ts'], effort: 'medium' })) }
 
 const finding = (over = {}) => ({ dimension: 'correctness', severity: 'medium', fix_cost_now: 'contained', file: 'src/a.ts', line: 1, claim: 'x', why_it_matters: 'y', fix_direction: 'z', also_relevant_to: [], ...over })
-const reconcileOk = (over = {}) => ({ status: 'ok', has_medium_plus_findings: true, has_cheap_lows: false, artifact: '.cheese/age/parent.md', ...over })
+const reconcileOk = (over = {}) => ({ status: 'ok', blocked_reason: '', has_medium_plus_findings: true, has_cheap_lows: false, artifact: '.cheese/age/parent.md', ...over })
 
 function respond(overrides = {}) {
   return (call) => {
     const { label } = call.opts
     if (overrides[label]) return overrides[label](call)
-    if (label === 'packet') return { skill_files_ok: true, dimensions: DIMS }
-    if (label.startsWith('review:')) return { status: 'ok', findings: [finding({ dimension: label.split(':')[1] })] }
+    if (label === 'packet') return PACKET
+    if (label.startsWith('review:')) return { status: 'ok', blocked_reason: '', findings: [finding({ dimension: label.split(':')[1] })] }
     if (label === 'reconcile') return reconcileOk()
     throw new Error(`unexpected agent ${label}`)
   }
@@ -50,7 +51,7 @@ for (const args of ['null', '5', null]) {
 }
 
 test('a null first packet answer recovers on the redo', async () => {
-  const { result, labels } = await run(BASE_ARGS, { packet: () => null, 'packet:retry': () => ({ skill_files_ok: true, dimensions: DIMS }) })
+  const { result, labels } = await run(BASE_ARGS, { packet: () => null, 'packet:retry': () => PACKET })
 
   assert.equal(result.status, 'ok')
   assert.deepEqual(labels.slice(0, 2), ['packet', 'packet:retry'])
@@ -78,8 +79,8 @@ test('no prompt tells a schema-returning agent to write a handoff slug', async (
 
 test('code sorts findings, drops exact repeats with a log, and passes shared locations as data', async () => {
   const { result, trace } = await run(BASE_ARGS, {
-    'review:correctness': () => ({ status: 'ok', findings: [finding({ file: 'src/b.ts', line: 9 }), finding({ file: 'src/a.ts', line: 4 }), finding({ file: 'src/a.ts', line: 4 })] }),
-    'review:security': () => ({ status: 'ok', findings: [finding({ dimension: 'security', file: 'src/a.ts', line: 4, claim: 'sec' })] }),
+    'review:correctness': () => ({ status: 'ok', blocked_reason: '', findings: [finding({ file: 'src/b.ts', line: 9 }), finding({ file: 'src/a.ts', line: 4 }), finding({ file: 'src/a.ts', line: 4 })] }),
+    'review:security': () => ({ status: 'ok', blocked_reason: '', findings: [finding({ dimension: 'security', file: 'src/a.ts', line: 4, claim: 'sec' })] }),
   })
 
   assert.equal(result.status, 'ok')
@@ -117,7 +118,7 @@ test('a review finding without severity or file fails the schema in plain mode',
 
   for (const key of ['severity', 'file', 'line', 'claim']) {
     const partial = Object.fromEntries(Object.entries(finding()).filter(([k]) => k !== key && k !== 'fix_cost_now'))
-    assert.throws(() => validate({ status: 'ok', findings: [partial] }, schema), { name: 'SchemaError' }, key)
+    assert.throws(() => validate({ status: 'ok', blocked_reason: '', findings: [partial] }, schema), { name: 'SchemaError' }, key)
   }
 })
 
