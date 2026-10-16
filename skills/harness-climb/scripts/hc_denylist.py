@@ -18,7 +18,7 @@ INJECTED_PREFIXES = (
     "# AGENTS.md instructions",  # the Codex project-instructions preamble
     "Base directory for this skill",  # a skill body that a harness loads
 )
-_CACHE_VERSION = 1
+_CACHE_VERSION = 2  # 2: the denylist holds schema identifiers
 _TEXT_TYPES = ("text", "input_text")
 
 
@@ -196,7 +196,10 @@ def load_denylist(
     if denylist_file:
         data = json.loads(Path(denylist_file).read_text())
         deny = hc_policy.build_denylist(
-            data.get("prompts", []), data.get("projects", []), own
+            data.get("prompts", []),
+            data.get("projects", []),
+            own,
+            data.get("schema", []),
         )
         return deny, []
     db = resolve_db()
@@ -213,10 +216,16 @@ def load_denylist(
         if not texts
     ]
     projects = duck(db, f"SELECT DISTINCT project FROM sessions WHERE {IN_SCOPE}")
+    schema = duck(
+        db,
+        "SELECT table_name AS name FROM information_schema.tables"
+        " UNION SELECT column_name FROM information_schema.columns",
+    )
     deny = hc_policy.build_denylist(
         [t for texts in by_harness.values() for t in texts],
         [r["project"] for r in projects],
         own,
+        [r["name"] for r in schema],
     )
     _write_cache(cache, key, deny, notes)
     return deny, notes

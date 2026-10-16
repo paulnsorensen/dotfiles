@@ -220,6 +220,7 @@ def check_tags(paths: Iterable[str], tags: dict[str, Any]) -> list[dict[str, str
 # --- leakage ---------------------------------------------------------------
 
 _WORD = re.compile(r"[^\W_]+")
+_IDENT = re.compile(r"\w+")
 # A leading slash command; its arguments stay in the prompt text.
 _SLASH_COMMAND = re.compile(r"^\s*/\S*")
 
@@ -234,11 +235,20 @@ def _ngram_keys(words: list[str]) -> Iterable[str]:
 
 
 def build_denylist(
-    prompts: Iterable[str], projects: Iterable[str], own_names: Iterable[str] = ()
+    prompts: Iterable[str],
+    projects: Iterable[str],
+    own_names: Iterable[str] = (),
+    schema: Iterable[str] = (),
 ) -> dict[str, set[str]]:
-    """Denylist by category: prompt n-grams, project names, repository paths."""
+    """Denylist by category: prompt n-grams, project names, repository paths.
+
+    `schema` holds session-database table and column names. A project name
+    never matches inside one, so a project that shares a word with a table
+    name does not block every query on that table.
+    """
     skip = {n.lower() for n in own_names}
     deny: dict[str, set[str]] = {"prompt": set(), "project": set(), "path": set()}
+    deny["schema"] = {s.casefold() for s in schema if s}
     for prompt in prompts:
         if prompt:
             deny["prompt"].update(_ngram_keys(_tokens(_SLASH_COMMAND.sub("", prompt))))
@@ -264,7 +274,9 @@ def _line_violations(
 ) -> list[dict[str, Any]]:
     """The path and project hits on one added line."""
     low = text.lower()
-    padded = f" {' '.join(_tokens(text))} "
+    schema = deny.get("schema", set())
+    words = _IDENT.sub(lambda m: " " if m[0].casefold() in schema else m[0], text)
+    padded = f" {' '.join(_tokens(words))} "
     hits = {
         "path": any(span in low for span in deny["path"]),
         "project": any(f" {name} " in padded for name in deny["project"]),
