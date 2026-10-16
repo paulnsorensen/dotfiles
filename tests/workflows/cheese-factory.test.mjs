@@ -1329,8 +1329,8 @@ test('telemetry: a failed salvage call says the salvage failed, not that the ref
 
   const result = await workflow.run({ ...globals, args: { spec: 'parent' } })
 
-  // Salvage is read-only, so a throw retries within the bound before it is final.
-  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('salvage')), ['salvage:parent', 'salvage:parent:retry1', 'salvage:parent:retry2'])
+  // Salvage is read-only, so a throw retries once before it is final.
+  assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith('salvage')), ['salvage:parent', 'salvage:parent:retry1'])
   assert.match(result.curds[0].excluded_reason, /the salvage of curd\/parent failed \(agent threw: salvage exploded\)/)
   assert.doesNotMatch(result.curds[0].excluded_reason, /no ref to resume/)
 })
@@ -2591,7 +2591,7 @@ test('F-9: a throwing cure reports failed with cure: and the error text, and the
 test('F-9: a throw in any stage keeps its stage name and every curd stays in the result', async () => {
   const boom = () => { throw new Error('boom') }
   const cured = { ...withMedium, ...cureLoop }
-  // A writer throw is final: one call. A read-only throw retries within the fix rounds: three calls.
+  // A writer throw is final: one call. A read-only throw retries once: two calls.
   const cases = [
     { stage: 'cook', label: 'cook:parent', over: { 'salvage:parent': { found: false } }, status: 'failed', reason: /^cook: .*agent threw: boom/ },
     { stage: 'taste', label: 'taste:parent', readOnly: true, status: 'failed', reason: /^taste: agent threw: boom/ },
@@ -2610,7 +2610,7 @@ test('F-9: a throw in any stage keeps its stage name and every curd stays in the
     assert.equal(result.curds[0].status, c.status, c.stage)
     if (c.reason) assert.match(result.curds[0].excluded_reason, c.reason, c.stage)
     if (c.log) assert.match(trace.logs.join('\n'), c.log, c.stage)
-    const expected = c.readOnly ? [c.label, `${c.label}:retry1`, `${c.label}:retry2`] : [c.label]
+    const expected = c.readOnly ? [c.label, `${c.label}:retry1`] : [c.label]
     assert.deepEqual(labelsOf(trace).filter((l) => l.startsWith(c.label)), expected, c.stage)
     if (c.stage === 'cook') assert.ok(labelsOf(trace).includes('salvage:parent'), c.stage)
   }

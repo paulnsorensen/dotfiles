@@ -489,7 +489,8 @@ test('F9 and F5: a checkpoint with no focus rejects a new focus, and a stored fo
 })
 
 test('F11: an auto run whose strategy advisor fails returns no questions, no state, and no digest', async () => {
-  const { result } = await runBoard({ args: { stamp: STAMP, auto: true }, overrides: Object.fromEntries(['advise:strategy:0', 'advise:strategy:0:redo1', 'advise:strategy:0:redo2', 'advise:strategy:0:repair1', 'advise:strategy:0:repair2'].map((label) => [label, { bogus: true }])) })
+  // A judge throw is read-only, so it retries once before the advice counts as missing; the retry label gets the same bad answer.
+  const { result } = await runBoard({ args: { stamp: STAMP, auto: true }, overrides: Object.fromEntries(['advise:strategy:0', 'advise:strategy:0:retry1', 'advise:strategy:0:redo1', 'advise:strategy:0:redo2', 'advise:strategy:0:repair1', 'advise:strategy:0:repair2'].map((label) => [label, { bogus: true }])) })
   assert.equal(result.status, 'needs-input')
   assert.deepEqual(result.questions, [])
   assert.ok(!Object.hasOwn(result, 'state'))
@@ -631,7 +632,7 @@ test('R1: a lanes-only resume with an open concern stays blocked and names the q
 })
 
 test('S3: answering approve on the no-valid-advice row settles the strategy without another advisor call', async () => {
-  const bogus = Object.fromEntries(['advise:strategy:0', 'advise:strategy:0:redo1', 'advise:strategy:0:redo2', 'advise:strategy:0:repair1', 'advise:strategy:0:repair2'].map((label) => [label, { bogus: true }]))
+  const bogus = Object.fromEntries(['advise:strategy:0', 'advise:strategy:0:retry1', 'advise:strategy:0:redo1', 'advise:strategy:0:redo2', 'advise:strategy:0:repair1', 'advise:strategy:0:repair2'].map((label) => [label, { bogus: true }]))
   const first = (await runBoard({ overrides: bogus })).result
   assert.equal(first.status, 'needs-input')
   assert.equal(first.reason, 'advisor returned no valid advice')

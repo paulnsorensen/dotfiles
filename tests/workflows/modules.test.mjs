@@ -13,7 +13,7 @@ const WORKFLOWS = ['claude/workflows/cheese-board.js', 'claude/workflows/cheese-
 const PROVIDES = {
   stale: ['SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE'],
   budget: ['floorReached'],
-  call: ['form', 'substance', 'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt'],
+  call: ['form', 'substance', 'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt', 'isWriter', 'attempt', 'typed'],
   ground: ['MOLD', 'DECISION_KINDS', 'RESEARCH_CONFIDENCE', 'GROUNDING_SCHEMA', 'GROUND_RESEARCH_SCHEMA', 'GROUND_RULES', 'researchRule', 'BRIE_GROUND_MAX_AGENTS', 'brieGround'],
   checkpoint: ['stable', 'fnv1a', 'digestOf', 'matchAnswers'],
 }
