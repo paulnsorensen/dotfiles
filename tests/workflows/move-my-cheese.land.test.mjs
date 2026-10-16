@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  ageFull, aged, approve, approveDone, built, finalized, integrated, merged, noTensions, openPr, plain, planRoutes, published,
-  ready, reconRoutes, replaceOnePlan, run, sha, stateMerged, survey, verified,
+  ageFull, aged, approve, approveDone, built, finalized, merged, noTensions, openPr, plain, planRoutes, published,
+  ready, reconRoutes, replaceOnePlan, run, sha, stateMerged, survey,
 } from './move-my-cheese.fixtures.mjs'
 
 // A two-PR stack (#2 on #1), both aged and clean; #2 moves when it is restacked onto main.
@@ -27,10 +27,11 @@ const stackRoutes = (overrides = []) => [
 ]
 
 test('land merges a stack bottom-up, restacks the child, and fully re-reviews its moved head on main', async () => {
-  const { result, labels, call } = await run({ prs: [1, 2], auto: true, land: true }, stackRoutes())
+  const { result, labels, wfxLabels, call } = await run({ prs: [1, 2], auto: true, land: true }, stackRoutes())
   assert.equal(result.status, 'landed')
   assert.deepEqual(labels.filter((l) => /^(merge|merged|restack|recheck-age):/.test(l)), ['merge:1', 'merged:1:1', 'restack:2', 'recheck-age:2', 'merge:2', 'merged:2:1'])
   assert.equal(labels.some((l) => l.startsWith('integrate:') || l.startsWith('verify:')), false)
+  assert.equal(wfxLabels.some((l) => l.startsWith('integrate') || l.startsWith('worktree:')), false)
   assert.match(call('merge:2').prompt, new RegExp(`Run gh pr merge 2 --squash --match-head-commit ${sha(2, 3)}\\.`))
   assert.equal(call('restack:2').opts.isolation, 'worktree')
   const restack = call('restack:2').prompt
@@ -73,8 +74,6 @@ const replaceRoutes = (overrides = []) => planRoutes([
   ['recon:detail', { prs: [aged(1), aged(2)] }],
   ['plan:minimal', replaceOnePlan()],
   ['target:T-1', built(sha(50), '/tmp/wt-t1')],
-  ['integrate', integrated(['T-1', 'T-2'])],
-  ['verify', { verdicts: [verified] }],
   ['publish', published('T-1', 10, sha(50))],
   ['age:10', ageFull(10, { worktree_path: '/tmp/wt-t1' })],
   ['finalize:10', finalized],
@@ -115,15 +114,18 @@ test('a stop before a replacement merges drafts the PR it supersedes instead of 
 
 test('a moved head on a reshaping plan re-checks its criteria on main, including landed outcomes', async () => {
   const { args } = await approve(replaceRoutes(), { land: true })
-  const { result, labels } = await run(args, replaceRoutes([
+  const { result, raw, wfxLabels, workflowCalls } = await run(args, replaceRoutes([
     ['land:2:status', ready(2, { head_sha: sha(2, 5) })],
     ['recheck-age:2', ageFull(2)],
-    ['integrate:land-T-2', integrated(['T-2'])],
     ['merge:2', merged],
     ['merged:2', stateMerged],
   ]))
   assert.equal(result.status, 'landed')
-  assert.ok(labels.includes('integrate:land-T-2'))
-  assert.ok(labels.includes('verify:land-T-2:AC-1'))
-  assert.ok(labels.indexOf('verify:land-T-2:AC-1') < labels.indexOf('merge:2'))
+  assert.ok(wfxLabels.includes('integrate:land-T-2:T-2'))
+  assert.deepEqual(wfxLabels.filter((l) => l.endsWith(':land-T-2')), ['worktree:add:land-T-2', 'worktree:remove:land-T-2'])
+  const verify = workflowCalls.find((c) => c.name === 'verify-criteria')
+  assert.deepEqual(verify.input.criteria.map((c) => c.id), ['AC-1'])
+  const order = raw.agents.map(({ opts }) => opts.label)
+  assert.ok(order.indexOf('integrate:land-T-2:T-2') < order.indexOf('worktree:add:land-T-2'))
+  assert.ok(order.indexOf('worktree:remove:land-T-2') < order.indexOf('merge:2'))
 })

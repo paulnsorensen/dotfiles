@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  ageFull, aged, approve, approveDone, builtConsolidation, detail, finalized, index, integrated, merged, minimalPlan, openPr, plain, planRoutes,
-  liveRecon, published, ready, run, sha, stateMerged, verified,
+  ageFull, aged, approve, approveDone, builtConsolidation, detail, finalized, index, merged, minimalPlan, openPr, plain, planRoutes,
+  liveRecon, published, ready, run, sha, stateMerged,
 } from './move-my-cheese.fixtures.mjs'
 
 // After a non-land run: #1 and #2 are drafts with this approval's marker, and #10 is open on the
@@ -16,8 +16,6 @@ const resumeRoutes = (digest, { author10 = 'me', digest10 = digest, head10 = sha
     detail(2, { landing_digest: digest }),
     aged(10, { branch: 'land/combined', head_sha: sha(50), aged_sha: sha(50), landing_digest: digest10, landing_head: head10 }),
   ] }],
-  ['integrate', integrated(['T-1'])],
-  ['verify', { verdicts: [verified] }],
   ['review:10:status', ready(10, { head_sha: sha(50) })],
   ['advise:done', approveDone],
   ['land:10:status', ready(10, { head_sha: sha(50) })],
@@ -33,7 +31,7 @@ test('a land run of the same approval resumes after a non-land run instead of st
   assert.match(call('recon:detail').prompt, /PRs 1, 2, 10\./)
   assert.match(call('recon:detail').prompt, /never the PR body/)
   assert.equal(labels.some((l) => /^(target|age|finalize):/.test(l) || l === 'publish'), false)
-  assert.ok(call('integrate:pre').prompt.includes('T-1=origin/land/combined'))
+  assert.ok(call('integrate:T-1').prompt.includes("--target 'origin/land/combined'"))
   assert.deepEqual(plain(result.inputs).map((i) => [i.number, i.mark]), [[1, 'closed'], [2, 'closed']])
 })
 
@@ -55,8 +53,6 @@ for (const [name, override] of [
 const modifiedRoutes = (digest, stampHead) => planRoutes([
   ['recon:detail', { prs: [aged(1), aged(2, { head_sha: sha(2, 6), landing_digest: digest, landing_head: stampHead })] }],
   ['plan:minimal', minimalPlan()],
-  ['integrate', integrated(['T-1', 'T-2'])],
-  ['verify', { verdicts: [verified] }],
   ['age:2', ageFull(2)],
   ['finalize:2', finalized],
   ['review:1:status', ready(1)],

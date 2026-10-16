@@ -1158,7 +1158,6 @@ const TENSION_KINDS = ['conflict', 'duplicate', 'supersedes', 'ordering', 'seman
 const TENSION_SEVERITIES = ['blocking', 'material', 'minor']
 const COMPLETENESS = ['complete', 'partial', 'wip']
 const TASK_STATUSES = ['done', 'partial', 'blocked']
-const INTEGRATE_STATUSES = ['done', 'blocked']
 const CI_STATES = ['pass', 'fail', 'pending', 'none']
 const MERGE_STATES = ['BEHIND', 'BLOCKED', 'CLEAN', 'DIRTY', 'DRAFT', 'HAS_HOOKS', 'UNKNOWN', 'UNSTABLE']
 const PR_STATES = ['OPEN', 'CLOSED', 'MERGED']
@@ -1256,7 +1255,6 @@ const LANDING_SCHEMA = { ...obj(LANDING_FIELDS), properties: { ...LANDING_FIELDS
 const PLAN_ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), chosen: { type: 'string', pattern: '^P-[0-9]+$' }, concerns: strs, guidance: text('Under 80 words') })
 const TARGET_SCHEMA = obj({ status: oneOf(TASK_STATUSES), completed: strs, remaining: strs, checkpoint: text('Last commit SHA, or empty'), head_sha: str, worktree_path: str, note: str })
 const SALVAGE_SCHEMA = obj({ found: bool, checkpoint: str, completed: strs, remaining: strs })
-const INTEGRATE_SCHEMA = obj({ status: oneOf(INTEGRATE_STATUSES), worktree_path: text('Absolute path of the integration worktree'), head: text('Commit SHA of the integration HEAD'), merged: strs, conflicted: strs })
 const PUBLISH_SCHEMA = obj({ results: list(obj({ target: str, pr_number: int, url: str, head_sha: str, changed_files: int, lines_changed: int })) })
 const AGE_SCHEMA = obj({ mode: oneOf(AGE_MODES), scope: text('The exact ref range reviewed, empty when skipped'), slug: text('The /age handoff slug, empty when skipped'), artifact: str, worktree_path: str, has_medium_plus_findings: bool, has_cheap_lows: bool })
 const CURE_SCHEMA = obj({ status: oneOf(PHASE_STATUSES), committed: bool, pushed: bool, head_sha: str, worktree_path: str, artifact: str, note: str })
@@ -1427,17 +1425,6 @@ function checkTarget(result) {
   return errors
 }
 
-function checkIntegrate(result, ids) {
-  const errors = []
-  if (!absolute(result.worktree_path) || !SAFE_PATH_RE.test(result.worktree_path.trim())) errors.push(substance('worktree_path must be the absolute path of the integration worktree'))
-  if (!SHA_RE.test(String(result.head).trim())) errors.push(substance('head must be a commit SHA of 7 to 40 hex characters'))
-  for (const id of result.merged) errors.push(refError(id, ids, 'merged'))
-  for (const id of result.conflicted) errors.push(refError(id, ids, 'conflicted'))
-  for (const id of result.merged.filter((m) => result.conflicted.includes(m))) errors.push(substance(`${id} is in both merged and conflicted`))
-  for (const id of ids) if (!result.merged.includes(id) && !result.conflicted.includes(id)) errors.push(substance(`${id} is in neither merged nor conflicted`))
-  return errors.filter(Boolean)
-}
-
 function checkPublish(result, jobs, inputNumbers) {
   const errors = []
   const ids = jobs.map((j) => j.target)
@@ -1536,7 +1523,8 @@ function agentsMax(plan) {
   const build = 1 + LIMITS.continuations * 2 // first round, then a salvage and a continuation per round
   const age = 1 + AGE_FANOUT_MAX_AGENTS + 1 // fan-out prep and child, then the one-reviewer fallback
   const review = age + 3 + LIMITS.pollRounds * 2 // cure, re-age, finalize, then status and /affinage pairs
-  const verify = 2 * (1 + Math.ceil(plan.criteria.filter((c) => c.check_kind !== 'ci').length / LIMITS.checksPerJudge)) // pre and final rounds
+  // pre and final rounds: the verify-criteria child, a worktree add and remove, and one merge for each target
+  const verify = 2 * (VERIFY_CRITERIA_MAX_AGENTS + 2 + plan.targets.length)
   // restack, polls, re-age and verify of a moved head, merge, merge polls, close of its superseded PRs
   const land = LAND ? 1 + LIMITS.pollRounds * 2 + 1 + verify / 2 + 1 + LIMITS.mergePolls + 1 : 0
   return plan.targets.length * (build + review + land) + verify + 6 // publish, mark, close, advise:done, stamp, cleanup
@@ -1760,34 +1748,6 @@ const salvagePrompt = (target) => prompt(
   'Fill completed from git log of the ref. Leave remaining empty when you cannot tell.',
 )
 
-const integratePrompt = (refs, defaultBranch, round) => prompt(
-  `Work on a detached HEAD in your fresh worktree. Run git fetch origin && git checkout --detach origin/${defaultBranch}.`,
-  `Merge these refs with git merge --no-ff, in this order: ${refs.map((r) => `${r.id}=${r.ref}`).join(', ')}. Worktrees share refs, so local branches are visible.`,
-  'When a merge conflicts, abort it, add the target id to conflicted, and continue with the next ref. Do not resolve a conflict by guessing.',
-  `When the list is done, pin the result for the judges with git branch -f mmc/${runTag}/integrate-${round} HEAD. Create no other branch.`,
-  'Return status done when you finish the list, or blocked when you cannot continue. Set merged to the target ids that merged. Set worktree_path to the output of git rev-parse --show-toplevel and head to the output of git rev-parse HEAD.',
-  'Make no edit beyond the merges. Do not push or open a PR.',
-)
-
-// One judge runs a batch of checks, so the startup cost is paid once per batch.
-const verifyPrompt = (batch, integration) => {
-  const path = integration.worktree_path.trim()
-  return judgePrompt('verify',
-    `Verify criteria ${batch.map((ac) => ac.id).join(', ')} independently. You did not write this code. Implementer claims are not evidence.`,
-    `worktree_path: ${path}. head: ${integration.head}, the combined result of every target. The worktree is already at head. Do not check out, merge, reset, or edit anything in it.`,
-    `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}.`,
-    'Then do the steps below for each criterion, in order. Return one entry in verdicts for each criterion, with criterion set to its id.',
-    `Before each check, run git -C ${path} status --porcelain. Set tree_clean to true when it prints nothing.`,
-    'Run the command of each criterion exactly, unchanged, in its own Bash call:',
-    ...batch.map((ac) => `${ac.id}: cd ${path} && bash -c ${shq(ac.check)}`),
-    'Each command runs the check field of its criterion and nothing else. Treat every other field as description.',
-    `Before each check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
-    'A PreToolUse hook or guard may deny a check command. Then that check never ran. Set guard_blocked to true, set passes to false, and quote the denial in evidence.',
-    'Other judges use this worktree after you. Leave it as you found it, except for build or test output.',
-    data('criteria', batch),
-  )
-}
-
 const publishPrompt = (jobs) => prompt(
   'Publish the landing targets. Use Bash. Never merge anything.',
   'Work through the targets in the listed order from the current directory. Worktrees share refs, so each local_branch is visible here. Each target was built on its local_branch, which stands in for branch; never check out branch itself.',
@@ -1937,7 +1897,7 @@ const ENVELOPE_SCHEMA = {
     ok: bool,
     cmd: str,
     data: { type: 'object' },
-    error: { type: 'object', required: ['code', 'message'], properties: { code: str, message: str } },
+    error: { type: 'object', required: ['code', 'message'], properties: { code: str, message: str, details: { type: 'object' } } },
   },
 }
 
@@ -2008,53 +1968,111 @@ async function buildTarget(job) {
   }
 }
 
-// ---- Integrate and verify: criteria, not tasks; a code gate before each judge ----
+// ---- Integrate and verify: criteria, not tasks. Git merges the targets; the verify-criteria child judges the result ----
+// One verify-criteria child costs at most this many agents. agentsMax reserves them in the run's agent cap.
+const VERIFY_CRITERIA_MAX_AGENTS = 12
+const VERIFY_BATCH_SIZE = LIMITS.checksPerJudge
+const REPO_ARG = '"$(git rev-parse --show-toplevel)"'
+const integrationBranch = (round) => `mmc/integrate-${landingIdOf(landing)}${round === 'pre' ? '' : `-${round}`}`
+
+// Each merge moves the branch ref, so merges onto the branches run one at a time.
+let integrateLock = Promise.resolve()
+const startedBranches = new Set()
+function integrateRef(branch, id, ref, label, phaseName) {
+  const run = integrateLock.then(async () => {
+    // A branch from an earlier run holds old heads, so the first merge for a branch starts it again from the base.
+    const reset = startedBranches.has(branch) ? '' : `git update-ref -d refs/heads/${branch}; `
+    startedBranches.add(branch)
+    const pull = ref.startsWith('origin/') ? 'git fetch --quiet origin && ' : ''
+    const env = await wfx(label, phaseName, `${reset}${pull}wfx integrate --repo ${REPO_ARG} --branch ${shq(branch)} --base ${landing.recon.base_sha.trim()} --target ${shq(ref)}`)
+    if (env.ok) return { ok: true }
+    const conflict = env.error.code === 'conflict' && isObject(env.error.details) && isObject(env.error.details.conflict) ? env.error.details.conflict : null
+    if (conflict) return { ok: false, reason: `${id} conflicts with the targets merged before it in ${(Array.isArray(conflict.files) ? conflict.files : []).join(', ') || 'unknown files'}` }
+    return { ok: false, reason: `integration of ${id} failed: ${env.error.code}: ${env.error.message}` }
+  })
+  integrateLock = run.catch(() => {})
+  return run
+}
+
+// A built or unchanged target joins the run's integration branch. A conflict makes the target failed, so its dependents skip.
+async function integrateTarget(outcome) {
+  const ref = outcome.local ? outcome.head_sha : `origin/${targetsById.get(outcome.id).branch}`
+  const res = await integrateRef(integrationBranch('pre'), outcome.id, ref, `integrate:${outcome.id}`, 'Assemble')
+  return res.ok ? outcome : { id: outcome.id, status: 'failed', reason: res.reason }
+}
+
+// One verify-criteria child call. Returns { verdicts } or { failure }. A thrown child, a blocked child, and an invalid answer are failures.
+// A criterion without a verdict is no failure here: the caller fails it as not verified.
+async function verifyChild(checked, tree) {
+  let r = null
+  try {
+    r = await workflow('verify-criteria', { worktree_path: tree.path, head: tree.head, criteria: checked, batch_size: VERIFY_BATCH_SIZE, preflight: false })
+  } catch (e) {
+    return { failure: `verify-criteria failed: ${e && e.message}` }
+  }
+  if (r === null || typeof r !== 'object' || !['ok', 'partial', 'blocked'].includes(r.status)) return { failure: 'verify-criteria returned no valid status' }
+  if (r.status === 'blocked') return { failure: `verify-criteria blocked: ${typeof r.reason === 'string' && r.reason.trim() ? r.reason : 'no reason given'}` }
+  if (!Array.isArray(r.verdicts)) return { failure: 'verify-criteria returned no verdict list' }
+  const errors = [...schemaErrors({ verdicts: r.verdicts }, VERIFY_BATCH_SCHEMA, 'verdicts').map((m) => form(m)), ...checkVerdicts({ verdicts: r.verdicts }, checked, { requireAll: false })]
+  if (errors.length) return { failure: `verify-criteria returned invalid verdicts: ${errorText(errors)}` }
+  const missing = new Set((Array.isArray(r.missing) ? r.missing : []).map(norm))
+  return { verdicts: r.verdicts.filter((v) => !missing.has(norm(v.criterion))) }
+}
+
 async function integrateAndVerify(round, refs, criteria = plan.criteria) {
-  const ids = refs.map((r) => r.id)
-  const integrated = await typed(integratePrompt(refs, idx.default_branch, round),
-    { label: `integrate:${round}`, phase: 'Verify', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA },
-    // Every attempt gets its own worktree, so record each one for cleanup, valid or not.
-    (r) => { noteWorktree(r.worktree_path); return checkIntegrate(r, ids) })
-  if (!integrated.value) return { ok: false, reason: `integration failed: ${errorText(integrated.errors)}`, verdicts: [] }
-  const integration = integrated.value
-  if (integration.status !== 'done') return { ok: false, reason: 'integration blocked', verdicts: [] }
-  if (integration.conflicted.length) return { ok: false, reason: `targets conflict when combined: ${integration.conflicted.join(', ')}`, verdicts: [] }
-  // Judges run one after another in the integration worktree. A judge may not check out, so it reads the tree that integrate pinned.
-  const checked = criteria.filter((ac) => ac.check_kind !== 'ci')
-  const results = new Map()
-  for (let i = 0; i < checked.length; i += LIMITS.checksPerJudge) {
-    const batch = checked.slice(i, i + LIMITS.checksPerJudge)
-    const span = batch.length === 1 ? batch[0].id : `${batch[0].id}..${batch[batch.length - 1].id}`
-    const { value, errors } = await typed(verifyPrompt(batch, integration),
-      { label: `verify:${round}:${span}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERIFY_BATCH_SCHEMA }, (r) => checkVerdicts(r, batch))
-    for (const ac of batch) results.set(ac.id, { value: value ? value.verdicts.find((v) => norm(v.criterion) === ac.id) : null, errors })
-  }
-  const verdicts = []
-  for (const ac of criteria) {
-    if (ac.check_kind === 'ci') {
-      verdicts.push({ criterion: ac.id, result: 'deferred', evidence: 'covered by CI readiness in Review' })
-      continue
+  const branch = integrationBranch(round)
+  // The pre round merged each target during Assemble. A later round merges the refs again, onto a branch of its own.
+  if (round !== 'pre') {
+    for (const r of refs) {
+      const res = await integrateRef(branch, r.id, r.ref, `integrate:${round}:${r.id}`, 'Verify')
+      if (!res.ok) return { ok: false, reason: `targets conflict when combined: ${res.reason}`, verdicts: [] }
     }
-    const { value, errors } = results.get(ac.id)
-    // A check that an earlier check's files could affect still counts, but the verdict says so.
-    if (value && !value.tree_clean) log(`verify:${round}:${ac.id}: the integration worktree had changes before the check`)
-    const note = value && !value.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
-    // A check that reads a missing path can pass without testing anything, so it fails here.
-    const missing = value ? value.missing_paths.filter((p) => !blank(p)) : []
-    const gap = missing.length ? ` (the check reads missing paths: ${missing.join(', ')})` : ''
-    // A guard denial means the check never ran. It stays a blocker, but the verdict says why.
-    if (value && value.guard_blocked === true) {
-      verdicts.push({ criterion: ac.id, result: 'unrun', evidence: 'check blocked by a PreToolUse guard' })
-      continue
-    }
-    verdicts.push(value
-      ? { criterion: ac.id, result: value.passes && !missing.length ? 'pass' : 'fail', evidence: `${value.evidence}${note}${gap}` }
-      : { criterion: ac.id, result: 'fail', evidence: `not verified: ${errorText(errors)}` })
   }
-  const failed = verdicts.filter((v) => v.result === 'fail').map((v) => v.criterion)
-  const unrun = verdicts.filter((v) => v.result === 'unrun').map((v) => v.criterion)
-  const reason = [failed.length && `criteria failed: ${failed.join(', ')}`, unrun.length && `criteria verification unrun (guard): ${unrun.join(', ')}`].filter(Boolean).join('; ')
-  return { ok: !failed.length && !unrun.length, reason, verdicts }
+  const added = await wfx(`worktree:add:${round}`, 'Verify', `wfx worktree add --repo ${REPO_ARG} --landing ${landingIdOf(landing)} --name verify-${round.toLowerCase()} --ref ${shq(branch)}`)
+  if (!added.ok) return { ok: false, reason: `integration worktree failed: ${added.error.message}`, verdicts: [] }
+  const tree = { path: String(added.data.path).trim(), head: String(added.data.head).trim() }
+  try {
+    const checked = criteria.filter((ac) => ac.check_kind !== 'ci')
+    const results = new Map()
+    let failure = ''
+    if (checked.length) {
+      const out = await verifyChild(checked, tree)
+      if (out.failure) failure = out.failure
+      else for (const v of out.verdicts) results.set(norm(v.criterion), v)
+    }
+    const verdicts = []
+    for (const ac of criteria) {
+      if (ac.check_kind === 'ci') {
+        verdicts.push({ criterion: ac.id, result: 'deferred', evidence: 'covered by CI readiness in Review' })
+        continue
+      }
+      const value = results.get(ac.id)
+      // A check that an earlier check's files could affect still counts, but the verdict says so.
+      if (value && !value.tree_clean) log(`verify:${round}:${ac.id}: the integration worktree had changes before the check`)
+      const note = value && !value.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
+      // A check that reads a missing path can pass without testing anything, so it fails here.
+      const missing = value ? value.missing_paths.filter((p) => !blank(p)) : []
+      const gap = missing.length ? ` (the check reads missing paths: ${missing.join(', ')})` : ''
+      // A guard denial means the check never ran. It stays a blocker, but the verdict says why.
+      if (value && value.guard_blocked === true) {
+        verdicts.push({ criterion: ac.id, result: 'unrun', evidence: 'check blocked by a PreToolUse guard' })
+        continue
+      }
+      verdicts.push(value
+        ? { criterion: ac.id, result: value.passes && !missing.length ? 'pass' : 'fail', evidence: `${value.evidence}${note}${gap}` }
+        : { criterion: ac.id, result: 'fail', evidence: `not verified: ${failure || 'verify-criteria returned no verdict'}` })
+    }
+    const failed = verdicts.filter((v) => v.result === 'fail').map((v) => v.criterion)
+    const unrun = verdicts.filter((v) => v.result === 'unrun').map((v) => v.criterion)
+    const reason = [failed.length && `criteria failed: ${failed.join(', ')}`, unrun.length && `criteria verification unrun (guard): ${unrun.join(', ')}`].filter(Boolean).join('; ')
+    return { ok: !failed.length && !unrun.length, reason, verdicts }
+  } finally {
+    const removed = await wfx(`worktree:remove:${round}`, 'Verify', `wfx worktree remove --repo ${REPO_ARG} --path ${shq(tree.path)}`)
+    if (!removed.ok) {
+      log(`worktree:remove:${round} failed: ${removed.error.message}`)
+      noteWorktree(tree.path)
+    }
+  }
 }
 
 // ---- Poll: status, then /affinage when work remains; bounded, with a stall guard ----
@@ -2823,6 +2841,12 @@ const jobOf = (t) => (appliedBefore(t)
       tensions: landing.tensions.filter((x) => t.resolves.includes(x.id)),
       criteria: plan.criteria.filter((c) => t.satisfies.includes(c.id)),
     })
+// Verify when targets change, sit side by side, carry tensions, or have non-CI criteria.
+const needVerify = plan.dispositions.some((d) => d.action !== 'keep')
+  || plan.targets.some((t) => t.kind === 'new')
+  || waveOrder.some((wave) => wave.length > 1)
+  || plan.criteria.some((c) => c.check_kind !== 'ci')
+  || landing.tensions.length > 0
 for (const wave of waveOrder) {
   const runnable = []
   for (const id of wave) {
@@ -2836,18 +2860,25 @@ for (const wave of waveOrder) {
     else if (floorReached()) outcomes.set(id, { id, status: 'skipped', reason: 'budget floor reached' })
     else runnable.push(t)
   }
-  const results = await parallel(runnable.map((t) => () => buildTarget(jobOf(t))))
-  results.forEach((r, i) => outcomes.set(runnable[i].id, r || { id: runnable[i].id, status: 'lost', reason: 'builder threw' }))
+  // A target that built or needs no build joins the integration branch at once, so a conflict stops it before its dependents start.
+  const unbuilt = wave.filter((id) => outcomes.get(id)?.status === 'done')
+  const integrating = (outcome) => (needVerify && outcome.status === 'done' ? integrateTarget(outcome) : outcome)
+  const tasks = [
+    ...unbuilt.map((id) => async () => integrating(outcomes.get(id))),
+    ...runnable.map((t) => async () => integrating(await buildTarget(jobOf(t)))),
+  ]
+  const ids = [...unbuilt, ...runnable.map((t) => t.id)]
+  const results = await parallel(tasks)
+  results.forEach((r, i) => outcomes.set(ids[i], r || { id: ids[i], status: 'lost', reason: 'builder threw' }))
 }
 const notBuilt = order.filter((id) => outcomes.get(id).status !== 'done')
-if (notBuilt.length) return report('fail', `targets not built: ${notBuilt.map((id) => `${id} (${outcomes.get(id).status})`).join(', ')}; nothing was pushed`)
+const notBuiltText = (id) => {
+  const o = outcomes.get(id)
+  return `${id} (${o.status}${o.status === 'failed' ? `: ${o.reason}` : ''})`
+}
+if (notBuilt.length) return report('fail', `targets not built: ${notBuilt.map(notBuiltText).join(', ')}; nothing was pushed`)
 
-// ---- Verify: when targets change, sit side by side, carry tensions, or have non-CI criteria ----
-const needVerify = plan.dispositions.some((d) => d.action !== 'keep')
-  || plan.targets.some((t) => t.kind === 'new')
-  || waveOrder.some((wave) => wave.length > 1)
-  || plan.criteria.some((c) => c.check_kind !== 'ci')
-  || landing.tensions.length > 0
+// ---- Verify: criteria run in the integration worktree; the targets merged during Assemble ----
 const refsOf = (afterPublish) => order.map((id) => ({ id, ref: afterPublish || !rebuilt(id) ? `origin/${targetsById.get(id).branch}` : localOf(targetsById.get(id).branch) }))
 if (floorReached()) return report('partial', 'budget floor reached before verification; nothing was pushed')
 if (needVerify) {

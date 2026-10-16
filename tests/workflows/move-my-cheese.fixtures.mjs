@@ -148,8 +148,6 @@ export const keepPlanRoutes = (overrides = []) => [
 export const builtConsolidation = (overrides = []) => planRoutes([
   ...overrides,
   ['target:T-1', built(sha(50), '/tmp/wt-t1')],
-  ['integrate:pre', integrated(['T-1'])],
-  ['verify:pre:AC-1', { verdicts: [verified] }],
   ['publish', published('T-1', 10, sha(50))],
   ['age:10', ageFull(10, { worktree_path: '/tmp/wt-t1' })],
   ['finalize:10', finalized],
@@ -186,25 +184,42 @@ export const liveRecon = ({ heads = {}, base = BASE_SHA } = {}) => ({ prompt }) 
   const prs = csv.split(',').map(Number).map((n) => ({ number: n, head: { ref: `feat/pr-${n}`, sha: heads[n] ?? sha(n) }, base: 'main', state: 'OPEN', mergeable: 'MERGEABLE' }))
   return envelope('recon', { prs, base: { ref: 'main', sha: base } })
 }
-const WFX_LABEL_RE = /^(preflight|state:|stale:)/
+const WFX_LABEL_RE = /^(preflight|state:|stale:|integrate|worktree:)/
+// ---- Integrate and verify defaults (AC-20, AC-25) ----
+// wfx integrate and wfx worktree answer ok. The default verify-criteria stub passes every criterion it receives.
+export const integrateOk = ({ prompt }) => envelope('integrate', { branch: /--branch '?([^' ]+)/.exec(prompt)[1], sha: sha(98), integrated: [/--target '?([^' ]+)/.exec(prompt)[1]] })
+export const passingVerdict = (ac) => ({ criterion: ac.id, passes: true, evidence: `ran ${ac.id}`, tree_clean: true, missing_paths: [] })
+export const defaultVerify = (input) => ({ status: 'ok', verdicts: input.criteria.map(passingVerdict), missing: [] })
+export const INT_WORKTREE = '/repo/.claude/worktrees/lnd@verify'
 const DEFAULT_ROUTES = [
   ['ground', grounded()], ['stamp', { results: [] }], ['cleanup', { removed: [], note: '' }], ['advise:done', approveDone],
   ['preflight', envelope('preflight', { checks: [] })], ['state:put', envelope('run-state', {})], ['stale:recon', liveRecon()],
+  ['integrate', integrateOk],
+  ['worktree:add', envelope('worktree', { path: INT_WORKTREE, landing: 'lnd', name: 'verify', head: sha(98) })],
+  ['worktree:remove', envelope('worktree', { path: INT_WORKTREE, removed: true })],
 ]
 
 // A test may pass its own budget object; the harness default has no total, so the floor never applies.
 // child stands in for workflow(): brie-ground research and the age-fanout child.
-export async function run(args, routes, budget = null, child = null) {
+// verify replaces the default verify-criteria stub: it receives the child input and returns the result or throws.
+export async function run(args, routes, budget = null, child = null, verify = defaultVerify) {
   const workflow = await loadWorkflow(path)
   const { globals, trace } = createRuntime({ respond: router([...routes, ...DEFAULT_ROUTES]) })
-  const result = await workflow.run({ ...globals, ...(budget ? { budget } : {}), ...(child ? { workflow: child } : {}), args })
+  const workflowCalls = []
+  const stub = async (name, input) => {
+    workflowCalls.push({ name, input: plain(input) })
+    if (name === 'verify-criteria') return verify(input)
+    if (!child) throw new Error('workflow() is not supported in the offline harness')
+    return child(name, input)
+  }
+  const result = await workflow.run({ ...globals, ...(budget ? { budget } : {}), workflow: stub, args })
   // trace, labels, and call show the planning and build agents. The wfx runner calls sit in raw and wfxLabels.
   const isWfx = ({ opts }) => WFX_LABEL_RE.test(opts.label)
   const shown = { ...trace, agents: trace.agents.filter((a) => !isWfx(a)) }
   const labels = shown.agents.map(({ opts }) => opts.label)
   const wfxLabels = trace.agents.filter(isWfx).map(({ opts }) => opts.label)
   const call = (label) => trace.agents.find(({ opts }) => opts.label === label)
-  return { result, trace: shown, raw: trace, labels, wfxLabels, call }
+  return { result, trace: shown, raw: trace, labels, wfxLabels, call, workflowCalls }
 }
 
 // Plan once, then return the args that approve that plan.
