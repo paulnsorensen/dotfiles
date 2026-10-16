@@ -1,8 +1,9 @@
-// wfx pr create   [--repo-slug owner/name] --base <b> --head <b> --title <t> --body-file <f>
+// wfx pr create   [--repo-slug owner/name] --base <b> --head <b> --title <t> --body-file <f | ->
 // wfx pr retarget  --pr N --base <b>
-// wfx pr comment   --pr N --body-file <f>
-// create returns { number, url }. The body always comes from a file, never from the command line.
-import { existsSync } from 'node:fs';
+// wfx pr comment   --pr N --body-file <f | ->
+// create returns { number, url }. The body comes from a file or, with --body-file -, from stdin; never from the command line.
+// Stdin lets a runner pipe the body in (printf '%s' <text> | wfx pr create ... --body-file -), so no step writes a file.
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { badInput } from '../lib/envelope.mjs';
 import { assertPr, ghOrThrow } from '../lib/gh.mjs';
@@ -18,10 +19,16 @@ function need(flags, ...names) {
   }
 }
 
-function bodyFile(ctx, value) {
+// Returns the gh --body-file value and the stdin text to feed it. An empty body is bad input.
+function body(ctx, value) {
+  if (value === '-') {
+    const text = (ctx.stdin ?? (() => readFileSync(0, 'utf8')))();
+    if (!text.trim()) throw badInput('--body-file - read an empty body from stdin');
+    return { file: '-', input: text };
+  }
   const path = resolve(ctx.cwd, value);
   if (!existsSync(path)) throw badInput(`--body-file does not exist: ${path}`);
-  return path;
+  return { file: path, input: undefined };
 }
 
 function create(argv, ctx) {
@@ -34,9 +41,9 @@ function create(argv, ctx) {
   if (flags.title.includes('\n') || flags.title.length > MAX_TITLE) {
     throw badInput(`--title must be one line of at most ${MAX_TITLE} characters`);
   }
-  const file = bodyFile(ctx, flags['body-file']);
+  const { file, input } = body(ctx, flags['body-file']);
   const repoArgs = slug ? ['--repo', slug] : [];
-  const out = ghOrThrow(ctx, ['pr', 'create', ...repoArgs, '--base', base, '--head', head, '--title', flags.title, '--body-file', file], 'pr-create-failed');
+  const out = ghOrThrow(ctx, ['pr', 'create', ...repoArgs, '--base', base, '--head', head, '--title', flags.title, '--body-file', file], 'pr-create-failed', input);
   const url = out.trim().split('\n').pop().trim();
   const match = /\/pull\/([1-9][0-9]*)$/.exec(url);
   if (!match) throw badInput(`gh pr create printed no PR URL: ${out.trim()}`);
@@ -56,8 +63,8 @@ function comment(argv, ctx) {
   const { flags } = parseFlags(argv, { value: ['pr', 'body-file'] });
   need(flags, 'pr', 'body-file');
   const pr = assertPr(flags.pr);
-  const file = bodyFile(ctx, flags['body-file']);
-  ghOrThrow(ctx, ['pr', 'comment', pr, '--body-file', file], 'pr-comment-failed');
+  const { file, input } = body(ctx, flags['body-file']);
+  ghOrThrow(ctx, ['pr', 'comment', pr, '--body-file', file], 'pr-comment-failed', input);
   return { data: { pr: Number(pr), commented: true } };
 }
 

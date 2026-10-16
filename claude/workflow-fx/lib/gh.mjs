@@ -8,9 +8,9 @@ export function assertPr(value, label = 'pr') {
   return value;
 }
 
-// Runs gh and returns stdout. A failure becomes an FxError with the given code.
-export function ghOrThrow(ctx, args, code = 'gh-failed') {
-  const res = ctx.gh(args, { env: ctx.env, cwd: ctx.cwd });
+// Runs gh and returns stdout. A failure becomes an FxError with the given code. input feeds gh's stdin.
+export function ghOrThrow(ctx, args, code = 'gh-failed', input = undefined) {
+  const res = ctx.gh(args, { env: ctx.env, cwd: ctx.cwd, input });
   if (res.status !== 0) {
     throw new FxError(code, `gh ${args.slice(0, 2).join(' ')} failed: ${res.stderr.trim()}`, {
       args,

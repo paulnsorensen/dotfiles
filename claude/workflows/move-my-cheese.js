@@ -2975,16 +2975,15 @@ if (pushJobs.length) {
       url = pr.url
     } else {
       const body = [targetsById.get(job.target).brief, ...job.supersedes.map((n) => `Supersedes #${n}`)].join('\n\n')
-      const file = `/tmp/mmc-body-${job.target}.md`
-      const created = await pubStep(job, 'create', `printf '%s' ${shq(body)} > ${shq(file)} && wfx pr create --base ${shq(job.base_branch)} --head ${shq(job.branch)} --title ${shq(job.title)} --body-file ${shq(file)}`)
+      // The body goes through a pipe to stdin, because the runner and the session guards forbid a file write.
+      const created = await pubStep(job, 'create', `printf '%s' ${shq(body)} | wfx pr create --base ${shq(job.base_branch)} --head ${shq(job.branch)} --title ${shq(job.title)} --body-file -`)
       if (!created.ok) return pubFail(job, 'create', envText(created))
       if (!Number.isInteger(created.data.number) || created.data.number <= 0 || blank(created.data.url)) return pubFail(job, 'create', 'wfx pr create returned no PR number or url')
       number = created.data.number
       url = created.data.url
     }
     // The reader takes the last landing marker comment, so a new comment replaces the old one.
-    const noteFile = `/tmp/mmc-landing-${job.target}.md`
-    const noted = await pubStep(job, 'comment', `printf '%s' ${shq(landingMarker(digest))} > ${shq(noteFile)} && wfx pr comment --pr ${number} --body-file ${shq(noteFile)}`)
+    const noted = await pubStep(job, 'comment', `printf '%s' ${shq(landingMarker(digest))} | wfx pr comment --pr ${number} --body-file -`)
     if (!noted.ok) return pubFail(job, 'comment', envText(noted))
     const stats = await statsOf(job, number)
     return { ok: true, result: { target: job.target, pr_number: number, url, head_sha: head, changed_files: stats.changed_files, lines_changed: stats.lines_changed } }

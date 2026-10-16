@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { fakeGh, pathWith, runWfx, tempDir } from './fx-kit.mjs';
+import { WFX, fakeGh, pathWith, runWfx, tempDir } from './fx-kit.mjs';
 
 function setup(fixtures, t) {
   const { binDir, logPath } = fakeGh(fixtures, t);
@@ -65,6 +66,29 @@ test('pr comment posts the body from a file, never from argv text', (t) => {
   assert.deepEqual(JSON.parse(readFileSync(fx.logPath, 'utf8').trim()), ['pr', 'comment', '7', '--body-file', body]);
   assert.equal(runWfx(['pr', 'comment', '--pr', '7', '--body-file', join(cwd, 'gone.md')], { cwd, env }).status, 2);
 });
+
+// A fake gh that copies its stdin to a file, so the test sees the body that wfx fed it.
+function stdinGh(t) {
+  const dir = tempDir(t)
+  const seen = join(dir, 'stdin.txt')
+  const bin = join(dir, 'gh')
+  writeFileSync(bin, `#!/bin/sh\nprintf '%s\\n' "$*" > '${join(dir, 'argv.txt')}'\ncat > '${seen}'\necho https://github.com/o/r/pull/9\n`)
+  chmodSync(bin, 0o755)
+  return { dir, seen, argv: join(dir, 'argv.txt') }
+}
+
+test('pr create and comment read the body from stdin with --body-file -, so no step writes a file', (t) => {
+  const cwd = tempDir(t)
+  for (const args of [['pr', 'create', '--base', 'main', '--head', 'land/x', '--title', 't', '--body-file', '-'], ['pr', 'comment', '--pr', '9', '--body-file', '-']]) {
+    const gh = stdinGh(t)
+    const res = spawnSync(WFX, args, { cwd, input: 'line one\nline two\n', encoding: 'utf8', env: { ...process.env, PATH: pathWith(gh.dir) } })
+    assert.equal(res.status, 0, res.stdout + res.stderr)
+    assert.equal(readFileSync(gh.seen, 'utf8'), 'line one\nline two\n')
+    assert.match(readFileSync(gh.argv, 'utf8'), /--body-file -$/m)
+  }
+  const empty = spawnSync(WFX, ['pr', 'comment', '--pr', '9', '--body-file', '-'], { cwd, input: '  \n', encoding: 'utf8', env: { ...process.env, PATH: pathWith(stdinGh(t).dir) } })
+  assert.equal(empty.status, 2, empty.stdout)
+})
 
 test('pr rejects an unknown subcommand', (t) => {
   const { env, cwd } = setup({}, t);
