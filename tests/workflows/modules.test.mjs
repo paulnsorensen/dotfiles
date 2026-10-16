@@ -16,8 +16,15 @@ const PROVIDES = {
   call: ['form', 'substance', 'errorText', 'schemaErrors', 'data', 'prompt', 'redoPrompt', 'repairPrompt'],
   ground: ['MOLD', 'DECISION_KINDS', 'RESEARCH_CONFIDENCE', 'GROUNDING_SCHEMA', 'GROUND_RESEARCH_SCHEMA', 'GROUND_RULES', 'researchRule', 'BRIE_GROUND_MAX_AGENTS', 'brieGround'],
   checkpoint: ['stable', 'fnv1a', 'digestOf', 'matchAnswers'],
+  guard: ['UNSAFE_CHECKS', 'GUARD_PREFERRED', 'unsafeCheck', 'guardedReaderReason', 'vacuousReason', 'shellWords'],
 }
-const MODULES = Object.keys(PROVIDES)
+// The guard module is not marked in any workflow yet; a later change adopts it.
+const UNMARKED = ['guard']
+// The guard module keeps private helpers next to the names it provides.
+const PRIVATE = {
+  guard: ['hit', 'maskQuotes', 'structuralHit', 'ASSIGN_RE', 'WRAPPERS', 'WRAPPER_VALUE_OPTS', 'SHELL_KEYWORDS', 'MUTATION_COMMANDS', 'NETWORK_COMMANDS', 'FETCH_RUNNERS', 'PACKAGE_MANAGERS', 'INSTALL_SUBCOMMANDS', 'SHELL_HEAD_RE', 'CODE_HEAD_RE', 'AWK_HEAD_RE', 'AWK_DANGER_RE', 'SED_WRITE_RE', 'GIT_VALUE_OPTS', 'GIT_MUTATIONS', 'unwrap', 'gitHit', 'sedHit', 'commandHit', 'GUARD_READERS', 'GUARD_SCRIPTED', 'GUARD_VALUED_LONG', 'GUARD_WRAPPERS', 'GUARD_LISTING', 'guardedFiles', 'SEARCH_TOOLS', 'VALUE_LETTERS', 'LONG_VALUE_OPTS', 'REDIRECT_RE', 'BARE_REDIRECT_RE', 'samePath', 'guardedPath', 'searchOf', 'COMMAND_OPS', 'PIPE_SINKS', 'unparen', 'withoutRedirects', 'pipelineStages', 'exitsZero', 'cannotFail'],
+}
+const MODULES = Object.keys(PROVIDES).filter((m) => !UNMARKED.includes(m))
 
 const roots = []
 after(() => {
@@ -50,8 +57,8 @@ const chainDir = () => {
   return d
 }
 
-test('listModules names exactly the five split modules', () => {
-  assert.deepEqual(listModules(), [...MODULES].sort())
+test('listModules names exactly the five split modules and the unmarked guard', () => {
+  assert.deepEqual(listModules(), Object.keys(PROVIDES).sort())
 })
 
 test('each module header parses, names its file, and lists the names it declares once', () => {
@@ -68,12 +75,12 @@ test('each module header parses, names its file, and lists the names it declares
       const m = /^(?:const|function) (\w+)/.exec(l)
       return m ? [m[1]] : []
     })
-    assert.deepEqual(declared.sort(), [...header.provides].sort(), `${name} declares each provided name once`)
+    assert.deepEqual(declared.sort(), [...header.provides, ...(PRIVATE[name] ?? [])].sort(), `${name} declares each provided name and each private helper once`)
   }
 })
 
 test('no workflow-wide name is provided by two modules', () => {
-  const all = MODULES.flatMap((m) => PROVIDES[m])
+  const all = Object.values(PROVIDES).flat()
   assert.equal(new Set(all).size, all.length)
 })
 
