@@ -1,9 +1,9 @@
 export const meta = {
   name: 'move-my-cheese',
   description: 'Land a set of PRs or stacks: digest each PR intent, find tensions, ground the PRs in recorded wiki decisions and brie-ground research, plan the landing with fresh opus planners and an advisor, gate on user approval, assemble the final PRs, age and affinage them until ready, and merge when land is set.',
-  whenToUse: 'Several open PRs or stacks that should land, where some may overlap, conflict, or replace each other. The first run returns a landing plan and an approve digest. Re-run with { prs, plan, approve } to execute it, or add revise:"<change>" to change the plan first. Pass auto:true to skip the user gate and land:true to merge.',
+  whenToUse: 'Several open PRs or stacks that should land, where some may overlap, conflict, or replace each other. Pass PR numbers, or a description such as "1358 and above" or "my age-fanout stack". The first run returns a landing plan and an approve digest. Re-run with { prs, plan, approve } to execute it, or add revise:"<change>" to change the plan first. Pass auto:true to skip the user gate and land:true to merge.',
   phases: [
-    { title: 'Recon', detail: 'haiku indexes open PRs; code expands stacks; haiku collects per-PR detail' },
+    { title: 'Recon', detail: 'haiku indexes open PRs; haiku resolves a free-text PR description to numbers; code expands stacks; haiku collects per-PR detail' },
     { title: 'Survey', detail: 'one read-only sonnet explorer per PR writes an intent digest' },
     { title: 'Tensions', detail: 'one sonnet cross-reader types tensions across all digests and the code-found overlaps' },
     { title: 'Ground', detail: 'beside Tensions: one read-only explorer reads the hallouminate wiki for recorded decisions and prior research that bear on the PRs, plus external questions that nothing settles; a failure is a gap' },
@@ -116,9 +116,9 @@ const GROUND_RULES = [
 ].join('\n')
 // The rule for research_questions. max resolves at call time.
 const researchRule = (max) => `research_questions: at most ${max} questions about external facts (a library, an API, upstream behavior) that the work needs settled. Ask a question only when the item text, the code, the wiki, and prior research all leave it open. Leave it empty otherwise.`
-// Upper bound for one brie-ground child: plan, recall, and synthesis, plus up to 3 deep sub-questions of scope, 6 angles, 12 fetches, and verify votes.
-const BRIE_GROUND_MAX_AGENTS = 100
-// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. workflow and log resolve at call time.
+// Worst case of one brie-ground child (see its fan-out caps): recall 2, plan 2, 3 deep sub-questions x 7, 2 shallow x 3, synthesis 2, prototype 2.
+const BRIE_GROUND_MAX_AGENTS = 35
+// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. A capped result also logs and returns its dropped count. workflow and log resolve at call time.
 const brieGround = async (question) => {
   let r = null
   try {
@@ -127,11 +127,20 @@ const brieGround = async (question) => {
     log(`brie-ground failed for "${question}": ${e && e.message}`)
   }
   if (!r || r.error || typeof r.answer !== 'string' || !RESEARCH_CONFIDENCE.includes(r.confidence)) return { failed: `research failed: ${question}` }
+  const capped = (result, items, max, what) => {
+    if (items.length <= max) return result
+    log(`brie-ground for "${question}" dropped ${items.length - max} ${what} past the cap of ${max}`)
+    return { ...result, dropped: items.length - max }
+  }
   // A dont_know answer may be blank. It keeps at most 2 follow-ups, so one child cannot flood the open questions.
-  if (r.confidence === 'dont_know') return { unsettled: [question, ...(Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()).slice(0, 2) : [])] }
+  if (r.confidence === 'dont_know') {
+    const followUps = Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()) : []
+    return capped({ unsettled: [question, ...followUps.slice(0, 2)] }, followUps, 2, 'follow-up question(s)')
+  }
   if (!r.answer.trim()) return { failed: `research failed: ${question}` }
-  const citations = (Array.isArray(r.evidence_table) ? r.evidence_table : []).slice(0, 5).map((e) => e && e.citation).filter(Boolean)
-  return { found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }
+  const evidence = Array.isArray(r.evidence_table) ? r.evidence_table : []
+  const citations = evidence.slice(0, 5).map((e) => e && e.citation).filter(Boolean)
+  return capped({ found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }, evidence, 5, 'citation row(s)')
 }
 
 // Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
@@ -235,9 +244,9 @@ function matchAnswers(questions, raw) {
 // viewer's comments, and a marker without full 40-hex values reads as none.
 
 // ---- Limits and closed sets: every loop has a bound in code ----
-const LIMITS = { maxPrs: 12, maxTargets: 12, maxCriteria: 24, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000, maxResearch: 2, checksPerJudge: 8, overlapFiles: 20 }
-// Worst case for one age-fanout child: packet, two attempts for each of about 12 dimensions, reconcile.
-const AGE_FANOUT_MAX_AGENTS = 27
+const LIMITS = { maxPrs: 12, maxTargets: 12, maxCriteria: 24, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000, maxResearch: 2, checksPerJudge: 8, overlapFiles: 20, descriptionChars: 500 }
+// Worst case for one age-fanout child: two packet attempts, two attempts for each of at most 5 planned reviewers, two reconcile attempts.
+const AGE_FANOUT_MAX_AGENTS = 14
 const MARKER_PREFIX = 'move-my-cheese:aged'
 const MERGE_METHODS = ['squash', 'merge', 'rebase']
 const BLAST_RADII = ['low', 'medium', 'high']
@@ -288,6 +297,7 @@ const INDEX_SCHEMA = obj({
   viewer: text('gh api user --jq .login'),
   open_prs: list(obj({ number: int, title: str, branch: str, base: str, author: str, is_draft: bool, is_cross_repository: bool })),
 })
+const SELECT_SCHEMA = obj({ prs: ints, note: text('How the description maps to these PRs, under 40 words') })
 
 // Every PR this run pushes to, opens, or drafts carries <!-- move-my-cheese:landing digest=<d> -->.
 // At the end of a run, each open target's marker also records the head the run last saw (head=<sha>).
@@ -635,6 +645,13 @@ function checkIndex(index) {
   if (!FULL_SHA_RE.test(index.base_sha.trim())) errors.push(substance('base_sha must be a full 40-character commit SHA'))
   if (!VIEWER_RE.test(index.viewer)) errors.push(substance('viewer must be the gh login'))
   for (const n of duplicates(index.open_prs.map((p) => p.number))) errors.push(substance(`open_prs lists #${n} twice`))
+  return errors
+}
+
+function checkSelect(selection, open) {
+  const numbers = new Set(open.map((p) => p.number))
+  const errors = selection.prs.filter((n) => !numbers.has(n)).map((n) => substance(`#${n} is not an open PR in open_prs`))
+  for (const n of duplicates(selection.prs)) errors.push(substance(`prs lists #${n} twice`))
   return errors
 }
 
@@ -1007,6 +1024,16 @@ const indexPrompt = () => prompt(
   'List the open PRs with gh pr list --state open --limit 200 --json number,title,headRefName,baseRefName,author,isDraft,isCrossRepository. Map headRefName to branch, baseRefName to base, and author.login to author.',
 )
 
+const selectPrompt = (description, idx) => prompt(
+  'Resolve a user description of PRs to land into PR numbers. Change nothing.',
+  'The description may name a number range ("1358 and above", "1350-1360"), an author ("my PRs", "renovate"), a topic, a branch, or a stack. open_prs lists every open PR of the repository. "My" or "mine" means author equals viewer.',
+  'Decode the description against open_prs first. When titles and branches do not settle a topic, read bodies with gh pr view <n> --json body, or search with gh pr list --state open --search "<terms>" --json number. Use Bash only for these reads.',
+  'Set prs to every open PR number that the description selects, and no other. A range bound is inclusive unless the description excludes it. Take each number from open_prs. When nothing matches, set prs to an empty list and say why in note.',
+  data('description', description),
+  data('viewer', idx.viewer),
+  data('open_prs', idx.open_prs),
+)
+
 const detailPrompt = (numbers, viewer) => prompt(
   `Collect landing detail for PRs ${numbers.join(', ')}. Use Bash. Change nothing.`,
   [
@@ -1322,7 +1349,7 @@ async function typed(text, opts, check) {
     if (!errors.length) return { value, errors }
     if (round > LIMITS.fixRounds) return { value: null, errors }
     value = errors.every((e) => e.kind === 'form')
-      ? await agent(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' })
+      ? await agent(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, agentType: 'formatter', schema: opts.schema, model: 'haiku', effort: 'low' })
       : await agent(redoPrompt(text, errors), { ...opts, label: `${opts.label}:redo${round}` })
   }
 }
@@ -1345,7 +1372,7 @@ function normalizeTask(result) {
 
 async function salvage(target) {
   const found = await agent(salvagePrompt(target),
-    { label: `salvage:${target.id}`, phase: 'Assemble', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA })
+    { label: `salvage:${target.id}`, phase: 'Assemble', agentType: 'runner', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA })
   return found && found.found && !blank(found.checkpoint)
     ? { completed: found.completed, remaining: found.remaining, checkpoint: found.checkpoint.trim() }
     : null
@@ -1429,7 +1456,7 @@ async function pollUntilReady(number, branch, prefix, phaseName, onStatus) {
   let before = null
   let last = null
   for (let round = 1; round <= LIMITS.pollRounds; round++) {
-    const checked = await typed(statusPrompt(number), { label: `${prefix}:status:${round}`, phase: phaseName, model: 'haiku', effort: 'low', schema: STATUS_SCHEMA }, checkStatus)
+    const checked = await typed(statusPrompt(number), { label: `${prefix}:status:${round}`, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: STATUS_SCHEMA }, checkStatus)
     const status = checked.value
     if (!status) return { verdict: 'failed', reason: `status failed: ${errorText(checked.errors)}`, status: last }
     last = status
@@ -1468,7 +1495,7 @@ function markerFor(t) {
 }
 
 async function runAgeFanout(m) {
-  const prep = await typed(ageFanoutPrepPrompt(m), { label: `age-fanout-prep:${m.number}`, phase: 'Review', model: 'haiku', effort: 'low', isolation: 'worktree', schema: PREP_SCHEMA }, checkPrep)
+  const prep = await typed(ageFanoutPrepPrompt(m), { label: `age-fanout-prep:${m.number}`, phase: 'Review', agentType: 'runner', model: 'haiku', effort: 'low', isolation: 'worktree', schema: PREP_SCHEMA }, checkPrep)
   if (!prep.value) throw new Error(`age-fanout prep failed: ${errorText(prep.errors)}`)
   const wt = prep.value.worktree_path.trim()
   noteWorktree(wt)
@@ -1530,7 +1557,7 @@ async function cureStage(r) {
 async function finalizeStage(r) {
   if (r.failure || r.stamped) return r
   const sha = r.cure && r.cure.committed ? r.cure.head_sha.trim() : r.m.head_sha
-  const finalized = await typed(finalizePrompt(r.m, sha, isDirtyChain(r)), { label: `finalize:${r.m.number}`, phase: 'Review', model: 'haiku', effort: 'low', schema: FINALIZE_SCHEMA }, checkFinalize)
+  const finalized = await typed(finalizePrompt(r.m, sha, isDirtyChain(r)), { label: `finalize:${r.m.number}`, phase: 'Review', agentType: 'runner', model: 'haiku', effort: 'low', schema: FINALIZE_SCHEMA }, checkFinalize)
   // The marker only lets a later run skip review, so a missing marker costs a full re-age, not this PR.
   if (!finalized.value) log(`#${r.m.number}: aged marker not written (${errorText(finalized.errors)}); the next run reviews this PR in full.`)
   return { ...r, finalize: finalized.value }
@@ -1547,7 +1574,7 @@ const draftedByThisApproval = (n) => Boolean(openByNumber.get(n)?.is_draft && by
 
 async function markPrs(items, close, label, phaseName) {
   const marked = items.map((item) => ({ ...item, comment: `${landingMarker(digest)}\n${item.comment}` }))
-  const result = await agent(markPrompt(marked, close), { label, phase: phaseName, model: 'haiku', effort: 'low', schema: MARK_SCHEMA })
+  const result = await agent(markPrompt(marked, close), { label, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: MARK_SCHEMA })
   return items.map((item) => (result && result.results.find((r) => r.pr === item.pr)) || { pr: item.pr, action: 'skipped', note: result ? 'no result reported' : 'agent returned no output' })
 }
 
@@ -1566,7 +1593,7 @@ async function stampHeads(ids) {
     .filter((item) => item.pr && FULL_SHA_RE.test(item.head))
     .map((item) => ({ ...item, marker: landingMarker(digest, item.head) }))
   if (!items.length) return
-  const result = (await typed(stampPrompt(items), { label: 'stamp', phase: 'Report', model: 'haiku', effort: 'low', schema: STAMP_SCHEMA }, noCheck)).value
+  const result = (await typed(stampPrompt(items), { label: 'stamp', phase: 'Report', agentType: 'runner', model: 'haiku', effort: 'low', schema: STAMP_SCHEMA }, noCheck)).value
   if (!result) log('stamp agent returned no output; a later run of this approval will ask to plan again')
 }
 
@@ -1619,11 +1646,11 @@ async function landOne(id, t, n) {
     const problem = await recheck(id, t, n, sha)
     if (problem) return stop(`changed-after-verify: ${problem}`)
   }
-  const merge = await agent(mergePrompt(n, sha), { label: `merge:${n}`, phase: 'Land', model: 'haiku', effort: 'low', schema: MERGE_SCHEMA })
+  const merge = await agent(mergePrompt(n, sha), { label: `merge:${n}`, phase: 'Land', agentType: 'runner', model: 'haiku', effort: 'low', schema: MERGE_SCHEMA })
   if (!merge || merge.result === 'refused') return stop(`merge refused: ${merge ? merge.note : 'no output'}`)
   let state = ''
   for (let round = 1; round <= LIMITS.mergePolls && state !== 'MERGED' && state !== 'CLOSED'; round++) {
-    const seen = await typed(mergedPrompt(n), { label: `merged:${n}:${round}`, phase: 'Land', model: 'haiku', effort: 'low', schema: STATE_SCHEMA }, noCheck)
+    const seen = await typed(mergedPrompt(n), { label: `merged:${n}:${round}`, phase: 'Land', agentType: 'runner', model: 'haiku', effort: 'low', schema: STATE_SCHEMA }, noCheck)
     state = seen.value ? seen.value.state : ''
   }
   if (state !== 'MERGED') return stop(`PR did not reach MERGED (last state ${state || 'unknown'})`)
@@ -1699,7 +1726,13 @@ function toNumbers(raw) {
   return [Number.NaN]
 }
 
-const requested = [...new Set(toNumbers(input.prs ?? input.pr).concat(toNumbers(input.stacks)))].sort(ascending)
+// A selector of only numbers, commas, and # parses in code. Any other string is a description for the select agent.
+const NUMERIC_SELECTOR_RE = /^[\s,#0-9]*$/
+const isDescription = (raw) => typeof raw === 'string' && !NUMERIC_SELECTOR_RE.test(raw)
+const selectors = [input.prs ?? input.pr, input.stacks]
+const DESCRIPTION = selectors.filter(isDescription).map((s) => s.trim()).join('; ')
+if (DESCRIPTION.length > LIMITS.descriptionChars) return { status: 'blocked', error: `The PR description exceeds ${LIMITS.descriptionChars} characters` }
+const requested = [...new Set(selectors.filter((s) => !isDescription(s)).flatMap(toNumbers))].sort(ascending)
 if (requested.some((n) => !Number.isInteger(n) || n <= 0)) {
   return { status: 'blocked', error: `Invalid PR number(s) in args: ${JSON.stringify(input.prs ?? input.pr ?? input.stacks)}. Expected positive integers.` }
 }
@@ -1715,6 +1748,7 @@ if (!MERGE_METHODS.includes(MERGE_METHOD)) return { status: 'blocked', error: `m
 const APPROVED = input.plan === undefined ? null : input.plan
 const APPROVE = typeof input.approve === 'string' ? input.approve.trim() : ''
 if (APPROVED !== null) {
+  if (DESCRIPTION) return { status: 'blocked', error: 'args.plan takes PR numbers, not a description; pass prs: landing.inputs' }
   const shapeErrors = checkLanding(APPROVED)
   if (shapeErrors.length) return { status: 'blocked', error: `args.plan is not a landing object from a needs-approval or needs-input result: ${shapeErrors.slice(0, 5).join('; ')}` }
   if (!APPROVE) return { status: 'blocked', error: 'args.plan needs args.approve set to the digest that the same result returned' }
@@ -1739,11 +1773,20 @@ if (input.revise !== undefined) {
 
 // ---- Recon ----
 phase('Recon')
-const indexed = await typed(indexPrompt(), { label: 'recon:index', phase: 'Recon', model: 'haiku', effort: 'low', schema: INDEX_SCHEMA }, checkIndex)
+const indexed = await typed(indexPrompt(), { label: 'recon:index', phase: 'Recon', agentType: 'runner', model: 'haiku', effort: 'low', schema: INDEX_SCHEMA }, checkIndex)
 if (!indexed.value) return { status: 'blocked', error: `recon index failed: ${errorText(indexed.errors)}` }
 const idx = indexed.value
 
-if (!requested.length && !APPROVED) {
+const selected = []
+if (DESCRIPTION) {
+  const select = await typed(selectPrompt(DESCRIPTION, idx), { label: 'recon:select', phase: 'Recon', model: 'haiku', effort: 'low', schema: SELECT_SCHEMA }, (s) => checkSelect(s, idx.open_prs))
+  if (!select.value) return { status: 'blocked', error: `recon select failed for '${DESCRIPTION}': ${errorText(select.errors)}` }
+  if (!select.value.prs.length) return { status: 'blocked', error: `no open PR matches '${DESCRIPTION}': ${select.value.note}` }
+  selected.push(...select.value.prs)
+  log(`'${DESCRIPTION}' selects PR(s) ${[...selected].sort(ascending).join(', ')}: ${select.value.note}`)
+}
+
+if (!requested.length && !selected.length && !APPROVED) {
   const candidates = idx.open_prs
     .filter((p) => (ALL_AUTHORS || p.author === idx.viewer) && (INCLUDE_DRAFTS || !p.is_draft) && !p.is_cross_repository)
     .sort((a, b) => a.number - b.number)
@@ -1757,7 +1800,7 @@ const skip = (number, reason) => {
   skipped.push({ number, reason })
   log(`#${number} skipped: ${reason}`)
 }
-const seed = requested.length ? requested : [...APPROVED.inputs].sort(ascending)
+const seed = requested.length || selected.length ? [...new Set([...requested, ...selected])].sort(ascending) : [...APPROVED.inputs].sort(ascending)
 const openByNumber = new Map(idx.open_prs.map((p) => [p.number, p]))
 const expanded = EXPAND_STACKS ? expandStacks(seed, idx.open_prs) : seed
 const added = expanded.filter((n) => !seed.includes(n))
@@ -1771,7 +1814,7 @@ const wanted = expanded.filter((n) => openByNumber.has(n) && !adoptable.includes
 if (wanted.length > LIMITS.maxPrs) return { status: 'blocked', error: `${wanted.length} PRs exceed the cap of ${LIMITS.maxPrs}. Pass fewer PRs or set expandStacks:false.`, skipped }
 if (!wanted.length) return { status: 'blocked', error: 'no open PR to land', skipped }
 
-const detailed = await typed(detailPrompt([...wanted, ...adoptable].sort(ascending), idx.viewer), { label: 'recon:detail', phase: 'Recon', model: 'haiku', schema: DETAIL_SCHEMA }, checkDetail)
+const detailed = await typed(detailPrompt([...wanted, ...adoptable].sort(ascending), idx.viewer), { label: 'recon:detail', phase: 'Recon', agentType: 'runner', model: 'haiku', schema: DETAIL_SCHEMA }, checkDetail)
 if (!detailed.value) return { status: 'blocked', error: `recon detail failed: ${errorText(detailed.errors)}`, skipped }
 // The prompt asks jq for 1500 characters; code enforces the cap.
 const details = new Map(detailed.value.prs.map((p) => [p.number, { ...p, body: p.body.slice(0, 1500) }]))
@@ -2158,10 +2201,10 @@ if (pushJobs.length) {
   phase('Publish')
   // Publish pushes and opens PRs, so it never reruns; a malformed report gets one form-only repair.
   const check = (r) => checkPublish(r, pushJobs, prNumbers)
-  let pub = await agent(publishPrompt(pushJobs), { label: 'publish', phase: 'Publish', model: 'sonnet', schema: PUBLISH_SCHEMA })
+  let pub = await agent(publishPrompt(pushJobs), { label: 'publish', phase: 'Publish', agentType: 'runner', model: 'sonnet', schema: PUBLISH_SCHEMA })
   let errors = pub ? check(pub) : [substance('agent returned no output')]
   if (pub && errors.length && errors.every((e) => e.kind === 'form')) {
-    pub = await agent(repairPrompt(pub, errors), { label: 'publish:repair1', phase: 'Publish', schema: PUBLISH_SCHEMA, model: 'haiku', effort: 'low' })
+    pub = await agent(repairPrompt(pub, errors), { label: 'publish:repair1', phase: 'Publish', agentType: 'formatter', schema: PUBLISH_SCHEMA, model: 'haiku', effort: 'low' })
     errors = pub ? check(pub) : [substance('repair returned no output')]
   }
   if (errors.length) return report('fail', `publish reported invalid results; check the remote branches and PRs before a rerun: ${errorText(errors)}`)
@@ -2254,7 +2297,7 @@ await stampOpen(order.filter((id) => landed.get(id)?.status !== 'merged' && verd
 // The runtime removes only unchanged isolated worktrees. A successful run removes the rest and its run refs;
 // a failed run keeps them for inspection and salvage.
 if (['landed', 'ready'].includes(finalStatus) && (scratchWorktrees.size || order.some(rebuilt))) {
-  const swept = (await typed(cleanupPrompt([...scratchWorktrees]), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, noCheck)).value
+  const swept = (await typed(cleanupPrompt([...scratchWorktrees]), { label: 'cleanup', phase: 'Report', agentType: 'runner', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, noCheck)).value
   if (!swept) log(`cleanup returned no output; remove the mmc/${runTag}/ refs and these worktrees by hand: ${[...scratchWorktrees].join(', ') || 'none recorded'}`)
   else if (swept.note) log(`cleanup: ${swept.note}`)
 }

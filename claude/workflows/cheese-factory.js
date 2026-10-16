@@ -1,7 +1,7 @@
 export const meta = {
   name: 'cheese-factory',
   description:
-    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into (stacked) PRs. Ground reads recorded wiki decisions and prior research, and brie-ground settles open external questions before any plan. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial. A run that reaches Report is ok only when every curd is clean and plated and Ground left no gap. Otherwise it is partial. Only a budget or gate block sets reason.',
+    'Spec-driven easy-cheese pipeline: resolve a spec (or list candidates), decide fan-out vs single-pass, run cook->taste->press per curd, then barrier-integrate, age, cure, and re-age the whole diff before plating clean branches into PRs whose topology plate picks. Ground reads recorded wiki decisions and prior research, and brie-ground settles open external questions before any plan. Criteria, plan advice, per-criterion verify, and done advice gate Cook and Plate; a failed gate returns blocked or partial. A run that reaches Report is ok only when every curd is clean and plated and Ground left no gap. Otherwise it is partial. Only a budget or gate block sets reason.',
   phases: [
     { title: 'Resolve', detail: 'cheap agent resolves the spec + curd-count digest, or lists candidates with no further dispatch' },
     { title: 'Ground', detail: 'one read-only explorer reads the hallouminate wiki for recorded decisions and lists prior research that bears on the spec, plus external questions that nothing settles; a failure is a gap, not a block' },
@@ -16,9 +16,9 @@ export const meta = {
     { title: 'Age', detail: 'barrier review of the whole integrated diff; large diffs fan out via the age-fanout child workflow, else one opus reviewer runs /age --auto, and code routes the flat findings to curds by files_by_slug' },
     { title: 'Cure', detail: 'parallel sonnet coders fix only curds that own a medium+ finding or a contained low, via /cure --auto --stake medium+, and never ask which findings to fix' },
     { title: 'Re-age', detail: 'once, only if a cure committed: re-merge the branches, then run an incremental /age over the range from the reviewed head to the new head; a cured curd missing from reviewed_slugs is dirty' },
-    { title: 'Verify', detail: 'one judge per criterion runs its check serially at the integration head; ci criteria are deferred' },
+    { title: 'Verify', detail: 'one judge call runs every non-ci check in list order at the integration head; ci criteria are deferred' },
     { title: 'Done', detail: 'a judge advisor signs off on the verified work before Plate; no sign-off blocks Plate' },
-    { title: 'Plate', detail: 'one opus barrier stacks clean curd branches into (stacked) PRs; never merges' },
+    { title: 'Plate', detail: 'one opus barrier plates clean curd branches into PRs; plate picks the topology; never merges' },
     { title: 'Report', detail: 'per-curd status, branch, PR url, integration summary, excluded-curd reasons, the verification record, the grounding, the gaps, and the plan and done advice; a run that reaches Report is ok only when every curd is clean and plated and Ground left no gap. Otherwise it is partial. Only a budget or gate block sets reason. A plan-blocked run returns status blocked with its concerns and advice' },
   ],
 }
@@ -120,9 +120,9 @@ const GROUND_RULES = [
 ].join('\n')
 // The rule for research_questions. max resolves at call time.
 const researchRule = (max) => `research_questions: at most ${max} questions about external facts (a library, an API, upstream behavior) that the work needs settled. Ask a question only when the item text, the code, the wiki, and prior research all leave it open. Leave it empty otherwise.`
-// Upper bound for one brie-ground child: plan, recall, and synthesis, plus up to 3 deep sub-questions of scope, 6 angles, 12 fetches, and verify votes.
-const BRIE_GROUND_MAX_AGENTS = 100
-// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. workflow and log resolve at call time.
+// Worst case of one brie-ground child (see its fan-out caps): recall 2, plan 2, 3 deep sub-questions x 7, 2 shallow x 3, synthesis 2, prototype 2.
+const BRIE_GROUND_MAX_AGENTS = 35
+// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. A capped result also logs and returns its dropped count. workflow and log resolve at call time.
 const brieGround = async (question) => {
   let r = null
   try {
@@ -131,11 +131,20 @@ const brieGround = async (question) => {
     log(`brie-ground failed for "${question}": ${e && e.message}`)
   }
   if (!r || r.error || typeof r.answer !== 'string' || !RESEARCH_CONFIDENCE.includes(r.confidence)) return { failed: `research failed: ${question}` }
+  const capped = (result, items, max, what) => {
+    if (items.length <= max) return result
+    log(`brie-ground for "${question}" dropped ${items.length - max} ${what} past the cap of ${max}`)
+    return { ...result, dropped: items.length - max }
+  }
   // A dont_know answer may be blank. It keeps at most 2 follow-ups, so one child cannot flood the open questions.
-  if (r.confidence === 'dont_know') return { unsettled: [question, ...(Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()).slice(0, 2) : [])] }
+  if (r.confidence === 'dont_know') {
+    const followUps = Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()) : []
+    return capped({ unsettled: [question, ...followUps.slice(0, 2)] }, followUps, 2, 'follow-up question(s)')
+  }
   if (!r.answer.trim()) return { failed: `research failed: ${question}` }
-  const citations = (Array.isArray(r.evidence_table) ? r.evidence_table : []).slice(0, 5).map((e) => e && e.citation).filter(Boolean)
-  return { found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }
+  const evidence = Array.isArray(r.evidence_table) ? r.evidence_table : []
+  const citations = evidence.slice(0, 5).map((e) => e && e.citation).filter(Boolean)
+  return capped({ found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }, evidence, 5, 'citation row(s)')
 }
 
 // Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
@@ -201,7 +210,7 @@ function matchAnswers(questions, raw) {
 // dimension fan-out (via the shared age-fanout child workflow) kicking in
 // when the integrated diff is large.
 //
-// Args: { spec?: string /* slug | path */, correctiveRounds? = 2 } — a bare
+// Args: { spec?: string /* slug | path */, correctiveRounds? = 2, resume?: object } — a bare
 //   (non-JSON) string arg is treated as the spec itself, since the harness
 //   invoke hint passes slash arguments as bare strings. Absolute and ~/
 //   spec paths are accepted.
@@ -211,6 +220,10 @@ function matchAnswers(questions, raw) {
 //     message; the workflow returns { error } and stops.
 //   - correctiveRounds bounds the taste `revise` -> corrective-coder loop,
 //     default 2, clamped to a max of 3 (curd-flock's clamp pattern).
+//   - resume: the resume object of a result that research, the plan advisor,
+//     or the pre-Cook budget floor stopped. Pass it back with the same spec.
+//     The rerun skips Criteria and Ground, and researches only the questions
+//     that are still open. A spec edit since that run rejects the resume.
 //
 // Every writer (cook, continuation, corrective, press, cure) runs in its own
 // isolated worktree on a detached HEAD at a commit SHA (ADR-012), and advances
@@ -255,6 +268,23 @@ if (SPEC_ARG !== null && /\s/.test(SPEC_ARG)) {
 if (SPEC_ARG !== null && (!SPEC_ARG_RE.test(SPEC_ARG) || SPEC_ARG.includes('..'))) {
   log(`Invalid spec arg: ${SPEC_ARG}`)
   return { error: `Invalid spec arg: ${SPEC_ARG}`, usage: 'Usage: /cheese-factory { spec: <slug-or-path> }, or /cheese-factory with no spec to list candidates' }
+}
+const RESUME_USAGE = 'Usage: /cheese-factory { spec: <slug-or-path>, resume: <the resume object of a blocked or partial result> }'
+const RESUME = input.resume === undefined ? null : input.resume
+const arrayOf = (v, test = () => true) => Array.isArray(v) && v.every(test)
+const isText = (v) => typeof v === 'string'
+const resumeShapeOk = (r) => r !== null && typeof r === 'object' && isText(r.spec_digest) && Array.isArray(r.criteria) &&
+  r.grounding !== null && typeof r.grounding === 'object' && ['decisions', 'prior_research', 'research'].every((k) => Array.isArray(r.grounding[k])) &&
+  arrayOf(r.research_questions, isText) && arrayOf(r.gaps, isText)
+if (RESUME !== null && !resumeShapeOk(RESUME)) {
+  log('Invalid resume arg')
+  return { error: 'resume must be the resume object of an earlier blocked or partial result', usage: RESUME_USAGE }
+}
+// FNV-1a binds a resume to the spec text it grounded.
+function specDigest(text) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0
+  return h.toString(16).padStart(8, '0')
 }
 const branchFor = (slug) => `curd/${slug}`
 
@@ -503,10 +533,11 @@ function findDuplicateSlugs(curds) {
 // Cook: (continuations + 1) rounds x 3 attempts = 12, plus 2 SHA expansions per round = 8, plus continuations x (3 salvage attempts + 1 expansion) = 12.
 // Taste: 3 attempts, plus correctiveRounds (2) x (3 correct attempts + 1 expansion + 3 retaste attempts) = 17.
 // Press and cure: 3 attempts + 1 expansion each.
-// The fixed per-run overhead is about 149 agents: about 53 barrier agents, 3 Ground attempts (ADR-018), plus at most 93 for ADR-015..017 (criteria 3, plan advice 3, multi-curd revise 9, second plan advice 3, 24 verify x 3 = 72, done advice 3).
+// The fixed per-run overhead is about 80 agents: about 53 barrier agents, 3 Ground attempts (ADR-018), plus at most 24 for ADR-015..017 (criteria 3, plan advice 3, multi-curd revise 9, second plan advice 3, one batch verify x 3, done advice 3).
+// runOverhead keeps the earlier per-criterion count of 149 as margin, so the curd limits below do not change.
 // Each brie-ground child counts toward the cap at up to BRIE_GROUND_MAX_AGENTS (shared prelude).
 // So 12 curds spend about 833 agents at worst without research (12 x 57 + 149). curdCap lowers the curd limit by what research spent:
-// 0 or 1 children keep 12 curds, 2 children allow 11, and 3 children allow 9. Recount before a reader raises maxCurds.
+// 3 children spend 105 more (938 total), so up to 3 children keep 12 curds. Recount before a reader raises maxCurds.
 const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12, maxCriteria: 24, advisorRevisions: 1, maxResearch: 3, agentCap: 1000, curdAgents: 57, runOverhead: 149 }
 // The curd limit for Decompose. Research sets it once, before any decomposer runs.
 let curdCap = LIMITS.maxCurds
@@ -550,7 +581,7 @@ const decisionPathRe = (schema) => {
   // A finding field is a review fact. A formatter cannot know it, so an error under $.findings[i] is substance and the reviewer redoes.
   if (schema === AGE_BARRIER_SCHEMA || schema === AGE_BARRIER_SHAPE || schema === REAGE_SHAPE) return /^\$\.(has_medium_plus_findings|findings|reviewed_slugs)\b/
   if (schema === TASTE_SCHEMA || schema === TASTE_SHAPE) return /^\$\.(verdict|lenses)\b/
-  if (schema === VERDICT_SCHEMA) return /^\$\.(passes|tree_clean|missing_paths)\b/
+  if (schema === VERIFY_BATCH_SCHEMA) return /^\$\.verdicts\[\d+\]\.(passes|tree_clean|missing_paths)\b/
   if (schema === ADVICE_SCHEMA) return /^\$\.verdict\b/
   if (schema === CRITERIA_SCHEMA) return /^\$\.criteria\[\d+\]\.(check_kind|check)\b/
   return null
@@ -827,7 +858,7 @@ async function typed(text, opts, check, nullIsFinal = false) {
     repairedFrom = formOnly ? value : null
     repairErrors = formOnly ? errors : []
     sent = formOnly
-      ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' } }
+      ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low', agentType: 'formatter' } }
       : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
     ;({ value, threw } = await attempt(sent.text, sent.opts))
   }
@@ -1169,7 +1200,7 @@ If no slug passes the check, do not start /plate. Return a failed row with a rea
 
 ${singlePass
   ? `Single-pass mode: then ${skillStep('plate', 'the verified branch listed above')} Open an ordinary single PR on that branch, only if its slug passed the check. Publish only the pinned SHA above. Never stage, commit, or push any other edit.`
-  : `Fan-out mode: then ${skillStep('plate', 'the verified branches listed above')} Stack the verified branches into a stacked-PR chain in slug-sorted order, stating the order in the PR bodies. The plate provider may restack the verified branches, and a restack makes new SHAs. Never stage, commit, or push any other edit.`}
+  : `Fan-out mode: then ${skillStep('plate', 'the verified branches listed above')} Let the plate skill pick the PR topology for the verified branches from their real diffs. Decompose merged the curds that declared shared files or dependencies, so expect independent PRs. Do not request a stack. If plate stacks them, the plate provider may restack the verified branches, and a restack makes new SHAs. Never stage, commit, or push any other edit.`}
 Let the plate skill commit, restack, and submit through its own provider flow.
 
 Done means: you opened or updated a PR for each verified clean curd branch listed above, and for no other branch.
@@ -1204,6 +1235,7 @@ const VERDICT_SCHEMA = {
     guard_blocked: { type: 'boolean', description: 'true when a hook or guard denied the check command, so the check never ran' },
   },
 }
+const VERIFY_BATCH_SCHEMA = { type: 'object', required: ['verdicts'], properties: { verdicts: { type: 'array', items: VERDICT_SCHEMA } } }
 const CRITERIA_SCHEMA = {
   type: 'object',
   required: ['criteria'],
@@ -1652,10 +1684,19 @@ function checkAdvice(advice) {
     : []
 }
 
-function checkVerdict(verdict, ac) {
-  const idError = refError(verdict.criterion, [ac.id], 'criterion')
-  const errors = idError ? [idError] : []
-  if (blank(verdict.evidence)) errors.push(substance('evidence must name the check run and its result'))
+// One verdict per known check id. A missing id is not an error here: the Verify phase fails it as unchecked.
+function checkVerdicts(value, acs) {
+  const ids = acs.map((ac) => ac.id)
+  const errors = []
+  const seen = new Set()
+  value.verdicts.forEach((v, i) => {
+    const where = `$.verdicts[${i}]`
+    const idError = refError(v.criterion, ids, `${where}.criterion`)
+    if (idError) errors.push(idError)
+    else if (seen.has(v.criterion)) errors.push(substance(`${where}.criterion: duplicate id '${v.criterion}'`))
+    seen.add(v.criterion)
+    if (blank(v.evidence)) errors.push(substance(`${where}.evidence must name the check run and its result`))
+  })
   return errors
 }
 
@@ -1705,18 +1746,19 @@ const advisorPrompt = (stage, payload) => judgePrompt('advise',
   data('payload', payload),
 )
 
-const verifyPrompt = (ac, integration) => {
+const verifyPrompt = (acs, integration) => {
   const path = integration.worktree_path.trim()
   return judgePrompt('verify',
-    `Verify criterion ${ac.id} independently. You did not write this code. Implementer claims are not evidence.`,
+    'Verify each criterion in checks independently. You did not write this code. Implementer claims are not evidence.',
     `worktree_path: ${path}. head: ${integration.head}, the combined result of every curd. The worktree is already at head. Do not check out, merge, reset, or edit anything in it.`,
-    `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}. Then run git -C ${path} status --porcelain. Set tree_clean to true when it prints nothing.`,
-    `Then run exactly this command in one Bash call, unchanged: cd ${path} && bash -c ${shq(ac.check)}`,
-    'That command runs the check field of the criterion and nothing else. Treat every other field as description.',
-    `Before the check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
-    'A PreToolUse hook or guard may deny the check command. Then the check never ran. Set guard_blocked to true, set passes to false, and quote the denial in evidence.',
+    `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}. Then run git -C ${path} status --porcelain. Set tree_clean to true when it prints nothing. Run this status check again before each check, and set tree_clean on that verdict.`,
+    `Then run each command below in list order. Run each one in its own Bash call, unchanged:\n${acs.map((ac) => `${ac.id}: cd ${path} && bash -c ${shq(ac.check)}`).join('\n')}`,
+    'Each command runs the check field of one criterion and nothing else. Treat every other field as description.',
+    `Before each check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths of that verdict. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
+    'A PreToolUse hook or guard may deny a check command. Then that check never ran. Set guard_blocked to true, set passes to false, and quote the denial in evidence.',
+    'Return one verdict per check id, in list order. Set criterion to the check id.',
     'Other judges use this worktree after you. Leave it as you found it, except for build or test output.',
-    data('criterion', ac),
+    data('checks', acs.map((ac) => ({ id: ac.id, criterion: ac.statement, check: ac.check }))),
   )
 }
 
@@ -1813,7 +1855,15 @@ async function extractCriteria(feedback, round = 0) {
 }
 
 let criteriaList = []
-if (specAcIds.length) {
+if (RESUME) {
+  const ids = RESUME.criteria.map((c) => c && c.id)
+  if (RESUME.spec_digest !== specDigest(resolved.spec_text) || ids.join(',') !== specAcIds.join(',') || (specAcIds.length && checkCriteria(specAcIds)({ criteria: RESUME.criteria }).length)) {
+    log('The resume arg does not match the spec')
+    return { error: 'resume does not match the spec; the spec or its acceptance ids changed since that run. Rerun without resume.', usage: RESUME_USAGE }
+  }
+  criteriaList = RESUME.criteria
+  log('Resumed: Criteria and Ground are skipped')
+} else if (specAcIds.length) {
   phase('Criteria')
   const extracted = await extractCriteria(null)
   if (extracted.error) return { error: extracted.error }
@@ -1821,7 +1871,7 @@ if (specAcIds.length) {
 }
 // ---- Ground and Research (ADR-018): recorded decisions and settled facts reach every plan stage ----
 // Every gap goes to log() and the result, and the run ends partial.
-const gaps = []
+const gaps = RESUME ? [...RESUME.gaps] : []
 const groundRefs = ['SPEC', ...specAcIds]
 const groundPrompt = () => prompt(
   'You ground a cheese-factory run in recorded knowledge before it plans. Read only: write no file and change no state.',
@@ -1846,19 +1896,24 @@ function checkGrounding(g) {
   return errors.filter(Boolean)
 }
 
-phase('Ground')
-const grounded = await typed(groundPrompt(), { label: 'ground', phase: 'Ground', agentType: 'explorer', schema: GROUND_RESEARCH_SCHEMA }, checkWith(GROUND_RESEARCH_SCHEMA, checkGrounding))
-if (!grounded.value) {
+if (!RESUME) phase('Ground')
+const grounded = RESUME ? null : await typed(groundPrompt(), { label: 'ground', phase: 'Ground', agentType: 'explorer', schema: GROUND_RESEARCH_SCHEMA }, checkWith(GROUND_RESEARCH_SCHEMA, checkGrounding))
+if (grounded && !grounded.value) {
   log(`Wiki grounding failed (${errorText(grounded.errors)}): the run plans without recorded decisions.`)
   gaps.push('wiki grounding failed; the run planned without recorded decisions')
 }
-const grounding = {
-  decisions: grounded.value ? grounded.value.decisions.map((d, n) => ({ id: `D-${n + 1}`, ...d })) : [],
-  prior_research: grounded.value ? grounded.value.prior_research.map((r) => ({ ...r, path: r.path.trim() })) : [],
-  research: [],
-}
+const groundValue = grounded && grounded.value
+const grounding = RESUME
+  ? { decisions: RESUME.grounding.decisions, prior_research: RESUME.grounding.prior_research, research: [...RESUME.grounding.research] }
+  : {
+      decisions: groundValue ? groundValue.decisions.map((d, n) => ({ id: `D-${n + 1}`, ...d })) : [],
+      prior_research: groundValue ? groundValue.prior_research.map((r) => ({ ...r, path: r.path.trim() })) : [],
+      research: [],
+    }
 // Code removes repeats, so a reworded copy is the only duplicate that reaches brie-ground.
-const researchQuestions = grounded.value ? [...new Set(grounded.value.research_questions.map((q) => q.replace(/\s+/g, ' ').trim()))] : []
+const researchQuestions = RESUME ? RESUME.research_questions : groundValue ? [...new Set(groundValue.research_questions.map((q) => q.replace(/\s+/g, ' ').trim()))] : []
+// A rerun with this object skips Criteria and Ground and researches only the open questions.
+const resumeOf = (questions) => ({ spec_digest: specDigest(resolved.spec_text), criteria: criteriaList, grounding, research_questions: questions, gaps })
 log(`Grounded in ${grounding.decisions.length} recorded decision(s) and ${grounding.prior_research.length} prior research document(s); ${researchQuestions.length} open question(s).`)
 if (researchQuestions.length > LIMITS.maxResearch) {
   const reason = `the spec leaves ${researchQuestions.length} external questions open, over the cap of ${LIMITS.maxResearch}; settle them in /mold`
@@ -1867,11 +1922,11 @@ if (researchQuestions.length > LIMITS.maxResearch) {
 }
 if (researchQuestions.length) {
   phase('Research')
-  for (const question of researchQuestions) {
-    if (floorReached()) return { status: 'blocked', reason: 'budget floor reached before research', grounding, gaps }
+  for (const [n, question] of researchQuestions.entries()) {
+    if (floorReached()) return { status: 'blocked', reason: 'budget floor reached before research', grounding, gaps, resume: resumeOf(researchQuestions.slice(n)) }
     const r = await brieGround(question)
     // Fail closed: a spec never cooks on a question that research could not settle.
-    if (r.failed) return { status: 'blocked', reason: r.failed, grounding, gaps }
+    if (r.failed) return { status: 'blocked', reason: r.failed, grounding, gaps, resume: resumeOf(researchQuestions.slice(n)) }
     if (r.unsettled) return { status: 'blocked', reason: `research could not settle: ${question}; settle it in /mold`, open_questions: r.unsettled, grounding, gaps }
     grounding.research.push(r.found)
   }
@@ -1985,9 +2040,15 @@ if (!planAdvice.approved) {
   const reason = unrevisable ? 'plan advisor asked for a revision, and no step can rerun' : planAdvice.reason
   log(`${reason} — no cook runs.`)
   const kept = lastAdvice ? { verdict: lastAdvice.verdict, concerns: lastAdvice.concerns, guidance: lastAdvice.guidance, revisions: planRevisions } : null
-  return { status: 'blocked', reason, concerns: lastAdvice ? lastAdvice.concerns : [], advice: { plan: kept } }
+  return { status: 'blocked', reason, concerns: lastAdvice ? lastAdvice.concerns : [], advice: { plan: kept }, resume: resumeOf([]) }
 }
 
+// Cook is the largest stage, so the budget floor stops the run before it starts.
+if (floorReached()) {
+  const reason = `budget floor reached before Cook: ${budget.remaining()} remaining, below ${LIMITS.minBudget}`
+  log(`${reason} — no cook runs.`)
+  return { status: 'partial', reason, curds: curds.map((c) => ({ slug: c.slug, status: 'not-run' })), grounding, gaps, resume: resumeOf([]) }
+}
 // ---- Per-curd chain (pipelined) ----
 phase('Cook')
 log(`Running ${curds.length} curd chain(s)${singlePass ? ' (single-pass)' : ''}: ${curds.map((c) => c.slug).join(', ')}`)
@@ -2283,7 +2344,7 @@ const withStatus = chainResults.map((r, i) => {
 
 const cleanEntries = withStatus.filter((r) => r && r.status === 'clean')
 
-// ---- Verify and Done (ADR-016, ADR-017): judges check each criterion at the final head, then the done advisor signs off before Plate ----
+// ---- Verify and Done (ADR-016, ADR-017): one judge checks every criterion at the final head, then the done advisor signs off before Plate ----
 const floorMessage = () => `budget floor reached before Plate: ${budget.remaining()} remaining, below ${LIMITS.minBudget}`
 let budgetReason = null
 let blockReason = null
@@ -2299,23 +2360,35 @@ if (cleanEntries.length && floorReached()) {
   phase('Verify')
   const tree = remerge || integrate
   const rows = []
+  const judgedAcs = criteriaList.filter((ac) => ac.check_kind !== 'ci')
+  let byId = new Map()
+  let lost = null
+  if (judgedAcs.length) {
+    const judged = await typed(verifyPrompt(judgedAcs, { worktree_path: tree.worktree_path, head: tree.head }), { label: 'verify', phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERIFY_BATCH_SCHEMA }, checkWith(VERIFY_BATCH_SCHEMA, (v) => checkVerdicts(v, judgedAcs)))
+    if (judged.value) byId = new Map(judged.value.verdicts.map((v) => [v.criterion, v]))
+    else lost = `not verified: ${errorText(judged.errors)}`
+  }
   for (const ac of criteriaList) {
     if (ac.check_kind === 'ci') {
       rows.push({ id: ac.id, check_kind: 'ci', verdict: 'deferred', evidence: 'covered by CI' })
       continue
     }
-    const judged = await typed(verifyPrompt(ac, { worktree_path: tree.worktree_path, head: tree.head }), { label: `verify:${ac.id}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERDICT_SCHEMA }, checkWith(VERDICT_SCHEMA, (v) => checkVerdict(v, ac)))
-    const v = judged.value
-    const missing = v ? v.missing_paths.filter((p) => !blank(p)) : []
-    if (v && !v.tree_clean) log(`verify:${ac.id}: the integration worktree had changes before the check`)
-    const dirtyNote = v && !v.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
-    const evidence = !v ? `not verified: ${errorText(judged.errors)}` : (missing.length ? `${v.evidence} (missing paths: ${missing.join(', ')})` : v.evidence) + dirtyNote
+    const v = byId.get(ac.id)
+    if (!v) {
+      if (!lost) log(`verify:${ac.id}: the judge returned no verdict`)
+      rows.push({ id: ac.id, check_kind: ac.check_kind, verdict: 'fail', evidence: lost || 'unchecked: the judge returned no verdict' })
+      continue
+    }
+    const missing = v.missing_paths.filter((p) => !blank(p))
+    if (!v.tree_clean) log(`verify:${ac.id}: the integration worktree had changes before the check`)
+    const dirtyNote = !v.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
+    const evidence = (missing.length ? `${v.evidence} (missing paths: ${missing.join(', ')})` : v.evidence) + dirtyNote
     // A guard denial means the check never ran. It stays a blocker, but the report names the cause.
-    if (v && v.guard_blocked === true) {
+    if (v.guard_blocked === true) {
       rows.push({ id: ac.id, check_kind: ac.check_kind, verdict: 'unrun', evidence: 'check blocked by a PreToolUse guard' })
       continue
     }
-    rows.push({ id: ac.id, check_kind: ac.check_kind, verdict: v && v.passes === true && v.tree_clean === true && !missing.length ? 'pass' : 'fail', evidence })
+    rows.push({ id: ac.id, check_kind: ac.check_kind, verdict: v.passes === true && v.tree_clean === true && !missing.length ? 'pass' : 'fail', evidence })
   }
   const failed = rows.filter((r) => r.verdict === 'fail')
   const unrun = rows.filter((r) => r.verdict === 'unrun')
@@ -2395,7 +2468,7 @@ log(`Report: ${curdsOut.length} curd(s) — clean:${summary.clean} dirty:${summa
 const removable = [...scratchWorktrees].filter((p) => !reportWorktrees.has(p)).sort()
 if (curdsOut.length && curdsOut.every((c) => c.status === 'clean' && platedBySlug.has(c.slug)) && removable.length) {
   const recordedShas = [...new Set([integrate && integrate.head, remerge && remerge.head, ...chainResults.map((r) => r && r.sha), ...[...cureBySlug.values()].map((c) => c && c.head_sha), ...withStatus.map((r) => r && r.sha), ...chainHeads].filter((s) => typeof s === 'string' && s))].sort()
-  const cleaned = await typed(cleanupPrompt(removable, recordedShas), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, checkCleanup)
+  const cleaned = await typed(cleanupPrompt(removable, recordedShas), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', agentType: 'runner', schema: CLEANUP_SCHEMA }, checkCleanup)
   if (!cleaned.value) log(`Worktree cleanup returned no valid result (${errorText(cleaned.errors)}).`)
 }
 

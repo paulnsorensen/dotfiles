@@ -53,6 +53,20 @@ class ProjectNames(unittest.TestCase):
         deny = hc_policy.build_denylist([], ["/Users/p/acme"])
         self.assertEqual(deny["project"], set())
 
+    def test_projectName_insideASchemaIdentifier_isNotFlagged(self) -> None:
+        deny = hc_policy.build_denylist(
+            [], ["/Users/p/zebracorp"], schema=["zebracorp_rows"]
+        )
+        self.assertEqual(leaks("FROM zebracorp_rows r", deny), [])
+        self.assertEqual(leaks("JOIN ZEBRACORP_ROWS", deny), [])
+
+    def test_projectName_outsideASchemaIdentifier_isStillFlagged(self) -> None:
+        deny = hc_policy.build_denylist(
+            [], ["/Users/p/zebracorp"], schema=["zebracorp_rows"]
+        )
+        self.assertEqual(leaks("zebracorp_rows and zebracorp", deny), ["project"])
+        self.assertEqual(leaks("zebracorp-rows", deny), ["project"])
+
 
 class SlashPrompts(unittest.TestCase):
     def test_slashPrompt_argumentsStillFeedNgrams(self) -> None:
@@ -185,6 +199,8 @@ class PromptSources(unittest.TestCase):
 
         def duck(_db, sql):
             self.duck_sql.append(sql)
+            if "information_schema" in sql:
+                return [{"name": "tool_results"}]
             return rows if "raw_entries" in sql else [{"project": "/a/b/zebracorp"}]
 
         env = {"CODEX_HOME": str(codex_home), "XDG_CACHE_HOME": str(codex_home / "c")}
@@ -236,6 +252,12 @@ class PromptSources(unittest.TestCase):
         self.assertEqual(leaks(PROMPT, deny), ["prompt"])
         self.assertEqual(leaks(PROMPT.replace("acme", "bolt"), deny), ["prompt"])
         self.assertEqual(leaks("zebracorp", deny), ["project"])
+
+    def test_loadDenylist_schemaIdentifiers_comeFromTheDatabase(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            deny, _notes = self.load([], Path(tmp))
+        self.assertEqual(deny["schema"], {"tool_results"})
+        self.assertEqual(leaks("tool_results zebracorp", deny), ["project"])
 
     def test_loadDenylist_harnessWithoutPrompts_isReportedPartial(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

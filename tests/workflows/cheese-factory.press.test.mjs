@@ -376,9 +376,9 @@ test('ageFanout_emptyRouteCurdsArray_usesFlatFindingsPath', async () => {
   const flat = [{ dimension: 'correctness', severity: 'low', fix_cost_now: 'contained', file: 'src/a.ts', line: 1, claim: 'c', why_it_matters: 'y', fix_direction: 'z' }]
   const { globals, trace } = createRuntime({
     respond: ({ opts }) => {
-      if (opts.label === 'packet') return { skill_files_ok: true, dimensions: ['correctness'], packet_path: '.cheese/age/p-packet.md' }
-      if (opts.label.startsWith('review:')) return { status: 'ok', findings: [] }
-      if (opts.label === 'reconcile') return { status: 'ok', has_medium_plus_findings: false, has_cheap_lows: true, artifact: 'a', findings: flat }
+      if (opts.label === 'packet') return { skill_files_ok: true, blocked_reason: '', assignments: [{ id: 'general', subjects: ['changed-behavior'], targets: ['src/a.ts'], effort: 'medium' }], packet_path: '.cheese/age/p-packet.md' }
+      if (opts.label.startsWith('review:')) return { status: 'ok', blocked_reason: '', findings: [] }
+      if (opts.label === 'reconcile') return { status: 'ok', blocked_reason: '', has_medium_plus_findings: false, has_cheap_lows: true, artifact: 'a', findings: flat }
       throw new Error(`unexpected agent ${opts.label}`)
     },
   })

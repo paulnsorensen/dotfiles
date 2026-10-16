@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import test from 'node:test'
 
-import { createRuntime } from './cheese-factory.fixtures.mjs'
+import { createRuntime, verifyFrom } from './cheese-factory.fixtures.mjs'
 import { loadWorkflow } from './harness.mjs'
 
 const path = resolve(import.meta.dirname, '../../claude/workflows/cheese-factory.js')
@@ -2385,11 +2385,12 @@ test('AC-11: a fallback severity outside the enum never reaches routing after th
   assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cure:')), false)
 })
 
-test('AC-15: below the budget floor, Plate is not dispatched and the run returns partial with the reason', async () => {
+test('AC-15: below the budget floor, Cook is not dispatched and the run returns partial with the reason', async () => {
   const { result, trace } = await runParent({}, { budgetTotal: 100000, budgetSpent: 60000 })
 
   assert.equal(result.status, 'partial')
-  assert.match(result.reason, /budget floor/)
+  assert.match(result.reason, /budget floor reached before Cook/)
+  assert.equal(trace.agents.some(({ opts }) => opts.label.startsWith('cook:')), false)
   assert.match(result.reason, /40000/)
   assert.equal(callsOf(trace, 'plate').length, 0)
   assert.equal(callsOf(trace, 'cleanup').length, 0)
@@ -3161,15 +3162,15 @@ const cgMulti = {
   cleanup: () => ({ removed: [] }),
 }
 
-// A redo or repair label maps to its base label. A verify label with no script passes.
+// A redo or repair label maps to its base label. A verify check with no script passes.
 function cgResponder(base, over = {}) {
   const table = { ...base, ...over }
-  return ({ opts }) => {
-    const key = opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')
-    let fn = table[opts.label] || table[key]
-    if (!fn && key.startsWith('verify:')) fn = () => cgVerdict(key.slice('verify:'.length))
-    if (!fn) throw new Error(`unexpected agent ${opts.label}`)
-    return fn()
+  return (call) => {
+    const key = call.opts.label.replace(/(:(redo|repair|retry)\d+)+$/, '')
+    let fn = table[call.opts.label] || table[key]
+    if (!fn && key === 'verify') fn = verifyFrom(table, (id) => cgVerdict(id))
+    if (!fn) throw new Error(`unexpected agent ${call.opts.label}`)
+    return fn(call)
   }
 }
 
@@ -3247,14 +3248,14 @@ test(`${CG} AC-1: a ci criterion skips the command gates`, async () => {
   const { result, trace } = await cgRun(cgSingle, { criteria: () => ({ criteria: [cgCriterion('AC-1'), cgCriterion('AC-2', { check_kind: 'ci', check: 'CI runs curl against staging' })] }) })
 
   assert.equal(result.error, undefined)
-  assert.equal(cgCalls(trace, 'verify:AC-2').length, 0)
+  assert.equal(cgCalls(trace, 'verify')[0].prompt.includes('AC-2: cd '), false)
 })
 
 test(`${CG} AC-2: a spec with no AC line dispatches no criteria agent and no verify judge but both advisors`, async () => {
   const { result, trace } = await cgRun(cgSingle, { resolve: () => resolveResolved({ spec_text: 'spec body\n\nAC-1 mentioned in prose only' }) })
 
   assert.equal(cgStarting(trace, 'criteria').length, 0)
-  assert.equal(cgStarting(trace, 'verify:').length, 0)
+  assert.equal(cgStarting(trace, 'verify').length, 0)
   assert.equal(cgCalls(trace, 'advise:plan').length, 1)
   assert.equal(cgCalls(trace, 'advise:done').length, 1)
   assert.equal(result.verification.status, 'skipped-no-criteria')
@@ -3345,23 +3346,22 @@ test(`${CG} AC-3: invalid advice blocks the run`, async () => {
   assert.equal(cgStarting(trace, 'cook:').length, 0)
 })
 
-test(`${CG} AC-4: verify judges run one at a time, pinned at the integration head and worktree`, async () => {
+test(`${CG} AC-4: one verify judge checks every criterion in order, pinned at the integration head and worktree`, async () => {
   const { result, trace } = await cgRun(cgSingle)
   const labels = cgLabels(trace)
-  const first = cgCalls(trace, 'verify:AC-1')[0]
-  const second = cgCalls(trace, 'verify:AC-2')[0]
+  const calls = cgCalls(trace, 'verify')
+  const [call] = calls
 
-  for (const call of [first, second]) {
-    assert.ok(call.prompt.startsWith('Judge mode: verify'))
-    assert.equal(call.opts.agentType, 'judge')
-    assert.equal(call.opts.phase, 'Verify')
-    assert.ok(call.prompt.includes(INTEGRATE_HEAD))
-    assert.ok(call.prompt.includes('/repo/.claude/worktrees/integration'))
-    assert.ok(call.prompt.includes("cd /repo/.claude/worktrees/integration && bash -c 'test -e src/parent.js'"))
-  }
-  assert.equal(labels.indexOf('verify:AC-2'), labels.indexOf('verify:AC-1') + 1)
-  assert.ok(labels.indexOf('age:barrier') < labels.indexOf('verify:AC-1'))
-  assert.ok(labels.indexOf('verify:AC-2') < labels.indexOf('advise:done'))
+  assert.equal(cgStarting(trace, 'verify').length, 1)
+  assert.ok(call.prompt.startsWith('Judge mode: verify'))
+  assert.equal(call.opts.agentType, 'judge')
+  assert.equal(call.opts.phase, 'Verify')
+  assert.ok(call.prompt.includes(INTEGRATE_HEAD))
+  assert.ok(call.prompt.includes('/repo/.claude/worktrees/integration'))
+  assert.ok(call.prompt.includes("AC-1: cd /repo/.claude/worktrees/integration && bash -c 'test -e src/parent.js'"))
+  assert.ok(call.prompt.indexOf('AC-1: cd ') < call.prompt.indexOf('AC-2: cd '))
+  assert.ok(labels.indexOf('age:barrier') < labels.indexOf('verify'))
+  assert.ok(labels.indexOf('verify') < labels.indexOf('advise:done'))
   assert.equal(result.verification.head, INTEGRATE_HEAD)
 })
 
@@ -3372,7 +3372,7 @@ test(`${CG} AC-4: after a re-merge the judges pin the re-merge head and its work
     're-merge': () => integrateResult({ merged: ['parent'], head: REMERGE_HEAD, worktree_path: REMERGE_TREE }),
     'age:reage': () => cleanAge('parent'),
   })
-  const call = cgCalls(trace, 'verify:AC-1')[0]
+  const call = cgCalls(trace, 'verify')[0]
 
   assert.ok(call.prompt.includes(REMERGE_HEAD))
   assert.ok(call.prompt.includes(REMERGE_TREE))
@@ -3383,7 +3383,7 @@ test(`${CG} AC-4: after a re-merge the judges pin the re-merge head and its work
 test(`${CG} AC-4: with no clean curd, verify and the done advisor are skipped and the status is not-run`, async () => {
   const { result, trace } = await cgRun(cgSingle, { integrate: () => integrateResult({ merged: [], conflicted: ['parent'] }) })
 
-  assert.equal(cgStarting(trace, 'verify:').length, 0)
+  assert.equal(cgStarting(trace, 'verify').length, 0)
   assert.equal(cgStarting(trace, 'advise:done').length, 0)
   assert.equal(cgCalls(trace, 'advise:plan').length, 1)
   assert.equal(result.verification.status, 'not-run')
@@ -3394,7 +3394,7 @@ test(`${CG} AC-4: with no clean curd, verify and the done advisor are skipped an
 test(`${CG} AC-4: a null integrate result skips verify and reports not-run`, async () => {
   const { result, trace } = await cgRun(cgSingle, { integrate: () => ({ bogus: true }) })
 
-  assert.equal(cgStarting(trace, 'verify:').length, 0)
+  assert.equal(cgStarting(trace, 'verify').length, 0)
   assert.equal(cgStarting(trace, 'advise:done').length, 0)
   assert.equal(result.verification.status, 'not-run')
   assert.equal(result.verification.head, null)
@@ -3450,7 +3450,7 @@ test(`${CG} AC-5: a failed criterion blocks every clean curd even when another c
 test(`${CG} AC-5: a ci criterion is deferred and never fails the run`, async () => {
   const { result, trace } = await cgRun(cgSingle, { criteria: () => ({ criteria: [cgCriterion('AC-1'), cgCriterion('AC-2', { check_kind: 'ci', check: 'CI job green' })] }) })
 
-  assert.equal(cgStarting(trace, 'verify:AC-2').length, 0)
+  assert.equal(cgCalls(trace, 'verify')[0].prompt.includes('AC-2: cd '), false)
   assert.deepEqual(cgPlain(result.verification.criteria.map((c) => [c.id, c.check_kind, c.verdict])), [['AC-1', 'command', 'pass'], ['AC-2', 'ci', 'deferred']])
   assert.equal(result.verification.status, 'passed')
   assert.equal(cgCalls(trace, 'plate').length, 1)
@@ -3468,7 +3468,7 @@ test(`${CG} AC-6: the done advisor sees the summary, curd statuses, and verdicts
   assert.ok(done.prompt.includes('ran the check: exit 0'))
   assert.ok(done.prompt.includes('"slug": "parent"'))
   assert.ok(done.prompt.includes('"clean"'))
-  assert.ok(labels.indexOf('verify:AC-2') < labels.indexOf('advise:done'))
+  assert.ok(labels.indexOf('verify') < labels.indexOf('advise:done'))
   assert.ok(labels.indexOf('advise:done') < labels.indexOf('plate'))
   assert.equal(result.status, 'ok')
   assert.equal(result.curds[0].pr_url, 'https://example.test/pr/parent')
@@ -3513,7 +3513,7 @@ test(`${CG} AC-6: a floor already reached skips verify and both Plate gates`, as
     configure: (globals) => { globals.budget = { total: 1000000, spent: () => 0, remaining: () => 10 } },
   })
 
-  assert.equal(cgStarting(trace, 'verify:').length, 0)
+  assert.equal(cgStarting(trace, 'verify').length, 0)
   assert.equal(cgStarting(trace, 'advise:done').length, 0)
   assert.equal(cgStarting(trace, 'plate').length, 0)
   assert.equal(result.status, 'partial')
@@ -3554,7 +3554,7 @@ test(`${CG} AC-8: exactly LIMITS.maxCriteria spec ACs reach the criteria agent`,
 
   assert.equal(result.error, undefined)
   assert.equal(cgCalls(trace, 'criteria').length, 1)
-  assert.equal(cgStarting(trace, 'verify:').length, 24)
+  assert.equal(cgStarting(trace, 'verify').length, 1)
 })
 
 test(`${CG} AC-9: ADR-015..017 read accepted and record the user decisions`, async () => {

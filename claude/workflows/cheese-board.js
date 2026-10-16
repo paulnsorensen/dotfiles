@@ -8,7 +8,7 @@ export const meta = {
     { title: 'Strategy', detail: 'three lens strategists propose themes and initiatives within the recorded decisions; one Opus synthesizer merges them; code gates coverage, refs, overrides, slugs, and the dependency graph' },
     { title: 'Advise', detail: 'a judge advisor approves the strategy against the decisions before any spec is drafted; one revision at most' },
     { title: 'Resolve', detail: 'one cheap agent resolves spec and report paths with mold artifact-path and flags files that already exist' },
-    { title: 'Spec', detail: 'per spec initiative: brie-ground child research for its open external questions (capped), Opus draft, taste-test, then stage, validate-spec, curd-count, and install; bounded redraft' },
+    { title: 'Spec', detail: 'per spec initiative: brie-ground child research for its open external questions (capped; in an interactive run, only for the questions the user approves at the spec checkpoint), Opus draft, taste-test, then stage, validate-spec, curd-count, and install; bounded redraft' },
     { title: 'Verify', detail: 'one judge re-runs validate-spec and curd-count on every installed spec' },
     { title: 'Report', detail: 'code computes factory waves and renders the report; one writer saves it; a judge advisor signs off' },
     { title: 'Record', detail: 'only after sign-off: one agent writes the approved strategy to the repo wiki with hallouminate add_markdown, so the next Ground reads it' },
@@ -143,9 +143,9 @@ const GROUND_RULES = [
 ].join('\n')
 // The rule for research_questions. max resolves at call time.
 const researchRule = (max) => `research_questions: at most ${max} questions about external facts (a library, an API, upstream behavior) that the work needs settled. Ask a question only when the item text, the code, the wiki, and prior research all leave it open. Leave it empty otherwise.`
-// Upper bound for one brie-ground child: plan, recall, and synthesis, plus up to 3 deep sub-questions of scope, 6 angles, 12 fetches, and verify votes.
-const BRIE_GROUND_MAX_AGENTS = 100
-// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. workflow and log resolve at call time.
+// Worst case of one brie-ground child (see its fan-out caps): recall 2, plan 2, 3 deep sub-questions x 7, 2 shallow x 3, synthesis 2, prototype 2.
+const BRIE_GROUND_MAX_AGENTS = 35
+// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. A capped result also logs and returns its dropped count. workflow and log resolve at call time.
 const brieGround = async (question) => {
   let r = null
   try {
@@ -154,11 +154,20 @@ const brieGround = async (question) => {
     log(`brie-ground failed for "${question}": ${e && e.message}`)
   }
   if (!r || r.error || typeof r.answer !== 'string' || !RESEARCH_CONFIDENCE.includes(r.confidence)) return { failed: `research failed: ${question}` }
+  const capped = (result, items, max, what) => {
+    if (items.length <= max) return result
+    log(`brie-ground for "${question}" dropped ${items.length - max} ${what} past the cap of ${max}`)
+    return { ...result, dropped: items.length - max }
+  }
   // A dont_know answer may be blank. It keeps at most 2 follow-ups, so one child cannot flood the open questions.
-  if (r.confidence === 'dont_know') return { unsettled: [question, ...(Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()).slice(0, 2) : [])] }
+  if (r.confidence === 'dont_know') {
+    const followUps = Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()) : []
+    return capped({ unsettled: [question, ...followUps.slice(0, 2)] }, followUps, 2, 'follow-up question(s)')
+  }
   if (!r.answer.trim()) return { failed: `research failed: ${question}` }
-  const citations = (Array.isArray(r.evidence_table) ? r.evidence_table : []).slice(0, 5).map((e) => e && e.citation).filter(Boolean)
-  return { found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }
+  const evidence = Array.isArray(r.evidence_table) ? r.evidence_table : []
+  const citations = evidence.slice(0, 5).map((e) => e && e.citation).filter(Boolean)
+  return capped({ found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }, evidence, 5, 'citation row(s)')
 }
 
 // Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
@@ -502,7 +511,7 @@ async function typed(text, opts, check) {
     if (!errors.length) return { value, errors }
     if (round > LIMITS.fixRounds) return { value: null, errors }
     value = errors.every((e) => e.kind === 'form')
-      ? await attempt(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low' })
+      ? await attempt(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, agentType: 'formatter', schema: opts.schema, model: 'haiku', effort: 'low' })
       : await attempt(redoPrompt(text, errors), { ...opts, label: `${opts.label}:redo${round}` })
   }
 }
@@ -1076,10 +1085,17 @@ if (resume) {
     () => workflow('triage-sweep', { scope: 'issues', limit, ...(repo ? { repo } : {}) }),
     () => typed(ideasPrompt(), { label: 'ideas', phase: 'Gather', agentType: 'explorer', schema: IDEAS_SCHEMA }, ideaCheck),
   ])
+  // A blocked or partial triage run names its gaps, so an empty grounded set never reads as an empty backlog.
+  const triageGaps = triage && Array.isArray(triage.gaps) ? triage.gaps.filter((g) => typeof g === 'string' && g.trim()).map(oneLine) : []
   if (!triage) {
     log('triage-sweep failed: the strategy covers ideas only.')
     gaps.push('triage-sweep failed; no issue was triaged')
-  }
+  } else if (triage.status === 'blocked') {
+    const reason = blank(triage.reason) ? 'no reason given' : oneLine(triage.reason)
+    log(`triage-sweep blocked: ${reason}`)
+    gaps.push(`triage-sweep blocked: ${reason}; no issue was triaged`)
+  } else if (triage.status === 'partial' && !triageGaps.length) gaps.push('triage-sweep returned partial with no gap list')
+  for (const g of triageGaps) gaps.push(`triage-sweep: ${g}`)
   const mapped = mapTriage(triage)
   issues = mapped.issues
   domains = mapped.domains
@@ -1345,7 +1361,9 @@ async function research(base, questions) {
 phase('Spec')
 // A leverage trigger asks mold or spec anyway; each open question takes a free answer.
 const openText = (init, text) => `${init.id} ${init.title}: ${text}`
-const pendingQuestions = (init, triggers, opens) => [
+// A research question takes a free answer, or the reply research to run brie-ground on it.
+const researchText = (init, q) => `${init.id} ${init.title} research question: ${q} Answer it, or reply "research" to run brie-ground on it.`
+const pendingQuestions = (init, triggers, opens, researchQs = []) => [
   ...(triggers.length ? [{
     text: `${init.id} ${init.title} fires leverage triggers: ${triggers.join(', ')}. Route it to /mold, or write the spec anyway?`,
     options: ['mold', 'spec anyway'],
@@ -1355,6 +1373,7 @@ const pendingQuestions = (init, triggers, opens) => [
     evidence: triggers.join('; '),
   }] : []),
   ...opens.map((text) => ({ text: openText(init, text), evidence: `${init.id} open question` })),
+  ...researchQs.map((q) => ({ text: researchText(init, q), options: ['research'], recommended: 'research', kind: 'research', evidence: `${init.id} research question` })),
 ].map((row, k) => question(`${init.id}.Q${k + 1}`, init.id, row.text, row))
 
 // prior is the earlier outcome of a resumed initiative; user holds its answers.
@@ -1370,13 +1389,14 @@ async function mintSpec(init, prior = null, user = null, asksFirst = false) {
   const relevant = decisions.filter((d) => !d.items.length || d.items.some((ref) => itemRefs.includes(ref)))
   // In interactive mode the initiative asks before it spends a draft.
   if (asksFirst) {
-    return { ...base, status: 'asking', questions: pendingQuestions(init, init.leverage_triggers, init.open_questions) }
+    return { ...base, status: 'asking', questions: pendingQuestions(init, init.leverage_triggers, init.open_questions, init.research_questions) }
   }
   if (prior && Array.isArray(prior.research)) base.research = prior.research
   else {
     const questions = researchPlan.get(init.id)
-    if (questions.length < init.research_questions.length) {
-      const unresearched = init.research_questions.slice(questions.length)
+    const wanted = user ? user.research : init.research_questions
+    if (questions.length < wanted.length) {
+      const unresearched = wanted.slice(questions.length)
       return { ...base, status: 'mold', reason: `research cap of ${LIMITS.maxResearch} reached; unresearched: ${unresearched.join(' / ')}`, open_questions: unresearched }
     }
     const researched = await research(base, questions)
@@ -1439,25 +1459,29 @@ for (const init of specInits) {
   const call = trigger ? got.find((a) => a.id === trigger.id) : null
   // An asking outcome holds the answers of earlier checkpoints, so a later ask keeps them.
   const held = prior.held || { answers: [], anyway: false }
-  const answers = [...held.answers, ...got.map(({ question: q, answer }) => ({ question: q, answer }))]
+  const asked = new Map(init.research_questions.map((rq) => [oneLine(researchText(init, rq)), rq]))
+  const approves = (a) => asked.has(a.question) && a.answer.trim().toLowerCase() === 'research'
+  const research = [...(held.research || []), ...got.filter(approves).map((a) => asked.get(a.question))]
+  const answers = [...held.answers, ...got.filter((a) => !approves(a)).map(({ question: q, answer }) => ({ question: q, answer }))]
   const anyway = held.anyway || Boolean(call && call.answer === 'spec anyway')
   const unanswered = prior.questions.filter((q) => !got.some((a) => a.id === q.id))
   if (call && call.answer === 'mold') results.set(init.id, { initiative: init.id, slug: init.slug, path: prior.path, status: 'mold', reason: `leverage triggers: ${trigger.evidence}; the user chose mold`, open_questions: [] })
-  else if (unanswered.length) results.set(init.id, { ...prior, questions: unanswered, held: { answers, anyway } })
-  else jobs.push({ init, prior, user: { answers, anyway } })
+  else if (unanswered.length) results.set(init.id, { ...prior, questions: unanswered, held: { answers, anyway, research } })
+  else jobs.push({ init, prior, user: { answers, anyway, research } })
 }
-// A fresh initiative with open questions or leverage triggers asks before it spends research or a draft.
-const asksFirstBy = new Map(jobs.map(({ init, prior }) => [init.id, INTERACTIVE && !prior && Boolean(init.leverage_triggers.length || init.open_questions.length)]))
+// A fresh initiative with open questions, leverage triggers, or research questions asks before it spends research or a draft.
+// The user can answer a research question for free, so brie-ground runs only for the questions the user approves.
+const asksFirstBy = new Map(jobs.map(({ init, prior }) => [init.id, INTERACTIVE && !prior && Boolean(init.leverage_triggers.length || init.open_questions.length || init.research_questions.length)]))
 // A resumed run reuses the answers that its earlier outcomes hold, at no cost to the cap.
 for (const o of priorOutcomes.values()) {
   for (const f of Array.isArray(o.research) ? o.research : []) if (f && typeof f.question === 'string') researchRuns.set(questionKey(f.question), Promise.resolve({ found: f }))
 }
 // Code caps brie-ground child runs across the jobs, in priority order. A question that is already planned costs no slot.
 const plannedKeys = new Set(researchRuns.keys())
-const researchPlan = new Map(jobs.map(({ init, prior }) => {
+const researchPlan = new Map(jobs.map(({ init, prior, user }) => {
   if (prior && Array.isArray(prior.research)) return [init.id, []]
   // All or nothing: a partial plan sends the initiative to mold and wastes its slots.
-  const qs = init.research_questions
+  const qs = user ? user.research : init.research_questions
   const fresh = [...new Set(qs.map(questionKey))].filter((k) => !plannedKeys.has(k))
   const planned = asksFirstBy.get(init.id) || pathBySlug.get(init.slug).exists || fresh.length > LIMITS.maxResearch - researchUsed ? [] : qs
   if (planned.length) {

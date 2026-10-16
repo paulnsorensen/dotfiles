@@ -73,7 +73,8 @@ const DEEP = {
 // Worst case with these caps is 35 agents: recall 1 + its verify 1, plan 1 +
 // redo 1, 3 deep mixed x 7 (wiki, search, 3 extract batches, code, verify),
 // 2 shallow mixed x 3 (wiki, web, verify), synthesis 1 + redo 1, prototype 2.
-// Callers reserve BRIE_GROUND_MAX_AGENTS = 100 for one child (workflow-prelude).
+// Callers reserve BRIE_GROUND_MAX_AGENTS = 35 for one child (workflow-prelude);
+// a prelude test pins it to this worst case.
 const MAX_SUBQUESTIONS = 5
 const VERIFY_MAX_CLAIMS = 4
 const WORKER_MODEL = 'sonnet'

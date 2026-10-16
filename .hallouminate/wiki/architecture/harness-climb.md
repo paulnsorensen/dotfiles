@@ -30,6 +30,8 @@ A round runs the first step that applies: stop check, field gate due, analyze, p
 
 **Leakage denylist from real prompts.** The critic builds n-grams from Claude and Codex user prompts and checks added lines only. The denylist skips every prompt that starts with `<`, so `<command-args>` text does not enter it yet. This is a known issue. Project names match as whole tokens with a stop-list for generic directory words. Substring matching rejected most rounds. Rejection output never holds prompt or project text.
 
+**Schema identifiers are not project text.** A project match skips each whole word that names a session-database table or column. The loader reads these names from `information_schema`. Before this rule, a project folder with a generic name matched one word of `tool_results`, so the freeze refused every tool-error query (round 1 of thread `tooling`, 2026-10-16). The same word outside an identifier still matches.
+
 ## Gotchas
 
 **The edit takes effect at the sync, not at the merge.** `dots sync` appends `<epoch> <HEAD sha>` to `$DOTFILES_STATE_DIR/sync-history.log` (see [[operations/sync-and-chezmoi]]). The after window starts at the first logged sync whose commit contains the merge. Before the sync grace ends with no such sync, the gate returns `not-due` and records nothing. After the grace it returns `inconclusive` with reason `sync-late`. Every clone and worktree writes the same log. When a sync inside the after window has a SHA without the merge, the gate returns `inconclusive` with reason `sync-regressed`. A sync from a dirty tree never counts as deploying a merge.

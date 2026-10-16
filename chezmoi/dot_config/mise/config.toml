@@ -92,12 +92,12 @@ node = "26.12.0"
 bun = "1.4.3"
 rust = "1.99.0"
 
-"npm:t3" = "0.0.45"
+"npm:t3" = "0.1.0"
 "npm:bash-language-server" = "5.8.1"
 "npm:yaml-language-server" = "1.25.0"
 "npm:basedpyright" = "1.40.2"
 # OpenCode v2 ships on npm only; its GitHub tags carry no release assets for aqua.
 # The package postinstall links the platform binary, so allow its build script.
-"npm:@opencode/cli" = { version = "2.0.29", allow_builds = ["@opencode/cli"] }
+"npm:@opencode/cli" = { version = "2.0.30", allow_builds = ["@opencode/cli"] }
 "cargo:eza" = { version = "0.23.5", features = "vendored-libgit2" }
 "cargo:tokei" = "15.0.0"
