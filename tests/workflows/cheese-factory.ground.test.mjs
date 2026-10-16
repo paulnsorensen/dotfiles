@@ -205,11 +205,11 @@ test('decompose_getsTheGroundingBlock', async () => {
   assert.match(promptOf('decompose:plan'), /Return at most 12 curds/)
 })
 
-test('research_threeChildren_lowerTheCurdCapUnderTheAgentCap', async () => {
+test('research_threeChildren_keepTheFullCurdCapUnderTheAgentCap', async () => {
   const { promptOf, trace } = await run({ ...multi, ground: () => ground({ research_questions: ['q1', 'q2', 'q3'] }) }, (q) => answer(q))
 
-  assert.match(promptOf('decompose:plan'), /Return at most 9 curds/)
-  assert.ok(trace.logs.some((l) => /3 research child\(ren\) leave room for 9 curds/.test(l)))
+  assert.match(promptOf('decompose:plan'), /Return at most 12 curds/)
+  assert.equal(trace.logs.some((l) => /leave room for/.test(l)), false)
 })
 
 test('research_oneChild_keepsTheFullCurdCap', async () => {

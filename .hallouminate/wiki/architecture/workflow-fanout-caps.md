@@ -16,7 +16,7 @@ A deep sub-question can extract 12 sources × 4 claims, so 46 agents was a norma
 - An `agent()` call with no `model` and no model-pinned `agentType` uses the parent model. Set `model` on each fan-out worker.
 - Cap each fan-out whose item count comes from agent output. Use a `slice`, a `LIMITS` value, or a check that blocks the run.
 - Remove repeats before the fan-out, not after it. A repeat shares the verdict of the first copy only when the verifier read the same thing: brie-ground keys on claim and citation, sliced-bread-audit on fingerprint and claim.
-- Keep a child workflow's worst case under the budget its callers reserve. brie-ground's worst case is 96 agents against `BRIE_GROUND_MAX_AGENTS = 100`; a test runs that case.
+- Keep a child workflow's worst case under the budget its callers reserve. brie-ground's worst case is 35 agents, and `BRIE_GROUND_MAX_AGENTS = 35` reserves exactly that; a prelude test computes the worst case from the brie-ground caps and pins the reservation to it.
 - Log the number of items that the cap drops. Report capped items as unverified, not as checked.
 
 ## Current caps (2026-10-15)

@@ -120,9 +120,9 @@ const GROUND_RULES = [
 ].join('\n')
 // The rule for research_questions. max resolves at call time.
 const researchRule = (max) => `research_questions: at most ${max} questions about external facts (a library, an API, upstream behavior) that the work needs settled. Ask a question only when the item text, the code, the wiki, and prior research all leave it open. Leave it empty otherwise.`
-// Upper bound for one brie-ground child: plan, recall, and synthesis, plus up to 3 deep sub-questions of scope, 6 angles, 12 fetches, and verify votes.
-const BRIE_GROUND_MAX_AGENTS = 100
-// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. workflow and log resolve at call time.
+// Worst case of one brie-ground child (see its fan-out caps): recall 2, plan 2, 3 deep sub-questions x 7, 2 shallow x 3, synthesis 2, prototype 2.
+const BRIE_GROUND_MAX_AGENTS = 35
+// Runs one brie-ground child, which nests no workflow, and returns { found }, { unsettled }, or { failed }. A capped result also logs and returns its dropped count. workflow and log resolve at call time.
 const brieGround = async (question) => {
   let r = null
   try {
@@ -131,11 +131,20 @@ const brieGround = async (question) => {
     log(`brie-ground failed for "${question}": ${e && e.message}`)
   }
   if (!r || r.error || typeof r.answer !== 'string' || !RESEARCH_CONFIDENCE.includes(r.confidence)) return { failed: `research failed: ${question}` }
+  const capped = (result, items, max, what) => {
+    if (items.length <= max) return result
+    log(`brie-ground for "${question}" dropped ${items.length - max} ${what} past the cap of ${max}`)
+    return { ...result, dropped: items.length - max }
+  }
   // A dont_know answer may be blank. It keeps at most 2 follow-ups, so one child cannot flood the open questions.
-  if (r.confidence === 'dont_know') return { unsettled: [question, ...(Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()).slice(0, 2) : [])] }
+  if (r.confidence === 'dont_know') {
+    const followUps = Array.isArray(r.open_questions) ? r.open_questions.filter((q) => typeof q === 'string' && q.trim()) : []
+    return capped({ unsettled: [question, ...followUps.slice(0, 2)] }, followUps, 2, 'follow-up question(s)')
+  }
   if (!r.answer.trim()) return { failed: `research failed: ${question}` }
-  const citations = (Array.isArray(r.evidence_table) ? r.evidence_table : []).slice(0, 5).map((e) => e && e.citation).filter(Boolean)
-  return { found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }
+  const evidence = Array.isArray(r.evidence_table) ? r.evidence_table : []
+  const citations = evidence.slice(0, 5).map((e) => e && e.citation).filter(Boolean)
+  return capped({ found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }, evidence, 5, 'citation row(s)')
 }
 
 // Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
@@ -506,7 +515,7 @@ function findDuplicateSlugs(curds) {
 // The fixed per-run overhead is about 149 agents: about 53 barrier agents, 3 Ground attempts (ADR-018), plus at most 93 for ADR-015..017 (criteria 3, plan advice 3, multi-curd revise 9, second plan advice 3, 24 verify x 3 = 72, done advice 3).
 // Each brie-ground child counts toward the cap at up to BRIE_GROUND_MAX_AGENTS (shared prelude).
 // So 12 curds spend about 833 agents at worst without research (12 x 57 + 149). curdCap lowers the curd limit by what research spent:
-// 0 or 1 children keep 12 curds, 2 children allow 11, and 3 children allow 9. Recount before a reader raises maxCurds.
+// 3 children spend 105 more (938 total), so up to 3 children keep 12 curds. Recount before a reader raises maxCurds.
 const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12, maxCriteria: 24, advisorRevisions: 1, maxResearch: 3, agentCap: 1000, curdAgents: 57, runOverhead: 149 }
 // The curd limit for Decompose. Research sets it once, before any decomposer runs.
 let curdCap = LIMITS.maxCurds
