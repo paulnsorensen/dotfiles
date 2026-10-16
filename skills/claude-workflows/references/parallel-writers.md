@@ -17,12 +17,12 @@ No cited source covers parallel writers on one repository. The rules below come 
 5. Integrate after each target or each wave, not only at one final barrier. Merge the target onto the integration head, then run a conflict probe.
 6. A failed probe stops the dependents of that target. Log each stopped target with its reason.
 7. Reject a plan in code when a target waits for a merge that cannot happen before publish. For example, target B waits for PR A to merge, but A merges only after the run publishes B. That plan deadlocks.
-8. Run the merges and the probe through one deterministic script. See the git row in `determinism.md`. An agent resolves a conflict only when the script reports one.
+8. Run the merges and the probe through one deterministic script, such as `wfx integrate` and `wfx probe`. See the git row in `determinism.md`. An agent resolves a conflict only when the script reports one.
 
 ## Template status
 
 `assets/workflow-template.js` predates these rules. It integrates once, at a final barrier, and its prompts carry git steps.
 Its dependent tasks merge their dependency branches, so it follows rule 3 in part.
-Adapt its integrate stage before you use it for writers that can conflict.
+Adapt its integrate stage before you use it for writers that can conflict. The template stays self-contained for teaching; the dotfiles modules and `wfx` hold the tested versions.
 
 Evidence: 48 move-my-cheese runs from 2026-10-12 to 2026-10-16 built targets in parallel from the base and combined them only at a final barrier. Three runs ended in conflicts. Builders told to "rebase on #115" re-applied the diff. One plan made a target wait for a merge that could not happen before publish, and the run deadlocked.
