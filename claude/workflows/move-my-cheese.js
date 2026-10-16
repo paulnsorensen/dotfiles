@@ -2650,19 +2650,27 @@ async function checkFresh(started, keepOnly) {
   if (verdict.verdict === 'replan') return verdict.reasons
   const targets = APPROVED.plan.targets.filter((t) => t.kind === 'existing')
   if (targets.some((t) => t.base !== idx.default_branch)) return [`the base moved from ${snapshot.base} to ${liveBase}; a stacked PR needs a restack, so plan again`]
+  // Restack everything and probe the new heads first. Nothing is pushed until the whole set passes.
   const moved = []
   for (const t of targets) {
     const pr = byNumber.get(t.pr)
-    const res = await wfx(`stale:restack:${t.branch}`, 'Recon', `git fetch --quiet origin ${shq(`${t.branch}:${t.branch}`)} && wfx restack --repo ${repo} --branch ${shq(t.branch)} --onto ${liveBase} --push --expect ${pr.head_sha}`)
+    const ref = runRefOf(t.branch)
+    const res = await wfx(`stale:restack:${t.branch}`, 'Recon', `git fetch --quiet origin && git fetch --quiet origin ${shq(`+refs/heads/${t.branch}:${ref}`)} && wfx restack --repo ${repo} --branch ${shq(t.branch)} --onto ${liveBase} --source ${shq(ref)} --expect ${pr.head_sha}`)
     if (!res.ok) return [`restack of ${t.branch} failed (${res.error.code}): ${res.error.message}`]
     if (!FULL_SHA_RE.test(res.data.new)) return [`restack of ${t.branch} returned no full head SHA`]
-    moved.push({ pr, sha: res.data.new })
+    moved.push({ pr, branch: t.branch, old: pr.head_sha, sha: res.data.new })
   }
   if (moved.length) {
     const conflict = await wfx('stale:probe:conflict', 'Recon', `wfx probe --repo ${repo} --base ${liveBase} ${moved.map((m) => `--head ${m.sha}`).join(' ')}`)
     if (!conflict.ok) return [`the conflict probe failed: ${conflict.error.message}`]
     if (conflict.data.conflicts.length) return [`the restacked heads conflict: ${conflict.data.conflicts.map((c) => `${c.a} with ${c.b}`).join('; ')}`]
-    for (const m of moved) m.pr.head_sha = m.sha
+    for (const m of moved) {
+      const pushed = await wfx(`stale:publish:${m.branch}`, 'Recon', `wfx publish --repo ${repo} --branch ${shq(m.branch)} --sha ${m.sha} --expect ${m.old}`, { effect: true })
+      if (!pushed.ok) return [`publish of ${m.branch} failed (${pushed.error.code}): ${pushed.error.message}`]
+      // The restacked head is current and clean, so needsBuild keeps the PR.
+      m.pr.head_sha = m.sha
+      m.pr.merge_state = 'CLEAN'
+    }
   }
   return []
 }
