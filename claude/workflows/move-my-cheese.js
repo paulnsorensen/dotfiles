@@ -236,8 +236,8 @@ function matchAnswers(questions, raw) {
 
 // ---- Limits and closed sets: every loop has a bound in code ----
 const LIMITS = { maxPrs: 12, maxTargets: 12, maxCriteria: 24, fixRounds: 2, continuations: 3, advisorRevisions: 1, pollRounds: 6, mergePolls: 4, minBudget: 50000, agentCap: 1000, revisionChars: 4000, maxResearch: 2, checksPerJudge: 8, overlapFiles: 20 }
-// Worst case for one age-fanout child: packet, two attempts for each of about 12 dimensions, reconcile.
-const AGE_FANOUT_MAX_AGENTS = 27
+// Worst case for one age-fanout child: two packet attempts, two attempts for each of at most 5 planned reviewers, two reconcile attempts.
+const AGE_FANOUT_MAX_AGENTS = 14
 const MARKER_PREFIX = 'move-my-cheese:aged'
 const MERGE_METHODS = ['squash', 'merge', 'rebase']
 const BLAST_RADII = ['low', 'medium', 'high']
