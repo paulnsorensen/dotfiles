@@ -1,4 +1,4 @@
-// module: findings; provides: isMediumPlus, needsCure, normalizeFile, routeFindings, findingErrors, enumErrors, splitBlocked, dedupeFindings, cureBatches; requires: call, stale, schema
+// module: findings; provides: isMediumPlus, needsCure, normalizeFile, routeFindings, findingErrors, enumErrors, splitBlocked, cureBatches; requires: call, stale, schema
 const isMediumPlus = (f) => f.severity !== 'low'
 const needsCure = (f) => isMediumPlus(f) || f.fix_cost_now === 'contained'
 // A finding file may carry a leading ./ or a worktree prefix; both name the same repo path.
@@ -52,17 +52,6 @@ const splitBlocked = (v) => {
     v.reason = typeof v.reason === 'string' && v.reason.trim() ? v.reason : m[2]
   }
   return v
-}
-// Code owns the mechanical fan-in: exact-repeat removal, then a stable order by location.
-function dedupeFindings(findings) {
-  const byLocation = (a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.dimension.localeCompare(b.dimension) || a.claim.localeCompare(b.claim)
-  const seen = new Set()
-  return findings.filter((f) => {
-    const key = JSON.stringify([f.dimension, f.file, f.line, f.claim])
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  }).sort(byLocation)
 }
 // bySlug maps a curd slug to its findings. Returns { slug, findings } batches in map order. A batch holds at most cap findings.
 function cureBatches(bySlug, cap) {

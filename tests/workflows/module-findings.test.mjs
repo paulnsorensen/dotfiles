@@ -6,6 +6,7 @@ const toPlain = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)))
 const assert = { ...strict, deepEqual: (a, b, m) => strict.deepEqual(toPlain(a), toPlain(b), m) }
 
 const f = loadModule('findings', { globals: {} })
+const fanin = loadModule('fanin', { globals: {} })
 const plain = (v) => JSON.parse(JSON.stringify(v))
 const finding = (file, severity = 'medium', extra = {}) => ({ dimension: 'd', severity, file, line: 1, claim: 'c', fix_cost_now: 'moderate', ...extra })
 
@@ -62,11 +63,11 @@ test('findings_splitBlocked_splitsStatusAndKeepsReason', () => {
   assert.equal(f.splitBlocked(null), null)
 })
 
-test('findings_dedupeFindings_dropsRepeatsAndSortsByLocation', () => {
+test('fanin_dedupeFindings_dropsRepeatsAndSortsByLocation', () => {
   const a = finding('b.js', 'medium', { line: 9 })
   const b = finding('a.js', 'medium', { line: 20 })
   const c = finding('a.js', 'medium', { line: 3 })
-  const out = f.dedupeFindings([a, b, { ...a, severity: 'high' }, c])
+  const out = fanin.dedupeFindings([a, b, { ...a, severity: 'high' }, c])
   assert.deepEqual(plain(out), plain([c, b, a]))
 })
 

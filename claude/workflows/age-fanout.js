@@ -170,56 +170,6 @@ function wfxCommandOf(command) {
   return names.length ? names[names.length - 1] : ''
 }
 // END module call
-// BEGIN module stale
-// module: stale; provides: SCRATCH_PATH_SRC, SCRATCH_WORKTREE_RE, FULL_SHA_RE, SHA_RE, SHORT_SHA_RE, DIGEST_RE, stampedBy, markersOf, shaErrors, staleVerdict; requires: call
-// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
-const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
-// The anchored form of SCRATCH_PATH_SRC matches a whole path.
-const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
-// A full commit SHA has 40 hex digits in either case.
-const FULL_SHA_RE = /^[0-9a-f]{40}$/i
-// A move-my-cheese SHA has 7 to 40 hex digits.
-const SHA_RE = /^[0-9a-f]{7,40}$/i
-// A writer may return a short SHA. A read-only call expands it.
-const SHORT_SHA_RE = /^[0-9a-f]{7,16}$/i
-// A landing digest has 16 lowercase hex digits.
-const DIGEST_RE = /^[0-9a-f]{16}$/
-// This approval recorded the PR's current head at the end of an earlier run.
-const stampedBy = (p, d) => p.landing_digest === d && p.landing_head === p.head_sha
-// Only well-formed markers count; anything else reads as no marker.
-function markersOf(pr) {
-  const aged = FULL_SHA_RE.test(pr.aged_sha.trim()) && FULL_SHA_RE.test(pr.aged_patch.trim())
-  const landing = DIGEST_RE.test(pr.landing_digest.trim())
-  return {
-    aged_sha: aged ? pr.aged_sha.trim() : '', aged_patch: aged ? pr.aged_patch.trim() : '', aged_dirty: aged && pr.aged_dirty,
-    landing_digest: landing ? pr.landing_digest.trim() : '',
-    landing_head: landing && FULL_SHA_RE.test(pr.landing_head.trim()) ? pr.landing_head.trim() : '',
-  }
-}
-// Code checks a SHA, not a schema pattern. A bad SHA is always substance: a formatter has no repo access and could only invent one.
-// typed() trims the SHA fields in TRIM_FIELDS before a check runs, so a padded SHA in those fields never reaches this test.
-const shaErrors = (path, value) =>
-  (typeof value === 'string' && FULL_SHA_RE.test(value) ? [] : [substance(`${path} must be a 40-hex commit SHA`)])
-// Compares a plan snapshot with the live repo. snapshot is { base, heads: { pr: sha }, files: [plan files] }.
-// live is { base, heads }. changedFiles lists the files that changed between the two bases, or null when unknown.
-// A moved head or a changed PR set needs a new plan. A moved base needs a new plan only when it touches a plan file.
-function staleVerdict(snapshot, live, changedFiles) {
-  const reasons = []
-  const planned = Object.keys(snapshot.heads).sort()
-  const current = Object.keys(live.heads).sort()
-  if (planned.join(',') !== current.join(',')) reasons.push(`the PR set is now ${current.join(', ') || 'empty'}, not ${planned.join(', ') || 'empty'}`)
-  for (const pr of planned) {
-    if (Object.hasOwn(live.heads, pr) && live.heads[pr] !== snapshot.heads[pr]) reasons.push(`#${pr} head moved from ${snapshot.heads[pr]} to ${live.heads[pr]}`)
-  }
-  if (reasons.length) return { verdict: 'replan', reasons }
-  if (snapshot.base === live.base) return { verdict: 'fresh', reasons: [] }
-  const moved = `the base moved from ${snapshot.base} to ${live.base}`
-  if (!Array.isArray(changedFiles)) return { verdict: 'replan', reasons: [`${moved}; the changed files are unknown`] }
-  const hit = changedFiles.filter((f) => snapshot.files.includes(f)).sort()
-  if (hit.length) return { verdict: 'replan', reasons: [`${moved}; it changed plan files: ${hit.join(', ')}`] }
-  return { verdict: 'rebase', reasons: [`${moved}; it touched no plan file`] }
-}
-// END module stale
 // BEGIN module schema
 // module: schema; provides: str, int, bool, strs, ints, text, oneOf, list, obj, CHECK_KINDS, ADVICE_VERDICTS, FIX_STATUSES, PHASE_STATUSES, FINDING_SEVERITIES, FIX_COSTS; requires: none
 // Schema builders: one constant per shape, so a contract reads as data.
@@ -240,62 +190,8 @@ const PHASE_STATUSES = ['ok', 'partial', 'blocked']
 const FINDING_SEVERITIES = ['blocker', 'high', 'medium', 'low']
 const FIX_COSTS = ['contained', 'moderate', 'sprawling', 'n/a']
 // END module schema
-// BEGIN module findings
-// module: findings; provides: isMediumPlus, needsCure, normalizeFile, routeFindings, findingErrors, enumErrors, splitBlocked, dedupeFindings, cureBatches; requires: call, stale, schema
-const isMediumPlus = (f) => f.severity !== 'low'
-const needsCure = (f) => isMediumPlus(f) || f.fix_cost_now === 'contained'
-// A finding file may carry a leading ./ or a worktree prefix; both name the same repo path.
-// The prefix is the producer's own worktree_path, or any scratch worktree root.
-const normalizeFile = (file, worktreePath) => {
-  let p = String(file).trim()
-  const root = worktreePath ? String(worktreePath).replace(/\/+$/, '') + '/' : null
-  p = root && p.startsWith(root) ? p.slice(root.length) : p.replace(new RegExp(`^${SCRATCH_PATH_SRC}\\/`), '')
-  return p.replace(/^(\.\/)+/, '')
-}
-// A finding owned by two curds routes to the first owner in slug order. Each other owner lands in shared, keyed to the owners that cure it.
-// unrouted is true when a finding that needs cure has no owner (an unowned low that needs no cure stays out),
-// or when the result claims medium+ findings or contained lows that its list does not carry.
-function routeFindings(result, filesBySlug, slugs, worktreePath) {
-  const bySlug = new Map()
-  const shared = new Map()
-  const sharedFindings = new Map()
-  // unownedMedium marks a medium+ finding that no curd owns. unrouted also fires for an unowned contained low.
-  let unownedMedium = Boolean(result.has_medium_plus_findings) && !result.findings.some(isMediumPlus)
-  let unrouted = unownedMedium ||
-    (Boolean(result.has_cheap_lows) && !result.findings.some((f) => f.severity === 'low' && f.fix_cost_now === 'contained'))
-  for (const f of result.findings.filter(needsCure)) {
-    const file = normalizeFile(f.file, worktreePath)
-    const owners = slugs.filter((s) => (filesBySlug[s] || []).includes(file))
-    if (!owners.length) {
-      unrouted = true
-      if (isMediumPlus(f)) unownedMedium = true
-      continue
-    }
-    const [first, ...others] = owners
-    bySlug.set(first, [...(bySlug.get(first) || []), { ...f, file }])
-    for (const s of others) {
-      shared.set(s, new Set([...(shared.get(s) || []), first]))
-      sharedFindings.set(s, [...(sharedFindings.get(s) || []), { ...f, file }])
-    }
-  }
-  return { bySlug, shared, sharedFindings, unrouted, unownedMedium }
-}
-// A closed set checked in code: the schema keeps the field a plain string.
-const enumErrors = (path, value, allowed, kind = form) => (allowed.includes(value) ? [] : [kind(`${path} must be one of ${allowed.join(', ')}`)])
-const findingErrors = (v) => v.findings.flatMap((f, i) => [
-  ...enumErrors(`$.findings[${i}].severity`, f.severity, FINDING_SEVERITIES, substance),
-  ...enumErrors(`$.findings[${i}].fix_cost_now`, f.fix_cost_now, FIX_COSTS, substance),
-])
-// A reviewer may answer status "blocked: <reason>" as one string. Code splits it into status and reason.
-// A halt is a blocked review too. Every caller still treats a status other than ok as no review.
-const splitBlocked = (v) => {
-  const m = v !== null && typeof v === 'object' && typeof v.status === 'string' ? /^(blocked|halt)\s*:\s*(.+)$/i.exec(v.status.trim()) : null
-  if (m) {
-    v.status = 'blocked'
-    v.reason = typeof v.reason === 'string' && v.reason.trim() ? v.reason : m[2]
-  }
-  return v
-}
+// BEGIN module fanin
+// module: fanin; provides: dedupeFindings; requires: none
 // Code owns the mechanical fan-in: exact-repeat removal, then a stable order by location.
 function dedupeFindings(findings) {
   const byLocation = (a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.dimension.localeCompare(b.dimension) || a.claim.localeCompare(b.claim)
@@ -307,16 +203,7 @@ function dedupeFindings(findings) {
     return true
   }).sort(byLocation)
 }
-// bySlug maps a curd slug to its findings. Returns { slug, findings } batches in map order. A batch holds at most cap findings.
-function cureBatches(bySlug, cap) {
-  const size = Math.max(1, cap)
-  const batches = []
-  for (const [slug, found] of bySlug) {
-    for (let i = 0; i < found.length; i += size) batches.push({ slug, findings: found.slice(i, i + size) })
-  }
-  return batches
-}
-// END module findings
+// END module fanin
 
 const NO_CHAIN_DIRECTIVE = 'Do not chain forward to the next phase even though your auto-mode contract documents that. Return your structured result and stop. The parent workflow orchestrating /age-fanout is driving the chain. Run in the foreground — do not background yourself, spawn detached processes, or defer work to a later session. If you cannot complete the phase within your context window, return status blocked with blocked_reason and stop; do not silently timeout.'
 

@@ -17,7 +17,7 @@ const ADOPTED = {
   'claude/workflows/cheese-board.js': ['schema', 'graph', 'criteria', 'advise', 'status'],
   'claude/workflows/sliced-bread-audit.js': ['budget', 'fanout'],
   'claude/workflows/brie-ground.js': ['budget', 'fanout', 'ground'],
-  'claude/workflows/age-fanout.js': ['budget', 'call', 'stale', 'schema', 'findings'],
+  'claude/workflows/age-fanout.js': ['budget', 'call', 'schema', 'fanin'],
   'claude/workflows/cheese-factory.js': ['guard', 'schema', 'graph', 'criteria', 'advise', 'findings', 'status'],
   'claude/workflows/hill-climb-threads.js': ['fanout'],
   'claude/workflows/triage-sweep.js': ['budget', 'status'],
@@ -37,7 +37,8 @@ const PROVIDES = {
   graph: ['waves', 'duplicates', 'baseChain', 'mergeWaitErrors'],
   criteria: ['norm', 'blank', 'refError', 'checkVerdicts', 'checkCriteria', 'CRITERIA_SCHEMA', 'VERDICT_SCHEMA', 'VERIFY_BATCH_SCHEMA'],
   advise: ['adviceSchema', 'ADVICE_SCHEMA', 'ROUND_TWO_RULE', 'checkAdvice', 'checkPlanAdvice', 'checkRoundTwo', 'adviceStep', 'adviseLoop', 'adviceResult', 'blockingOf'],
-  findings: ['isMediumPlus', 'needsCure', 'normalizeFile', 'routeFindings', 'findingErrors', 'enumErrors', 'splitBlocked', 'dedupeFindings', 'cureBatches'],
+  findings: ['isMediumPlus', 'needsCure', 'normalizeFile', 'routeFindings', 'findingErrors', 'enumErrors', 'splitBlocked', 'cureBatches'],
+  fanin: ['dedupeFindings'],
 }
 // Modules that name other modules. A module not listed here requires none.
 const REQUIRES = {
@@ -49,7 +50,7 @@ const REQUIRES = {
 }
 const ALL = Object.keys(PROVIDES)
 // These modules are not marked in any workflow yet; a later change adopts them.
-const UNMARKED = ['guard', 'fanout', 'args', 'status', 'schema', 'graph', 'criteria', 'advise', 'findings']
+const UNMARKED = ['guard', 'fanout', 'args', 'status', 'schema', 'graph', 'criteria', 'advise', 'findings', 'fanin']
 // The guard module keeps private helpers next to the names it provides.
 const PRIVATE = {
   guard: ['hit', 'maskQuotes', 'structuralHit', 'ASSIGN_RE', 'WRAPPERS', 'WRAPPER_VALUE_OPTS', 'SHELL_KEYWORDS', 'MUTATION_COMMANDS', 'NETWORK_COMMANDS', 'FETCH_RUNNERS', 'PACKAGE_MANAGERS', 'INSTALL_SUBCOMMANDS', 'SHELL_HEAD_RE', 'CODE_HEAD_RE', 'AWK_HEAD_RE', 'AWK_DANGER_RE', 'SED_WRITE_RE', 'GIT_VALUE_OPTS', 'GIT_MUTATIONS', 'unwrap', 'gitHit', 'sedHit', 'DATA_HEADS', 'embeddedGit', 'commandHit', 'GUARD_READERS', 'GUARD_SCRIPTED', 'GUARD_VALUED_LONG', 'GUARD_WRAPPERS', 'GUARD_LISTING', 'guardedFiles', 'SEARCH_TOOLS', 'VALUE_LETTERS', 'LONG_VALUE_OPTS', 'REDIRECT_RE', 'BARE_REDIRECT_RE', 'samePath', 'guardedPath', 'searchOf', 'COMMAND_OPS', 'PIPE_SINKS', 'unparen', 'withoutRedirects', 'pipelineStages', 'exitsZero', 'cannotFail'],
