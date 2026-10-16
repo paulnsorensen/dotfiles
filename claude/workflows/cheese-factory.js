@@ -201,7 +201,7 @@ function matchAnswers(questions, raw) {
 // dimension fan-out (via the shared age-fanout child workflow) kicking in
 // when the integrated diff is large.
 //
-// Args: { spec?: string /* slug | path */, correctiveRounds? = 2 } — a bare
+// Args: { spec?: string /* slug | path */, correctiveRounds? = 2, resume?: object } — a bare
 //   (non-JSON) string arg is treated as the spec itself, since the harness
 //   invoke hint passes slash arguments as bare strings. Absolute and ~/
 //   spec paths are accepted.
@@ -211,6 +211,10 @@ function matchAnswers(questions, raw) {
 //     message; the workflow returns { error } and stops.
 //   - correctiveRounds bounds the taste `revise` -> corrective-coder loop,
 //     default 2, clamped to a max of 3 (curd-flock's clamp pattern).
+//   - resume: the resume object of a result that research, the plan advisor,
+//     or the pre-Cook budget floor stopped. Pass it back with the same spec.
+//     The rerun skips Criteria and Ground, and researches only the questions
+//     that are still open. A spec edit since that run rejects the resume.
 //
 // Every writer (cook, continuation, corrective, press, cure) runs in its own
 // isolated worktree on a detached HEAD at a commit SHA (ADR-012), and advances
@@ -255,6 +259,23 @@ if (SPEC_ARG !== null && /\s/.test(SPEC_ARG)) {
 if (SPEC_ARG !== null && (!SPEC_ARG_RE.test(SPEC_ARG) || SPEC_ARG.includes('..'))) {
   log(`Invalid spec arg: ${SPEC_ARG}`)
   return { error: `Invalid spec arg: ${SPEC_ARG}`, usage: 'Usage: /cheese-factory { spec: <slug-or-path> }, or /cheese-factory with no spec to list candidates' }
+}
+const RESUME_USAGE = 'Usage: /cheese-factory { spec: <slug-or-path>, resume: <the resume object of a blocked or partial result> }'
+const RESUME = input.resume === undefined ? null : input.resume
+const arrayOf = (v, test = () => true) => Array.isArray(v) && v.every(test)
+const isText = (v) => typeof v === 'string'
+const resumeShapeOk = (r) => r !== null && typeof r === 'object' && isText(r.spec_digest) && Array.isArray(r.criteria) &&
+  r.grounding !== null && typeof r.grounding === 'object' && ['decisions', 'prior_research', 'research'].every((k) => Array.isArray(r.grounding[k])) &&
+  arrayOf(r.research_questions, isText) && arrayOf(r.gaps, isText)
+if (RESUME !== null && !resumeShapeOk(RESUME)) {
+  log('Invalid resume arg')
+  return { error: 'resume must be the resume object of an earlier blocked or partial result', usage: RESUME_USAGE }
+}
+// FNV-1a binds a resume to the spec text it grounded.
+function specDigest(text) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0
+  return h.toString(16).padStart(8, '0')
 }
 const branchFor = (slug) => `curd/${slug}`
 
@@ -1813,7 +1834,15 @@ async function extractCriteria(feedback, round = 0) {
 }
 
 let criteriaList = []
-if (specAcIds.length) {
+if (RESUME) {
+  const ids = RESUME.criteria.map((c) => c && c.id)
+  if (RESUME.spec_digest !== specDigest(resolved.spec_text) || ids.join(',') !== specAcIds.join(',') || (specAcIds.length && checkCriteria(specAcIds)({ criteria: RESUME.criteria }).length)) {
+    log('The resume arg does not match the spec')
+    return { error: 'resume does not match the spec; the spec or its acceptance ids changed since that run. Rerun without resume.', usage: RESUME_USAGE }
+  }
+  criteriaList = RESUME.criteria
+  log('Resumed: Criteria and Ground are skipped')
+} else if (specAcIds.length) {
   phase('Criteria')
   const extracted = await extractCriteria(null)
   if (extracted.error) return { error: extracted.error }
@@ -1821,7 +1850,7 @@ if (specAcIds.length) {
 }
 // ---- Ground and Research (ADR-018): recorded decisions and settled facts reach every plan stage ----
 // Every gap goes to log() and the result, and the run ends partial.
-const gaps = []
+const gaps = RESUME ? [...RESUME.gaps] : []
 const groundRefs = ['SPEC', ...specAcIds]
 const groundPrompt = () => prompt(
   'You ground a cheese-factory run in recorded knowledge before it plans. Read only: write no file and change no state.',
@@ -1846,19 +1875,24 @@ function checkGrounding(g) {
   return errors.filter(Boolean)
 }
 
-phase('Ground')
-const grounded = await typed(groundPrompt(), { label: 'ground', phase: 'Ground', agentType: 'explorer', schema: GROUND_RESEARCH_SCHEMA }, checkWith(GROUND_RESEARCH_SCHEMA, checkGrounding))
-if (!grounded.value) {
+if (!RESUME) phase('Ground')
+const grounded = RESUME ? null : await typed(groundPrompt(), { label: 'ground', phase: 'Ground', agentType: 'explorer', schema: GROUND_RESEARCH_SCHEMA }, checkWith(GROUND_RESEARCH_SCHEMA, checkGrounding))
+if (grounded && !grounded.value) {
   log(`Wiki grounding failed (${errorText(grounded.errors)}): the run plans without recorded decisions.`)
   gaps.push('wiki grounding failed; the run planned without recorded decisions')
 }
-const grounding = {
-  decisions: grounded.value ? grounded.value.decisions.map((d, n) => ({ id: `D-${n + 1}`, ...d })) : [],
-  prior_research: grounded.value ? grounded.value.prior_research.map((r) => ({ ...r, path: r.path.trim() })) : [],
-  research: [],
-}
+const groundValue = grounded && grounded.value
+const grounding = RESUME
+  ? { decisions: RESUME.grounding.decisions, prior_research: RESUME.grounding.prior_research, research: [...RESUME.grounding.research] }
+  : {
+      decisions: groundValue ? groundValue.decisions.map((d, n) => ({ id: `D-${n + 1}`, ...d })) : [],
+      prior_research: groundValue ? groundValue.prior_research.map((r) => ({ ...r, path: r.path.trim() })) : [],
+      research: [],
+    }
 // Code removes repeats, so a reworded copy is the only duplicate that reaches brie-ground.
-const researchQuestions = grounded.value ? [...new Set(grounded.value.research_questions.map((q) => q.replace(/\s+/g, ' ').trim()))] : []
+const researchQuestions = RESUME ? RESUME.research_questions : groundValue ? [...new Set(groundValue.research_questions.map((q) => q.replace(/\s+/g, ' ').trim()))] : []
+// A rerun with this object skips Criteria and Ground and researches only the open questions.
+const resumeOf = (questions) => ({ spec_digest: specDigest(resolved.spec_text), criteria: criteriaList, grounding, research_questions: questions, gaps })
 log(`Grounded in ${grounding.decisions.length} recorded decision(s) and ${grounding.prior_research.length} prior research document(s); ${researchQuestions.length} open question(s).`)
 if (researchQuestions.length > LIMITS.maxResearch) {
   const reason = `the spec leaves ${researchQuestions.length} external questions open, over the cap of ${LIMITS.maxResearch}; settle them in /mold`
@@ -1867,11 +1901,11 @@ if (researchQuestions.length > LIMITS.maxResearch) {
 }
 if (researchQuestions.length) {
   phase('Research')
-  for (const question of researchQuestions) {
-    if (floorReached()) return { status: 'blocked', reason: 'budget floor reached before research', grounding, gaps }
+  for (const [n, question] of researchQuestions.entries()) {
+    if (floorReached()) return { status: 'blocked', reason: 'budget floor reached before research', grounding, gaps, resume: resumeOf(researchQuestions.slice(n)) }
     const r = await brieGround(question)
     // Fail closed: a spec never cooks on a question that research could not settle.
-    if (r.failed) return { status: 'blocked', reason: r.failed, grounding, gaps }
+    if (r.failed) return { status: 'blocked', reason: r.failed, grounding, gaps, resume: resumeOf(researchQuestions.slice(n)) }
     if (r.unsettled) return { status: 'blocked', reason: `research could not settle: ${question}; settle it in /mold`, open_questions: r.unsettled, grounding, gaps }
     grounding.research.push(r.found)
   }
@@ -1985,14 +2019,14 @@ if (!planAdvice.approved) {
   const reason = unrevisable ? 'plan advisor asked for a revision, and no step can rerun' : planAdvice.reason
   log(`${reason} — no cook runs.`)
   const kept = lastAdvice ? { verdict: lastAdvice.verdict, concerns: lastAdvice.concerns, guidance: lastAdvice.guidance, revisions: planRevisions } : null
-  return { status: 'blocked', reason, concerns: lastAdvice ? lastAdvice.concerns : [], advice: { plan: kept } }
+  return { status: 'blocked', reason, concerns: lastAdvice ? lastAdvice.concerns : [], advice: { plan: kept }, resume: resumeOf([]) }
 }
 
 // Cook is the largest stage, so the budget floor stops the run before it starts.
 if (floorReached()) {
   const reason = `budget floor reached before Cook: ${budget.remaining()} remaining, below ${LIMITS.minBudget}`
   log(`${reason} — no cook runs.`)
-  return { status: 'partial', reason, curds: curds.map((c) => ({ slug: c.slug, status: 'not-run' })), grounding, gaps }
+  return { status: 'partial', reason, curds: curds.map((c) => ({ slug: c.slug, status: 'not-run' })), grounding, gaps, resume: resumeOf([]) }
 }
 // ---- Per-curd chain (pipelined) ----
 phase('Cook')

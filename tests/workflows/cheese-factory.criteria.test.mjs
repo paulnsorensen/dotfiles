@@ -1057,5 +1057,6 @@ test('verify_failedAndGuardBlockedCriteria_areNamedSeparately', async () => {
 test('returnShape_planBlockedReturn_isNotAFullReport', async () => {
   const { result } = await run(single, { 'advise:plan': () => advice('stop', ['no']) })
 
-  assert.deepEqual(Object.keys(plain(result)).sort(), ['advice', 'concerns', 'reason', 'status'])
+  assert.deepEqual(Object.keys(plain(result)).sort(), ['advice', 'concerns', 'reason', 'resume', 'status'])
+  assert.deepEqual(Object.keys(result.resume).sort(), ['criteria', 'gaps', 'grounding', 'research_questions', 'spec_digest'])
 })
