@@ -23,8 +23,10 @@ Criteria are the contract. Tasks are a plan to meet them. Verdicts attach to cri
 4. Each `satisfies` and `depends_on` reference resolves.
 5. The task graph has no cycle. A topological sort gives the execution waves.
 6. `open_questions` is empty. Otherwise return `needs-input` to the user. Spec-kit has the same gate for `[NEEDS CLARIFICATION]` markers [s13].
+7. No task waits for a merge that can happen only after the run publishes. See `parallel-writers.md`.
 
 A barrier per wave is correct, because a task needs the results of its dependencies.
+For writers, each wave barrier also integrates the wave and runs a conflict probe. See `parallel-writers.md`.
 
 ## Validation
 

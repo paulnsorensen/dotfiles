@@ -15,7 +15,8 @@ It has no write tools. The implementer stays the only writer [s15], [s16].
 3. When the run considers a change of approach [s15].
 4. Before the run declares done, after the deliverable is durable [s15].
 
-Plan for about two to three calls per task [s15].
+Plan for about two to three calls per task [s15]. That count assumes one run.
+Across gate hops, a run that replans also calls the advisor again on each hop. Skip the advisor on a resume when the plan did not change.
 
 ## Give the advisor a plan it can approve
 
@@ -35,8 +36,9 @@ Do not send raw transcripts.
 
 1. When the executor has evidence against the advice, make one reconcile call. State the evidence and ask which constraint breaks the tie [s15].
 2. Bound revision rounds in code, for example `LIMITS.advisorRevisions = 1`.
-3. After the limit, return `needs-input` to the user. Return typed questions `{id, question, options[], recommended, evidence, initiative?, closed?, kind?}`, the state, and a digest of the state. Do not loop.
-   The next run takes `{state, digest, answers}`. Before the first agent, it checks the digest and the answers. Then it applies one revision. An unsettled advisor returns `needs-input` on every path.
+3. After the limit, return `needs-input` to the user. Return typed questions `{id, question, options[], recommended, evidence, initiative?, closed?, kind?}` and a digest of the state. Do not loop.
+   Persist the state in a file, as `budget-recovery.md` describes. The next run takes `{resume, answers}`. Before the first agent, it checks the digest and the answers. Then it applies one revision. It does not rerun survey, the planner fan-out, or an earlier advisor round. An unsettled advisor returns `needs-input` on every path.
+   Fallback only: when no file store exists, the caller sends `{state, digest, answers}`.
    The prelude `digestOf` and `matchAnswers` are one implementation of this check. Any equivalent code works.
 4. Ask for guidance under 80 words. Advisor output is its main cost driver [s15].
 5. On a revision round, send the prior concerns. The advisor judges only whether each one is resolved. It raises a new concern only for a blocker, and it never reverses a prior concern.

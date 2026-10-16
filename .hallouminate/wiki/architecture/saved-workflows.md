@@ -45,6 +45,15 @@ Source of truth is `claude/workflows/*.js`. `dots sync` copies the whole dir int
 - 19 of 28 move-my-cheese runs were gate hops with no build, because a Workflow cannot pause and the caller round-trips the plan.
 - The auto-mode classifier denies a relaunch of an edited `scriptPath` copy as `[Self-Modification]`. Edit the source, `dots sync`, and relaunch by name.
 
+**Parallel writers and checkpoint cost (session analytics, 2026-10-12 to 2026-10-16):** 48 move-my-cheese runs over 7 sessions landed no plan end to end. 27 of 48 runs (56%) were gate hops, and each hop reran survey, the planners, and the advisor. The skill's fan-out sources cover read-heavy work, so they did not cover parallel writers on shared git state. The skill now asks for these rules:
+
+- A preflight stage checks the interpreter, the test runner, `gh` auth, and the host guards before the first planner. Judges ran a Python without pytest and recorded 12 false failures.
+- Writers integrate in task-graph order, with a conflict probe after each target, not at one final barrier. A plan that waits for a merge after publish is rejected.
+- Gate state lives in a file by default, and a resume skips survey, the planner fan-out, and the advisor. A moved default branch or PR head gets a rebase and recheck, not a replan.
+- Git and GitHub plumbing runs in one tested script with JSON output, not in English steps in prompts.
+
+Rules: `skills/claude-workflows/references/parallel-writers.md`, `budget-recovery.md`, and the Preflight and live-boundary sections of `environment.md`.
+
 The design rules live in `skills/claude-workflows/references/environment.md`; the cases are eval data in `skills/claude-workflows/evals/`. Run records for counting: `~/.claude/projects/*/<session>/workflows/wf_*.json`.
 
 Related: [[architecture/cheese-board-workflow]], [[architecture/agents-dir]], [[operations/sync-and-chezmoi]], [[adr/cheese-factory-workflow]], [[architecture/move-my-cheese-workflow]].

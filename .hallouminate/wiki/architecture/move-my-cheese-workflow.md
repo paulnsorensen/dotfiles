@@ -79,6 +79,7 @@ A plan-only run of the worktree script on #1151 and #1261 (two oh-my-pi pin bump
 - `/plate` on a stage-owned `mmc/...` branch is not confirmed in a live run. It finds the PR through the upstream, and the prompt pins its push to `HEAD:<branch>`.
 - `dots sync` deploys from the main clone, not from a worktree. Test an unmerged version through `Workflow({ scriptPath })` instead of syncing from the worktree, which would undo uncommitted chezmoi work in the main clone.
 - **Reviewer dispatches need the contract line (#1271).** The `reviewer` agent type returns `blocked: missing-contract` unless the prompt has `Review mode: severity-report`. `reviewerPrompt` and the age-fanout prompts send the line. Age-fanout workers now return a `status`; a lost or blocked dimension gets one retry, and a dimension with no review blocks the fan-out, so the PR falls back to one full reviewer.
+- **Diverges from the claude-workflows rules (2026-10-16).** This workflow builds targets in parallel and integrates them at one barrier. Each gate hop reruns survey, the planners, and the advisor. A moved head returns `needs-replan` instead of a rebase and recheck. Git steps live in prompts, for example `restackPrompt`. It has no preflight stage. See [[architecture/saved-workflows]] and `skills/claude-workflows/references/parallel-writers.md`. The fix needs a follow-up PR.
 
 ## Why a PR-comment marker (not git notes or a local artifact)
 
