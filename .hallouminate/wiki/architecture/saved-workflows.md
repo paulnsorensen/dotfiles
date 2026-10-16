@@ -20,7 +20,18 @@ Source of truth is `claude/workflows/*.js`. `dots sync` copies the whole dir int
 
 **Backtick gotcha** (PR #463): the sandbox-guard test (`tests/workflows/all-parse.test.mjs`, "no workflow reaches for a global outside the Workflow runtime surface") blanks string literals with a character state machine that does **not** understand regex literals. A backtick inside a regex literal (e.g. `match(/`+/g)` written with a literal backtick) flips the stripper into template-string state, wrecking quote parity for the rest of the file — later prompt prose leaks into the identifier scan and the test fails on an unrelated word (e.g. "process") far from the real cause, which reads as a pre-existing failure. In workflow scripts, spell backticks as the escape ` whenever they appear in code position (regex literals, char comparisons); backticks *inside* quoted strings are fine.
 
-**Worktree gotcha** (PR #436 review): a follow-up agent must never pair `isolation: 'worktree'` with `git checkout <branch>` of a branch another agent's worktree still holds — git refuses a second checkout of an already-checked-out branch. Hand the first agent's worktree path back through its schema (e.g. `worktree_path` via `git rev-parse --show-toplevel`) and have the follow-up agent run *without* isolation and `cd` there instead.
+**Worktree gotcha** (PR #436 review, updated 2026-10-16): git refuses a second checkout of a branch that another worktree holds. So a stage in a fresh isolated worktree never checks out a shared branch. It fetches the branch by name and detaches, or it creates a stage-owned local branch. It pushes with `git push origin HEAD:<branch>` (see `pinStep` and `writerStep` in `claude/workflows/move-my-cheese.js`).
+
+- Run git from the worktree itself, as plain separate commands. The isolation guard refuses a git command that it cannot prove stays inside the worktree, such as `cd <path> && git ...` or a shell loop over branches.
+- Fetch the base branch explicitly, for example `git fetch origin <base>`, before `git switch -c <new> origin/<base>` or a diff against it. A fresh worktree can lack the remote-tracking ref of a stacked base branch.
+- Fetch a branch that may not exist yet in a separate command. In a multi-ref `git fetch`, one missing ref fails the whole command with `couldn't find remote ref`.
+- To hand work to a later stage, return the worktree path or the pushed commit through the schema (for example `worktree_path` from `git rev-parse --show-toplevel`). Do not ask the later stage to check out the same branch.
+
+**Resume inputs:** a Workflow cannot pause, so a gated workflow returns its state and the caller passes it back in a new run.
+
+- move-my-cheese takes `{ prs, plan, approve }`, plus `revise` or `answers`. `plan` is the landing from a `needs-approval` or `needs-input` result, and `approve` is its digest. A changed plan fails the digest check. `answers` applies only to a landing with open questions.
+- cheese-board takes `state`, `digest`, `answers`, and `lanes` (PR #1316). `answers` maps a question or its 1-based number to an answer. An unknown key or a repeated answer blocks the run. PR #1361 (open, pending its base PR #1358) holds research questions at the spec checkpoint, so brie-ground runs only for the questions the user approves.
+- cheese-factory has no resume input on main. A `resume` object that skips Criteria and Ground has no PR yet.
 
 **vm-realm test gotcha** (PR #486): `tests/workflows/harness.mjs` runs workflow scripts in a `node:vm` context, so objects/arrays the workflow returns carry foreign prototypes — `assert.deepEqual` from `node:assert/strict` fails with "Values have same structure but are not reference-equal" even when contents match. Convention: spread-clone (`{ ...obj }`), `Array.from(arr)`, or JSON round-trip before `deepEqual`. Fixture objects built in the *test* realm and passed through mocks compare fine; only workflow-realm-constructed values trip it.
 
