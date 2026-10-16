@@ -102,3 +102,15 @@ test('worktree rejects bad ids, unknown subcommands, and bad refs', (t) => {
   assert.equal(bad.status, 1);
   assert.equal(bad.json.error.code, 'worktree-failed');
 });
+
+test('worktree add rejects a ref with a leading dash and a ref that is not a commit', (t) => {
+  const repo = tempRepo(t);
+  const cwd = tempDir(t);
+  const run = (ref) => runWfx(['worktree', 'add', '--repo', repo, '--landing', 'l1', '--name', 'a', '--ref', ref], { cwd });
+  assert.equal(run('--orphan').status, 2);
+  const missing = run('no-such-ref');
+  assert.equal(missing.status, 1);
+  assert.equal(missing.json.error.code, 'worktree-failed');
+  assert.equal(existsSync(join(repo, '.claude', 'worktrees', 'l1@a')), false);
+  assert.equal(git(repo, ['worktree', 'list', '--porcelain']).split('\n').filter((l) => l.startsWith('worktree ')).length, 1);
+});

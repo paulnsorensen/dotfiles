@@ -66,7 +66,12 @@ function add(argv, ctx) {
   const name = assertId(flags.name, 'name');
   const root = scratchRoot(ctx, repo);
   const path = join(root, `${landing}@${name}`);
-  const res = ctx.git(['worktree', 'add', '--detach', path, flags.ref], { cwd: repo });
+  // A ref with a leading dash would parse as a git option. The rev-parse check also proves the ref names a commit.
+  if (flags.ref.startsWith('-')) throw badInput(`invalid --ref: ${flags.ref}`);
+  const found = ctx.git(['rev-parse', '--verify', '--quiet', '--end-of-options', `${flags.ref}^{commit}`], { cwd: repo });
+  const sha = found.stdout.trim();
+  if (found.status !== 0 || !sha) throw new FxError('worktree-failed', `cannot resolve ${flags.ref}`, { ref: flags.ref });
+  const res = ctx.git(['worktree', 'add', '--detach', path, sha], { cwd: repo });
   if (res.status !== 0) throw new FxError('worktree-failed', res.stderr.trim(), { path });
   const head = ctx.git(['rev-parse', 'HEAD'], { cwd: path }).stdout.trim();
   return { data: { path, landing, name, head } };
