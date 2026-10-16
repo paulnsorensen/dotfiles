@@ -18,6 +18,7 @@ const ADOPTED = {
   'claude/workflows/sliced-bread-audit.js': ['budget', 'fanout'],
   'claude/workflows/brie-ground.js': ['budget', 'fanout', 'ground'],
   'claude/workflows/age-fanout.js': ['budget', 'call', 'stale', 'schema', 'findings'],
+  'claude/workflows/cheese-factory.js': ['guard', 'schema', 'graph', 'criteria', 'advise', 'findings', 'status'],
 }
 const PROVIDES = {
   stale: ['SCRATCH_PATH_SRC', 'SCRATCH_WORKTREE_RE', 'FULL_SHA_RE', 'SHA_RE', 'SHORT_SHA_RE', 'DIGEST_RE', 'stampedBy', 'markersOf', 'shaErrors', 'staleVerdict'],
@@ -158,11 +159,6 @@ test('each workflow declares every provided name once, inside its module block, 
     }
   }
 })
-
-// Modules that one script adopted ahead of the shared MARKED list.
-const ADOPTED = {
-  'claude/workflows/cheese-factory.js': ['guard', 'schema', 'graph', 'criteria', 'advise', 'findings', 'status'],
-}
 
 test('each adopted module sits once in its script, inside its block, and equals its module file', () => {
   for (const [file, names] of Object.entries(ADOPTED)) {
