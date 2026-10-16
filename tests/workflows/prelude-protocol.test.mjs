@@ -2,12 +2,12 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { runInNewContext } from 'node:vm'
+import { loadModule } from '../../claude/workflow-prelude/load.mjs'
 
 const repo = fileURLToPath(new URL('../../', import.meta.url))
 const read = (rel) => readFileSync(`${repo}${rel}`, 'utf8')
 const WORKFLOWS = ['claude/workflows/cheese-board.js', 'claude/workflows/cheese-factory.js', 'claude/workflows/move-my-cheese.js']
-const sandbox = runInNewContext(`${read('claude/workflow-prelude/prelude.js')}\n({ stable, digestOf, matchAnswers })`, {})
+const sandbox = loadModule('checkpoint')
 const { stable, digestOf } = sandbox
 // The sandbox has its own Array prototype, so a JSON round trip makes deepEqual comparable.
 const matchAnswers = (...args) => JSON.parse(JSON.stringify(sandbox.matchAnswers(...args)))
@@ -47,11 +47,12 @@ test('matchAnswers reports unknown keys, blank answers, duplicates, and empty or
   assert.match(matchAnswers(questions, null).errors[0], /must be an object/)
 })
 
-test('all three workflows carry the protocol in the prelude block and move-my-cheese keeps no local copy', () => {
+test('all three workflows carry the protocol in the checkpoint block and move-my-cheese keeps no local copy', () => {
   for (const file of WORKFLOWS) {
     const text = read(file)
-    const begin = text.indexOf('// BEGIN shared prelude')
-    const end = text.indexOf('// END shared prelude')
+    const begin = text.indexOf('// BEGIN module checkpoint\n')
+    const end = text.indexOf('// END module checkpoint')
+    assert.ok(begin >= 0 && end > begin, file)
     const block = text.slice(begin, end)
     const rest = text.slice(0, begin) + text.slice(end)
     for (const name of ['stable', 'digestOf', 'matchAnswers']) {

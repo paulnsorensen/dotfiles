@@ -23,16 +23,22 @@ export const meta = {
   ],
 }
 
-// BEGIN shared prelude: sync.mjs copies this block from claude/workflow-prelude/prelude.js. Edit that file. Then run node claude/workflow-prelude/sync.mjs.
+// BEGIN module stale
+// module: stale; provides: SCRATCH_PATH_SRC, SCRATCH_WORKTREE_RE, FULL_SHA_RE; requires: none
 // The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
 const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
 // The anchored form of SCRATCH_PATH_SRC matches a whole path.
 const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
 // A full commit SHA has 40 hex digits in either case.
 const FULL_SHA_RE = /^[0-9a-f]{40}$/i
+// END module stale
+// BEGIN module budget
+// module: budget; provides: floorReached; requires: none
 // True when the budget is known and less than LIMITS.minBudget remains. Both names resolve at call time.
 const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
-// A form error is mechanical, so a cheap model repairs it.
+// END module budget
+// BEGIN module call
+// module: call; provides: form, substance, errorText, schemaErrors, data, prompt, redoPrompt, repairPrompt; requires: none
 const form = (msg) => ({ kind: 'form', msg })
 // A substance error needs new facts, so the producer redoes the answer.
 const substance = (msg) => ({ kind: 'substance', msg })
@@ -70,7 +76,9 @@ const repairPrompt = (value, errors) => prompt(
   data('errors', errors.map((e) => e.msg)),
   data('object', value),
 )
-
+// END module call
+// BEGIN module ground
+// module: ground; provides: MOLD, DECISION_KINDS, RESEARCH_CONFIDENCE, GROUNDING_SCHEMA, GROUND_RESEARCH_SCHEMA, GROUND_RULES, researchRule, BRIE_GROUND_MAX_AGENTS, brieGround; requires: none
 // mold resolves the spec, research, and notes artifact paths.
 const MOLD = 'python3 ~/.claude/skills/mold/scripts/mold.pyz'
 // A Ground explorer sorts each recorded wiki decision into one of these kinds.
@@ -146,7 +154,9 @@ const brieGround = async (question) => {
   const citations = evidence.slice(0, 5).map((e) => e && e.citation).filter(Boolean)
   return capped({ found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }, evidence, 5, 'citation row(s)')
 }
-
+// END module ground
+// BEGIN module checkpoint
+// module: checkpoint; provides: stable, fnv1a, digestOf, matchAnswers; requires: none
 // Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
@@ -187,7 +197,7 @@ function matchAnswers(questions, raw) {
   const answers = [...byIndex.keys()].sort((a, b) => a - b).map((i) => ({ id: questions[i].id, question: questions[i].question, answer: byIndex.get(i) }))
   return { errors, answers }
 }
-// END shared prelude
+// END module checkpoint
 
 // Tracked source: claude/workflows/cheese-factory.js in the dotfiles repo.
 // Replaces claude/workflows/curd-flock.js (deleted, no alias). Spec:
@@ -535,7 +545,7 @@ function findDuplicateSlugs(curds) {
 // Press and cure: 3 attempts + 1 expansion each.
 // The fixed per-run overhead is about 80 agents: about 53 barrier agents, 3 Ground attempts (ADR-018), plus at most 24 for ADR-015..017 (criteria 3, plan advice 3, multi-curd revise 9, second plan advice 3, one batch verify x 3, done advice 3).
 // runOverhead keeps the earlier per-criterion count of 149 as margin, so the curd limits below do not change.
-// Each brie-ground child counts toward the cap at up to BRIE_GROUND_MAX_AGENTS (shared prelude).
+// Each brie-ground child counts toward the cap at up to BRIE_GROUND_MAX_AGENTS (ground module).
 // So 12 curds spend about 833 agents at worst without research (12 x 57 + 149). curdCap lowers the curd limit by what research spent:
 // 3 children spend 105 more (938 total), so up to 3 children keep 12 curds. Recount before a reader raises maxCurds.
 const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12, maxCriteria: 24, advisorRevisions: 1, maxResearch: 3, agentCap: 1000, curdAgents: 57, runOverhead: 149 }

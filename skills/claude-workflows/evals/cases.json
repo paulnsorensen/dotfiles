@@ -230,7 +230,7 @@
       "id": "NEGATIVE-ONE-AGENT",
       "requirement_ids": ["CW-10"],
       "mode": "design",
-      "prompt": "/claude-workflows design a workflow that fixes one failing unit test in tests/workflows/prelude.test.mjs.",
+      "prompt": "/claude-workflows design a workflow that fixes one failing unit test in tests/workflows/modules.test.mjs.",
       "fixture_setup": "dotfiles with one failing test and a clear cause.",
       "evidence": {
         "runs": [],

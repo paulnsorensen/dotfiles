@@ -19,16 +19,22 @@ export const meta = {
   ],
 }
 
-// BEGIN shared prelude: sync.mjs copies this block from claude/workflow-prelude/prelude.js. Edit that file. Then run node claude/workflow-prelude/sync.mjs.
+// BEGIN module stale
+// module: stale; provides: SCRATCH_PATH_SRC, SCRATCH_WORKTREE_RE, FULL_SHA_RE; requires: none
 // The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
 const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
 // The anchored form of SCRATCH_PATH_SRC matches a whole path.
 const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
 // A full commit SHA has 40 hex digits in either case.
 const FULL_SHA_RE = /^[0-9a-f]{40}$/i
+// END module stale
+// BEGIN module budget
+// module: budget; provides: floorReached; requires: none
 // True when the budget is known and less than LIMITS.minBudget remains. Both names resolve at call time.
 const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
-// A form error is mechanical, so a cheap model repairs it.
+// END module budget
+// BEGIN module call
+// module: call; provides: form, substance, errorText, schemaErrors, data, prompt, redoPrompt, repairPrompt; requires: none
 const form = (msg) => ({ kind: 'form', msg })
 // A substance error needs new facts, so the producer redoes the answer.
 const substance = (msg) => ({ kind: 'substance', msg })
@@ -66,7 +72,9 @@ const repairPrompt = (value, errors) => prompt(
   data('errors', errors.map((e) => e.msg)),
   data('object', value),
 )
-
+// END module call
+// BEGIN module ground
+// module: ground; provides: MOLD, DECISION_KINDS, RESEARCH_CONFIDENCE, GROUNDING_SCHEMA, GROUND_RESEARCH_SCHEMA, GROUND_RULES, researchRule, BRIE_GROUND_MAX_AGENTS, brieGround; requires: none
 // mold resolves the spec, research, and notes artifact paths.
 const MOLD = 'python3 ~/.claude/skills/mold/scripts/mold.pyz'
 // A Ground explorer sorts each recorded wiki decision into one of these kinds.
@@ -142,7 +150,9 @@ const brieGround = async (question) => {
   const citations = evidence.slice(0, 5).map((e) => e && e.citation).filter(Boolean)
   return capped({ found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }, evidence, 5, 'citation row(s)')
 }
-
+// END module ground
+// BEGIN module checkpoint
+// module: checkpoint; provides: stable, fnv1a, digestOf, matchAnswers; requires: none
 // Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
@@ -183,7 +193,7 @@ function matchAnswers(questions, raw) {
   const answers = [...byIndex.keys()].sort((a, b) => a - b).map((i) => ({ id: questions[i].id, question: questions[i].question, answer: byIndex.get(i) }))
   return { errors, answers }
 }
-// END shared prelude
+// END module checkpoint
 
 // Tracked source: claude/workflows/move-my-cheese.js in the dotfiles repo.
 // Design notes: .hallouminate/wiki/architecture/move-my-cheese-workflow.md.
