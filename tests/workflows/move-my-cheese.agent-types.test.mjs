@@ -33,7 +33,7 @@ test('publish, its form repair, age-fanout prep, finalize, mark, stamp, cleanup,
   assert.equal(result.status, 'ready', result.note)
   assertTypes(trace)
   const labels = seen(trace, /./)
-  for (const label of ['recon:index', 'recon:detail', 'publish', 'publish:repair1', 'age-fanout-prep:10', 'finalize:10', 'mark', 'stamp', 'cleanup']) {
+  for (const label of ['recon:index', 'recon:detail', 'publish', 'publish:repair1', 'age-fanout-prep:10', 'finalize:10', 'mark', 'stamp:10', 'cleanup:sweep']) {
     assert.ok(labels.includes(label), `${label} ran`)
   }
   assert.ok(labels.some((l) => /^review:10:status/.test(l)))

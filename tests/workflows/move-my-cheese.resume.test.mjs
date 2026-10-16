@@ -4,7 +4,7 @@ import test from 'node:test'
 
 import {
   ageFull, aged, approve, approveDone, builtConsolidation, detail, finalized, index, merged, minimalPlan, openPr, plain, planRoutes,
-  liveRecon, published, ready, run, sha, stateMerged,
+  envelope, liveRecon, pollData, published, ready, run, sha, stateMerged,
 } from './move-my-cheese.fixtures.mjs'
 
 // After a non-land run: #1 and #2 are drafts with this approval's marker, and #10 is open on the
@@ -80,9 +80,10 @@ test('an executing run stamps the head it last saw on each open target', async (
   const plan = planRoutes([['recon:detail', { prs: [aged(1), aged(2)] }], ['plan:minimal', minimalPlan()]])
   const { first, args } = await approve(plan)
   const { call } = await run(args, modifiedRoutes(first.result.digest, sha(2, 6)))
-  const stamp = call('stamp').prompt
-  assert.ok(stamp.includes(`move-my-cheese:landing digest=${first.result.digest} head=${sha(2, 6)}`))
-  assert.ok(stamp.includes(`move-my-cheese:landing digest=${first.result.digest} head=${sha(1)}`))
+  const stamp2 = call('stamp:2').prompt
+  const stamp1 = call('stamp:1').prompt
+  assert.ok(stamp2.includes(`wfx stamp --pr 2 --marker ${first.result.digest} --sha ${sha(2, 6)}`))
+  assert.ok(stamp1.includes(`wfx stamp --pr 1 --marker ${first.result.digest} --sha ${sha(1)}`))
 })
 
 test('a revise on an approval that already started blocks before any planner runs', async () => {
@@ -97,11 +98,12 @@ test('a budget floor after publish still stamps the published head', async () =>
   const { first, args } = await approve(planRoutes())
   let spent = 0
   const budget = { total: 1e6, spent: () => spent, remaining: () => 1e6 - spent }
-  const routes = builtConsolidation([['publish', () => { spent = 1e6 - 1000; return published('T-1', 10, sha(50)) }]])
+  // No status poll ran, so the fake gh serves the published head for the stamp check.
+  const routes = builtConsolidation([['stampcheck:10', envelope('poll', pollData({ headRefOid: sha(50) }))], ['publish', () => { spent = 1e6 - 1000; return published('T-1', 10, sha(50)) }]])
   const { result, labels, call } = await run(args, routes, budget)
   assert.equal(result.status, 'partial')
   assert.equal(labels.some((l) => l.startsWith('age:')), false)
-  assert.ok(call('stamp')?.prompt.includes(`move-my-cheese:landing digest=${first.result.digest} head=${sha(50)}`))
+  assert.ok(call('stamp:10')?.prompt.includes(`wfx stamp --pr 10 --marker ${first.result.digest} --sha ${sha(50)}`))
 })
 
 test('a poll that throws mid-loop still stamps the head its last status saw', async () => {
@@ -111,5 +113,5 @@ test('a poll that throws mid-loop still stamps the head its last status saw', as
     ['review:10:affinage', () => { throw new Error('budget spent') }],
   ])
   const { call } = await run(args, routes)
-  assert.ok(call('stamp')?.prompt.includes(`move-my-cheese:landing digest=${first.result.digest} head=${sha(50, 3)}`))
+  assert.ok(call('stamp:10')?.prompt.includes(`wfx stamp --pr 10 --marker ${first.result.digest} --sha ${sha(50, 3)}`))
 })

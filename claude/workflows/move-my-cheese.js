@@ -1201,7 +1201,6 @@ const MERGE_STATES = ['BEHIND', 'BLOCKED', 'CLEAN', 'DIRTY', 'DRAFT', 'HAS_HOOKS
 const PR_STATES = ['OPEN', 'CLOSED', 'MERGED']
 const REVIEW_DECISIONS = ['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED', 'NONE']
 const AGE_MODES = ['skipped-unchanged', 'incremental', 'full']
-const MERGE_RESULTS = ['merged', 'queued', 'refused']
 const MARK_ACTIONS = ['drafted', 'closed', 'skipped']
 
 const SAFE_REF_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
@@ -1300,10 +1299,7 @@ const PREP_SCHEMA = obj({ worktree_path: str })
 const FINALIZE_SCHEMA = obj({ marker_updated: bool })
 const STATUS_SCHEMA = obj({ state: oneOf(PR_STATES), head_sha: str, ci: oneOf(CI_STATES), merge_state: oneOf(MERGE_STATES), review_decision: oneOf(REVIEW_DECISIONS), unresolved_threads: int })
 const FIX_SCHEMA = obj({ status: oneOf(PHASE_STATUSES), pushed: bool, worktree_path: str, note: str })
-const MERGE_SCHEMA = obj({ result: oneOf(MERGE_RESULTS), note: str })
-const STATE_SCHEMA = obj({ state: oneOf(PR_STATES) })
 const MARK_SCHEMA = obj({ results: list(obj({ pr: int, action: oneOf(MARK_ACTIONS), note: str })) })
-const CLEANUP_SCHEMA = obj({ removed: strs, note: str })
 
 // ---- Validators: the schema checks shape; code checks meaning ----
 const absolute = (path) => typeof path === 'string' && path.trim().startsWith('/')
@@ -1453,8 +1449,6 @@ function checkFinalize(result) {
 function checkPrep(result) {
   return absolute(result.worktree_path) ? [] : [substance('worktree_path must be the absolute output of git rev-parse --show-toplevel')]
 }
-
-const noCheck = () => []
 
 function checkTarget(result) {
   if (result.status !== 'done') return []
@@ -1860,14 +1854,6 @@ const finalizePrompt = (m, sha, dirty) => prompt(
   'Set marker_updated to true when the comment holds the new marker.',
 )
 
-const statusPrompt = (number) => prompt(
-  `Report the merge readiness of PR #${number}. Use Bash. Change nothing.`,
-  `First wait for the checks: timeout 900 gh pr checks ${number} --watch --interval 30. Ignore its exit status.`,
-  `Then run gh pr view ${number} --json state,headRefOid,mergeStateStatus,reviewDecision. Map an empty reviewDecision to NONE.`,
-  `Set ci to the output of ${checksCmd(number)}. Use none when it prints nothing.`,
-  `Set unresolved_threads to the output of ${threadsCmd(number)}.`,
-)
-
 const affinagePrompt = (number, branch, own) => prompt(
   `Make PR #${number} ready to merge. Use Bash and the Skill tool.`,
   writerStep(branch, `origin/${branch}`, own),
@@ -1887,19 +1873,6 @@ const restackPrompt = (number, branch, parentBranch, defaultBranch) => prompt(
   NO_CHAIN,
 )
 
-const mergePrompt = (number, sha) => prompt(
-  `Merge PR #${number}. Use Bash.`,
-  `Run gh pr merge ${number} --${MERGE_METHOD} --match-head-commit ${sha}.`,
-  `When GitHub says that the base branch requires a merge queue, run gh pr merge ${number} --${MERGE_METHOD} --auto --match-head-commit ${sha} and return queued.`,
-  'Never pass --admin or --delete-branch. Do not retry with other flags. Return refused with the error text when the merge fails.',
-)
-
-const mergedPrompt = (number) => prompt(
-  `Wait for PR #${number} to merge. Use Bash. Change nothing.`,
-  `Poll gh pr view ${number} --json state --jq .state every 30 seconds for at most 10 minutes. Stop early when it prints MERGED or CLOSED.`,
-  'Return the last state.',
-)
-
 const markPrompt = (items, close) => prompt(
   'Update superseded and dropped PRs. Use Bash. Never merge a PR and never delete a branch.',
   close
@@ -1907,14 +1880,6 @@ const markPrompt = (items, close) => prompt(
     : `For each PR: post its comment with gh pr comment <pr> --body-file - fed by a quoted heredoc (<<'EOF'), never with --body. Then convert it to a draft with gh pr ready <pr> --undo.`,
   'Return one result per PR. Use skipped with a note when a command fails.',
   data('prs', items),
-)
-
-const cleanupPrompt = (paths) => prompt(
-  'Remove the scratch worktrees and local branches of this finished run. Use Bash. Never touch the remote. Never remove the main worktree or the current directory.',
-  `Run git worktree list --porcelain. Remove each path in the list below that it shows, and each worktree whose branch is under refs/heads/mmc/${runTag}/, with git worktree remove --force <path>. Skip every other worktree.`,
-  `Then delete the run refs: git for-each-ref --format='%(refname)' refs/heads/mmc/${runTag}/ | while read -r ref; do git update-ref -d "$ref"; done. Then run git worktree prune.`,
-  'Return the removed paths. Put each skipped path and its reason in note.',
-  data('worktrees', paths),
 )
 
 // ---- Typed call: the shared typed() in the call module validates, then repairs (form) or redoes (substance), bounded ----
@@ -2114,13 +2079,33 @@ async function integrateAndVerify(round, refs, criteria = plan.criteria) {
 }
 
 // ---- Poll: status, then /affinage when work remains; bounded, with a stall guard ----
+// The runner holds each poll for POLL_SLEEP_SECONDS before it reads the PR, so checks get time to finish.
+// One runner Bash call caps at 10 minutes, so each sleep stays under 540 seconds. The old agent watched
+// the checks for up to 900 seconds a round; 540 seconds a round with up to pollRounds - 1 sleeps keeps
+// the total wait near it. The first round reads at once.
+const POLL_SLEEP_SECONDS = 540
+// The merged wait sleeps between reads in the same way: up to mergePolls - 1 sleeps of 540 seconds.
+const MERGED_SLEEP_SECONDS = 540
+
+// Maps the wfx poll data to the status object that classify and the fingerprint read.
+function statusFromPoll(d) {
+  const c = d.checks || {}
+  const none = !(c.passing || 0) && !(c.failing || 0) && !(c.pending || 0) && !(c.items && c.items.length)
+  const ci = c.failing > 0 ? 'fail' : c.pending > 0 ? 'pending' : none ? 'none' : 'pass'
+  const raw = String(d.mergeStateStatus || '').toUpperCase()
+  const merge_state = d.isDraft ? 'DRAFT' : MERGE_STATES.includes(raw) ? raw : 'UNKNOWN'
+  return { state: d.state, head_sha: String(d.headRefOid || ''), ci, merge_state, review_decision: d.reviewDecision || 'NONE', unresolved_threads: d.unresolvedThreads }
+}
+
 async function pollUntilReady(number, branch, prefix, phaseName, onStatus) {
   let before = null
   let last = null
   for (let round = 1; round <= LIMITS.pollRounds; round++) {
-    const checked = await typed(statusPrompt(number), { label: `${prefix}:status:${round}`, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: STATUS_SCHEMA }, checkStatus)
-    const status = checked.value
-    if (!status) return { verdict: 'failed', reason: `status failed: ${errorText(checked.errors)}`, status: last }
+    const env = await wfx(`${prefix}:status:${round}`, phaseName, `${round > 1 ? `sleep ${POLL_SLEEP_SECONDS} && ` : ''}wfx poll --pr ${number}`)
+    if (!env.ok) return { verdict: 'failed', reason: `status failed: ${env.error.code}: ${env.error.message}`, status: last }
+    const status = statusFromPoll(env.data)
+    const problems = [...schemaErrors(status, STATUS_SCHEMA, 'status').map((m) => form(m)), ...checkStatus(status)]
+    if (problems.length) return { verdict: 'failed', reason: `status failed: ${errorText(problems)}`, status: last }
     last = status
     onStatus(status)
     const verdict = classify(status)
@@ -2240,23 +2225,19 @@ async function markPrs(items, close, label, phaseName) {
   return items.map((item) => (result && result.results.find((r) => r.pr === item.pr)) || { pr: item.pr, action: 'skipped', note: result ? 'no result reported' : 'agent returned no output' })
 }
 
-const STAMP_SCHEMA = obj({ results: list(obj({ pr: int, stamped: bool, note: str })) })
-const stampPrompt = (items) => prompt(
-  'Record the head each PR had when this run ended. Use Bash. Change nothing else.',
-  `For each PR: read gh pr view <pr> --json headRefOid. When it differs from head, skip that PR with stamped false. Otherwise upsert your comment that contains ${LANDING_PREFIX}: PATCH its body to marker through gh api when it exists, else post marker with gh pr comment <pr> --body-file - fed by a quoted heredoc (<<'EOF').`,
-  'Return one result per PR.',
-  data('prs', items),
-)
-
 // Stamp each open target with the head this run last saw, so the same approval can resume.
 async function stampHeads(ids) {
   const items = ids
     .map((id) => ({ pr: published.get(id)?.pr_number, head: lastHead.get(id) || '' }))
     .filter((item) => item.pr && FULL_SHA_RE.test(item.head))
-    .map((item) => ({ ...item, marker: landingMarker(digest, item.head) }))
-  if (!items.length) return
-  const result = (await typed(stampPrompt(items), { label: 'stamp', phase: 'Report', agentType: 'runner', model: 'haiku', effort: 'low', schema: STAMP_SCHEMA }, noCheck)).value
-  if (!result) log('stamp agent returned no output; a later run of this approval will ask to plan again')
+  await Promise.all(items.map(async ({ pr, head }) => {
+    // lastHead is the head this run saw. A PR whose live head differs keeps no stamp.
+    const live = await wfx(`stampcheck:${pr}`, 'Report', `wfx poll --pr ${pr}`)
+    if (!live.ok) return log(`stamp skipped for #${pr}: ${live.error.message}`)
+    if (String(live.data.headRefOid || '').trim() !== head) return log(`stamp skipped for #${pr}: its head moved after this run saw ${head}`)
+    const stamped = await wfx(`stamp:${pr}`, 'Report', `wfx stamp --pr ${pr} --marker ${digest} --sha ${head}`)
+    if (!stamped.ok) log(`stamp failed for #${pr}: ${stamped.error.message}; a later run of this approval will ask to plan again`)
+  }))
 }
 
 // agent() throws once the budget is spent, so a failed stamp only logs.
@@ -2290,12 +2271,29 @@ async function recheck(id, t, n, sha) {
 
 const stopAt = (id, reason) => { landed.set(id, { status: 'failed', reason }); return `landing stopped at ${id}: ${reason}` }
 
+// Moves a stacked target onto the default branch. Returns '' on success, else the reason to stop.
+async function restackOne(n, t) {
+  const parent = targetsById.get(t.base).branch
+  const base = idx.default_branch
+  const fetchRefs = `git fetch --quiet origin && git fetch --quiet origin ${shq(`${t.branch}:${t.branch}`)}`
+  const moved = await wfx(`restack:${n}`, 'Land', `${fetchRefs} && wfx restack --repo ${REPO_ARG} --branch ${shq(t.branch)} --onto ${shq(`origin/${base}`)} --from ${shq(`origin/${parent}`)} --push`)
+  if (moved.ok) {
+    const retarget = await wfx(`restack:${n}:retarget`, 'Land', `wfx pr retarget --pr ${n} --base ${shq(base)}`)
+    return retarget.ok ? '' : `restack retarget failed: ${retarget.error.code}: ${retarget.error.message}`
+  }
+  if (moved.error.code !== 'conflict') return `restack failed: ${moved.error.code}: ${moved.error.message}`
+  const files = moved.error.details && Array.isArray(moved.error.details.files) ? moved.error.details.files : []
+  log(`restack:${n} conflicts in ${files.join(', ') || 'unknown files'}; handing the rebase to /melt`)
+  const melted = await agent(restackPrompt(n, t.branch, parent, base), { label: `restack:${n}:melt`, phase: 'Land', model: 'sonnet', schema: FIX_SCHEMA, isolation: 'worktree' })
+  if (melted) noteWorktree(melted.worktree_path)
+  return !melted || melted.status !== 'ok' ? `restack failed: ${melted ? melted.note : 'no output'}` : ''
+}
+
 async function landOne(id, t, n) {
   const stop = (reason) => stopAt(id, reason)
   if (t.base !== idx.default_branch) {
-    const moved = await agent(restackPrompt(n, t.branch, targetsById.get(t.base).branch, idx.default_branch), { label: `restack:${n}`, phase: 'Land', model: 'sonnet', schema: FIX_SCHEMA, isolation: 'worktree' })
-    if (moved) noteWorktree(moved.worktree_path)
-    if (!moved || moved.status !== 'ok') return stop(`restack failed: ${moved ? moved.note : 'no output'}`)
+    const problem = await restackOne(n, t)
+    if (problem) return stop(problem)
   }
   const poll = await pollTarget(id, n, t.branch, `land:${n}`, 'Land')
   if (poll.verdict !== 'ready') return stop(`not ready before merge: ${poll.verdict}${poll.reason ? ` (${poll.reason})` : ''}`)
@@ -2308,12 +2306,15 @@ async function landOne(id, t, n) {
     const problem = await recheck(id, t, n, sha)
     if (problem) return stop(`changed-after-verify: ${problem}`)
   }
-  const merge = await agent(mergePrompt(n, sha), { label: `merge:${n}`, phase: 'Land', agentType: 'runner', model: 'haiku', effort: 'low', schema: MERGE_SCHEMA })
-  if (!merge || merge.result === 'refused') return stop(`merge refused: ${merge ? merge.note : 'no output'}`)
+  const mergeCmd = `wfx merge --pr ${n} --head ${sha} --method ${MERGE_METHOD}`
+  let merge = await wfx(`merge:${n}`, 'Land', mergeCmd)
+  // Queue only when GitHub demands it.
+  if (!merge.ok && /merge queue/i.test(merge.error.message)) merge = await wfx(`merge:${n}:queue`, 'Land', `${mergeCmd} --queue`)
+  if (!merge.ok) return stop(`merge refused: ${merge.error.message}`)
   let state = ''
   for (let round = 1; round <= LIMITS.mergePolls && state !== 'MERGED' && state !== 'CLOSED'; round++) {
-    const seen = await typed(mergedPrompt(n), { label: `merged:${n}:${round}`, phase: 'Land', agentType: 'runner', model: 'haiku', effort: 'low', schema: STATE_SCHEMA }, noCheck)
-    state = seen.value ? seen.value.state : ''
+    const seen = await wfx(`merged:${n}:${round}`, 'Land', `${round > 1 ? `sleep ${MERGED_SLEEP_SECONDS} && ` : ''}wfx poll --pr ${n}`)
+    state = seen.ok && typeof seen.data.state === 'string' ? seen.data.state : ''
   }
   if (state !== 'MERGED') return stop(`PR did not reach MERGED (last state ${state || 'unknown'})`)
   landed.set(id, { status: 'merged', reason: moved ? 'merged after a re-check of the moved head' : '' })
@@ -2371,7 +2372,7 @@ function landingReport(status, note) {
     const mark = marks.find((m) => m.pr === n)
     return { number: n, action: d.action, target: d.target, reason: d.reason, mark: mark ? mark.action : '' }
   })
-  return report(status, note, { digest, plan_source: planSource, plan_summary: plan.summary, inputs, targets, tensions: landing.tensions, verification, skipped, advice: adviceLog, ...gapField(gaps) })
+  return report(status, note, { digest, plan_source: planSource, plan_summary: plan.summary, inputs, targets, tensions: landing.tensions, verification, skipped, advice: adviceLog, ...(leftoverWorktrees.length ? { leftover_worktrees: leftoverWorktrees } : {}), ...gapField(gaps) })
 }
 
 // The action an approved plan gives a PR, or '' on a planning run.
@@ -2827,6 +2828,8 @@ const baseBranchOf = (t) => (t.base === idx.default_branch ? t.base : targetsByI
 const outcomes = new Map()
 // Cleanup hints only: no stage works in a directory that another agent returned.
 const scratchWorktrees = new Set()
+// Worktrees the final cleanup scan could not remove; the landing report lists them.
+let leftoverWorktrees = []
 function noteWorktree(path) {
   const p = typeof path === 'string' ? path.trim() : ''
   if (SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')) scratchWorktrees.add(p)
@@ -3041,8 +3044,15 @@ await stampOpen(order.filter((id) => landed.get(id)?.status !== 'merged' && verd
 // The runtime removes only unchanged isolated worktrees. A successful run removes the rest and its run refs;
 // a failed run keeps them for inspection and salvage.
 if (['landed', 'ready'].includes(finalStatus) && (scratchWorktrees.size || order.some(rebuilt))) {
-  const swept = (await typed(cleanupPrompt([...scratchWorktrees]), { label: 'cleanup', phase: 'Report', agentType: 'runner', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, noCheck)).value
-  if (!swept) log(`cleanup returned no output; remove the mmc/${runTag}/ refs and these worktrees by hand: ${[...scratchWorktrees].join(', ') || 'none recorded'}`)
-  else if (swept.note) log(`cleanup: ${swept.note}`)
+  await Promise.all([...scratchWorktrees].map(async (path, i) => {
+    const removed = await wfx(`cleanup:${i}`, 'Report', `wfx worktree remove --repo ${REPO_ARG} --path ${shq(path)}`)
+    if (!removed.ok) log(`cleanup: ${path} stays: ${removed.error.message}`)
+  }))
+  // One scan finds the worktrees on this run's branches, removes them, deletes the run refs, and lists what remains.
+  const prune = `git worktree list --porcelain | awk '/^worktree /{p=substr($0,10)} /^branch refs\/heads\/mmc\/${runTag}\//{print p}' | while IFS= read -r p; do wfx worktree remove --repo ${REPO_ARG} --path "$p" >/dev/null || true; done; git for-each-ref --format='%(refname)' refs/heads/mmc/${runTag}/ | while read -r ref; do git update-ref -d "$ref"; done; `
+  const swept = await wfx('cleanup:sweep', 'Report', `${prune}wfx worktree list --repo ${REPO_ARG} --landing ${landingIdOf(landing)}`)
+  if (!swept.ok) log(`cleanup returned no list; remove the mmc/${runTag}/ refs and these worktrees by hand: ${[...scratchWorktrees].join(', ') || 'none recorded'}`)
+  else leftoverWorktrees = Array.isArray(swept.data.worktrees) ? swept.data.worktrees : []
 }
+return landingReport(finalStatus, landNote || doneNote)
 return landingReport(finalStatus, landNote || doneNote)

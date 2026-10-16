@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  ageFull, aged, approve, approveDone, built, finalized, merged, noTensions, openPr, plain, planRoutes, published,
+  ageFull, aged, approve, approveDone, built, envelope, finalized, merged, noTensions, openPr, plain, planRoutes, published,
   ready, reconRoutes, replaceOnePlan, run, sha, stateMerged, survey,
 } from './move-my-cheese.fixtures.mjs'
 
@@ -19,7 +19,8 @@ const stackRoutes = (overrides = []) => [
   ['land:1:status', ready(1)],
   ['merge:1', merged],
   ['merged:1', stateMerged],
-  ['restack:2', { status: 'ok', pushed: true, worktree_path: '/tmp/wt-2', note: '' }],
+  ['restack:2:retarget', envelope('pr', { pr: 2, base: 'main' })],
+  ['restack:2', envelope('restack', { branch: 'feat/pr-2', old: sha(2), new: sha(2, 3), pushed: true, localUpdated: true })],
   ['recheck-age:2', ageFull(2)],
   ['land:2:status', ready(2, { head_sha: sha(2, 3) })],
   ['merge:2', merged],
@@ -29,15 +30,15 @@ const stackRoutes = (overrides = []) => [
 test('land merges a stack bottom-up, restacks the child, and fully re-reviews its moved head on main', async () => {
   const { result, labels, wfxLabels, call } = await run({ prs: [1, 2], auto: true, land: true }, stackRoutes())
   assert.equal(result.status, 'landed')
-  assert.deepEqual(labels.filter((l) => /^(merge|merged|restack|recheck-age):/.test(l)), ['merge:1', 'merged:1:1', 'restack:2', 'recheck-age:2', 'merge:2', 'merged:2:1'])
+  assert.deepEqual(labels.filter((l) => /^(merge|merged|restack|recheck-age):/.test(l)), ['merge:1', 'merged:1:1', 'restack:2', 'restack:2:retarget', 'recheck-age:2', 'merge:2', 'merged:2:1'])
   assert.equal(labels.some((l) => l.startsWith('integrate:') || l.startsWith('verify:')), false)
   assert.equal(wfxLabels.some((l) => l.startsWith('integrate') || l.startsWith('worktree:')), false)
-  assert.match(call('merge:2').prompt, new RegExp(`Run gh pr merge 2 --squash --match-head-commit ${sha(2, 3)}\\.`))
-  assert.equal(call('restack:2').opts.isolation, 'worktree')
+  // merge and restack run through wfx now: the command carries the checked head, not a prompt sentence.
+  assert.match(call('merge:2').prompt, new RegExp(`wfx merge --pr 2 --head ${sha(2, 3)} --method squash`))
   const restack = call('restack:2').prompt
-  assert.ok(restack.includes('git checkout --detach origin/feat/pr-2'))
-  assert.ok(restack.includes('git rebase --onto origin/main origin/feat/pr-1'))
-  assert.ok(!restack.includes('git checkout -B feat/pr-2 '))
+  assert.ok(restack.includes("git fetch --quiet origin 'feat/pr-2:feat/pr-2'"))
+  assert.ok(restack.includes("--branch 'feat/pr-2' --onto 'origin/main' --from 'origin/feat/pr-1' --push"))
+  assert.match(call('restack:2:retarget').prompt, /wfx pr retarget --pr 2 --base 'main'/)
   const recheck = call('recheck-age:2').prompt
   assert.ok(recheck.includes('/age origin/main...HEAD --auto'))
   assert.ok(!recheck.includes('origin/feat/pr-1...HEAD'))

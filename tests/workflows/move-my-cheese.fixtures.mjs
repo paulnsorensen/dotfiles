@@ -191,20 +191,71 @@ export const integrateOk = ({ prompt }) => envelope('integrate', { branch: /--br
 export const passingVerdict = (ac) => ({ criterion: ac.id, passes: true, evidence: `ran ${ac.id}`, tree_clean: true, missing_paths: [] })
 export const defaultVerify = (input) => ({ status: 'ok', verdicts: input.criteria.map(passingVerdict), missing: [] })
 export const INT_WORKTREE = '/repo/.claude/worktrees/lnd@verify'
+// A stamp check answers with the head the fake gh last served for that PR (see legacyAdapter), else sha(n).
 const DEFAULT_ROUTES = [
-  ['ground', grounded()], ['stamp', { results: [] }], ['cleanup', { removed: [], note: '' }], ['advise:done', approveDone],
+  ['ground', grounded()], ['advise:done', approveDone],
+  ['stampcheck', ({ opts }) => envelope('poll', pollData({ headRefOid: servedHeads.get(Number(opts.label.split(':')[1])) ?? sha(Number(opts.label.split(':')[1])) }))],
+  ['stamp', envelope('stamp', { stamped: true })],
+  ['cleanup:sweep', envelope('worktree', { root: '/repo', worktrees: [] })],
+  ['cleanup', ({ prompt }) => envelope('worktree', { path: /--path '?([^' ]+)/.exec(prompt)[1], removed: true })],
   ['preflight', envelope('preflight', { checks: [] })], ['state:put', envelope('run-state', {})], ['stale:recon', liveRecon()],
   ['integrate', integrateOk],
   ['worktree:add', envelope('worktree', { path: INT_WORKTREE, landing: 'lnd', name: 'verify', head: sha(98) })],
   ['worktree:remove', envelope('worktree', { path: INT_WORKTREE, removed: true })],
 ]
 
+// ---- Legacy to envelope adapter ----
+// The status, merge, and merged stages now run through wfx and answer with envelopes. Many tests still route
+// them with the shapes the removed agent prompts returned: ready(n) for a status, merged for a merge,
+// stateMerged for a merged wait. This adapter turns those legacy values into the matching wfx envelopes.
+// A value that already is an envelope (it has ok and cmd) passes through unchanged.
+const servedHeads = new Map()
+export const pollData = (over = {}) => ({
+  pr: 0, state: 'OPEN', isDraft: false, mergeStateStatus: 'CLEAN', reviewDecision: 'NONE', headRefOid: sha(0), baseRefName: 'main',
+  checks: { passing: 1, failing: 0, pending: 0, items: [{}] }, unresolvedThreads: 0, ...over,
+})
+const CHECKS_OF = {
+  fail: { passing: 0, failing: 1, pending: 0, items: [{}] },
+  pending: { passing: 0, failing: 0, pending: 1, items: [{}] },
+  none: { passing: 0, failing: 0, pending: 0, items: [] },
+  pass: { passing: 1, failing: 0, pending: 0, items: [{}] },
+}
+const isEnvelope = (v) => Boolean(v) && typeof v === 'object' && 'ok' in v && 'cmd' in v
+function legacyToEnvelope({ opts, prompt }, value) {
+  const label = opts.label
+  const pr = Number(/--pr (\d+)/.exec(prompt)?.[1] ?? 0)
+  if (/:status:\d+/.test(label) && value && 'merge_state' in value) {
+    const draft = value.merge_state === 'DRAFT'
+    servedHeads.set(pr, value.head_sha)
+    return envelope('poll', pollData({
+      pr, state: value.state, isDraft: draft, mergeStateStatus: draft ? 'CLEAN' : value.merge_state, headRefOid: value.head_sha,
+      reviewDecision: value.review_decision, checks: CHECKS_OF[value.ci], unresolvedThreads: value.unresolved_threads,
+    }))
+  }
+  if (/^merge:/.test(label) && value && 'result' in value) {
+    return value.result === 'refused'
+      ? failure('merge', 'merge-failed', value.note)
+      : envelope('merge', { pr, method: 'squash', head: /--head (\S+)/.exec(prompt)?.[1] ?? '', queued: value.result === 'queued' })
+  }
+  if (/^merged:/.test(label) && value && 'state' in value) return envelope('poll', pollData({ pr, state: value.state }))
+  return value
+}
+export const legacyAdapter = (respond) => (call) => {
+  const value = respond(call)
+  if (isEnvelope(value)) {
+    if (value.ok && value.cmd === 'poll' && /--pr (\d+)/.test(call.prompt) && value.data.headRefOid) servedHeads.set(Number(/--pr (\d+)/.exec(call.prompt)[1]), value.data.headRefOid)
+    return value
+  }
+  return legacyToEnvelope(call, value)
+}
+
 // A test may pass its own budget object; the harness default has no total, so the floor never applies.
 // child stands in for workflow(): brie-ground research and the age-fanout child.
 // verify replaces the default verify-criteria stub: it receives the child input and returns the result or throws.
 export async function run(args, routes, budget = null, child = null, verify = defaultVerify) {
   const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({ respond: router([...routes, ...DEFAULT_ROUTES]) })
+  servedHeads.clear()
+  const { globals, trace } = createRuntime({ respond: legacyAdapter(router([...routes, ...DEFAULT_ROUTES])) })
   const workflowCalls = []
   const stub = async (name, input) => {
     workflowCalls.push({ name, input: plain(input) })

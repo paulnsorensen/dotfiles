@@ -79,7 +79,7 @@ test('without land, the done advisor gates the draft conversions and the ready v
   assert.equal(result.status, 'partial')
   assert.match(result.note, /advisor did not approve: wait for a human review/)
   assert.equal(labels.includes('mark'), false)
-  assert.equal(labels.includes('cleanup'), false)
+  assert.equal(labels.some((l) => l.startsWith('cleanup')), false)
 })
 
 test('an error during land still returns a report', async () => {
@@ -92,5 +92,6 @@ test('an error during land still returns a report', async () => {
     ['merge:1', () => { throw new Error('budget spent') }],
   ])
   assert.equal(result.status, 'partial')
-  assert.match(result.note, /land stopped by an error: budget spent/)
+  // The shared typed() call turns a throw into a failed stage, so the merge wfx call reports it as a refusal.
+  assert.match(result.note, /merge refused: .*budget spent/)
 })
