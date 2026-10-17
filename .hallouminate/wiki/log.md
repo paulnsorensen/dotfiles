@@ -114,3 +114,5 @@
 2026-10-13 · build-ci-parallelization-20261013 · merged · operations/test-suite-performance.md · Record read-only lint fan-out and Ubuntu shard hints. Supersede the stale mutating-gate description. Preserve worker defaults and failed-baseline comparison limits.
 
 2026-10-14 · 8d50142076b0af8d · merged · harnesses/codex.md · Record the dedicated Codex uv cache inside the existing writable root.
+
+2026-10-16 · workflow-decomposition-docs · merged · architecture/saved-workflows.md, architecture/move-my-cheese-workflow.md, architecture/cheese-board-workflow.md, architecture/workflow-fanout-caps.md · Record the module system, the wfx effects tool, the verify-criteria child, and the move-my-cheese preflight, staleVerdict, and saved-landing changes. Mark per-target integrate and verify-criteria in move-my-cheese as pending.

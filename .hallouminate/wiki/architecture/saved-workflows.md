@@ -35,6 +35,35 @@ Source of truth is `claude/workflows/*.js`. `dots sync` copies the whole dir int
 
 **vm-realm test gotcha** (PR #486): `tests/workflows/harness.mjs` runs workflow scripts in a `node:vm` context, so objects/arrays the workflow returns carry foreign prototypes — `assert.deepEqual` from `node:assert/strict` fails with "Values have same structure but are not reference-equal" even when contents match. Convention: spread-clone (`{ ...obj }`), `Array.from(arr)`, or JSON round-trip before `deepEqual`. Fixture objects built in the *test* realm and passed through mocks compare fine; only workflow-realm-constructed values trip it.
 
+## Module system
+
+A workflow script cannot import, and `dots sync` copies `claude/workflows/` byte for byte. So shared helpers live as modules and each script carries a vendored copy. Design rationale: [[adr/workflow-decomposition]].
+
+- **Module file.** `claude/workflow-prelude/modules/<name>.js` holds one module. Line 1 is the header: `// module: <name>; provides: a, b; requires: x, y` (`requires: none` when empty). The modules are: advise, args, budget, call, checkpoint, criteria, fanout, findings, graph, ground, guard, schema, stale, status.
+- **Sync.** A script marks each module it uses with the line pair `// BEGIN module <name>` and `// END module <name>`. `node claude/workflow-prelude/sync.mjs` rewrites each block body with the module file. With `--check`, it exits 1 and names each drifted block. It also fails on an unknown module, a repeated module, or a `requires` module that the script does not mark. A script includes only the modules it uses. The deployed file equals the repo file (ADR-014).
+- **Load.** `claude/workflow-prelude/load.mjs` evaluates a module and its requirements in a `node:vm` context. It needs no Workflow runtime. Module tests (`tests/workflows/module-*.test.mjs`) and `wfx` use it. Seed runtime globals through its `globals` option.
+- **Duplicate scanner.** `tests/workflows/module-duplicates.test.mjs` scans each script outside the module blocks. It fails when a top-level declaration reuses a name that a module provides. A script must adopt the module instead of keeping a local copy.
+- **Edit rule.** Edit the module file, then run `sync.mjs`. An edit inside a block fails the drift test until it moves to the module.
+
+## wfx effects tool
+
+`wfx` runs git, `gh`, and environment steps as tested code, so no prompt carries English git steps. `bin/wfx` is a shim that execs `claude/workflow-fx/cli.mjs`. Each subcommand lives in `claude/workflow-fx/commands/<command>.mjs` and exports `run(argv, ctx)`.
+
+- **Envelope.** One JSON object per call on stdout. Success is `{ok: true, cmd, data}`. Failure is `{ok: false, cmd, error: {code, message, details?}}`. Exit code 0 is success, 1 is an operation failure, and 2 is bad input.
+- **Subcommands.** `preflight` (interpreter and tool checks), `recon` (PR heads, bases, and the base SHA), `probe` (merge-conflict check, or the files changed in a range), `integrate` (merge targets into an integration branch with `merge-tree`, no working tree), `restack` (rebase in a temporary worktree, optional leased push), `publish` (leased push), `merge` (head-pinned `gh pr merge`), `poll` (CI checks and unresolved threads), `stamp` (landing marker comment), `rev-parse`, `worktree add|remove|list`, and `run-state put|get|list`.
+- **Run state.** `run-state` keeps JSON under `${WFX_STATE_DIR:-${XDG_STATE_HOME:-~/.local/state}/wfx}/<landing>/<key>.json`.
+- **Runner agent.** A workflow calls a cheap `runner` agent that runs exactly one `wfx` command and returns its envelope. Code validates the envelope. In move-my-cheese this is the `wfx()` helper.
+- **Tests.** `tests/workflows/fx-*.test.mjs` with the `fx-kit.mjs` helpers cover the envelope and each command.
+
+## verify-criteria child
+
+`claude/workflows/verify-criteria.js` is a child workflow that verifies acceptance criteria in one worktree. It starts no other workflow.
+
+- **Args.** `{worktree_path, head, criteria: [{id, statement, check_kind, check}], batch_size?, preflight?}`. `batch_size` defaults to 6 and clamps to 1..12. `preflight` defaults to true.
+- **Returns.** `{status: 'ok' | 'partial' | 'blocked', verdicts, missing, reason?, preflight?}`. `ok` means every criterion has a valid verdict. `partial` means some ids sit in `missing`. `blocked` means the args are invalid or the preflight failed, so no judge ran.
+- **Flow.** An optional runner agent runs `wfx preflight`. Then one judge agent runs each batch of checks unchanged. Code validates every verdict. `LIMITS.maxBatches` (8) caps the judges per run.
+- **Callers.** cheese-factory calls it with `preflight: false` and reserves `VERIFY_CRITERIA_MAX_AGENTS` ([[architecture/workflow-fanout-caps]]). move-my-cheese does not call it yet (pending).
+
 **Strategy layer (2026-10-14):** `cheese-board.js` sits above `cheese-factory`. It runs `triage-sweep` as a child, then synthesizes a strategy and mints resolver-path mini-specs that form a `factory_queue`. See [[architecture/cheese-board-workflow]].
 
 **Host-fit failures (session analytics, 2026-10-11 to 2026-10-14):** 54 runs of cheese-board, cheese-factory, and move-my-cheese used about 23.5M tokens, and none returned `ok`. The causes were the host setup, not model quality:
@@ -50,12 +79,12 @@ Source of truth is `claude/workflows/*.js`. `dots sync` copies the whole dir int
 - A preflight stage checks the interpreter, the test runner, `gh` auth, and the host guards before the first planner. Judges ran a Python without pytest and recorded 12 false failures.
 - Writers integrate in task-graph order, with a conflict probe after each target, not at one final barrier. A plan that waits for a merge after publish is rejected.
 - Gate state lives in a file by default, and a resume skips survey, the planner fan-out, and the advisor. A moved default branch or PR head gets a rebase and recheck, not a replan.
-- Git and GitHub plumbing runs in one tested script with JSON output, not in English steps in prompts.
+- Git and GitHub plumbing runs in one tested script with JSON output, not in English steps in prompts. `wfx` is that script (see above).
 
 Rules: `skills/claude-workflows/references/parallel-writers.md`, `budget-recovery.md`, and the Preflight and live-boundary sections of `environment.md`.
 
 The design rules live in `skills/claude-workflows/references/environment.md`; the cases are eval data in `skills/claude-workflows/evals/`. Run records for counting: `~/.claude/projects/*/<session>/workflows/wf_*.json`.
 
-Related: [[architecture/cheese-board-workflow]], [[architecture/agents-dir]], [[operations/sync-and-chezmoi]], [[adr/cheese-factory-workflow]], [[architecture/move-my-cheese-workflow]].
+Related: [[adr/workflow-decomposition]], [[architecture/cheese-board-workflow]], [[architecture/agents-dir]], [[operations/sync-and-chezmoi]], [[adr/cheese-factory-workflow]], [[architecture/move-my-cheese-workflow]].
 
 *Source: main-clone wiki page (untracked) + cheese-factory-workflow implementation session (PR #486) + barrier-age restructure session (2026-07-21) + cheese workflow session-analytics review (2026-10-14) · Updated: 2026-10-14 · Supersedes: untracked main-clone copy of this page*

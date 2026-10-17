@@ -4,7 +4,7 @@ import test from 'node:test'
 
 import {
   aged, approve, consolidatePlan, detail, index, keepPlan, minimalPlan, noTensions, openPr, plain, planRoutes,
-  reconRoutes, run, sha, survey, tension,
+  envelope, liveRecon, reconRoutes, run, sha, survey, tension,
 } from './move-my-cheese.fixtures.mjs'
 
 test('invalid args block before any agent runs', async () => {
@@ -185,32 +185,37 @@ test('an approved plan edited after approval is refused before any agent runs', 
 
 test('a moved head turns an approved plan into needs-replan', async () => {
   const { args } = await approve(planRoutes())
-  const { result } = await run(args, planRoutes([['recon:detail', { prs: [detail(1, { head_sha: sha(1, 9) }), detail(2)] }]]))
+  // The live recon is the source for the heads, so the move shows there.
+  const { result } = await run(args, planRoutes([['stale:recon', liveRecon({ heads: { 1: sha(1, 9) } })]]))
   assert.equal(result.status, 'needs-replan')
   assert.match(result.reasons.join(' '), /#1 head moved/)
 })
 
-test('a moved default branch turns a reshaping plan into needs-replan', async () => {
+// The old rule replanned on every base move of a reshaping plan; the new rule replans only when the move touches a plan file.
+test('a moved default branch that changes a plan file turns the plan into needs-replan', async () => {
   const { args } = await approve(planRoutes())
-  const { result } = await run(args, planRoutes([['recon:index', index([openPr(1), openPr(2)], { base_sha: 'c'.repeat(40) })]]))
+  const { result } = await run(args, planRoutes([
+    ['stale:recon', liveRecon({ base: 'c'.repeat(40) })],
+    ['stale:probe', envelope('probe', { files: ['src/1.js'] })],
+  ]))
   assert.equal(result.status, 'needs-replan')
-  assert.match(result.reasons.join(' '), /default branch moved/)
+  assert.match(result.reasons.join(' '), /base moved.*plan files: src\/1\.js/)
 })
 
 test('auto still stops for approval when the plan reshapes another author\'s PR', async () => {
-  const { result, labels } = await run({ prs: [1, 2], auto: true }, planRoutes([['recon:index', index([openPr(1), openPr(2, { author: 'someone' })])]]))
+  const { result, labels, allLabels } = await run({ prs: [1, 2], auto: true }, planRoutes([['recon:index', index([openPr(1), openPr(2, { author: 'someone' })])]]))
   assert.equal(result.status, 'needs-approval')
   assert.match(result.reason, /other authors.*#2/)
-  assert.equal(labels.some((l) => l.startsWith('target:')), false)
+  assert.equal(allLabels.some((l) => l.startsWith('target:')), false)
 })
 
 test('auto stops for approval when any PR in the run belongs to another author, even a kept one', async () => {
-  const { result, labels } = await run({ prs: [1, 2], auto: true, land: true }, [
+  const { result, allLabels } = await run({ prs: [1, 2], auto: true, land: true }, [
     ...reconRoutes([openPr(1), openPr(2, { author: 'someone', base: 'feat/pr-1' })], [aged(1), aged(2, { base: 'feat/pr-1' })]),
     ['survey', survey],
     ['tensions', noTensions],
   ])
   assert.equal(result.status, 'needs-approval')
   assert.match(result.reason, /other authors.*#2/)
-  assert.equal(labels.some((l) => /^(review|cure|finalize|restack|merge):/.test(l)), false)
+  assert.equal(allLabels.some((l) => /^(review|cure|finalize|restack|merge):/.test(l)), false)
 })

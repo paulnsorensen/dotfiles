@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# wfx — workflow effects tool. Runs git, gh, and environment steps and
+# prints exactly one JSON envelope on stdout. See claude/workflow-fx/cli.mjs.
+
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+exec node "$(dirname "$SELF")/../claude/workflow-fx/cli.mjs" "$@"

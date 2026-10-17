@@ -39,7 +39,7 @@ Do not send raw transcripts.
 3. After the limit, return `needs-input` to the user. Return typed questions `{id, question, options[], recommended, evidence, initiative?, closed?, kind?}` and a digest of the state. Do not loop.
    Persist the state in a file, as `budget-recovery.md` describes. The next run takes `{resume, answers}`. Before the first agent, it checks the digest and the answers. Then it applies one revision. It does not rerun survey, the planner fan-out, or an earlier advisor round. An unsettled advisor returns `needs-input` on every path.
    Fallback only: when no file store exists, the caller sends `{state, digest, answers}`.
-   The prelude `digestOf` and `matchAnswers` are one implementation of this check. Any equivalent code works.
+   The `checkpoint` module `digestOf` and `matchAnswers` (`claude/workflow-prelude/modules/checkpoint.js`) are one implementation of this check. Any equivalent code works.
 4. Ask for guidance under 80 words. Advisor output is its main cost driver [s15].
 5. On a revision round, send the prior concerns. The advisor judges only whether each one is resolved. It raises a new concern only for a blocker, and it never reverses a prior concern.
 
