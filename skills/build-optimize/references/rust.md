@@ -25,3 +25,7 @@ Check the pinned compiler's supported options before using an unstable experimen
 ## Profiling
 
 Use `cargo build --timings` to locate slow units and concurrency limits. Compare repeated equivalent command runs to measure a change. The timing report diagnoses work; it does not replace a build or test gate. [Cargo timings](https://doc.rust-lang.org/cargo/reference/timings.html)
+
+## Shared hosts
+
+Cargo and nextest have no load option. On a host that many agents share, pass `-j N` or `--test-threads N` from the free cores. See [shared-host.md](shared-host.md).

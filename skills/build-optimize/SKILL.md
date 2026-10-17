@@ -2,7 +2,7 @@
 name: build-optimize
 model: sonnet
 effort: medium
-description: Optimize local build, test, and check commands with measured wall-time evidence. Use for "speed up my build", "why is just check slow", or /build-optimize. Route GitHub Actions work to /ci-optimize.
+description: Optimize local build, test, and check commands with measured wall-time evidence. Use for "speed up my build", "why is just check slow", "tests overload the server", or /build-optimize. Also use it when concurrent agent gates overload a shared host. Route GitHub Actions work to /ci-optimize.
 ---
 
 # Local build optimization
@@ -26,17 +26,20 @@ Use /ci-optimize for GitHub Actions workflow timing or changes.
 | --- | --- | --- |
 | "The warm run is faster, so every build is faster." | A warm run skips cold-cache work. | Report each cohort separately. |
 | "Parallel tests are faster." | Parallel workers require test isolation. | Prove isolation before the plan. |
+| "`-n auto` is fastest, so every agent should use it." | Concurrent gates on one host oversubscribe the CPU. | Measure concurrent gates and apply [shared-host.md](references/shared-host.md). |
 | "The helper is absent, so raw timings are enough." | Raw timings cannot pass the comparison gate. | Keep raw evidence and report comparison blocked. |
 
 ## References
 
 Read methodology before defining the run plan.
 Read the matching ecosystem reference before defining the run plan.
+Read shared-host.md when several agents or worktrees run gates on one host.
 Read sibling local.md before capturing local timing.
 Read sibling schemas.md before constructing normalized inputs.
 
 - Ecosystem: [rust.md](references/rust.md), [python.md](references/python.md), [js-ts.md](references/js-ts.md), [go.md](references/go.md).
 - Timing: [methodology.md](references/methodology.md).
+- Shared hosts and agent fleets: [shared-host.md](references/shared-host.md).
 - Sibling adapters: [local.md](../ci-optimize/references/local.md), [schemas.md](../ci-optimize/references/schemas.md).
 
 ## Workflow
