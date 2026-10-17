@@ -34,6 +34,8 @@ Keep any lint-fix command separate from the verification gate.
 
 Check coverage and required behavior when you assess parity. Do not require identical scheduling.
 
+The `[parallel]` attribute has no load gate. On a shared host, use the `parallel --load` lane pattern in [shared-host.md](shared-host.md).
+
 Treat the [`[cache]` attribute](https://just.systems/man/en/cached-recipes.html) as skip-work caching, not timing evidence.
 
 Do not add speculative cache complexity. Do not add a new justfile or task runner.

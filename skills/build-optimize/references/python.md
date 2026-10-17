@@ -72,3 +72,4 @@ Many agents can run a gate at the same time on one host. Plan for that load.
 - `-n auto` starts one worker per core in each worktree. Expose the worker count as an overridable variable, such as `just TEST_WORKERS=6 check`.
 - Share the uv cache across worktrees through `UV_CACHE_DIR`. The uv cache is safe for concurrent use. Do not share the virtual environment. [uv cache](https://docs.astral.sh/uv/concepts/cache/)
 - Report a fleet recommendation as untested unless you measured concurrent gates.
+- Size `-n auto` from the free cores with a `pytest_xdist_auto_num_workers` hook. See [shared-host.md](shared-host.md) for the hook, the queue, and the cgroup controls.
