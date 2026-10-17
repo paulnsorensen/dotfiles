@@ -20,7 +20,13 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
     [[ "$instructions" == *"Do not apply Bash rules to POSIX sh or sourced zsh"* ]]
     [[ "$instructions" == *'Require `local` for function-scoped variables'* ]]
 
-    run node - "$shell_path" "$DOTFILES_DIR/.github/lint-deps/node_modules/minimatch" <<'NODE'
+    local lint_deps="$DOTFILES_DIR/.github/lint-deps"
+    if [[ ! -d "$lint_deps/node_modules/minimatch" ]]; then
+        npm ci --silent --no-audit --no-fund --prefix "$lint_deps" >&2 ||
+            { echo "npm ci failed in $lint_deps; minimatch is unavailable" >&2; return 1; }
+    fi
+
+    run node - "$shell_path" "$lint_deps/node_modules/minimatch" <<'NODE'
 const [pattern, modulePath] = process.argv.slice(2);
 const minimatch = require(modulePath);
 const matches = ["bin/dots", ".sync", "chezmoi/.sync", "macos/.sync", "zsh/claude.zsh"];
