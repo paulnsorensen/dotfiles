@@ -90,7 +90,7 @@
 
 node = "26.12.0"
 bun = "1.4.3"
-rust = "1.99.0"
+rust = "1.99.1"
 
 "npm:t3" = "0.1.0"
 "npm:bash-language-server" = "5.8.1"
