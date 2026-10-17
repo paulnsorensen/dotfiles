@@ -58,7 +58,7 @@
 "aqua:tmux/tmux-builds" = "v3.7c"
 "aqua:j178/prek" = "v0.5.5"
 "aqua:ajeetdsouza/zoxide" = "v0.10.0"
-"aqua:atuinsh/atuin" = "v18.23.0"
+"aqua:atuinsh/atuin" = "v18.24.0"
 "aqua:ClementTsang/bottom" = "0.14.9"
 "aqua:bootandy/dust" = "v1.2.6"
 "aqua:dalance/procs" = "v0.14.12"
@@ -94,7 +94,7 @@ rust = "1.99.0"
 
 "npm:t3" = "0.1.0"
 "npm:bash-language-server" = "5.8.1"
-"npm:yaml-language-server" = "1.25.0"
+"npm:yaml-language-server" = "2.0.0"
 "npm:basedpyright" = "1.40.2"
 # OpenCode v2 ships on npm only; its GitHub tags carry no release assets for aqua.
 # The package postinstall links the platform binary, so allow its build script.
