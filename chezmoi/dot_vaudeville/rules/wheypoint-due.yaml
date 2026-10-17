@@ -1,0 +1,169 @@
+name: wheypoint-due
+type: decide
+event: Stop
+prompt: |
+  You see the final assistant message of one turn. Decide if a wheypoint is due.
+  A wheypoint is a checkpoint that lets a new agent resume the work.
+  Answer "violation" (wheypoint due) or "clean".
+
+  VIOLATION — the turn finished a meaningful unit of work or learning, AND the message
+  does not report that a wheypoint or checkpoint was just written or updated:
+  - merged, committed, or opened PRs; shipped or fixed a feature
+  - diagnosed a root cause
+  - made or recorded a design decision
+  - ran an investigation whose findings change the plan
+  - found a non-obvious gotcha
+  - completed a multi-step task with results the user will build on
+
+  CLEAN — no wheypoint is due:
+  - trivial or conversational turns: quick answers, one small edit, status pings
+  - clarifying questions, or asking the user to choose
+  - plans or proposals not yet executed
+  - mid-task progress with no result yet ("waiting on", "still running")
+  - a blocked or empty result with no work done
+  - the message reports a wheypoint or checkpoint was just written or updated
+    ("Wheypoint dropped: ...", "Checkpoint written: revision 2"). This stops the loop.
+
+  "Merged PR #212 and #213. Root cause was a stale cache key in the session store; the fix adds the tenant id to the key. 64 tests pass."
+  VERDICT: violation
+  REASON: Shipped fix with a diagnosed root cause and no wheypoint reported
+
+  "We chose SQLite over Postgres for the local store because the daemon must start with no setup. The migration plan is in the spec and the schema is committed."
+  VERDICT: violation
+  REASON: A design decision was made and committed; a new agent needs it
+
+  "The benchmark is done. Median latency fell from 410 ms to 120 ms. The gain comes from skipping the TLS handshake on reused sockets, so we should drop the pool rewrite."
+  VERDICT: violation
+  REASON: Investigation findings change the plan
+
+  "Wheypoint dropped: revision 3, durability canonical-local. The migration is done and the next step is the rollout."
+  VERDICT: clean
+  REASON: The message reports a wheypoint was just written
+
+  "Checkpoint written: revision 1, status ok. Resume with the cook phase."
+  VERDICT: clean
+  REASON: The message reports a checkpoint was just written
+
+  "Fixed the typo in the README heading."
+  VERDICT: clean
+  REASON: One small edit; nothing for a new agent to resume
+
+  "Two coders are still running. I wait for their digests before the gate."
+  VERDICT: clean
+  REASON: Mid-task progress with no result yet
+
+  "The security lane is in and confirms one medium finding. Four lanes remain."
+  VERDICT: clean
+  REASON: A partial result inside a task that is still running
+
+  "Which option do you want: A keeps the old API, B breaks it but removes the shim?"
+  VERDICT: clean
+  REASON: Asks the user to choose
+
+  "Here is the plan: 1) split the parser, 2) add the cache, 3) update tests. Approve and I start."
+  VERDICT: clean
+  REASON: Plan not yet executed
+outcomes: [violation, clean]
+reasons:
+  violation: "A wheypoint is due. Run /wheypoint now. Update this session's existing work item if it has one. Otherwise create a new one. Then stop."
+  clean: "No wheypoint is due."
+"on":
+  violation: block
+  clean: allow
+tier: shadow
+
+test_cases:
+  # Violations — meaningful work finished, no wheypoint reported
+  - text: "Done — `just check` exit 0, `dots sync` deployed, and the new Bash allow rule is live in the user settings.\n\nChanged (3 files, +6/-3):\n- `chezmoi/.chezmoidata/claude.yaml` — added the allow rule to `permissions.allow`.\n- `AGENTS.md` — compact STE writing-style block; gate 5 (tilth overrides auto-mode Bash-first).\n- `agents/preamble.md` — shell-only rule overrides Bash-preference text; the reviewer `Review mode:` line is now a hard gate.\n\nGate note: one bats test failed on 2 of 5 full-suite runs (2-second TTL under `bats --jobs` load)."
+    outcome: violation
+
+  - text: "The work is published as a stack of three PRs, all open and linked to this thread. The GitHub stack verifier reports it valid.\n\n| PR | Layer | Base |\n|---|---|---|\n| #733 | Schema 4 contracts | `main` |\n| #734 | Wheypoint kernel: refs, edges, fork, shape, bridge | #733 |\n| #735 | Surface | #734 |"
+    outcome: violation
+
+  - text: "**PR #416 open**\n\n`fix(run-loop): complete the root goal on specless runs`, base `main`, commit `77312cb`. Gate re-run green before push. The PR body flags #365 AC-2 as superseded, so whoever picks up that issue will not delete the symbol and re-break root completion.\n\nLeftovers still open:\n1. Correct issue #365 (AC-2 now wrong; AC-3 still valid)\n2. Stale `StatusMiddleware.meta` allowlist"
+    outcome: violation
+
+  - text: "All five reviews are in.\n\n## Consolidated verdict\n\n**#493 is the spine.** Every bundle independently says land it first, with in-branch fixes:\n\n| Fix in #493 | Sev |\n|---|---|\n| Commit re-measured `eval/baseline.json` (CI is green only because enforce is `#[ignore]`d) | Blocker |\n| `footnote_mode` on IPC does not filter; `bucket.rs` attaches raw `source_text` (~2x payload) | Blocker |"
+    outcome: violation
+
+  - text: "**Item 7 — server hardening.** Analytics show ~70 `tilth_write` calls failed on malformed input last week: unparseable JSON (37), bad `kind` (12), bad `mode` (10), missing `op` (9). Fixes: enum-validate the fields and print the valid set in the error; put one worked multi-line JSON example in the tool description; fix the adapter, which logs one tool name truncated.\n\n**Item 8 — coder context blowouts.** 17 coder agents died out of context in mega-refactors; 4 died at the checkpoint write itself."
+    outcome: violation
+
+  - text: "Mold pass complete. The spec is saved at `draft` with every gate green, and you stopped short of Cook, so nothing is finalized.\n\n**What the pass settled.** Four consequential forks, all yours:\n\n- F-1 pointer coupling with shared schemas and separate stores.\n- F-2 fork and link write only the initiating record. The counterpart reports `fork-pending` on read and applies the reciprocal at its own next checkpoint."
+    outcome: violation
+
+  - text: "Two steps: Markdown lost authority because it was lossy, and JSON beat YAML as the replacement because only JSON has a canonical form to hash.\n\n**Why Markdown stopped being the record** (ADR-001). The handwritten note was the authority, and same-slug rewrites silently dropped earlier decisions. Lineage was a `parents:` line nobody verified. The fix was a typed record the runtime owns, updated only by deltas, with immutable receipts."
+    outcome: violation
+
+  - text: "Synthesis below. The wiki `architecture.md` now carries a \"Verified gaps\" section with file:line footnotes.\n\n## Roadmap state\n\nAll 12 goal issues are open with zero evidence attached. All four milestones sit at 0%. Recent PRs are docs and infra only. Four orphan issues (CV leakage, label intervals, multi-strategy execution, confidence-triggered rebalancing) plausibly feed the first release."
+    outcome: violation
+
+  - text: "Status: the loop is back up and running the `shared` reconcile (node 78). All 56 ingest nodes plus the `schemas` reconcile are landed, 60 commits on the integration branch.\n\n**What broke this time.** Node 77 hit the full `just check` gate while 27 cross-area failures still existed. It thrashed, then filed two follow-ups as children of itself, which flipped its own status to `blocked`. When the worker finished, `executor.complete` crashed the loop on the blocked-to-done transition."
+    outcome: violation
+
+  - text: "Yes — that's B. The cut line is already drawn in the ADRs.\n\n**What moves:** the wiki document layer (`Lifecycle`, `GoalDocument`, `RoadmapDocument`, parse/load functions, graph validation) becomes a new `graph` domain in the schemas package, published on PyPI. The consumer adds the dependency, deletes its own `model.py` equivalents, and imports them.\n\n**What stays:** the node and execution model."
+    outcome: violation
+
+  - text: "Both restacked branches are green locally. The one thing I need from you is the force-push.\n\n| PR | State |\n|---|---|\n| #629 | Merged as `223b6261` |\n| #630 | Open, CI green, but GitHub shows it DIRTY: binary `.pyz` conflicts after the #629 squash |\n| #631 | Open, CI green, clean against #630 |"
+    outcome: violation
+
+  - text: "Merged #812 and #813. Root cause of the flaky deploy was a race between the migration job and the cache warmer: both held the schema lock. The fix orders them, and I added a regression test. CI is green on main."
+    outcome: violation
+
+  - text: "Investigation done. The slow startup is not the database. Profiling shows 70% of the 3.2 s goes to eager import of the plugin registry. Lazy loading cuts it to 0.9 s. This replaces the connection-pool plan, which would not help."
+    outcome: violation
+
+  - text: "Gotcha found: `chezmoi apply` skips files that end in `.tmpl` when the template renders to empty output, so a rule with a false guard never deploys. I added a guard-free fallback and documented the rule in the wiki."
+    outcome: violation
+
+  - text: "The migration is complete across 14 services. All 212 integration tests pass, the rollback script is verified against a staging copy, and the cutover is scheduled for Friday. Decision: we keep the legacy endpoint for 30 days."
+    outcome: violation
+
+  # Clean — trivial, mid-task, questions, plans, or a wheypoint just written
+  - text: "The script appends the attribution itself. Waiting on the taste-test and re-review."
+    outcome: clean
+
+  - text: "Done — slept 2 seconds and deposited the result for run `node-1-20260901T112055Z-f7eeb313` (seq 1). No files touched, no blockers, no follow-ups."
+    outcome: clean
+
+  - text: "Blocked and reported: the node's task and goal are placeholder text with no real requirements, and the repo has no source files to act on. Deposited a blocker explanation as the result. No code changes made."
+    outcome: clean
+
+  - text: "The taste test passed all seven lenses. I fixed its one note, a stale docstring (5a081f1). G2b is still running."
+    outcome: clean
+
+  - text: "Four coders in flight (A1b, A2b, C1, C2); A2a and B2 are done. Nothing further is independent of their results. Waiting on the digests."
+    outcome: clean
+
+  - text: "The researcher's completion notice matches the report I already folded into the answer above — nothing new to add. Waiting on your call: spec via `/mold`, a shareable write-up, or something else."
+    outcome: clean
+
+  - text: "Wheypoint dropped: `session-analytics-2026-09`, revision 3, durability `canonical-local`. Projection written under the work item. The audit is complete and the next step is the follow-up backlog."
+    outcome: clean
+
+  - text: "Checkpoint written: revision 1, `status: gated`, durability `repo-snapshot`, `next: hold`.\n\nGating question on record: which first curd — `/mold` the early-stopping leakage fix, normalize point-in-time data, or publish the review page first."
+    outcome: clean
+
+  - text: "Checkpoint written and lint-clean. Durability is repo-snapshot.\n\nWheypoint dropped: the ergonomics note, revision 2.\n\n**Orientation.** Wheypoint schema and skill ergonomics: make the checkpoint cheap to write and the resume path obvious."
+    outcome: clean
+
+  - text: "Wheypoint committed. Durability: **canonical-local**.\n\n**Orientation:** Located and explained the benchmark harness — a paired-arm benchmark that never merged to main. The session was orientation-only; parked awaiting your next instruction."
+    outcome: clean
+
+  - text: "Which should I do first: fix the flaky test or bump the dependency? The bump touches the lockfile, so I prefer the test first."
+    outcome: clean
+
+  - text: "Here is the plan: 1) split the parser into two modules, 2) add a cache layer, 3) update the tests. I have not started. Approve, or tell me what to change."
+    outcome: clean
+
+  - text: "Fixed the typo in the README heading."
+    outcome: clean
+
+  - text: "The default timeout is 30 seconds. It lives in `config.py` on line 41."
+    outcome: clean
+
+  - text: "Verifier retry is running against the worktree paths. Only its verdict table remains before I write the final report and hand off to cure."
+    outcome: clean
+
+  - text: "Removed-behavior lane is in and confirms the Windows full-hash medium. 6 lanes remain."
+    outcome: clean
