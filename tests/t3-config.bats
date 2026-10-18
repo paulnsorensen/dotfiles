@@ -55,10 +55,38 @@ setup() {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
     run jq -c '.providerInstances | [.claudeAgent, .codex, .opencode] | map([.driver, .config.binaryPath])' <<<"$output"
-    [ "$output" = '[["claudeAgent","/home/tester/Dev/dotfiles/bin/dotsclaude"],["codex","/home/tester/Dev/dotfiles/bin/dotscodex"],["opencode","/home/tester/Dev/dotfiles/bin/dotsopencode"]]' ]
+    local d="$REAL_DOTFILES_DIR"
+    [ "$output" = '[["claudeAgent","'"$d"'/bin/dotsclaude"],["codex","'"$d"'/bin/dotscodex"],["opencode","'"$d"'/bin/dotsopencode"]]' ]
     for wrapper in dotsclaude dotscodex dotsopencode; do
         [ -x "$REAL_DOTFILES_DIR/bin/$wrapper" ]
     done
+}
+
+@test "t3 wrapper paths follow a clone outside ~/Dev" {
+    local clone="$TEST_HOME/code/my dots"
+    mkdir -p "$clone/chezmoi/lib" "$clone/chezmoi/.chezmoidata"
+    cp "$REGISTRY" "$clone/chezmoi/.chezmoidata/t3.yaml"
+    cp "$CZ_SRC"/lib/drift-gate.sh "$CZ_SRC"/lib/t3-settings-*.txt "$clone/chezmoi/lib/"
+    run env CHEZMOI_SOURCE_DIR="$clone/chezmoi" HOME=/home/tester sh "$SCRIPT" </dev/null
+    [ "$status" -eq 0 ]
+    run jq -r '.providerInstances | .claudeAgent, .codex, .opencode | .config.binaryPath' <<<"$output"
+    [ "${lines[0]}" = "$clone/bin/dotsclaude" ]
+    [ "${lines[1]}" = "$clone/bin/dotscodex" ]
+    [ "${lines[2]}" = "$clone/bin/dotsopencode" ]
+}
+
+@test "t3 wrapper paths resolve a symlinked chezmoi source to the real clone" {
+    local clone="$TEST_HOME/code/my dots"
+    mkdir -p "$clone/chezmoi/lib" "$clone/chezmoi/.chezmoidata" "$TEST_HOME/share"
+    cp "$REGISTRY" "$clone/chezmoi/.chezmoidata/t3.yaml"
+    cp "$CZ_SRC"/lib/drift-gate.sh "$CZ_SRC"/lib/t3-settings-*.txt "$clone/chezmoi/lib/"
+    ln -s "$clone/chezmoi" "$TEST_HOME/share/chezmoi"
+    local real
+    real=$(cd -P "$clone" && pwd)
+    run env CHEZMOI_SOURCE_DIR="$TEST_HOME/share/chezmoi" HOME=/home/tester sh "$SCRIPT" </dev/null
+    [ "$status" -eq 0 ]
+    run jq -r '.providerInstances.codex.config.binaryPath' <<<"$output"
+    [ "$output" = "$real/bin/dotscodex" ]
 }
 
 @test "t3 settings preserve UI state and reset managed drift" {
@@ -84,8 +112,8 @@ JSON
     [ "$output" = '[true,null,"worktree",false,true,"",[]]' ]
     run jq -r '.providerInstances.claudeAgent.config.launchArgs, .providerInstances.claudeAgent.config.binaryPath, .providerInstances.opencode.config.binaryPath' <<<"$rendered"
     [ "${lines[0]}" = "--permission-mode auto --settings /home/tester/.t3/userdata/claude-settings.json" ]
-    [ "${lines[1]}" = "/home/tester/Dev/dotfiles/bin/dotsclaude" ]
-    [ "${lines[2]}" = "/home/tester/Dev/dotfiles/bin/dotsopencode" ]
+    [ "${lines[1]}" = "$REAL_DOTFILES_DIR/bin/dotsclaude" ]
+    [ "${lines[2]}" = "$REAL_DOTFILES_DIR/bin/dotsopencode" ]
     run jq -e 'has("providers") | not' <<<"$rendered"
     [ "$status" -eq 0 ]
 }

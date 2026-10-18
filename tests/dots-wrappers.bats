@@ -50,13 +50,12 @@ config_of() { sed -n 's/^CONFIG=//p' <<<"$1"; }
 }
 
 @test "dotscodex escapes the preamble path as a TOML string" {
-    export AGENTS_DOTFILES='/tmp/odd "dir"\x'
+    export AGENTS_DOTFILES="$TEST_HOME"'/odd "dir"\x'
     mkdir -p "$AGENTS_DOTFILES"
     printf 'p\n' > "$AGENTS_DOTFILES/preamble.md"
     run "$REAL_DOTFILES_DIR/bin/dotscodex" exec
-    rm -rf "$AGENTS_DOTFILES"
     [ "$status" -eq 0 ]
-    [ "${lines[1]}" = 'model_instructions_file="/tmp/odd \"dir\"\\x/preamble.md"' ]
+    [ "${lines[1]}" = 'model_instructions_file="'"$TEST_HOME"'/odd \"dir\"\\x/preamble.md"' ]
 }
 
 @test "dotscodex passes arguments through when the preamble is missing" {
@@ -105,6 +104,87 @@ config_of() { sed -n 's/^CONFIG=//p' <<<"$1"; }
     [ "$status" -eq 0 ]
     jq -e '.share == "disabled" and .agent.build.prompt == "caller" and (.agent.plan.prompt | contains("Plan only."))' \
         <<<"$(config_of "$output")"
+}
+
+@test "dotsopencode keeps the preamble when the caller config has instructions" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    local p="$AGENTS_DOTFILES/preamble.md"
+    OPENCODE_CONFIG_CONTENT=$(jq -cn --arg p "$p" '{instructions: ["extra.md", $p, "extra.md"]}')
+    export OPENCODE_CONFIG_CONTENT
+    run "$REAL_DOTFILES_DIR/bin/dotsopencode" serve
+    [ "$status" -eq 0 ]
+    jq -e --arg p "$p" '.instructions == [$p, "extra.md"]' <<<"$(config_of "$output")"
+}
+
+@test "dotsopencode leaves the config unchanged when jq is missing" {
+    local nojq="$TEST_HOME/nojq"
+    mkdir -p "$nojq"
+    ln -s "$(command -v bash)" "$nojq/bash"
+    ln -s "$(command -v dirname)" "$nojq/dirname"
+    export OPENCODE_CONFIG_CONTENT='{"share":"disabled"}'
+    # env is an absolute path, so only the wrapper sees the jq-free PATH.
+    run --separate-stderr /usr/bin/env PATH="$nojq" "$REAL_DOTFILES_DIR/bin/dotsopencode" serve
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "serve" ]
+    [ "$(config_of "$output")" = '{"share":"disabled"}' ]
+    [[ "$stderr" == *"jq missing"* ]]
+}
+
+@test "wrappers find the preamble in a clone outside ~/Dev" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    local clone="$TEST_HOME/code/my dots"
+    mkdir -p "$clone/bin/lib" "$clone/agents"
+    cp "$REAL_DOTFILES_DIR"/bin/dots{claude,codex,opencode} "$clone/bin/"
+    cp "$REAL_DOTFILES_DIR/bin/lib/preamble-wrappers.sh" "$clone/bin/lib/"
+    printf 'p\n' > "$clone/agents/preamble.md"
+    unset AGENTS_DOTFILES DOTFILES_DIR
+    run "$clone/bin/dotsclaude" -p hi
+    [ "$status" -eq 0 ]
+    [ "${lines[1]}" = "$clone/agents/preamble.md" ]
+    run "$clone/bin/dotscodex" exec
+    [ "$status" -eq 0 ]
+    [ "${lines[1]}" = "model_instructions_file=\"$clone/agents/preamble.md\"" ]
+    run "$clone/bin/dotsopencode" serve
+    [ "$status" -eq 0 ]
+    jq -e --arg p "$clone/agents/preamble.md" '.instructions == [$p]' <<<"$(config_of "$output")"
+}
+
+@test "dotsclaude passes the real clone to cc-env-exec through a symlinked bin" {
+    local clone="$TEST_HOME/code/my dots"
+    mkdir -p "$clone/bin" "$clone/agents"
+    cp "$REAL_DOTFILES_DIR/bin/dotsclaude" "$clone/bin/"
+    cat > "$clone/bin/cc-env-exec" <<'SH'
+#!/bin/sh
+printf 'DOTFILES_DIR=%s\n' "$DOTFILES_DIR"
+SH
+    chmod +x "$clone/bin/cc-env-exec"
+    printf 'p\n' > "$clone/agents/preamble.md"
+    ln -s "$clone/bin" "$TEST_HOME/linkbin"
+    local real
+    real=$(cd -P "$clone" && pwd)
+    unset AGENTS_DOTFILES DOTFILES_DIR
+    run "$TEST_HOME/linkbin/dotsclaude" -p hi
+    [ "$status" -eq 0 ]
+    [ "$output" = "DOTFILES_DIR=$real" ]
+}
+
+@test "preamble library functions keep the caller shell usable under strict mode" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    run bash -c '
+        set -euo pipefail
+        source "$1/bin/lib/preamble-wrappers.sh"
+        home=$2
+        caller() {
+            dots_codex_instructions_override "$home/missing.md" || echo "codex:none"
+            dots_opencode_preamble_path "$home/nowhere" || echo "opencode:none"
+            dots_opencode_config p "[1]" || echo "config:rejected"
+            dots_opencode_config p "" | jq -r ".instructions[0]"
+        }
+        caller
+        echo after
+    ' _ "$REAL_DOTFILES_DIR" "$TEST_HOME"
+    [ "$status" -eq 0 ]
+    [ "$output" = $'codex:none\nopencode:none\nconfig:rejected\np\nafter' ]
 }
 
 @test "dotsopencode leaves a malformed caller config unchanged" {

@@ -36,6 +36,13 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "sccache config sets a 30 GiB local disk cache" {
+    local conf="$REAL_DOTFILES_DIR/chezmoi/dot_config/sccache/config"
+    run python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["cache"]["disk"]["size"])' "$conf"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$((30 * 1024 * 1024 * 1024))" ]
+}
+
 # ── chezmoi/.sync wiring ────────────────────────────────────────────────
 
 # Helper: drop a fake chezmoi binary on PATH that records its args and
@@ -476,6 +483,57 @@ YAML
     grep -rq "^main-v1$" "$TEST_HOME/dst"
     [ "$(git -C "$cache" rev-parse --abbrev-ref HEAD)" = "main" ]
     [ ! -e "$cache/.dotfiles-pin" ]
+}
+
+@test "_cz_vendor_external_skills installs scripts/ from a pinned dist branch over a main cache" {
+    export XDG_CACHE_HOME="$TEST_HOME/cache"
+
+    # Origin starts on main: source skills with build outputs gitignored.
+    local origin="$TEST_HOME/origin-repo"
+    mkdir -p "$origin/skills/foo" "$origin/skills/bar"
+    git -C "$origin" init -q -b main
+    echo "# foo" > "$origin/skills/foo/SKILL.md"
+    echo "# bar" > "$origin/skills/bar/SKILL.md"
+    git -C "$origin" add -A
+    git -C "$origin" -c user.email=t@t -c user.name=t commit -qm main-v1
+
+    # Cache as an unpinned sync left it: single-branch shallow clone of main.
+    local cache="$XDG_CACHE_HOME/dotfiles/claude-skill-sources/someorg__somerepo"
+    mkdir -p "$(dirname "$cache")"
+    git clone -q --depth 1 "$origin" "$cache"
+
+    # Only the built dist branch carries each skill's scripts/ helpers
+    # (the easy-cheese *.pyz case).
+    git -C "$origin" checkout -q -b dist
+    mkdir -p "$origin/skills/foo/scripts" "$origin/skills/bar/scripts"
+    echo "zip" > "$origin/skills/foo/scripts/foo.pyz"
+    echo "zip" > "$origin/skills/bar/scripts/bar.pyz"
+    git -C "$origin" add -A
+    git -C "$origin" -c user.email=t@t -c user.name=t commit -qm dist-v1
+
+    local registry="$TEST_HOME/registry.yaml"
+    cat > "$registry" <<'YAML'
+sources:
+  someorg/somerepo:
+    description: test
+    pin: dist
+YAML
+
+    run _cz_vendor_external_skills "$registry" "$TEST_HOME/dst" claude
+    assert_success
+    # Every source skill with a scripts/ folder installs with that folder.
+    local d name
+    for d in "$origin"/skills/*/scripts/; do
+        name=$(basename "$(dirname "$d")")
+        [[ -f "$TEST_HOME/dst/exact_$name/exact_scripts/$name.pyz" ]] \
+            || { echo "installed skill $name is missing scripts/$name.pyz" >&2; return 1; }
+    done
+}
+
+@test "skill registry pins easy-cheese to its built dist branch" {
+    command -v yq >/dev/null 2>&1 || skip "yq not installed"
+    # main gitignores skills/*/scripts/*.pyz; only dist ships them.
+    [ "$(yq -r '.sources."paulnsorensen/easy-cheese".pin' "$REAL_DOTFILES_DIR/skills/_registry.yaml")" = "dist" ]
 }
 
 # ── source-tree scaffold ────────────────────────────────────────────────

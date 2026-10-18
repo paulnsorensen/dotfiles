@@ -1,0 +1,12 @@
+# sccache config, deployed by chezmoi to ~/.config/sccache/config.
+# The sccache server reads it at start, so every build uses it: shells,
+# T3 agents, and systemd services. Restart the server after a change:
+# `sccache --stop-server`.
+#
+# Gotcha: SCCACHE_DIR or SCCACHE_CACHE_SIZE in the environment replaces this
+# disk config, and the size falls back to 10 GiB. Do not export either one.
+#
+# 30 GiB local disk cache. The 10 GiB default was full on crabbot on
+# 2026-10-18, with about 60 Rust projects across many worktrees.
+[cache.disk]
+size = 32212254720

@@ -11,7 +11,8 @@
 # key into the registry.
 #
 # A literal `$HOME` inside a registry string expands to the target home
-# directory, because chezmoi data files are not templated.
+# directory, and `$DOTFILES` expands to the clone (the parent of the chezmoi
+# source directory), because chezmoi data files are not templated.
 
 set -eu
 
@@ -35,8 +36,11 @@ if [ ! -f "$registry" ]; then
 fi
 
 home=${CHEZMOI_HOME_DIR:-${HOME:?HOME is unset}}
+# -P resolves a symlinked source dir to the real clone, as the wrappers do.
+dotfiles=$(cd -P "$CHEZMOI_SOURCE_DIR/.." && pwd)
 desired=$(yq -o=json '.t3.settings' "$registry" \
-    | jq --arg home "$home" 'walk(if type == "string" then gsub("\\$HOME"; $home) else . end)')
+    | jq --arg home "$home" --arg dotfiles "$dotfiles" \
+        'walk(if type == "string" then gsub("\\$DOTFILES"; $dotfiles) | gsub("\\$HOME"; $home) else . end)')
 if ! printf '%s' "$desired" | jq -e 'type == "object"' >/dev/null 2>&1; then
     echo "modify_settings.json: t3.settings must be a map" >&2
     exit 1

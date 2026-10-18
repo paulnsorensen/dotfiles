@@ -240,8 +240,12 @@ Keep the device code, OAuth token, and `secrets/` files out of Git.
   leaves, and the claudeAgent `launchArgs`. Enable toggles, credentials,
   custom models, `defaultThreadEnvMode`, and sidebar state stay T3-owned;
   add new T3 UI keys to `lib/t3-settings-ignore.txt`, not to the registry.
-- The wrapper paths assume the clone at `~/Dev/dotfiles`, the same default
-  that `dotsclaude` and `cc-env-exec` use.
+- The registry writes each wrapper path as `$DOTFILES/bin/dots*`. The modify
+  script expands `$DOTFILES` to the parent of the chezmoi source directory,
+  so the path follows the clone and does not assume `~/Dev/dotfiles`. A
+  `chezmoi apply` from a worktree source writes that worktree path; deploy
+  through `dots sync` from the main clone. The wrappers find `agents/` from
+  their own location unless `DOTFILES_DIR` or `AGENTS_DOTFILES` is set.
 - Tests: `tests/t3-config.bats` (settings), `tests/dots-wrappers.bats`
   (wrappers), and `tests/lib-t3-service.bats` (service upgrade).
 - T3 themes are not chezmoi-managed. The theme library (upstream PR #5226)
