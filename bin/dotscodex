@@ -9,18 +9,14 @@
 # lacks the key, and it reads the live preamble from the clone.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/preamble-wrappers.sh
+source "$SCRIPT_DIR/lib/preamble-wrappers.sh"
+
 AGENTS_DOTFILES="${AGENTS_DOTFILES:-$HOME/Dev/dotfiles/agents}"
 CODEX_BIN="${CODEX_BIN:-${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims/codex}"
 
-flags=()
-preamble="$AGENTS_DOTFILES/preamble.md"
-if [[ -f "$preamble" ]]; then
-    # The value is TOML: quote the path and escape \ and ".
-    escaped="${preamble//\\/\\\\}"
-    escaped="${escaped//\"/\\\"}"
-    flags+=(-c "model_instructions_file=\"$escaped\"")
+if override=$(dots_codex_instructions_override "$AGENTS_DOTFILES/preamble.md"); then
+    exec "$CODEX_BIN" -c "$override" "$@"
 fi
-
-# ${flags[@]+…} guard: bash 3.2 (macOS /bin/bash) treats an empty array
-# expansion as unbound under `set -u`.
-exec "$CODEX_BIN" ${flags[@]+"${flags[@]}"} "$@"
+exec "$CODEX_BIN" "$@"
