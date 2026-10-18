@@ -229,9 +229,8 @@ The separate export matches the persistent environment used by the real sync cal
 
 **Cause:** easy-cheese changed its GitHub default branch from `main` to `dist`. `main` gitignores `skills/*/scripts/*.pyz`; `dist` carries the built archives. `npx skills add` clones fresh, so it got `dist`. The Claude vendor cache in `_cz_vendor_external_skills` (`.sync-lib.sh`) was a single-branch clone of `main`, and the unpinned path only ran `git pull --ff-only`. It never saw the new default branch.
 
-**Fix (two layers):**
+**Fix:** `skills/_registry.yaml` pins `paulnsorensen/easy-cheese` to `dist`. Every harness now installs the built branch, whatever the GitHub default is. The pinned path fetches the pin on every sync, so a cache left on `main` moves to `dist`. Bats: `tests/chezmoi-wiring.bats` "installs scripts/ from a pinned dist branch over a main cache" and "skill registry pins easy-cheese to its built dist branch".
 
-- `skills/_registry.yaml` pins `paulnsorensen/easy-cheese` to `dist`. Every harness now installs the built branch, whatever the GitHub default is.
-- The unpinned path compares the cache branch with `git ls-remote --symref origin HEAD` on every sync. It re-attaches when the remote default changes. A failed re-attach is a hard error. An offline lookup keeps the cached branch. Bats: `tests/chezmoi-wiring.bats` "follows a changed remote default branch and keeps scripts/".
+**Open gap:** an unpinned source still never follows a changed remote default branch. Its cache stays on the clone-time branch. A change to `.sync-lib.sh` that re-attached on a default-branch change was dropped from PR #1390 as not needed for easy-cheese.
 
 **Check:** after `dots sync`, `ls ~/.claude/skills/*/scripts` must match the `scripts/` folders on the source branch.
