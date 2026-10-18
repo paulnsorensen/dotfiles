@@ -3,4 +3,8 @@
 # semantics: the path and its whole subtree). A retired path is gone from
 # the repo's desired schema on purpose; deleting it here means the old live
 # key is removed silently instead of surviving forever as preserved drift.
-# Blank lines and "#" comments are ignored. Empty for now.
+# Blank lines and "#" comments are ignored.
+
+# Legacy provider map. T3 0.1.0 reads providerInstances and ignores this map
+# once an instance slot exists.
+providers

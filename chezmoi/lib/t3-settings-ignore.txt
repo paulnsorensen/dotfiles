@@ -8,18 +8,9 @@ projectSettingsFolded
 sidebarAutoSettleAfterDays
 # Thread environment default (worktree vs. local); set from the T3 UI.
 defaultThreadEnvMode
-# Provider enable toggles, binary paths, and custom model lists. Only
-# providers.claudeAgent.launchArgs is registry-owned.
-providers.codex
-providers.cursor
-providers.grok
-providers.opencode
-providers.antigravity
-providers.claudeAgent.enabled
-providers.claudeAgent.binaryPath
-providers.claudeAgent.configDir
-providers.claudeAgent.customModels
-providers.claudeAgent.autoCompactWindow
+# Provider instances: enable toggles, credentials, and custom model lists.
+# The registry owns each instance driver, the claudeAgent launchArgs, and the
+# claudeAgent, codex, and opencode binaryPath leaves.
 providerInstances
 observability
 usageLimitSources

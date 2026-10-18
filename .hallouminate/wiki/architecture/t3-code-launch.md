@@ -1,27 +1,81 @@
 # T3 Code launch regime — why chezmoi owns Claude launch args
 
 T3 Code (`~/.t3`, systemd unit `t3code.service`) launches Claude through the
-Agent SDK as an unattended child session. Chezmoi authors two keys for it so
-T3 sessions route file work through tilth like every other harness.
+Agent SDK as an unattended child session. Chezmoi authors the provider keys
+so that T3 sessions use the shared preamble and route file work through tilth
+like every other harness.
 
 ## What T3 adds to a session
 
-- **The `t3-code` MCP server.** In-process, 21 tools: `preview_*` (browser
-  preview drive), `device_*`, and `link_pull_request` /
-  `unlink_pull_request` / `list_thread_pull_requests`. No overlap with tilth
-  or hallouminate.
-- **Appended system prompt.** A `<runtime_info>` line, a worktree-isolation
-  block, and `<pull_request_linking>` rules.
+Observed on 2026-10-18 with T3 0.1.0 and Claude Code 2.1.301. The source is
+the `api-request-shape` entries of T3 session transcripts, compared with a
+plain `claude -p` session.
+
+- **The `t3-code` MCP server.** It has 83 tools: threads, delegated tasks,
+  the scheduler, queues, projects, previews, devices, attachments, secrets,
+  pull-request links and watches, and worktrees. No overlap with tilth or
+  hallouminate.
+- **Identity line.** T3 keeps the `claude_code` preset line ("You are Claude
+  Code, Anthropic's official CLI for Claude, running within the Claude Agent
+  SDK."). A plain `claude -p` session opens with "You are a Claude agent,
+  built on Anthropic's Claude Agent SDK."
+- **Appended system prompt, about 8,500 characters.** T3 does not change the
+  default prompt text. It appends these blocks:
+  - `<runtime_info>`: the session runs in T3; images and videos embed by
+    absolute path.
+  - `<pull_request_linking>`: register every pull request with
+    `link_pull_request`; watch and unwatch rules.
+  - `## T3 Code orchestration`: delegated tasks versus top-level threads,
+    workspace selection before `t3_thread_launch`, scheduled tasks, secret
+    requests, and thread links.
+  - `### Showing visuals`: build an HTML page, check it with `html_preview`,
+    and publish it with `html_render`.
 - **`permissionMode: bypassPermissions` by default.** T3 maps its runtime
   mode (`full-access` → `bypassPermissions`, `auto` → `auto`,
   `auto-accept-edits` → `acceptEdits`), but the decode falls back to bypass
   whenever `--dangerously-skip-permissions` is absent from launch args. An
-  explicit `--permission-mode` in `providers.claudeAgent.launchArgs`
-  overrides every path, including the mode picked in the T3 UI. The
-  registry pins `auto` (since 2026-10-06; `acceptEdits` before).
+  explicit `--permission-mode` in the claudeAgent `launchArgs` overrides
+  every path, including the mode picked in the T3 UI. The registry pins
+  `auto` (since 2026-10-06; `acceptEdits` before).
 
 Everything else (claude.ai connectors, plugins, tilth, context7) loads from
 `~/.claude` as in an interactive session.
+
+## Preamble wrappers (binaryPath)
+
+T3 launches each harness through `providerInstances.<id>.config.binaryPath`.
+The registry points three instances at the `bin/dots*` wrappers. Each wrapper
+replaces the native system prompt with `agents/preamble.md`:
+
+| Instance | Wrapper | Mechanism |
+|---|---|---|
+| `claudeAgent` | `bin/dotsclaude` | `--system-prompt-file <clone>/agents/preamble.md`. T3 still appends its own blocks after the preamble. |
+| `codex` | `bin/dotscodex` | `-c model_instructions_file="<clone>/agents/preamble.md"` before the subcommand. T3 runs `<binaryPath> app-server`. |
+| `opencode` | `bin/dotsopencode` | Merges work-agent prompts and the preamble path into `OPENCODE_CONFIG_CONTENT`. T3 runs `<binaryPath> serve` and sets that variable (`"{}"` by default). |
+
+**Why wrappers when config already does it:** Codex reads
+`model_instructions_file` from `config.toml`, and OpenCode reads its agent
+prompts from `opencode.json`. Both are global config, so T3 sessions got the
+preamble before the wrappers existed. The wrappers make the override hold
+when that config is missing or stale, and the Claude and Codex wrappers read
+the live preamble from the clone. Claude has no config key for a replacement
+system prompt, so only `dotsclaude` was ever required.
+
+**Before 2026-10-18 05:09 UTC** the claudeAgent `binaryPath` was the mise
+shim, and nothing in the repository set it. T3 Claude sessions sent the
+default prompt and no preamble. Session transcripts before that time give a
+natural default-prompt sample for comparison.
+
+Verification on 2026-10-18:
+
+- `dotscodex exec` and a `dotscodex app-server` turn, with `AGENTS_DOTFILES`
+  pointed at a sentinel preamble. Both rollouts recorded the sentinel as
+  `session_meta.base_instructions`, so the flag wins over `config.toml`.
+- `dotsopencode serve` with `OPENCODE_CONFIG_CONTENT={}`. `/api/config`
+  listed the env source with the four work-agent prompts and the preamble
+  path.
+- `tests/dots-wrappers.bats` covers the launch lines, the TOML escape, the
+  caller-config merge, and prompt parity with the OpenCode registry.
 
 ## Why the permission mode matters
 
@@ -53,7 +107,7 @@ looked like a T3 MCP problem.
 
 | Source | Target | Purpose |
 |---|---|---|
-| `chezmoi/.chezmoidata/t3.yaml` → `dot_t3/userdata/modify_settings.json` | `~/.t3/userdata/settings.json` | Merges `providers.claudeAgent.launchArgs` into the live file. T3 rewrites this file from its UI, so the guard preserves UI state through `lib/drift-gate.sh` with `lib/t3-settings-ignore.txt`. |
+| `chezmoi/.chezmoidata/t3.yaml` → `dot_t3/userdata/modify_settings.json` | `~/.t3/userdata/settings.json` | Merges `providerInstances.{claudeAgent,codex,opencode}` (`driver`, `config.binaryPath`, and the claudeAgent `config.launchArgs`) into the live file. T3 rewrites this file from its UI, so the guard preserves UI state through `lib/drift-gate.sh` with `lib/t3-settings-ignore.txt`. `lib/t3-settings-retired.txt` deletes the legacy `providers` map. |
 | `dot_t3/userdata/claude-settings.json` | `~/.t3/userdata/claude-settings.json` | Passed via `--settings`. Sets `disableClaudeAiConnectors: true` for T3 sessions only, so the connectors never push tilth into the deferred tool list. |
 | `dot_config/systemd/user/t3code.service.d/telemetry.conf` (Linux only) | `~/.config/systemd/user/t3code.service.d/telemetry.conf` | Sets `T3CODE_TELEMETRY_ENABLED=false` for the background service. A drop-in, because `t3 service install` and `t3 update` rewrite the unit file. `run_onchange_after_reload-t3-service.sh.tmpl` runs `daemon-reload` only; the setting applies at the next service restart. |
 | `zsh/core.zsh` | shell profile | Exports `T3CODE_TELEMETRY_ENABLED=false` for the macOS desktop app, which reads the shell profile, and for foreground `t3 serve`. |
@@ -62,6 +116,18 @@ The registry string uses a literal `$HOME`; the modify script expands it
 because chezmoi data files are not templated. `--settings` in Claude Code
 accepts a file path or inline JSON, so a file keeps quoting out of T3's
 launch-args tokenizer.
+
+### Why `providerInstances`, not `providers`
+
+T3 0.1.0 stores provider settings as `providerInstances.<id>.{driver,
+enabled, config}`. On load, `migrateLegacyProviderSettings` copies a legacy
+`providers.<kind>` blob only into an empty default instance slot; "an
+explicit instance already in that slot wins". The registry wrote
+`providers.claudeAgent.launchArgs` until 2026-10-18. After the first
+migration, that key had no effect, and T3 dropped it on each rewrite. The
+live `launchArgs` survived only because the one-time migration had copied
+it. The registry sets `driver` on each instance so that a fresh settings
+file decodes. Source: strings of `~/.t3/runtime/versions/0.1.0/t3`.
 
 ## Desktop installation and Tailscale connections
 
@@ -169,12 +235,19 @@ Keep the device code, OAuth token, and `secrets/` files out of Git.
 
 - T3 reads `settings.json` at thread start. Restart T3 or open a new thread
   after `dots sync`.
-- The T3 provider key is `claudeAgent`, not `claude`.
-- Only `providers.claudeAgent.launchArgs` is registry-owned. Provider
-  toggles, `defaultThreadEnvMode`, and sidebar state stay T3-owned; add new
-  T3 UI keys to `lib/t3-settings-ignore.txt`, not to the registry.
-- Tests: `tests/t3-config.bats` (settings) and `tests/lib-t3-service.bats`
-  (service upgrade).
+- The T3 provider instance key is `claudeAgent`, not `claude`.
+- The registry owns only each instance `driver`, the three `binaryPath`
+  leaves, and the claudeAgent `launchArgs`. Enable toggles, credentials,
+  custom models, `defaultThreadEnvMode`, and sidebar state stay T3-owned;
+  add new T3 UI keys to `lib/t3-settings-ignore.txt`, not to the registry.
+- The registry writes each wrapper path as `$DOTFILES/bin/dots*`. The modify
+  script expands `$DOTFILES` to the parent of the chezmoi source directory,
+  so the path follows the clone and does not assume `~/Dev/dotfiles`. A
+  `chezmoi apply` from a worktree source writes that worktree path; deploy
+  through `dots sync` from the main clone. The wrappers find `agents/` from
+  their own location unless `DOTFILES_DIR` or `AGENTS_DOTFILES` is set.
+- Tests: `tests/t3-config.bats` (settings), `tests/dots-wrappers.bats`
+  (wrappers), and `tests/lib-t3-service.bats` (service upgrade).
 - T3 themes are not chezmoi-managed. The theme library (upstream PR #5226)
   keeps custom themes in app storage, not in `settings.json`. Import
   `theme/t3/chocolate-donut-2-color-theme.json` (VS Code format) through

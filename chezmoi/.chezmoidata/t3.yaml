@@ -10,11 +10,29 @@
 #   the shell reads it suggests.
 # - --settings points at the chezmoi-managed claude-settings.json next to the
 #   live file. It disables claude.ai connectors for T3 sessions only, so tilth
-#   and hallouminate stay in the preloaded tool list. $HOME is expanded by the
-#   modify script; chezmoi data files are not templated.
+#   and hallouminate stay in the preloaded tool list. The modify script
+#   expands $HOME and $DOTFILES; chezmoi data files are not templated.
+# - binaryPath points each harness at its bin/dots* wrapper, which replaces
+#   the native system prompt with agents/preamble.md. $DOTFILES is the parent
+#   of the chezmoi source directory, so the path follows the clone location.
+# - T3 0.1.0 reads providerInstances.<id>.{driver,config}. It copies a legacy
+#   providers.<kind> blob only into an empty instance slot, so a key under
+#   providers has no effect once the slot exists. driver is set so that a
+#   fresh settings file decodes.
 
 t3:
   settings:
-    providers:
+    providerInstances:
       claudeAgent:
-        launchArgs: "--permission-mode auto --settings $HOME/.t3/userdata/claude-settings.json"
+        driver: claudeAgent
+        config:
+          binaryPath: $DOTFILES/bin/dotsclaude
+          launchArgs: "--permission-mode auto --settings $HOME/.t3/userdata/claude-settings.json"
+      codex:
+        driver: codex
+        config:
+          binaryPath: $DOTFILES/bin/dotscodex
+      opencode:
+        driver: opencode
+        config:
+          binaryPath: $DOTFILES/bin/dotsopencode

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# dotsopencode — run OpenCode with the shared preamble in place of the native
+# provider prompts, for launchers that exec a path (T3 Code, Conductor).
+# OpenCode counterpart of bin/dotsclaude.
+#
+# OpenCode has no system-prompt flag. It merges OPENCODE_CONFIG_CONTENT over
+# the global config, so this wrapper adds two things there:
+#   - work-agent prompts for build, plan, general, and explore. A custom agent
+#     prompt replaces the native provider prompt.
+#   - the preamble path in `instructions`.
+# bin/lib/preamble-wrappers.sh builds the value. T3 always sets
+# OPENCODE_CONFIG_CONTENT ("{}" by default); its keys win over the keys that
+# this wrapper adds, except that its `instructions` are appended.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/preamble-wrappers.sh
+source "$SCRIPT_DIR/lib/preamble-wrappers.sh"
+
+# The clone is the parent of bin/ unless DOTFILES_DIR is set.
+AGENTS_DOTFILES="${AGENTS_DOTFILES:-${DOTFILES_DIR:-${SCRIPT_DIR%/bin}}/agents}"
+OPENCODE_BIN="${OPENCODE_BIN:-${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims/opencode}"
+
+preamble=$(dots_opencode_preamble_path "$AGENTS_DOTFILES") || exec "$OPENCODE_BIN" "$@"
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "dotsopencode: jq missing; native OpenCode prompts stay active" >&2
+    exec "$OPENCODE_BIN" "$@"
+fi
+
+if ! merged=$(dots_opencode_config "$preamble" "${OPENCODE_CONFIG_CONTENT:-}"); then
+    echo "dotsopencode: OPENCODE_CONFIG_CONTENT is not a JSON object; left unchanged" >&2
+    exec "$OPENCODE_BIN" "$@"
+fi
+
+export OPENCODE_CONFIG_CONTENT="$merged"
+exec "$OPENCODE_BIN" "$@"
