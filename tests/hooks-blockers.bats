@@ -41,6 +41,7 @@ setup() {
 }
 
 teardown() {
+    teardown_sibling_worktrees
     teardown_test_env
 }
 
@@ -452,5 +453,85 @@ setup_worktree() {
     if [[ "$output" == *"couldn't create cache file"* ]]; then
         skip "git xcrun permissions (sandbox issue)"
     fi
+    [[ "$output" == blocked:* ]]
+}
+
+# ── worktree-guard.js: request cwd in a sibling worktree (issue #1396) ──
+# The guard always allows /tmp and $TMPDIR, so these fixtures live in the
+# gitignored .tmp-tests/ scratch dir inside the checkout. Otherwise every
+# target would pass through the scratch rule and the tests would prove nothing.
+
+setup_sibling_worktrees() {
+    mkdir -p "$REAL_DOTFILES_DIR/.tmp-tests"
+    SIB="$(mktemp -d "$REAL_DOTFILES_DIR/.tmp-tests/wt-guard-XXXXXX")"
+    case "$SIB" in /tmp/* | /private/tmp/* | "${TMPDIR:-/nonexistent}"*) skip "scratch dir is under an always-allowed prefix" ;; esac
+    local repo
+    for repo in main other; do
+        mkdir -p "$SIB/$repo"
+        (
+            cd "$SIB/$repo" || exit 1
+            GIT_TEMPLATE_DIR="" git init -q
+            git config user.email "t@e"
+            git config user.name "t"
+            echo "x" > f.txt && git add f.txt && git commit -qm "x"
+        ) >/dev/null 2>&1 || skip "git init unavailable"
+    done
+    git -C "$SIB/main" worktree add -q "$SIB/wt" -b wtbranch 2>/dev/null || skip "git worktree unavailable"
+    git -C "$SIB/main" worktree add -q "$SIB/wt2" -b wt2branch 2>/dev/null || skip "git worktree unavailable"
+    git -C "$SIB/other" worktree add -q "$SIB/other-wt" -b otherbranch 2>/dev/null || skip "git worktree unavailable"
+}
+
+teardown_sibling_worktrees() {
+    if [[ -n "${SIB:-}" && "$SIB" == "$REAL_DOTFILES_DIR/.tmp-tests/wt-guard-"* ]]; then
+        rm -rf "$SIB"
+    fi
+}
+
+# tilth_write from session worktree $SIB/wt with request cwd $1 and path $2.
+run_tilth_write_from_wt() {
+    run_hook_event "$HOOKS_DIR/worktree-guard.js" mcp__tilth__tilth_write \
+        "{\"cwd\":\"$1\",\"edits\":[{\"path\":\"$2\",\"ops\":[{\"op\":\"replace_text\"}]}]}" \
+        "$SIB/wt"
+}
+
+@test "worktree-guard: tilth_write with cwd in a same-repo sibling worktree is allowed" {
+    setup_sibling_worktrees
+    run_tilth_write_from_wt "$SIB/wt2" "f.txt"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "worktree-guard: sibling-worktree absolute path under its own cwd is allowed" {
+    setup_sibling_worktrees
+    run_tilth_write_from_wt "$SIB/wt2" "$SIB/wt2/new/dir/x.txt"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "allowed" ]]
+}
+
+@test "worktree-guard: tilth_write with cwd in the main checkout is blocked" {
+    setup_sibling_worktrees
+    run_tilth_write_from_wt "$SIB/main" "f.txt"
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "worktree-guard: sibling cwd does not allow a path in the main checkout" {
+    setup_sibling_worktrees
+    run_tilth_write_from_wt "$SIB/wt2" "$SIB/main/f.txt"
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "worktree-guard: cwd in a worktree of another repository is blocked" {
+    setup_sibling_worktrees
+    run_tilth_write_from_wt "$SIB/other-wt" "f.txt"
+    [ "$status" -eq 0 ]
+    [[ "$output" == blocked:* ]]
+}
+
+@test "worktree-guard: Write without a request cwd to a sibling worktree is blocked" {
+    setup_sibling_worktrees
+    run_hook_event "$HOOKS_DIR/worktree-guard.js" Write "{\"file_path\":\"$SIB/wt2/f.txt\",\"new_string\":\"x\"}" "$SIB/wt"
+    [ "$status" -eq 0 ]
     [[ "$output" == blocked:* ]]
 }

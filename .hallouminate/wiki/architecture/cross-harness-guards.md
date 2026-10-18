@@ -140,6 +140,17 @@ Beyond the cross-harness git-guard, Claude wires a `PreToolUse` guard (in `claud
 
 - **`worktree-guard.js`** (Edit/Write/MultiEdit/`tilth_write`) — opt-out: it enforces inside a git worktree by default. `CLAUDE_WORKTREE_GUARD=0` disables; `CLAUDE_WORKTREE_GUARD_ALLOW=/abs,/abs2` extends the allowlist (worktree root, `$TMPDIR`, `/tmp`, `~/.claude/`, and any `.cheese/` dir are always allowed).
 
+### Sibling worktrees through the request `cwd` (issue #1396)
+
+A parent that runs `git worktree add` to start parallel coders hit the guard on every `tilth_write`, because the guard roots writes in the session worktree. The guard now also allows the root of the request's `cwd` when that `cwd` is a linked worktree with the same git common dir as the session.
+
+- Linked means `--git-dir` differs from `--git-common-dir`. The main checkout fails this test, so it stays protected.
+- Only tools that carry a `cwd` (`tilth_write`) get the extra root. `Edit` and `Write` into a sibling stay blocked.
+- A path outside the request worktree stays blocked, even when the `cwd` is a valid sibling.
+- Why this option: an accidental write must name the sibling twice, in `cwd` and in the path. Allowing every same-repo worktree was rejected as too broad.
+
+Test gotcha: the guard always allows `/tmp` and `$TMPDIR`, and `TEST_HOME` lives there. The sibling fixtures in `tests/hooks-blockers.bats` use the gitignored `.tmp-tests/` dir, or an "allowed" assertion proves nothing.
+
 The **secret-protection guard** (`sensitive-file-guard`) is the other cross-harness guard, declared in the `agents/hooks/` registry rather than here — it blocks `.env`/keys/credentials, is fail-open, and honors `CLAUDE_SENSITIVE_GUARD` / `CLAUDE_SENSITIVE_GUARD_ALLOW`. See [[agents-dir]] for the hook-registry mechanics.
 
 ### Tilth payload coverage (PR #891, merged)
