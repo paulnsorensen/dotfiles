@@ -27,6 +27,14 @@ Claude is the **only** harness where `ap launch` builds a closed world with Clau
 
 Gotcha: `--setting-sources ""` closes the **MCP world and inherited settings** (no inherited allowlist), but **not** the built-in tool surface. A profile with **no `tools` key omits `--tools` entirely**, so claude keeps its full default built-in tools (Bash, Read, …) — the closed world is the MCPs + settings, not the tools. Declaring `tools` narrows to exactly that whitelist + `permissions_deny`; leaving it out keeps everything (`todo` does this deliberately, adding `--dangerously-skip-permissions`). Shipped Claude isolated profiles: `review`, `todo`, `fe`, `spec`, `plugin`, `tui`, `oss-docs`, and `skills-doctor`. `mgmt` is not isolated; it reaches GitHub planning through the `gh` CLI + `/gh` skill over Bash.
 
+## System prompt replacement
+
+Only a launch flag replaces Claude's system prompt. `--system-prompt-file` (used by the `cc` wrappers and `bin/dotsclaude`) swaps the default text for `agents/preamble.md`; `--append-system-prompt-file` adds after it. No `settings.json` key does either. A plain `claude` launch, such as a mise shim behind a launcher, therefore sends Anthropic's default prompt. Codex and OpenCode differ: their global config files carry the override (see [[../architecture/t3-code-launch]]).
+
+**Why an output style is not a substitute:** a custom output style looks like a settings-level route, but it never enters the system prompt. Claude Code 2.1.302 delivers the style as an `output_style_instructions` attachment, rendered as a `<system-reminder>` that starts `# Output Style: <name>` inside the first user message. The system blocks stay byte-identical to the default, and `keep-coding-instructions: false` removed nothing from them. So a style only appends, from a lower-authority position.
+
+Verified on 2026-10-18 with a sentinel style in `.claude/output-styles/`, selected by `--settings` and by project `settings.json`, in `-p` and in T3's stream-json mode. Read the result from the session transcript: `api-request-shape` holds the sent system blocks, and the `attachment` entries hold the reminder.
+
 ## Quirks
 
 - Docs host is `code.claude.com/docs`, not `docs.claude.com` (that's the API/Agent-SDK surface).
