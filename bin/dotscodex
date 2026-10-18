@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# dotscodex — run Codex with agents/preamble.md as its base instructions, for
+# launchers that exec a path (T3 Code, Conductor). Codex counterpart of
+# bin/dotsclaude.
+#
+# `-c model_instructions_file=...` replaces the bundled per-model prompt, the
+# same as the key that chezmoi/lib/install-prompts.sh writes to config.toml.
+# The flag wins over config.toml, so the override holds even when that file
+# lacks the key, and it reads the live preamble from the clone.
+set -euo pipefail
+
+AGENTS_DOTFILES="${AGENTS_DOTFILES:-$HOME/Dev/dotfiles/agents}"
+CODEX_BIN="${CODEX_BIN:-${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims/codex}"
+
+flags=()
+preamble="$AGENTS_DOTFILES/preamble.md"
+if [[ -f "$preamble" ]]; then
+    # The value is TOML: quote the path and escape \ and ".
+    escaped="${preamble//\\/\\\\}"
+    escaped="${escaped//\"/\\\"}"
+    flags+=(-c "model_instructions_file=\"$escaped\"")
+fi
+
+# ${flags[@]+…} guard: bash 3.2 (macOS /bin/bash) treats an empty array
+# expansion as unbound under `set -u`.
+exec "$CODEX_BIN" ${flags[@]+"${flags[@]}"} "$@"

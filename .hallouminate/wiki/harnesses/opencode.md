@@ -81,6 +81,18 @@ Internal title, summary, and compaction prompts remain native.
 - `chezmoi/lib/install-prompts.sh` copies `agents/preamble.md` to `~/.config/opencode/preamble.md`.
 - OpenCode discovers skills natively from its config `skill`/`skills` directories and the `.claude`/`.agents` roots. Chezmoi copies no skill tree.
 
+### `OPENCODE_CONFIG_CONTENT` merge (v2.0.32)
+
+`bin/dotsopencode` injects the work-agent prompts and the preamble path through this variable. T3 launches it as the OpenCode `binaryPath`; see [[../architecture/t3-code-launch]].
+
+- OpenCode loads the variable as a virtual source after the global config. `/api/config` on `opencode serve` lists it with a null `path`.
+- v2 normalizes v1 `agent.<name>.prompt` to `agents.<name>.system` in every source, the variable included.
+- `{file:<path>}` substitution works inside the variable and escapes the file text.
+- `instructions` concatenate across sources, and a repeated path loads once. A different path to the same text loads twice. The wrapper therefore uses the installed `~/.config/opencode/preamble.md` string.
+- `opencode debug config` queries the background service, so it does not show the caller's variable. Use `opencode serve` and `/api/config` instead.
+
+Verified on 2026-10-18 with `/api/config` and two live `opencode run --standalone` calls.
+
 ### Specialist policy
 
 OpenCode uses the existing shared role bodies from `agents/registry.yaml`.[^shared-agents]

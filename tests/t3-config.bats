@@ -6,7 +6,8 @@ bats_require_minimum_version 1.5.0
 # The T3 guard (chezmoi/dot_t3/userdata/modify_settings.json) merges the
 # registry keys from .chezmoidata/t3.yaml into the live T3 settings.json.
 # T3 rewrites that file from its UI, so the guard must preserve UI state and
-# only assert the launchArgs contract.
+# only assert the provider-instance contract: drivers, wrapper binaryPaths,
+# and the claudeAgent launchArgs.
 
 teardown() { teardown_test_env; }
 
@@ -20,7 +21,7 @@ setup() {
 }
 
 @test "t3 registry forces an explicit permission mode and a settings file" {
-    run yq -r '.t3.settings.providers.claudeAgent.launchArgs' "$REGISTRY"
+    run yq -r '.t3.settings.providerInstances.claudeAgent.config.launchArgs' "$REGISTRY"
     [ "$status" -eq 0 ]
     [[ "$output" == *"--permission-mode auto"* ]]
     [[ "$output" == *"--settings \$HOME/.t3/userdata/claude-settings.json"* ]]
@@ -43,8 +44,21 @@ setup() {
 @test "t3 settings render from the registry with HOME expanded" {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
-    run jq -r '.providers.claudeAgent.launchArgs' <<<"$output"
+    local rendered="$output"
+    run jq -r '.providerInstances.claudeAgent.config.launchArgs' <<<"$rendered"
     [ "$output" = "--permission-mode auto --settings /home/tester/.t3/userdata/claude-settings.json" ]
+    run jq -e 'has("providers") | not' <<<"$rendered"
+    [ "$status" -eq 0 ]
+}
+
+@test "t3 provider instances launch the preamble wrappers" {
+    run env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SCRIPT" </dev/null
+    [ "$status" -eq 0 ]
+    run jq -c '.providerInstances | [.claudeAgent, .codex, .opencode] | map([.driver, .config.binaryPath])' <<<"$output"
+    [ "$output" = '[["claudeAgent","/home/tester/Dev/dotfiles/bin/dotsclaude"],["codex","/home/tester/Dev/dotfiles/bin/dotscodex"],["opencode","/home/tester/Dev/dotfiles/bin/dotsopencode"]]' ]
+    for wrapper in dotsclaude dotscodex dotsopencode; do
+        [ -x "$REAL_DOTFILES_DIR/bin/$wrapper" ]
+    done
 }
 
 @test "t3 settings preserve UI state and reset managed drift" {
@@ -54,18 +68,26 @@ setup() {
   "sidebarAutoSettleAfterDays": null,
   "defaultThreadEnvMode": "worktree",
   "providers": {
-    "cursor": { "enabled": false },
-    "claudeAgent": { "enabled": true, "launchArgs": "--dangerously-skip-permissions" }
+    "claudeAgent": { "launchArgs": "--dangerously-skip-permissions" }
+  },
+  "providerInstances": {
+    "cursor": { "driver": "cursor", "enabled": false, "config": {} },
+    "opencode": { "driver": "opencode", "enabled": true, "config": { "binaryPath": "/usr/bin/opencode", "serverUrl": "" } },
+    "claudeAgent": { "driver": "claudeAgent", "enabled": true, "config": { "binaryPath": "/usr/bin/claude", "launchArgs": "--dangerously-skip-permissions", "customModels": [] } }
   }
 }
 JSON
     [ "$status" -eq 0 ]
     [ -z "$stderr" ]
     local rendered="$output"
-    run jq -c '[.projectSettingsFolded, .sidebarAutoSettleAfterDays, .defaultThreadEnvMode, .providers.cursor.enabled, .providers.claudeAgent.enabled]' <<<"$rendered"
-    [ "$output" = '[true,null,"worktree",false,true]' ]
-    run jq -r '.providers.claudeAgent.launchArgs' <<<"$rendered"
-    [ "$output" = "--permission-mode auto --settings /home/tester/.t3/userdata/claude-settings.json" ]
+    run jq -c '[.projectSettingsFolded, .sidebarAutoSettleAfterDays, .defaultThreadEnvMode, .providerInstances.cursor.enabled, .providerInstances.claudeAgent.enabled, .providerInstances.opencode.config.serverUrl, .providerInstances.claudeAgent.config.customModels]' <<<"$rendered"
+    [ "$output" = '[true,null,"worktree",false,true,"",[]]' ]
+    run jq -r '.providerInstances.claudeAgent.config.launchArgs, .providerInstances.claudeAgent.config.binaryPath, .providerInstances.opencode.config.binaryPath' <<<"$rendered"
+    [ "${lines[0]}" = "--permission-mode auto --settings /home/tester/.t3/userdata/claude-settings.json" ]
+    [ "${lines[1]}" = "/home/tester/Dev/dotfiles/bin/dotsclaude" ]
+    [ "${lines[2]}" = "/home/tester/Dev/dotfiles/bin/dotsopencode" ]
+    run jq -e 'has("providers") | not' <<<"$rendered"
+    [ "$status" -eq 0 ]
 }
 
 @test "t3 settings keep unknown live keys with a warning" {
@@ -109,7 +131,7 @@ JSON
     local destination="$TEST_HOME/home"
     mkdir -p "$destination/.t3/userdata"
     printf 'runtime state\n' > "$destination/.t3/userdata/state.sqlite"
-    printf '{"defaultThreadEnvMode":"worktree","providers":{"cursor":{"enabled":false}}}\n' > "$destination/.t3/userdata/settings.json"
+    printf '{"defaultThreadEnvMode":"worktree","providerInstances":{"cursor":{"driver":"cursor","enabled":false,"config":{}}}}\n' > "$destination/.t3/userdata/settings.json"
     cat > "$cfg" <<TOML
 sourceDir = "$CZ_SRC"
 destDir = "$destination"
@@ -124,7 +146,7 @@ TOML
     [ "$status" -eq 0 ]
     [ "$(cat "$destination/.t3/userdata/state.sqlite")" = "runtime state" ]
     cmp -s "$CZ_SRC/dot_t3/userdata/claude-settings.json" "$destination/.t3/userdata/claude-settings.json"
-    run jq -r '.defaultThreadEnvMode, .providers.cursor.enabled, .providers.claudeAgent.launchArgs' "$destination/.t3/userdata/settings.json"
+    run jq -r '.defaultThreadEnvMode, .providerInstances.cursor.enabled, .providerInstances.claudeAgent.config.launchArgs' "$destination/.t3/userdata/settings.json"
     [ "${lines[0]}" = "worktree" ]
     [ "${lines[1]}" = "false" ]
     [ "${lines[2]}" = "--permission-mode auto --settings $destination/.t3/userdata/claude-settings.json" ]

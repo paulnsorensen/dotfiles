@@ -12,9 +12,26 @@
 #   live file. It disables claude.ai connectors for T3 sessions only, so tilth
 #   and hallouminate stay in the preloaded tool list. $HOME is expanded by the
 #   modify script; chezmoi data files are not templated.
+# - binaryPath points each harness at its bin/dots* wrapper, which replaces
+#   the native system prompt with agents/preamble.md.
+# - T3 0.1.0 reads providerInstances.<id>.{driver,config}. It copies a legacy
+#   providers.<kind> blob only into an empty instance slot, so a key under
+#   providers has no effect once the slot exists. driver is set so that a
+#   fresh settings file decodes.
 
 t3:
   settings:
-    providers:
+    providerInstances:
       claudeAgent:
-        launchArgs: "--permission-mode auto --settings $HOME/.t3/userdata/claude-settings.json"
+        driver: claudeAgent
+        config:
+          binaryPath: $HOME/Dev/dotfiles/bin/dotsclaude
+          launchArgs: "--permission-mode auto --settings $HOME/.t3/userdata/claude-settings.json"
+      codex:
+        driver: codex
+        config:
+          binaryPath: $HOME/Dev/dotfiles/bin/dotscodex
+      opencode:
+        driver: opencode
+        config:
+          binaryPath: $HOME/Dev/dotfiles/bin/dotsopencode
