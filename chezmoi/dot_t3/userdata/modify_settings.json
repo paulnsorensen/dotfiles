@@ -36,7 +36,8 @@ if [ ! -f "$registry" ]; then
 fi
 
 home=${CHEZMOI_HOME_DIR:-${HOME:?HOME is unset}}
-dotfiles=$(cd "$CHEZMOI_SOURCE_DIR/.." && pwd)
+# -P resolves a symlinked source dir to the real clone, as the wrappers do.
+dotfiles=$(cd -P "$CHEZMOI_SOURCE_DIR/.." && pwd)
 desired=$(yq -o=json '.t3.settings' "$registry" \
     | jq --arg home "$home" --arg dotfiles "$dotfiles" \
         'walk(if type == "string" then gsub("\\$DOTFILES"; $dotfiles) | gsub("\\$HOME"; $home) else . end)')

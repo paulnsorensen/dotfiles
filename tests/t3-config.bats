@@ -75,6 +75,20 @@ setup() {
     [ "${lines[2]}" = "$clone/bin/dotsopencode" ]
 }
 
+@test "t3 wrapper paths resolve a symlinked chezmoi source to the real clone" {
+    local clone="$TEST_HOME/code/my dots"
+    mkdir -p "$clone/chezmoi/lib" "$clone/chezmoi/.chezmoidata" "$TEST_HOME/share"
+    cp "$REGISTRY" "$clone/chezmoi/.chezmoidata/t3.yaml"
+    cp "$CZ_SRC"/lib/drift-gate.sh "$CZ_SRC"/lib/t3-settings-*.txt "$clone/chezmoi/lib/"
+    ln -s "$clone/chezmoi" "$TEST_HOME/share/chezmoi"
+    local real
+    real=$(cd -P "$clone" && pwd)
+    run env CHEZMOI_SOURCE_DIR="$TEST_HOME/share/chezmoi" HOME=/home/tester sh "$SCRIPT" </dev/null
+    [ "$status" -eq 0 ]
+    run jq -r '.providerInstances.codex.config.binaryPath' <<<"$output"
+    [ "$output" = "$real/bin/dotscodex" ]
+}
+
 @test "t3 settings preserve UI state and reset managed drift" {
     run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SCRIPT" <<'JSON'
 {
