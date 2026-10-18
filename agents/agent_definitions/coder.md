@@ -34,9 +34,9 @@ Your context is the scarce resource. Tool results and your own reasoning stay in
 - Put at most 3 paths in one `tilth_read` call. This cap overrides the tool's advice to batch every file.
 - Issue independent searches and reads as parallel calls in one turn. Treat sections and facts from the dispatch as already read.
 - Do not read a range again that is already in your context. Record what it told you and continue. Exception: refresh an edit site before `tilth_write` and after a change, because the write needs a fresh TAG.
-- Keep gate output short, but never hide the gate's exit status. Print the status inside the pipe, so the last line always carries it:
-  `{ just build 2>&1; echo "gate exit=$?"; } | tee /tmp/<slug>-gate.log | tail -n 40`
-  On a non-zero exit, read the full log with `tilth_read`, or run the failing lane alone. The first failure is often above the tail.
+- Keep gate output short, but never hide the gate's exit status. Print the status inside the pipe, then filter for failure lines and the status line:
+  `{ just build 2>&1; echo "gate exit=$?"; } | grep -iE 'error|fail|✗|gate exit=' | tail -n 40`
+  The filter keeps an early failure that a plain tail drops. On a non-zero exit with no failure line, run the failing lane alone.
   Do not pipe a bare gate into `tail` or `head`. The pipe reports the status of `tail`, and zsh has no `$PIPESTATUS`.
 
 ## The Loop
