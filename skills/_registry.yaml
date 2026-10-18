@@ -30,6 +30,9 @@
 sources:
   paulnsorensen/easy-cheese:
     description: Portable agent workflow toolkit — mold, cook, press, age, cure, melt, and related gates
+    # dist is the built branch: it carries each skill's scripts/*.pyz, which
+    # main gitignores. Pin it so no harness installs the source-only main.
+    pin: dist
   paulnsorensen/skillz-that-grillz:
     # Tracks main (no pin). Ships /skillz with its bundled analytics engine to
     # every harness; it replaces the retired local skills/skillz.
