@@ -242,12 +242,17 @@ STUB
 exit 0
 STUB
     chmod +x "$stub_bin/zsh"
-    # Keep the host broker inventory fixed across both doctor runs.
-    cat > "$stub_bin/ps" <<'STUB'
-#!/bin/bash
-exit 0
-STUB
-    chmod +x "$stub_bin/ps"
+    # Run doctor from a minimal dotfiles tree. Host-dependent checks never run
+    # there: bin-doctor, the broker inventory, and VS Code have no files in the
+    # tree. A stub chezmoi pins the chezmoi health check. A tree without .git
+    # pins the prek hook check to the installed prek binary alone.
+    local tree="$TEST_HOME/doctor-tree"
+    mkdir -p "$tree/chezmoi/lib"
+    cp "$DOTFILES_DIR/chezmoi/lib/drift-gate.sh" "$tree/chezmoi/lib/drift-gate.sh"
+    printf '#!/bin/bash\nexit 0\n' > "$stub_bin/chezmoi"
+    chmod +x "$stub_bin/chezmoi"
+    cd "$tree"
+    export DOTFILES_DIR="$tree"
 
     run dots doctor
     local before=0
