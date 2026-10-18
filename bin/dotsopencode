@@ -13,11 +13,12 @@
 # this wrapper adds, except that its `instructions` are appended.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/lib/preamble-wrappers.sh
 source "$SCRIPT_DIR/lib/preamble-wrappers.sh"
 
-AGENTS_DOTFILES="${AGENTS_DOTFILES:-$HOME/Dev/dotfiles/agents}"
+# The clone is the parent of bin/ unless DOTFILES_DIR is set.
+AGENTS_DOTFILES="${AGENTS_DOTFILES:-${DOTFILES_DIR:-${SCRIPT_DIR%/bin}}/agents}"
 OPENCODE_BIN="${OPENCODE_BIN:-${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims/opencode}"
 
 preamble=$(dots_opencode_preamble_path "$AGENTS_DOTFILES") || exec "$OPENCODE_BIN" "$@"

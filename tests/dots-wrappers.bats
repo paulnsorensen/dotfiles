@@ -130,6 +130,25 @@ config_of() { sed -n 's/^CONFIG=//p' <<<"$1"; }
     [[ "$stderr" == *"jq missing"* ]]
 }
 
+@test "wrappers find the preamble in a clone outside ~/Dev" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    local clone="$TEST_HOME/code/my dots"
+    mkdir -p "$clone/bin/lib" "$clone/agents"
+    cp "$REAL_DOTFILES_DIR"/bin/dots{claude,codex,opencode} "$clone/bin/"
+    cp "$REAL_DOTFILES_DIR/bin/lib/preamble-wrappers.sh" "$clone/bin/lib/"
+    printf 'p\n' > "$clone/agents/preamble.md"
+    unset AGENTS_DOTFILES DOTFILES_DIR
+    run "$clone/bin/dotsclaude" -p hi
+    [ "$status" -eq 0 ]
+    [ "${lines[1]}" = "$clone/agents/preamble.md" ]
+    run "$clone/bin/dotscodex" exec
+    [ "$status" -eq 0 ]
+    [ "${lines[1]}" = "model_instructions_file=\"$clone/agents/preamble.md\"" ]
+    run "$clone/bin/dotsopencode" serve
+    [ "$status" -eq 0 ]
+    jq -e --arg p "$clone/agents/preamble.md" '.instructions == [$p]' <<<"$(config_of "$output")"
+}
+
 @test "preamble library functions keep the caller shell usable under strict mode" {
     command -v jq >/dev/null 2>&1 || skip "jq not installed"
     run bash -c '

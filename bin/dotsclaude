@@ -5,7 +5,11 @@
 # Mirrors zsh/claude.zsh:_cc_base() — intentionally without the tmux wrap.
 set -euo pipefail
 
-AGENTS_DOTFILES="${AGENTS_DOTFILES:-$HOME/Dev/dotfiles/agents}"
+# The clone is the parent of this script's directory unless DOTFILES_DIR is
+# set. The export lets cc-env-exec read the .env file of the same clone.
+DOTFILES_DIR="${DOTFILES_DIR:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export DOTFILES_DIR
+AGENTS_DOTFILES="${AGENTS_DOTFILES:-$DOTFILES_DIR/agents}"
 CLAUDE_BIN="${CLAUDE_BIN:-${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims/claude}"
 
 flags=()
@@ -16,7 +20,7 @@ flags=()
 
 # Fresh .env keys at process start (mirrors _cc_base's launcher prefix) —
 # Conductor doesn't source zsh init, so .env keys may be absent from its env.
-launcher="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-env-exec"
+launcher="$DOTFILES_DIR/bin/cc-env-exec"
 # ${flags[@]+…} guard: bash 3.2 (macOS /bin/bash) treats an empty array
 # expansion as unbound under `set -u`.
 if [[ -x "$launcher" ]]; then
