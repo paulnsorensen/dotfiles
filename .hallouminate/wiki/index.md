@@ -29,7 +29,8 @@ relevant page rather than loading the whole reference into every session.
   registries, the four-target `ap` compiler, and chezmoi-managed native
   harnesses, including secret handling, config drift, and cross-harness guards.
 - [[harnesses/index]] — the supported agent harnesses (Claude Code, Codex,
-  Copilot, Cursor, OMP): official docs and repo wiring per capability.
+  Copilot, Cursor, OMP, Pi, OpenCode): official docs and repo wiring per
+  capability.
 - [[operations/index]] — the operational plumbing: the sync + chezmoi deploy
   system, the opt-in local-LLM stack, and the local dev environment (git
   tooling, prek, plugins).
@@ -39,6 +40,8 @@ relevant page rather than loading the whole reference into every session.
   machine-aware vault selection.
 - [[decisions/index]] — the `session-convergence` ADR series (analytics access,
   where the convergence sweep lives, wheypoint provenance fields).
+- [[strategy/index]] — dated cheese-board strategy pages: themes, initiatives,
+  and the issue batches that each run routed to spec, mold, or close.
 - [[domain-model]] — the ubiquitous language for this repo's agent-orchestration
   domain. Merge into it; don't overwrite.
 - [[log]] — the ingest log: one line per page created or merged, with the commit
