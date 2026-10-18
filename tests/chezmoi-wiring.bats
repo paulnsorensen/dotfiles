@@ -478,6 +478,51 @@ YAML
     [ ! -e "$cache/.dotfiles-pin" ]
 }
 
+@test "_cz_vendor_external_skills follows a changed remote default branch and keeps scripts/" {
+    export XDG_CACHE_HOME="$TEST_HOME/cache"
+
+    # Origin starts on main: source skills with build outputs gitignored.
+    local origin="$TEST_HOME/origin-repo"
+    mkdir -p "$origin/skills/foo" "$origin/skills/bar"
+    git -C "$origin" init -q -b main
+    echo "# foo" > "$origin/skills/foo/SKILL.md"
+    echo "# bar" > "$origin/skills/bar/SKILL.md"
+    git -C "$origin" add -A
+    git -C "$origin" -c user.email=t@t -c user.name=t commit -qm main-v1
+
+    # Cache as an unpinned sync left it: single-branch shallow clone of main.
+    local cache="$XDG_CACHE_HOME/dotfiles/claude-skill-sources/someorg__somerepo"
+    mkdir -p "$(dirname "$cache")"
+    git clone -q --depth 1 "$origin" "$cache"
+
+    # The remote then makes a built dist branch the default. Only dist
+    # carries each skill's scripts/ helpers (the easy-cheese *.pyz case).
+    git -C "$origin" checkout -q -b dist
+    mkdir -p "$origin/skills/foo/scripts" "$origin/skills/bar/scripts"
+    echo "zip" > "$origin/skills/foo/scripts/foo.pyz"
+    echo "zip" > "$origin/skills/bar/scripts/bar.pyz"
+    git -C "$origin" add -A
+    git -C "$origin" -c user.email=t@t -c user.name=t commit -qm dist-v1
+
+    local registry="$TEST_HOME/registry.yaml"
+    cat > "$registry" <<'YAML'
+sources:
+  someorg/somerepo:
+    description: test
+YAML
+
+    run _cz_vendor_external_skills "$registry" "$TEST_HOME/dst" claude
+    assert_success
+    [ "$(git -C "$cache" rev-parse --abbrev-ref HEAD)" = "dist" ]
+    # Every source skill with a scripts/ folder installs with that folder.
+    local d name
+    for d in "$origin"/skills/*/scripts/; do
+        name=$(basename "$(dirname "$d")")
+        [[ -f "$TEST_HOME/dst/exact_$name/exact_scripts/$name.pyz" ]] \
+            || { echo "installed skill $name is missing scripts/$name.pyz" >&2; return 1; }
+    done
+}
+
 # ── source-tree scaffold ────────────────────────────────────────────────
 
 @test "chezmoi/.chezmoiroot exists" {

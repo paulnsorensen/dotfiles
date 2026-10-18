@@ -221,4 +221,17 @@ The separate export matches the persistent environment used by the real sync cal
 
 **Fix:** the unpinned path now detects a leftover `.dotfiles-pin` marker or a detached HEAD. It reads the remote default branch with `git ls-remote --symref origin HEAD`, widens the refspec with `git remote set-branches`, fetches it, checks out a tracking branch, and deletes the marker. A pin removal is a pin change, so a failure here is a hard error like the pinned path — not a warning. Bats: `tests/chezmoi-wiring.bats` "re-attaches to the default branch when a pin is removed".
 
-**Context:** easy-cheese retired its `next` soak channel upstream (`c4bdcb3`, #558). `main` is the only live branch. The registry now tracks it unpinned.
+**Context:** easy-cheese retired its `next` soak channel upstream (`c4bdcb3`, #558). The registry then tracked `main` unpinned. Since 2026-10-18 it pins `dist` (next section).
+
+## Gotcha: easy-cheese ships helper scripts only on its `dist` branch (fixed 2026-10-18)
+
+**Symptom:** `~/.claude/skills/<name>/` lacked `scripts/` for 12 of 13 easy-cheese skills. `/affinage` could not find `skills/affinage/scripts/affinage.pyz`. `~/.agents/skills` had every `scripts/` folder.
+
+**Cause:** easy-cheese changed its GitHub default branch from `main` to `dist`. `main` gitignores `skills/*/scripts/*.pyz`; `dist` carries the built archives. `npx skills add` clones fresh, so it got `dist`. The Claude vendor cache in `_cz_vendor_external_skills` (`.sync-lib.sh`) was a single-branch clone of `main`, and the unpinned path only ran `git pull --ff-only`. It never saw the new default branch.
+
+**Fix (two layers):**
+
+- `skills/_registry.yaml` pins `paulnsorensen/easy-cheese` to `dist`. Every harness now installs the built branch, whatever the GitHub default is.
+- The unpinned path compares the cache branch with `git ls-remote --symref origin HEAD` on every sync. It re-attaches when the remote default changes. A failed re-attach is a hard error. An offline lookup keeps the cached branch. Bats: `tests/chezmoi-wiring.bats` "follows a changed remote default branch and keeps scripts/".
+
+**Check:** after `dots sync`, `ls ~/.claude/skills/*/scripts` must match the `scripts/` folders on the source branch.

@@ -547,22 +547,26 @@ _cz_vendor_external_skills() {
                 log_warning "external skill source $source: fetch failed, using cached checkout"
             fi
         else
-            # Unpinned: float to latest of the default branch on every sync.
-            # A cache left by a removed pin sits on a detached HEAD, so
-            # `pull --ff-only` fails forever and the stale pin never moves.
-            # The pinned path always writes .dotfiles-pin, so the marker
-            # alone identifies such a cache. Re-attach to the remote default
-            # branch first; a pin removal is a pin change, so failure here
-            # is loud like the pinned path.
-            if [[ -f "$cache/.dotfiles-pin" ]]; then
-                local def
-                def=$(GIT_TERMINAL_PROMPT=0 git -C "$cache" ls-remote --symref origin HEAD 2>/dev/null \
-                    | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2; exit }')
+            # Unpinned: float to latest of the remote default branch on every
+            # sync. The cache is a single-branch clone, so `pull --ff-only`
+            # alone stays on the clone-time branch forever. Re-attach first
+            # in two cases:
+            #   - A removed pin leaves a detached HEAD. The pinned path always
+            #     writes .dotfiles-pin, so the marker identifies that cache.
+            #   - The remote changed its default branch. easy-cheese moved
+            #     from main to a built dist branch that ships scripts/*.pyz.
+            # A failed re-attach is loud: the stale branch can lack files.
+            # An offline lookup with no pin marker keeps the cached branch.
+            local def cur
+            def=$(GIT_TERMINAL_PROMPT=0 git -C "$cache" ls-remote --symref origin HEAD 2>/dev/null \
+                | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2; exit }')
+            cur=$(git -C "$cache" symbolic-ref -q --short HEAD 2>/dev/null || true)
+            if [[ -f "$cache/.dotfiles-pin" || ( -n "$def" && "$def" != "$cur" ) ]]; then
                 if [[ -z "$def" ]] \
                     || ! git -C "$cache" remote set-branches origin "$def" >/dev/null 2>&1 \
                     || ! GIT_TERMINAL_PROMPT=0 git -C "$cache" fetch --depth 1 origin "$def" >/dev/null 2>&1 \
                     || ! git -C "$cache" checkout -q -B "$def" --track "origin/$def" >/dev/null 2>&1; then
-                    log_error "external skill source $source: pin removed but cannot re-attach to the default branch"
+                    log_error "external skill source $source: cannot re-attach to the remote default branch '${def:-unknown}'"
                     return 1
                 fi
                 rm -f "$cache/.dotfiles-pin"
