@@ -44,8 +44,10 @@ esac
 MOCK
     chmod +x "$MOCK_BIN/git"
 
-    # Mock bootstrap/runtime commands — no-ops
-    for cmd in brew prek uv tmux yq omp chezmoi; do
+    # Mock bootstrap/runtime commands — no-ops. tilth is mocked because .sync
+    # runs `tilth install claude-code` under pipefail: a failure of the host
+    # binary would abort the sync before it prints its failure summary.
+    for cmd in brew prek uv tmux yq omp chezmoi tilth; do
         printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/$cmd"
         chmod +x "$MOCK_BIN/$cmd"
     done
