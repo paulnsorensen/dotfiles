@@ -36,6 +36,13 @@ EOF
     [ "$status" -eq 0 ]
 }
 
+@test "sccache config sets a 30 GiB local disk cache" {
+    local conf="$REAL_DOTFILES_DIR/chezmoi/dot_config/sccache/config"
+    run python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["cache"]["disk"]["size"])' "$conf"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$((30 * 1024 * 1024 * 1024))" ]
+}
+
 # ── chezmoi/.sync wiring ────────────────────────────────────────────────
 
 # Helper: drop a fake chezmoi binary on PATH that records its args and
