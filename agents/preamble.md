@@ -50,7 +50,7 @@ Reuse the verified worktree and base commit on resume.
 Give the coder a `path#start-end` section for each edit site.
 In an active phase, a coder returns `status: needs-context` with observations.
 The parent persists them per the phase-owned protocol and never implements the remainder.
-Dispatch coders until the phase is done; stop if one completes no new edit.
+Dispatch fresh, not resumed, coders until the phase is done; stop if one completes no new edit.
 
 ## Agent selection
 

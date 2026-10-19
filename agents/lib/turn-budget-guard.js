@@ -93,6 +93,12 @@ const BUDGETS = {
   // correctly instead of silently falling to `default`.
   'milknado-worker': { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   'milknado:milknado-worker': { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
+  // Workflow-tool agents report `workflow-subagent` and run cook/cure-shaped
+  // work. Project-local `implementer` agents (for example in the multiplier
+  // repository) are coder-shaped writers. Both fell to `default` and were
+  // turn-denied at 50 while a coder gets 100 (decision log, 2026-10-19).
+  'workflow-subagent': { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
+  implementer: { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   reviewer: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   explorer: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
   researcher: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
@@ -571,6 +577,13 @@ const HANDBACK_TOOLS = new Set(['SubagentHandback']);
 // a hard wall loses the agent's whole result, so it stays allowed.
 const STRUCTURED_OUTPUT_TOOL = 'StructuredOutput';
 
+// A resumed agent keeps its whole transcript, so it restarts at or above the
+// ceiling and is denied again on its first call. The decision log showed 34 of
+// 63 resumes started past the hard ceiling. Every handoff text tells the parent
+// to dispatch a fresh agent instead.
+const FRESH_DISPATCH =
+  'Tell the parent to dispatch a fresh agent with these observations; resuming this agent keeps its full context.';
+
 function checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent) {
   const exceeded = [];
   if (turns > budget.turnHard) exceeded.push(`turns ${turns}/${budget.turnHard}`);
@@ -583,23 +596,28 @@ function checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent) 
     ? 'If your task is incomplete, open your final reply with "status: needs-context" so the phase owner can persist observations and retry the same phase.'
     : 'If your task is incomplete, open your final reply with "status: blocked: <reason>" so the owner can handle the blocker.';
   return `Local guard budget exceeded (type '${agentType || 'default'}': ${exceeded.join(', ')}). ` +
-    `This is a local guard budget signal, not a provider context failure. ${status} ${incomplete}`;
+    `This is a local guard budget signal, not a provider context failure. ${status} ${incomplete} ${FRESH_DISPATCH}`;
 }
 
 function denyReason(agentType, turns, tokens, budget, checkpointSpent) {
   return checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent);
 }
 
+// The soft nudge is a heads-up, not a stop. Agents read the old "wrap up" text
+// as "stop now" and abandoned work with about 30k tokens left (2026-10-19).
+// The text now names the hard ceiling and says to keep working.
 function nudgeContext(agentType, budget) {
   const coder = String(agentType || '').trim().toLowerCase() === 'coder';
   const handoff = coder
-    ? 'return compact checkpoint observations inline now; do not persist a checkpoint; wrap up.'
-    : 'Persist compact handoff observations now and wrap up; if incomplete, return status: blocked: <reason>.';
+    ? 'When the remaining work does not fit, return compact checkpoint observations inline; do not persist a checkpoint.'
+    : 'When the remaining work does not fit, persist compact handoff observations and return; if incomplete, return status: blocked: <reason>.';
   return `Local guard budget warning (type '${agentType || 'default'}': ` +
-    `soft ${budget.turnSoft} turns / ${budget.ctxSoft} context tokens). ` +
-    `This is a local guard budget signal, not a provider context failure. ${handoff} ` +
-    `non-checkpoint tool calls are hard-blocked at the ceiling (SubagentHandback stays allowed), so prefer returning a concise ` +
-    `final answer over further exploration.`;
+    `soft ${budget.turnSoft} turns / ${budget.ctxSoft} context tokens passed; ` +
+    `hard ceiling ${budget.turnHard} turns / ${budget.ctxHard} context tokens). ` +
+    'This is a local guard budget signal, not a provider context failure. ' +
+    'Do not stop yet: keep working on the current step, and use targeted section reads instead of broad reads. ' +
+    `${handoff} ${FRESH_DISPATCH} ` +
+    'At the ceiling, non-checkpoint tool calls are hard-blocked (SubagentHandback stays allowed).';
 }
 
 // Sterner one-time nudge for crossing the context HARD ceiling.
@@ -613,7 +631,7 @@ function hardNudgeContext(agentType, budget, checkpointSpent) {
     : 'If your task is incomplete, open your final reply with "status: blocked: <reason>" so the owner can handle the blocker.';
   return `Local guard context hard ceiling exceeded (type '${agentType || 'default'}': ` +
     `${budget.ctxHard} tokens). This is a local guard budget signal, not a provider context failure. ` +
-    `${checkpoint} Do not keep exploring. ${incomplete}`;
+    `${checkpoint} Do not keep exploring. ${incomplete} ${FRESH_DISPATCH}`;
 }
 
 function isCheckpointWrite(event) {

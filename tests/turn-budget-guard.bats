@@ -484,13 +484,15 @@ post_event() {
     seed_turns s3 c1 75  # coder turnSoft = 75
     fire "$(post_event s3 c1 coder)"
     [[ "$(verdict)" == "nudge" ]]
-    [[ "$output" == *"wrap up"* ]]
+    [[ "$output" == *"Do not stop yet"* ]]
+    [[ "$output" != *"wrap up"* ]]
+    [[ "$output" == *"hard ceiling 100 turns / 180000 context tokens"* ]]
     [[ "$output" == *"return compact checkpoint observations inline"* ]]
     [[ "$output" == *"do not persist a checkpoint"* ]]
     [[ "$output" == *"non-checkpoint tool calls are hard-blocked"* ]]
     [[ "$output" == *"local guard budget"* ]]
     [[ "$output" == *"not a provider context failure"* ]]
-
+    [[ "$output" == *"dispatch a fresh agent"* ]]
 
     # Marker set — a second PostToolUse must not nudge again.
     fire "$(post_event s3 c1 coder)"
@@ -501,7 +503,8 @@ post_event() {
     seed_turns s3 reviewer1 40
     fire "$(post_event s3 reviewer1 reviewer)"
     [[ "$(verdict)" == "nudge" ]]
-    [[ "$output" == *"Persist compact handoff observations"* ]]
+    [[ "$output" == *"persist compact handoff observations"* ]]
+    [[ "$output" == *"Do not stop yet"* ]]
     [[ "$output" == *"status: blocked: <reason>"* ]]
     [[ "$output" != *"status: needs-context"* ]]
 }
@@ -651,6 +654,14 @@ post_event() {
     fire "$(pre_event s5b gp1 general-purpose)"
     [[ "$(verdict)" == "deny" ]]
     [[ "$(log_record | jq -r '.turnHard')" == "100" ]]
+}
+
+@test "A5b: hard-ceiling deny tells the parent to dispatch a fresh agent, not resume" {
+    seed_turns s5b fresh1 100
+    fire "$(pre_event s5b fresh1 coder)"
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$output" == *"dispatch a fresh agent"* ]]
+    [[ "$output" == *"resuming this agent keeps its full context"* ]]
 }
 
 # ── A6 — independent counters + scoped cleanup ───────────────────────
@@ -953,4 +964,24 @@ backdate_mtime() {
     [[ "$(verdict)" == "allow" ]]
     [[ "$(log_record | jq -r '.budget_type')" == "generalist" ]]
     [[ "$(log_record | jq -r '.turnHard')" == "100" ]]
+}
+
+# ── A14 ─ workflow-subagent and implementer resolve the coder tier ─────
+
+@test "A14: workflow-subagent at 51 turns is allowed (coder tier, not default's 50)" {
+    seed_turns s14 w1 51
+    fire "$(pre_event s14 w1 workflow-subagent)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.budget_type')" == "workflow-subagent" ]]
+    [[ "$(log_record | jq -r '.turnHard')" == "100" ]]
+}
+
+@test "A14: implementer at 51 turns is allowed and at 101 is denied (coder tier)" {
+    seed_turns s14 i1 51
+    fire "$(pre_event s14 i1 implementer)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.budget_type')" == "implementer" ]]
+    seed_turns s14 i2 100
+    fire "$(pre_event s14 i2 implementer)"
+    [[ "$(verdict)" == "deny" ]]
 }

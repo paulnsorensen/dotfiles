@@ -175,7 +175,7 @@ hooks:
     description: Nudge a checkpoint-and-relaunch on opus/high for deep-synthesis skills at effort below high
 
   # ─── Sub-agent turn/context budget ──────────────────────────────────
-  # Enforces a per-sub-agent turn + context-byte ceiling that Claude Code's
+  # Enforces a per-sub-agent turn + context-token ceiling that Claude Code's
   # `maxTurns` frontmatter fails to (upstream #41143: the hardcoded default
   # always wins; background spawns drop the config entirely). Claude-only —
   # Codex has no hook deployment for this guard today.
@@ -183,18 +183,19 @@ hooks:
   # main orchestrator's tool calls carry none, so the shared logic fail-opens
   # on them. Budgets are keyed by `agent_type`.
   #   turn-budget-guard-pre  — PreToolUse: increment the per-agent turn
-  #                            counter, read live context bytes, DENY the call
-  #                            at the turn hard ceiling immediately; the byte
-  #                            hard ceiling gets a short grace window before
-  #                            it denies (a resumed sub-agent's transcript can
-  #                            already sit above it on the very first call).
-  #                            SubagentHandback stays allowed at the ceiling,
-  #                            because it ends the agent.
-  #   turn-budget-guard-post — PostToolUse: inject a one-time wrap-up nudge
+  #                            counter, read live context tokens, and DENY
+  #                            the call past either hard ceiling. There is no
+  #                            grace window: a resumed sub-agent keeps its
+  #                            transcript, so it is denied on its first call
+  #                            when it already sits past the ceiling. One
+  #                            checkpoint write, SubagentHandback, and
+  #                            StructuredOutput stay allowed at the ceiling.
+  #   turn-budget-guard-post — PostToolUse: inject a one-time warning
   #                            (additionalContext) when either signal crosses
-  #                            its soft threshold — the graceful handoff
-  #                            window — plus a sterner one-time nudge when
-  #                            bytes cross the hard ceiling.
+  #                            its soft threshold. The warning says to keep
+  #                            working and names the hard ceiling. A sterner
+  #                            one-time nudge fires when tokens cross the
+  #                            hard ceiling.
   #   turn-budget-guard-stop — SubagentStop: delete the agent's counter dir.
   # All three share the one Node logic module and dispatch on hook_event_name.
   # matcher ".*" on pre/post covers every supported tool (the no-agent_id

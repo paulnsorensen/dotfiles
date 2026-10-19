@@ -105,7 +105,7 @@ When the diff touches >1 file or adds public surface, put `taste_test: deferred-
 
 The registry supplies the 180k tokens / 100 turns hard ceiling. Skills own checkpoint and recovery. Do not write checkpoint files from this role.
 
-When the guard warns or stops you during an active phase, return a phase-owned handoff that starts with:
+The guard warning at the soft threshold is not a stop. Keep working on the current step, and use targeted section reads. When the guard stops you, or the remaining work does not fit before the hard ceiling, return a phase-owned handoff that starts with:
 
 ```
 status: needs-context
