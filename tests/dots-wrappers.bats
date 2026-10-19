@@ -134,6 +134,9 @@ config_of() { sed -n 's/^CONFIG=//p' <<<"$1"; }
     command -v jq >/dev/null 2>&1 || skip "jq not installed"
     local clone="$TEST_HOME/code/my dots"
     mkdir -p "$clone/bin/lib" "$clone/agents"
+    # The wrappers resolve their clone with `cd -P`; macOS TMPDIR sits behind
+    # the /var -> /private/var symlink, so compare against the physical path.
+    clone="$(cd -P "$clone" && pwd)"
     cp "$REAL_DOTFILES_DIR"/bin/dots{claude,codex,opencode} "$clone/bin/"
     cp "$REAL_DOTFILES_DIR/bin/lib/preamble-wrappers.sh" "$clone/bin/lib/"
     printf 'p\n' > "$clone/agents/preamble.md"
