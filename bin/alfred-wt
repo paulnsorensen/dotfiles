@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# alfred-wt — backend for the Alfred `wt` worktree workflow.
+#
+# Usage:
+#   alfred-wt list                  Script-filter JSON for all worktrees
+#   alfred-wt open <action> <path>  Run terminal | zed | copy on a worktree
+#   alfred-wt session <path>        cd into <path> and start cc (Ghostty runs this)
+#   alfred-wt install               Package the workflow and open it in Alfred
+#
+# Roots: $DEV_DIR/*/.worktrees/* (default ~/Dev) and $T3_WORKTREES_DIR/*/*
+# (default ~/.t3/worktrees). Workflow source: alfred/workflows/wt/.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOTFILES_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=bin/lib/worktree.sh
+source "$SCRIPT_DIR/lib/worktree.sh"
+# shellcheck source=bin/lib/alfred.sh
+source "$SCRIPT_DIR/lib/alfred.sh"
+
+# Alfred starts scripts with /usr/bin:/bin:/usr/sbin:/sbin only. Append the
+# Homebrew dirs so system tools stay first.
+export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
+
+usage() { sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+case "${1:-}" in
+    list)
+        alfred_wt_list "${DEV_DIR:-$HOME/Dev}" "${T3_WORKTREES_DIR:-$HOME/.t3/worktrees}"
+        ;;
+    open)
+        [[ $# -eq 3 ]] || { usage >&2; exit 2; }
+        alfred_wt_open "$2" "$3" "$SCRIPT_DIR/alfred-wt"
+        ;;
+    session)
+        [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+        cd -- "$2"
+        exec "${ALFRED_WT_SHELL:-/bin/zsh}" -lic cc
+        ;;
+    install)
+        out="${TMPDIR:-/tmp}"
+        out="${out%/}/Worktrees.alfredworkflow"
+        alfred_package_workflow "$DOTFILES_ROOT/alfred/workflows/wt" "$DOTFILES_ROOT" "$out"
+        echo "alfred-wt: built $out"
+        open "$out"
+        ;;
+    -h | --help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac
