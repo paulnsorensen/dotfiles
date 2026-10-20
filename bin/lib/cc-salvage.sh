@@ -10,7 +10,7 @@
 # salvage_duration_secs <dur> — "90m", "6h", "2d", or "30s" in seconds.
 salvage_duration_secs() {
     [[ "$1" =~ ^([0-9]+)([smhd])$ ]] || return 1
-    local n="${BASH_REMATCH[1]}"
+    local n=$(( 10#${BASH_REMATCH[1]} ))
     case "${BASH_REMATCH[2]}" in
         s) echo "$n" ;;
         m) echo $(( n * 60 )) ;;
@@ -38,7 +38,7 @@ salvage_pid_live() {
 }
 
 # salvage_registry_rows — one "pid<TAB>procStart<TAB>sessionId<TAB>cwd<TAB>name"
-# row per terminal session or Remote Control session. Remote Control spawns
+# row plus its registry path per terminal or Remote Control session. Remote Control spawns
 # are sdk-cli records with a bridgeSessionId; other sdk-cli records are
 # headless runs and are left out. "-" fills empty fields, because read with
 # a tab IFS merges empty fields.
@@ -46,11 +46,11 @@ salvage_registry_rows() {
     local f
     for f in "$HOME"/.claude/sessions/*.json; do
         [[ -f "$f" ]] || continue
-        jq -r 'select((.entrypoint == "cli" or (.entrypoint == "sdk-cli" and has("bridgeSessionId")))
+        jq -r --arg file "$f" 'select((.entrypoint == "cli" or (.entrypoint == "sdk-cli" and has("bridgeSessionId")))
                 and (.kind // "interactive") == "interactive"
                 and (.sessionId | type) == "string" and (.cwd | type) == "string")
             | [(.pid | tostring), (.procStart // "-" | tostring), .sessionId, .cwd,
-               (if (.name // "") == "" then "-" else .name end)]
+               (if (.name // "") == "" then "-" else .name end), $file]
             | @tsv' "$f" 2>/dev/null || true
     done
 }
@@ -66,23 +66,24 @@ salvage_transcript() {
 
 # salvage_candidates <since-epoch> <until-epoch> — dead sessions whose
 # transcript changed inside the window, newest first:
-# "mtime<TAB>sessionId<TAB>cwd<TAB>name". A session id with any live record
+# "mtime<TAB>sessionId<TAB>cwd<TAB>name<TAB>pid<TAB>procStart<TAB>path".
+# A session id with any live record
 # is left out, because a resume would fork a second writer.
 salvage_candidates() {
-    local since="$1" until="$2" rows live=" " seen=" " pid start sid cwd name t mtime
+    local since="$1" until="$2" rows live=" " seen=" " pid start sid cwd name file t mtime
     rows="$(salvage_registry_rows)"
     [[ -n "$rows" ]] || return 0
     while IFS=$'\t' read -r pid start sid _ _; do
         if salvage_pid_live "$pid" "$start"; then live+="$sid "; fi
     done <<< "$rows"
-    while IFS=$'\t' read -r _ _ sid cwd name; do
+    while IFS=$'\t' read -r pid start sid cwd name file; do
         [[ "$sid" =~ ^[0-9A-Za-z_-]+$ ]] || continue
         [[ "$live$seen" == *" $sid "* ]] && continue
         seen+="$sid "
         t="$(salvage_transcript "$sid")" || continue
         mtime="$(resume_file_mtime "$t")" || continue
         if (( mtime >= since && mtime <= until )); then
-            printf '%s\t%s\t%s\t%s\n' "$mtime" "$sid" "$cwd" "$name"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$mtime" "$sid" "$cwd" "$name" "$pid" "$start" "$file"
         fi
     done <<< "$rows" | sort -rn
 }
@@ -101,19 +102,35 @@ salvage_target_session() {
     printf '%s\n' "$s"
 }
 
-# salvage_launch <tmux-session> <session-id> <cwd> <window-name> — open a
+# salvage_launch <tmux-session> <session-id> <cwd> <window-name> <path> <pid> <procStart> — open a
 # detached window that resumes the session with the same launcher as `cc`.
+# After success, archive the record only if its process and session still match.
 # On a failed resume the window waits for Enter, so the error stays visible.
 salvage_launch() {
     local target="$1" sid="$2" cwd="$3" name="$4" dotfiles="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
+    local file="$5" pid="$6" start="$7"
     local -a cmd=(claude)
     [[ -f "$dotfiles/agents/preamble.md" ]] && cmd+=(--system-prompt-file "$dotfiles/agents/preamble.md")
     cmd+=(--resume "$sid")
     [[ -x "$dotfiles/bin/cc-env-exec" ]] && cmd=("$dotfiles/bin/cc-env-exec" "${cmd[@]}")
-    # shellcheck disable=SC2016 # $@ and $rc expand in the window's shell
+    # shellcheck disable=SC2016 # Variables expand in the window's shell.
     tmux new-window -d -t "$target:" -n "$name" -c "$cwd" \
-        sh -c '"$@"; rc=$?; [ "$rc" -eq 0 ] || { echo "cc-salvage: resume exited $rc (Enter closes)"; read -r _; }' \
-        sh "${cmd[@]}"
+        sh -c '
+            file=$1 pid=$2 start=$3 sid=$4
+            shift 4
+            "$@"; rc=$?
+            if [ "$rc" -eq 0 ]; then
+                if jq -e --arg pid "$pid" --arg start "$start" --arg sid "$sid" \
+                    '\''(.pid | tostring) == $pid and (.procStart // "-" | tostring) == $start and .sessionId == $sid'\'' \
+                    "$file" >/dev/null 2>&1; then
+                    mkdir -p "$HOME/.claude/sessions/salvaged" &&
+                        mv -- "$file" "$HOME/.claude/sessions/salvaged/"
+                fi
+            else
+                echo "cc-salvage: resume exited $rc (Enter closes)"
+                read -r _
+            fi' \
+        sh "$file" "$pid" "$start" "$sid" "${cmd[@]}"
 }
 
 salvage_usage() {
@@ -153,6 +170,7 @@ salvage_main() {
     since_s="$(salvage_duration_secs "$since")" || { echo "cc-salvage: bad --since duration: $since" >&2; return 2; }
     until_s="$(salvage_duration_secs "$until")" || { echo "cc-salvage: bad --until duration: $until" >&2; return 2; }
     [[ "$limit" =~ ^[0-9]+$ ]] || { echo "cc-salvage: --limit needs a number: $limit" >&2; return 2; }
+    limit=$(( 10#$limit ))
     command -v jq >/dev/null || { echo "cc-salvage: jq is required" >&2; return 1; }
     now="${CC_SALVAGE_NOW:-$(date +%s)}"
 
@@ -163,9 +181,9 @@ salvage_main() {
         return 0
     fi
 
-    local target="" launched=0 mtime sid cwd name status
+    local target="" launched=0 mtime sid cwd name pid start file status
     printf 'SESSION\tNAME\tAGE\tSTATUS\tCWD\n'
-    while IFS=$'\t' read -r mtime sid cwd name; do
+    while IFS=$'\t' read -r mtime sid cwd name pid start file; do
         [[ "$name" == - ]] && name="${sid:0:8}"
         if [[ ! -d "$cwd" ]]; then
             status=skipped:cwd-missing
@@ -176,7 +194,7 @@ salvage_main() {
             launched=$(( launched + 1 ))
         else
             [[ -n "$target" ]] || target="$(salvage_target_session "$session")"
-            if salvage_launch "$target" "$sid" "$cwd" "$name"; then
+            if salvage_launch "$target" "$sid" "$cwd" "$name" "$file" "$pid" "$start"; then
                 status="resumed"
                 launched=$(( launched + 1 ))
             else

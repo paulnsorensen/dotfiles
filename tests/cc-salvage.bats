@@ -16,8 +16,13 @@ setup() {
     # Stub tmux: log every call; report "main" as the current session.
     cat > "$TEST_HOME/stub-bin/tmux" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >> "$TMUX_LOG"
+call="$*"
+printf '%s\n' "${call//$'\n'/ }" >> "$TMUX_LOG"
 [[ "$1" == display-message ]] && echo main
+if [[ "$1" == new-window && -n "${TMUX_COMMAND_FILE:-}" ]]; then
+    shift 8 # new-window -d -t target -n name -c cwd
+    printf '%q ' "$@" > "$TMUX_COMMAND_FILE"
+fi
 exit 0
 EOF
     chmod +x "$TEST_HOME/stub-bin/tmux"
@@ -53,6 +58,19 @@ add_transcript() {
 mark_live() {
     mkdir -p "$CC_SALVAGE_PROC_DIR/$1"
     echo "$1 (claude code) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 $2 19 20" > "$CC_SALVAGE_PROC_DIR/$1/stat"
+}
+
+# Save the detached command so each test can run it after cc-salvage returns.
+capture_resume() {
+    export TMUX_COMMAND_FILE="$TEST_HOME/resume.sh"
+    cat > "$TEST_HOME/stub-bin/claude" <<'EOF'
+#!/usr/bin/env bash
+if [[ -n "${CLAUDE_REPLACEMENT:-}" ]]; then
+    cp "$CLAUDE_REPLACEMENT" "$HOME/.claude/sessions/501.json"
+fi
+exit "${CLAUDE_EXIT_CODE:-0}"
+EOF
+    chmod +x "$TEST_HOME/stub-bin/claude"
 }
 
 @test "a dead session in the window opens one tmux window that resumes it in its cwd" {
@@ -187,4 +205,119 @@ mark_live() {
     run cc-salvage --since yesterday
     assert_failure
     assert_output_contains "duration"
+}
+
+@test "duration counts use decimal for every unit including seconds" {
+    source "$REAL_DOTFILES_DIR/bin/lib/cc-salvage.sh"
+    local unit expected
+    for unit in s m h d; do
+        case "$unit" in
+            s) expected=9 ;;
+            m) expected=540 ;;
+            h) expected=32400 ;;
+            d) expected=777600 ;;
+        esac
+        run salvage_duration_secs "009$unit"
+        assert_success
+        [[ "$output" == "$expected" ]]
+    done
+
+    run salvage_duration_secs 010m
+    assert_success
+    [[ "$output" == 600 ]]
+}
+
+@test "leading-zero durations and limits work through the CLI" {
+    add_session 501 decimal-session "$WT"
+    add_transcript decimal-session 9
+
+    run cc-salvage --since 010m --until 008s --limit 008 --dry-run
+    assert_success
+    assert_output_contains "dry-run"
+
+    run cc-salvage --limit 000 --dry-run
+    assert_success
+    assert_output_contains "skipped:limit"
+
+    run cc-salvage --limit 08x
+    [[ "$status" == 2 ]]
+    assert_output_contains "--limit needs a number"
+}
+
+@test "a successful detached resume archives only the selected registry path" {
+    capture_resume
+    add_session 501 archive-session "$WT"
+    add_transcript archive-session 5
+    local record="$HOME/.claude/sessions/selected record's.json"
+    mv "$HOME/.claude/sessions/501.json" "$record"
+    cp "$record" "$TEST_HOME/expected.json"
+    add_session 502 other-session "$WT"
+
+    run cc-salvage
+    assert_success
+    [[ -f "$record" ]]
+    [[ ! -d "$HOME/.claude/sessions/salvaged" ]]
+
+    run bash "$TMUX_COMMAND_FILE"
+    assert_success
+    [[ ! -e "$record" ]]
+    cmp "$TEST_HOME/expected.json" "$HOME/.claude/sessions/salvaged/${record##*/}"
+    [[ -f "$HOME/.claude/sessions/502.json" ]]
+
+    run cc-salvage --dry-run
+    assert_success
+    assert_output_not_contains "archive-session"
+}
+
+@test "a failed detached resume preserves the record for retry" {
+    capture_resume
+    export CLAUDE_EXIT_CODE=7
+    add_session 501 retry-session "$WT"
+    add_transcript retry-session 5
+    cp "$HOME/.claude/sessions/501.json" "$TEST_HOME/expected.json"
+
+    run cc-salvage
+    assert_success
+    run bash "$TMUX_COMMAND_FILE" <<< ''
+    assert_output_contains "resume exited 7"
+    cmp "$TEST_HOME/expected.json" "$HOME/.claude/sessions/501.json"
+    [[ ! -d "$HOME/.claude/sessions/salvaged" ]]
+
+    run cc-salvage --dry-run
+    assert_success
+    assert_output_contains "retry-session"
+}
+
+@test "a successful resume preserves records with any changed identity value" {
+    capture_resume
+    export CLAUDE_REPLACEMENT="$TEST_HOME/replacement.json"
+    local field
+    for field in pid procStart sessionId; do
+        add_session 501 original-session "$WT"
+        add_transcript original-session 5
+        jq --arg field "$field" '.[$field] = (if $field == "pid" then 999 else "changed" end)' \
+            "$HOME/.claude/sessions/501.json" > "$CLAUDE_REPLACEMENT"
+
+        run cc-salvage
+        assert_success
+        run bash "$TMUX_COMMAND_FILE"
+        assert_success
+        cmp "$CLAUDE_REPLACEMENT" "$HOME/.claude/sessions/501.json"
+        [[ ! -d "$HOME/.claude/sessions/salvaged" ]]
+    done
+}
+
+@test "a missing procStart uses the same identity fallback during archival" {
+    capture_resume
+    add_session 501 fallback-session "$WT"
+    add_transcript fallback-session 5
+    jq 'del(.procStart)' "$HOME/.claude/sessions/501.json" > "$TEST_HOME/fallback.json"
+    mv "$TEST_HOME/fallback.json" "$HOME/.claude/sessions/501.json"
+
+    run cc-salvage
+    assert_success
+    run bash "$TMUX_COMMAND_FILE"
+    assert_success
+    [[ ! -e "$HOME/.claude/sessions/501.json" ]]
+    [[ -f "$HOME/.claude/sessions/salvaged/501.json" ]]
 }
