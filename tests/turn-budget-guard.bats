@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Tests for the turn-budget-guard sub-agent ceiling hook.
 #   agents/hooks/turn-budget-guard.sh  — bash bridge (self-locating)
-#   agents/lib/turn-budget-guard.js    — turn/byte counter + decision logic
+#   agents/lib/turn-budget-guard.js    — context ceiling + auto-compact exemption logic
 #
 # Behavior is exercised through the stdin/stdout hook protocol against a
 # deployed-layout fixture (hooks/ + lib/ siblings), so the test covers both
@@ -179,20 +179,7 @@ post_event() {
         '{hook_event_name:"PostToolUse", agent_id:$a, agent_type:$t, session_id:$s, transcript_path:$p, tool_name:"Bash", tool_input:{}}'
 }
 
-# ── A1 — hard turn wall ──────────────────────────────────────────────
-
-@test "A1: coder at 100 turns -> next call (101) is denied" {
-    seed_turns s1 a1 100
-    fire "$(pre_event s1 a1 coder)"
-    [[ "$(verdict)" == "deny" ]]
-    [[ "$output" == *"budget exceeded"* ]]
-}
-
-@test "A1: coder at 99 turns -> next call (100) is allowed" {
-    seed_turns s1 a1 99
-    fire "$(pre_event s1 a1 coder)"
-    [[ "$(verdict)" == "allow" ]]
-}
+# ── A1 — no turn wall; context wall only ─────────────────────────────
 
 @test "A1: PreToolUse increments the turns counter by exactly one" {
     seed_turns s1 a1 10
@@ -201,16 +188,18 @@ post_event() {
 }
 
 @test "A1: hard-ceiling deny message tells the orchestrator to re-dispatch" {
-    seed_turns s1 a1 100
+    seed_usage_transcript s1 a1 "$((180000 + 1)):0:0"
     fire "$(pre_event s1 a1 coder)"
     [[ "$(verdict)" == "deny" ]]
     [[ "$output" == *"status: needs-context"* ]]
     [[ "$output" == *"local guard budget"* ]]
     [[ "$output" == *"not a provider context failure"* ]]
+    [[ "$output" == *"context 180001/180000 tokens"* ]]
+    [[ "$output" != *"turns"* ]]
 }
 
 @test "A1: non-coder hard-ceiling message reports a blocker instead of needs-context" {
-    seed_turns s1 reviewer1 50
+    seed_usage_transcript s1 reviewer1 "$((180000 + 1)):0:0"
     fire "$(pre_event s1 reviewer1 reviewer)"
     [[ "$(verdict)" == "deny" ]]
     [[ "$output" == *"status: blocked: <reason>"* ]]
@@ -260,14 +249,15 @@ post_event() {
 }
 
 @test "A2: PreToolUse deny writes a deny record while stdout stays hook JSON" {
-    seed_turns s2 log2 100
+    seed_usage_transcript s2 log2 "$((180000 + 1)):0:0"
     fire "$(pre_event s2 log2 coder)"
     [[ "$(verdict)" == "deny" ]]
     jq -e '.hookSpecificOutput.permissionDecision == "deny"' <<<"$output" >/dev/null
     [[ "$(log_count)" == "1" ]]
     [[ "$(log_record | jq -r '.action')" == "deny" ]]
     [[ "$(log_record | jq -r '.reason')" == "hard-ceiling" ]]
-    [[ "$(log_record | jq -r '.turnHard')" == "100" ]]
+    [[ "$(log_record | jq -r '.ctxHard')" == "180000" ]]
+    [[ "$(log_record | jq -r '.turnHard')" == "null" ]]
 }
 
 @test "A2: Codex direct agent_transcript_path drives the context ceiling" {
@@ -285,9 +275,8 @@ post_event() {
     [[ "$(log_record | jq -r '.tokens')" == "$((180000 + 1))" ]]
 }
 
-@test "A2: Codex standard agent_id and agent_type still enforce the turn wall" {
-    seed_turns s2 codex2 100
-    seed_usage_transcript s2 codex2 "140000:0:0"
+@test "A2: Codex standard agent_id and agent_type still enforce the context wall" {
+    seed_usage_transcript s2 codex2 "$((180000 + 1)):0:0"
     local json
     json=$(jq -nc --arg p "$PROJ/s2.jsonl" \
         '{harness:"codex",hook_event_name:"PreToolUse",agent_id:"codex2",agent_type:"coder",session_id:"s2",transcript_path:$p,tool_name:"Bash",tool_input:{}}')
@@ -307,11 +296,11 @@ post_event() {
     [[ -f "$CLAUDE_TURN_BUDGET_DIR/s2b/checkpoint1/checkpoint-spent" ]]
 }
 
-@test "A2b: the 101st coder call may be a valid .context checkpoint" {
-    seed_turns s2b checkpoint2 100
+@test "A2b: a coder over the context ceiling may make a valid .context checkpoint" {
+    seed_usage_transcript s2b checkpoint2 "$((180000 + 1)):0:0"
     fire "$(checkpoint_event s2b checkpoint2 coder .context/handoff.md)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.turns')" == "101" ]]
+    [[ "$(log_record | jq -r '.turns')" == "1" ]]
     [[ "$(log_record | jq -r '.reason')" == "checkpoint-write" ]]
 }
 
@@ -326,9 +315,9 @@ post_event() {
     [[ -f "$CLAUDE_TURN_BUDGET_DIR/s2b/checkpoint_create/checkpoint-spent" ]]
 }
 
-@test "A2b: a replace_text checkpoint is allowed over the turn-hard ceiling" {
+@test "A2b: a replace_text checkpoint is allowed over the context-hard ceiling" {
     local json
-    seed_turns s2b checkpoint_replace_text 100
+    seed_usage_transcript s2b checkpoint_replace_text "$((180000 + 1)):0:0"
     json=$(jq -nc --argjson event "$(checkpoint_event s2b checkpoint_replace_text coder .context/handoff.md)" \
         '$event | .tool_input.edits[0].ops = [{op:"replace_text",old:"todo",new:"done"}]')
     fire "$json"
@@ -337,14 +326,14 @@ post_event() {
 }
 
 @test "A2b: hard-ceiling deny message names the allowed checkpoint ops" {
-    seed_turns s2b checkpoint_msg 100
+    seed_usage_transcript s2b checkpoint_msg "$((180000 + 1)):0:0"
     fire "$(pre_event s2b checkpoint_msg coder)"
     [[ "$(verdict)" == "deny" ]]
     [[ "$output" == *"create_file/replace_text/prepend/append/replace/insert_before/insert_after/replace_block/insert_after_block"* ]]
 }
 
-@test "A2c: SubagentHandback is allowed over the turn-hard ceiling" {
-    seed_turns s2c handback1 100
+@test "A2c: SubagentHandback is allowed over the context-hard ceiling" {
+    seed_usage_transcript s2c handback1 "$((180000 + 1)):0:0"
     fire "$(handback_event s2c handback1 coder)"
     [[ "$(verdict)" == "allow" ]]
     [[ "$(log_record | jq -r '.reason')" == "handback" ]]
@@ -375,17 +364,15 @@ post_event() {
     [[ "$(log_record | jq -r '.reason')" == "hard-ceiling" ]]
 }
 
-@test "A2d: StructuredOutput is allowed over the turn-hard ceiling and other tools stay denied" {
-    seed_turns s2d so_turn 100
+@test "A2d: StructuredOutput is allowed at 500 turns with low context" {
+    seed_turns s2d so_turn 500
     fire "$(structured_output_event s2d so_turn coder)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.reason')" == "structured-output" ]]
-    fire "$(pre_event s2d so_turn coder)"
-    [[ "$(verdict)" == "deny" ]]
+    [[ "$(log_record | jq -r '.reason')" == "within-budget" ]]
 }
 
 @test "A2b: a second valid checkpoint is denied after the allowance is spent" {
-    seed_turns s2b checkpoint3 100
+    seed_usage_transcript s2b checkpoint3 "$((180000 + 1)):0:0"
     fire "$(checkpoint_event s2b checkpoint3 coder .cheese/first.md)"
     [[ "$(verdict)" == "allow" ]]
     fire "$(checkpoint_event s2b checkpoint3 coder .context/second.md)"
@@ -397,7 +384,7 @@ post_event() {
 }
 
 @test "A2b: an invalid checkpoint path is denied without spending the allowance" {
-    seed_turns s2b checkpoint4 100
+    seed_usage_transcript s2b checkpoint4 "$((180000 + 1)):0:0"
     fire "$(checkpoint_event s2b checkpoint4 coder notes/handoff.md)"
     [[ "$(verdict)" == "deny" ]]
     [[ "$output" == *"One mcp__tilth__tilth_write"* ]]
@@ -408,7 +395,7 @@ post_event() {
 }
 
 @test "A2b: multiple edits are denied without spending the allowance" {
-    seed_turns s2b checkpoint5 100
+    seed_usage_transcript s2b checkpoint5 "$((180000 + 1)):0:0"
     fire "$(multiple_checkpoint_event s2b checkpoint5 coder)"
     [[ "$(verdict)" == "deny" ]]
     [[ ! -f "$CLAUDE_TURN_BUDGET_DIR/s2b/checkpoint5/checkpoint-spent" ]]
@@ -465,7 +452,7 @@ post_event() {
 }
 
 @test "A2b: concurrent valid checkpoints spend the allowance exactly once" {
-    seed_turns s2b checkpoint7 100
+    seed_usage_transcript s2b checkpoint7 "$((180000 + 1)):0:0"
     local json
     json=$(checkpoint_event s2b checkpoint7 coder .cheese/concurrent.md)
     printf '%s' "$json" | "$DEPLOY/hooks/turn-budget-guard.sh" > "$TEST_HOME/first.out" &
@@ -480,13 +467,14 @@ post_event() {
 
 # ── A3 — soft nudge fires once ───────────────────────────────────────
 
-@test "A3: PostToolUse crossing the soft turn threshold nudges once, then never repeats" {
-    seed_turns s3 c1 75  # coder turnSoft = 75
+@test "A3: PostToolUse crossing the soft context threshold nudges once, then never repeats" {
+    seed_usage_transcript s3 c1 "$((150000 + 1)):0:0"  # > ctxSoft (150000)
     fire "$(post_event s3 c1 coder)"
     [[ "$(verdict)" == "nudge" ]]
     [[ "$output" == *"Do not stop yet"* ]]
     [[ "$output" != *"wrap up"* ]]
-    [[ "$output" == *"hard ceiling 100 turns / 180000 context tokens"* ]]
+    [[ "$output" == *"hard ceiling 180000 context tokens"* ]]
+    [[ "$output" != *"turns"* ]]
     [[ "$output" == *"return compact checkpoint observations inline"* ]]
     [[ "$output" == *"do not persist a checkpoint"* ]]
     [[ "$output" == *"non-checkpoint tool calls are hard-blocked"* ]]
@@ -500,7 +488,7 @@ post_event() {
 }
 
 @test "A3: non-coder soft nudge keeps blocker handoff guidance" {
-    seed_turns s3 reviewer1 40
+    seed_usage_transcript s3 reviewer1 "$((150000 + 1)):0:0"
     fire "$(post_event s3 reviewer1 reviewer)"
     [[ "$(verdict)" == "nudge" ]]
     [[ "$output" == *"persist compact handoff observations"* ]]
@@ -510,7 +498,7 @@ post_event() {
 }
 
 @test "A3: nudge is logged once and later PostToolUse records already-nudged" {
-    seed_turns s3 log3 75
+    seed_usage_transcript s3 log3 "$((150000 + 1)):0:0"
     fire "$(post_event s3 log3 coder)"
     [[ "$(verdict)" == "nudge" ]]
     fire "$(post_event s3 log3 coder)"
@@ -528,9 +516,8 @@ post_event() {
     [[ "$(turns_count s3 c1)" == "75" ]]
 }
 
-@test "A3: soft context-token threshold nudges even when turns are low" {
-    seed_turns s3 c2 1
-    seed_usage_transcript s3 c2 "$((150000 + 1)):0:0"  # > ctxSoft (150000)
+@test "A3: context exactly at the soft threshold nudges" {
+    seed_usage_transcript s3 c2 "150000:0:0"
     fire "$(post_event s3 c2 coder)"
     [[ "$(verdict)" == "nudge" ]]
 }
@@ -615,49 +602,37 @@ post_event() {
     [[ "$(log_record | jq -r '.reason')" == "no-agent-id" ]]
 }
 
-# ── A5 — unknown agent_type -> default budget ────────────────────────
+# ── A5 — unknown agent_type -> same context budget ───────────────────
 
-@test "A5: unknown agent_type falls to the default budget (hard 50)" {
-    seed_turns s5 e1 50  # default turnHard = 50
+@test "A5: unknown agent_type is denied past the context hard ceiling" {
+    seed_usage_transcript s5 e1 "$((180000 + 1)):0:0"
     fire "$(pre_event s5 e1 wizard)"
     [[ "$(verdict)" == "deny" ]]
 }
 
-@test "A5: unknown agent_type at 49 turns is allowed" {
-    seed_turns s5 e1 49
+@test "A5: unknown agent_type at the context ceiling is allowed" {
+    seed_usage_transcript s5 e1 "180000:0:0"
     fire "$(pre_event s5 e1 wizard)"
     [[ "$(verdict)" == "allow" ]]
 }
 
-@test "A5: unknown agent_type deny message names the default budget, not the raw type" {
-    # The message must report the budget actually in force ('default'), not the
-    # phantom incoming type — a triager reading 'wizard' would hunt for a
-    # wizard-specific budget that was never applied.
-    seed_turns s5 e1 50
-    fire "$(pre_event s5 e1 wizard)"
+@test "A5: empty agent_type is reported as default" {
+    seed_usage_transcript s5 e2 "$((180000 + 1)):0:0"
+    fire "$(pre_event s5 e2 '')"
     [[ "$(verdict)" == "deny" ]]
     [[ "$output" == *"type 'default'"* ]]
-    [[ "$output" != *wizard* ]]
 }
 
-# ── A5b — general-purpose resolves the coder tier ────────────────────
-
-@test "A5b: general-purpose at 99 turns -> next call (100) is allowed (coder ceiling)" {
-    seed_turns s5b gp1 99
+@test "A5b: general-purpose is allowed at 500 turns and denied only by context" {
+    seed_turns s5b gp1 500
+    seed_usage_transcript s5b gp1 "140000:0:0"
     fire "$(pre_event s5b gp1 general-purpose)"
     [[ "$(verdict)" == "allow" ]]
     [[ "$(log_record | jq -r '.budget_type')" == "general-purpose" ]]
 }
 
-@test "A5b: general-purpose at 100 turns -> next call (101) is denied (coder ceiling, not default)" {
-    seed_turns s5b gp1 100
-    fire "$(pre_event s5b gp1 general-purpose)"
-    [[ "$(verdict)" == "deny" ]]
-    [[ "$(log_record | jq -r '.turnHard')" == "100" ]]
-}
-
 @test "A5b: hard-ceiling deny tells the parent to dispatch a fresh agent, not resume" {
-    seed_turns s5b fresh1 100
+    seed_usage_transcript s5b fresh1 "$((180000 + 1)):0:0"
     fire "$(pre_event s5b fresh1 coder)"
     [[ "$(verdict)" == "deny" ]]
     [[ "$output" == *"dispatch a fresh agent"* ]]
@@ -667,8 +642,8 @@ post_event() {
 # ── A6 — independent counters + scoped cleanup ───────────────────────
 
 @test "A6: distinct agent_ids under one session count independently" {
-    seed_turns s6 f1 99   # coder, one below the wall
-    seed_turns s6 f2 100  # coder, at the wall
+    seed_usage_transcript s6 f1 "180000:0:0"  # at the wall, still allowed
+    seed_usage_transcript s6 f2 "$((180000 + 1)):0:0"
     fire "$(pre_event s6 f1 coder)"
     [[ "$(verdict)" == "allow" ]]
     fire "$(pre_event s6 f2 coder)"
@@ -677,14 +652,15 @@ post_event() {
 
 @test "A6: same agent_id under distinct sessions counts independently" {
     # counterPath keys on BOTH session_id and agent_id. Two sub-agents that
-    # happen to share an agent_id across different sessions must not collide;
-    # a session-drop regression would read one shared counter and mis-verdict.
-    seed_turns isoA z 5     # session isoA, agent z — well under the wall
-    seed_turns isoB z 100   # session isoB, agent z — at the coder wall
-    fire "$(pre_event isoA z coder)"
+    # share an agent_id across sessions must not collide on the checkpoint
+    # marker: spending it in isoB must not spend it in isoA.
+    seed_usage_transcript isoA z "$((180000 + 1)):0:0"
+    seed_usage_transcript isoB z "$((180000 + 1)):0:0"
+    fire "$(checkpoint_event isoB z coder .cheese/a.md)"
     [[ "$(verdict)" == "allow" ]]
-    fire "$(pre_event isoB z coder)"
-    [[ "$(verdict)" == "deny" ]]
+    fire "$(checkpoint_event isoA z coder .cheese/a.md)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "checkpoint-write" ]]
 }
 
 @test "A6: SubagentStop removes only its own agent dir" {
@@ -728,7 +704,7 @@ post_event() {
 
 @test "A7: logger write failure does not change enforcement" {
     export CLAUDE_TURN_BUDGET_LOG="$TEST_HOME"
-    seed_turns s7 logfail 100
+    seed_usage_transcript s7 logfail "$((180000 + 1)):0:0"
     fire "$(pre_event s7 logfail coder)"
     [[ "$(verdict)" == "deny" ]]
     jq -e '.hookSpecificOutput.permissionDecision == "deny"' <<<"$output" >/dev/null
@@ -956,32 +932,331 @@ backdate_mtime() {
     [[ "$(cat "$CLAUDE_TURN_BUDGET_DIR/s6/f3/baseline")" == "178791" ]]
 }
 
-# ── A13 — generalist resolves the general-purpose tier ───────────────
+# ── A13 — no turn ceiling ────────────────────────────────────────────
 
-@test "A13: generalist at 51 turns is allowed (registry maxTurns: 100, not default's 50)" {
-    seed_turns s13 g1 51
-    fire "$(pre_event s13 g1 generalist)"
+@test "A13: coder at 500 turns with low context is allowed (no turn deny)" {
+    seed_turns s13 g1 500
+    seed_usage_transcript s13 g1 "10000:0:0"
+    fire "$(pre_event s13 g1 coder)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.budget_type')" == "generalist" ]]
-    [[ "$(log_record | jq -r '.turnHard')" == "100" ]]
+    [[ "$(log_record | jq -r '.reason')" == "within-budget" ]]
+    [[ "$(log_record | jq -r '.turns')" == "501" ]]
+    [[ "$(log_record | jq -r '.turnHard')" == "null" ]]
 }
 
-# ── A14 ─ workflow-subagent and implementer resolve the coder tier ─────
-
-@test "A14: workflow-subagent at 51 turns is allowed (coder tier, not default's 50)" {
-    seed_turns s14 w1 51
-    fire "$(pre_event s14 w1 workflow-subagent)"
+@test "A13: unknown type at 500 turns with low context is allowed (no turn deny)" {
+    seed_turns s13 g2 500
+    seed_usage_transcript s13 g2 "10000:0:0"
+    fire "$(pre_event s13 g2 wizard)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.budget_type')" == "workflow-subagent" ]]
-    [[ "$(log_record | jq -r '.turnHard')" == "100" ]]
 }
 
-@test "A14: implementer at 51 turns is allowed and at 101 is denied (coder tier)" {
-    seed_turns s14 i1 51
-    fire "$(pre_event s14 i1 implementer)"
+@test "A13: PostToolUse at 500 turns with low context does not nudge" {
+    seed_turns s13 g3 500
+    seed_usage_transcript s13 g3 "10000:0:0"
+    fire "$(post_event s13 g3 coder)"
     [[ "$(verdict)" == "allow" ]]
-    [[ "$(log_record | jq -r '.budget_type')" == "implementer" ]]
-    seed_turns s14 i2 100
-    fire "$(pre_event s14 i2 implementer)"
+    [[ "$(log_record | jq -r '.reason')" == "below-soft-threshold" ]]
+}
+
+# ── A14 — self-compacting agents are exempt ──────────────────────────
+
+# Write an agent definition whose frontmatter carries `autoCompactWindow: N`.
+write_agent_def() {
+    local dir="$1" name="$2" window="$3"
+    mkdir -p "$dir"
+    printf -- '---\nname: %s\nautoCompactWindow: %s\n---\nbody\n' "$name" "$window" > "$dir/$name.md"
+}
+
+with_cwd() {
+    jq -nc --argjson event "$1" --arg cwd "$2" '$event | .cwd = $cwd'
+}
+
+@test "A14: self-compacting coder over the hard ceiling is allowed on PreToolUse" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    seed_usage_transcript s14 sc1 "250000:0:0"
+    fire "$(pre_event s14 sc1 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$output" == "" ]]
+    [[ "$(log_record | jq -r '.reason')" == "auto-compact" ]]
+}
+
+@test "A14: self-compacting coder over the hard ceiling gets no nudge on PostToolUse" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    seed_usage_transcript s14 sc2 "250000:0:0"
+    fire "$(post_event s14 sc2 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$output" == "" ]]
+    [[ "$(log_record | jq -r '.reason')" == "auto-compact" ]]
+    [[ ! -f "$CLAUDE_TURN_BUDGET_DIR/s14/sc2/hard-nudged" ]]
+}
+
+@test "A14: the same type without a definition file is denied with the context ceiling message" {
+    seed_usage_transcript s14 nd1 "250000:0:0"
+    fire "$(pre_event s14 nd1 coder)"
     [[ "$(verdict)" == "deny" ]]
+    [[ "$output" == *"context 250000/180000 tokens"* ]]
+    [[ "$output" != *"turns"* ]]
+}
+
+@test "A14: a definition under <cwd>/.claude/agents also counts" {
+    write_agent_def "$PROJ/.claude/agents" coder 120000
+    seed_usage_transcript s14 cw1 "250000:0:0"
+    fire "$(with_cwd "$(pre_event s14 cw1 coder)" "$PROJ")"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "auto-compact" ]]
+}
+
+@test "A14: a definition without the field does not exempt the agent" {
+    mkdir -p "$HOME/.claude/agents"
+    printf -- '---\nname: coder\n---\nautoCompactWindow: 120000\n' > "$HOME/.claude/agents/coder.md"
+    seed_usage_transcript s14 nf1 "250000:0:0"
+    fire "$(pre_event s14 nf1 coder)"
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A14: a plugin-scoped agent_type is not self-compacting" {
+    write_agent_def "$HOME/.claude/agents" milknado-worker 120000
+    seed_usage_transcript s14 pl1 "250000:0:0"
+    fire "$(pre_event s14 pl1 milknado:milknado-worker)"
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A14: a path-traversal agent_type is not self-compacting" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    mkdir -p "$HOME/.claude/agents/sub"
+    seed_usage_transcript s14 tr1 "250000:0:0"
+    fire "$(pre_event s14 tr1 ../coder)"
+    [[ "$(verdict)" == "deny" ]]
+    fire "$(pre_event s14 tr1 sub/../coder)"
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A14: an out-of-range autoCompactWindow is not self-compacting" {
+    write_agent_def "$HOME/.claude/agents" coder 50000
+    seed_usage_transcript s14 rg1 "250000:0:0"
+    fire "$(pre_event s14 rg1 coder)"
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A14: a self-compacting agent's SubagentStop still cleans up its counter dir" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    fire "$(pre_event s14 sc3 coder)"
+    [[ -d "$CLAUDE_TURN_BUDGET_DIR/s14/sc3" ]]
+    fire "$(jq -nc '{hook_event_name:"SubagentStop", agent_id:"sc3", agent_type:"coder", session_id:"s14"}')"
+    [[ ! -d "$CLAUDE_TURN_BUDGET_DIR/s14/sc3" ]]
+}
+
+@test "A14: workflow-subagent keeps the context ceiling" {
+    seed_usage_transcript s14 w1 "180001:0:0"
+    fire "$(pre_event s14 w1 workflow-subagent)"
+    [[ "$(verdict)" == "deny" ]]
+}
+
+# ── A15 — frontmatter / name / path edge cases for the exemption ─────
+
+# Write raw definition bytes (backslash escapes expanded) to $HOME/.claude/agents/<name>.md,
+# then fire PreToolUse for <name> past the hard ceiling; leaves verdict in $output.
+fire_with_raw_def() {
+    local name="$1" raw="$2" session="${3:-s15}" agent="${4:-r1}"
+    mkdir -p "$HOME/.claude/agents"
+    printf '%b' "$raw" > "$HOME/.claude/agents/$name.md"
+    seed_usage_transcript "$session" "$agent" "250000:0:0"
+    fire "$(pre_event "$session" "$agent" "$name")"
+}
+
+@test "A15: CRLF frontmatter with a valid window is exempt" {
+    fire_with_raw_def coder '---\r\nname: coder\r\nautoCompactWindow: 120000\r\n---\r\nbody\r\n'
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "auto-compact" ]]
+}
+
+@test "A15: quoted autoCompactWindow is not exempt (strict integer only)" {
+    fire_with_raw_def coder '---\nname: coder\nautoCompactWindow: "120000"\n---\n'
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: autoCompactWindow with a trailing YAML comment is not exempt" {
+    # speculative: valid YAML, but the guard's strict regex rejects it (fails toward the ceiling)
+    fire_with_raw_def coder '---\nname: coder\nautoCompactWindow: 120000 # tuned\n---\n'
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: indented autoCompactWindow key is not exempt" {
+    fire_with_raw_def coder '---\nname: coder\n  autoCompactWindow: 120000\n---\n'
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: window of exactly 100000 is exempt" {
+    fire_with_raw_def coder '---\nautoCompactWindow: 100000\n---\n'
+    [[ "$(verdict)" == "allow" ]]
+}
+
+@test "A15: window of exactly 1000000 is exempt" {
+    fire_with_raw_def coder '---\nautoCompactWindow: 1000000\n---\n'
+    [[ "$(verdict)" == "allow" ]]
+}
+
+@test "A15: window of 99999 is not exempt" {
+    fire_with_raw_def coder '---\nautoCompactWindow: 99999\n---\n'
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: window of 1000001 is not exempt" {
+    fire_with_raw_def coder '---\nautoCompactWindow: 1000001\n---\n'
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: negative and decimal windows are not exempt" {
+    fire_with_raw_def coder '---\nautoCompactWindow: -120000\n---\n'
+    [[ "$(verdict)" == "deny" ]]
+    fire_with_raw_def coder '---\nautoCompactWindow: 120000.5\n---\n' s15 r2
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: field only in a second frontmatter block is not exempt" {
+    fire_with_raw_def coder '---\nname: coder\n---\n---\nautoCompactWindow: 120000\n---\n'
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: file without an opening --- fence is not exempt" {
+    fire_with_raw_def coder 'name: coder\nautoCompactWindow: 120000\n---\n'
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: unterminated frontmatter that still carries the field is exempt" {
+    # speculative: documents current behavior (no closing fence required)
+    fire_with_raw_def coder '---\nautoCompactWindow: 120000\n'
+    [[ "$(verdict)" == "allow" ]]
+}
+
+@test "A15: UTF-8 BOM before the opening fence is not exempt" {
+    # speculative: documents fail-toward-ceiling on BOM-prefixed files
+    fire_with_raw_def coder '\xef\xbb\xbf---\nautoCompactWindow: 120000\n---\n'
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: empty definition file is not exempt" {
+    fire_with_raw_def coder ''
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: definition path that is a directory is not exempt and does not crash" {
+    mkdir -p "$HOME/.claude/agents/coder.md"
+    seed_usage_transcript s15 d1 "250000:0:0"
+    fire "$(pre_event s15 d1 coder)"
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: definition that is a symlink to a valid file is exempt" {
+    mkdir -p "$HOME/.claude/agents" "$TEST_HOME/elsewhere"
+    printf -- '---\nautoCompactWindow: 120000\n---\n' > "$TEST_HOME/elsewhere/real.md"
+    ln -s "$TEST_HOME/elsewhere/real.md" "$HOME/.claude/agents/coder.md"
+    seed_usage_transcript s15 l1 "250000:0:0"
+    fire "$(pre_event s15 l1 coder)"
+    [[ "$(verdict)" == "allow" ]]
+}
+
+@test "A15: dangling symlink definition is not exempt" {
+    mkdir -p "$HOME/.claude/agents"
+    ln -s "$TEST_HOME/nope.md" "$HOME/.claude/agents/coder.md"
+    seed_usage_transcript s15 l2 "250000:0:0"
+    fire "$(pre_event s15 l2 coder)"
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: uppercase agent_type (Explore) resolves to Explore.md and is exempt" {
+    write_agent_def "$HOME/.claude/agents" Explore 120000
+    seed_usage_transcript s15 u1 "250000:0:0"
+    fire "$(pre_event s15 u1 Explore)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "auto-compact" ]]
+}
+
+@test "A15: agent_type with a space is not exempt" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    cp "$HOME/.claude/agents/coder.md" "$HOME/.claude/agents/my coder.md"
+    seed_usage_transcript s15 sp1 "250000:0:0"
+    fire "$(pre_event s15 sp1 'my coder')"
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: empty agent_type is not exempt" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    seed_usage_transcript s15 e1 "250000:0:0"
+    fire "$(pre_event s15 e1 '')"
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: agent_type with a trailing newline is not exempt" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    seed_usage_transcript s15 nl1 "250000:0:0"
+    fire "$(pre_event s15 nl1 coder | jq -c '.agent_type = "coder\n"')"
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: nonexistent cwd falls back to the HOME definition" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    seed_usage_transcript s15 c1 "250000:0:0"
+    fire "$(with_cwd "$(pre_event s15 c1 coder)" "$TEST_HOME/does/not/exist")"
+    [[ "$(verdict)" == "allow" ]]
+}
+
+@test "A15: relative cwd does not crash and HOME definition still exempts" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    seed_usage_transcript s15 c2 "250000:0:0"
+    fire "$(with_cwd "$(pre_event s15 c2 coder)" "relative/dir")"
+    [[ "$(verdict)" == "allow" ]]
+}
+
+@test "A15: non-string cwd does not crash and a missing definition is denied" {
+    seed_usage_transcript s15 c3 "250000:0:0"
+    fire "$(pre_event s15 c3 coder | jq -c '.cwd = 42')"
+    [[ "$(verdict)" == "deny" ]]
+}
+
+@test "A15: invalid cwd definition still exempts via a valid HOME definition" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$PROJ/.claude/agents" coder 50000
+    seed_usage_transcript s15 c4 "250000:0:0"
+    fire "$(with_cwd "$(pre_event s15 c4 coder)" "$PROJ")"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$(log_record | jq -r '.reason')" == "auto-compact" ]]
+}
+
+@test "A15: valid cwd definition still exempts when the HOME definition is invalid" {
+    write_agent_def "$HOME/.claude/agents" coder 50000
+    write_agent_def "$PROJ/.claude/agents" coder 120000
+    seed_usage_transcript s15 c5 "250000:0:0"
+    fire "$(with_cwd "$(pre_event s15 c5 coder)" "$PROJ")"
+    [[ "$(verdict)" == "allow" ]]
+}
+
+@test "A15: exempt agent in the soft zone (160k) gets no soft nudge on PreToolUse or PostToolUse" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    seed_usage_transcript s15 z1 "160000:0:0"
+    fire "$(pre_event s15 z1 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    fire "$(post_event s15 z1 coder)"
+    [[ "$(verdict)" == "allow" ]]
+    [[ "$output" == "" ]]
+    [[ ! -f "$CLAUDE_TURN_BUDGET_DIR/s15/z1/nudged" ]]
+    [[ ! -f "$CLAUDE_TURN_BUDGET_DIR/s15/z1/hard-nudged" ]]
+}
+
+@test "A15: exempt agent at 1M context never hard-nudges across repeated PostToolUse" {
+    write_agent_def "$HOME/.claude/agents" coder 120000
+    seed_usage_transcript s15 z2 "1000000:0:0"
+    local _
+    for _ in 1 2 3; do
+        fire "$(post_event s15 z2 coder)"
+        [[ "$output" == "" ]]
+    done
+    [[ ! -f "$CLAUDE_TURN_BUDGET_DIR/s15/z2/hard-nudged" ]]
+}
+
+@test "A15: definition lacking the field still hard-denies past 180k with the context message" {
+    fire_with_raw_def coder '---\nname: coder\n---\n'
+    [[ "$(verdict)" == "deny" ]]
+    [[ "$output" == *"context 250000/180000 tokens"* ]]
 }

@@ -146,6 +146,32 @@ omp:
       # quota (221 of 224 model error stops were usage_limit_reached), and a
       # worker that stops this way leaves the coordinator in `hub wait`.
       maxConcurrency: 6
+      # Each sub-agent compacts at a fixed 120000 tokens, below the measured
+      # context "dumb zone" (agents/registry.yaml autoCompactWindow). Keys are
+      # exact agent names: every file in dot_omp/private_agent/agents plus the
+      # bundled scout, security-reviewer, task, and sonic. The main session
+      # keeps its model-relative trigger (ADR codex-omp-harness-upgrade-001).
+      agentCompactionThresholdOverrides:
+        cheese-reviewer: 120000
+        coder: 120000
+        duckdb-expert: 120000
+        explorer: 120000
+        formatter: 120000
+        generalist: 120000
+        ghostbuster: 120000
+        judge: 120000
+        nih-scanner: 120000
+        researcher: 120000
+        reviewer: 120000
+        roquefort-wrecker: 120000
+        runner: 120000
+        taste-tester: 120000
+        whey-drainer: 120000
+        worktree-content-digest: 120000
+        scout: 120000
+        security-reviewer: 120000
+        task: 120000
+        sonic: 120000
     # omp-introduced (v18.1.x): top-level sandbox backend selector, sibling to
     # the per-task `task.isolation` toggle above — folded at omp's live default.
     isolation:

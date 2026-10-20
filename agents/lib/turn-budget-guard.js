@@ -1,39 +1,42 @@
 #!/usr/bin/env node
-// turn-budget-guard.js — per-sub-agent turn + context-token ceiling.
+// turn-budget-guard.js — per-sub-agent context-token ceiling.
 //
-// Claude Code's `maxTurns` sub-agent frontmatter does not enforce (upstream
-// #41143: the hardcoded default always wins, and background spawns drop the
-// config entirely), so sub-agents run unbounded. This hook owns the cap.
+// The guard sets no turn limit. An agent can run as many turns as it needs.
+// It stops only when its live context grows too large.
+//
+// Agents that compact themselves are exempt. An agent definition that sets
+// `autoCompactWindow` in its frontmatter gets every call allowed and no
+// nudge (decision log reason `auto-compact`). The guard reads the definition
+// from <cwd>/.claude/agents/<agent_type>.md, then ~/.claude/agents. Only
+// plain agent names resolve. A read or parse error means the agent is not
+// self-compacting, so the context ceiling applies.
 //
 // Three hook events, all firing INSIDE the sub-agent and carrying a
 // consistent `agent_id`. The main orchestrator's tool calls carry no
 // `agent_id`, so the hook no-ops on them — only sub-agents are capped.
-//   PreToolUse  — increment the per-agent turn counter, read live context
-//                 tokens; over either hard ceiling, permit one atomic
-//                 mcp__tilth__tilth_write checkpoint with exactly one path
-//                 under .cheese/ or .context/, always permit the
+//   PreToolUse  — read live context tokens. Over the hard ceiling, permit one
+//                 atomic mcp__tilth__tilth_write checkpoint with exactly one
+//                 path under .cheese/ or .context/, always permit the
 //                 SubagentHandback return, then deny every other call.
-//   PostToolUse — once per agent, inject a wrap-up nudge when either signal
-//                 crosses its soft threshold (the graceful handoff window);
-//                 a sterner one-time hard nudge fires when context tokens
-//                 cross the hard ceiling, even if the soft nudge already
-//                 fired.
+//   PostToolUse — once per agent, inject a wrap-up nudge when context tokens
+//                 cross the soft threshold (the graceful handoff window).
+//                 A sterner one-time hard nudge fires when tokens cross the
+//                 hard ceiling, even if the soft nudge already fired.
 //   SubagentStop — delete the agent's counter dir, sweep stale dirs so a
 //                 missed Stop can't leak forever, and rotate the decision
 //                 log past a size cap.
 //
-// Budgets are keyed by `agent_type` (table + default fallback). The context
-// ceiling is the sharper proxy for context rot: the sub-agent's own
-// transcript (`agent-<agent_id>.jsonl`) is located live under the project
-// dir and its last assistant `message.usage` tokens summed. If no usage
-// line is found the byte size of the file stands in as a proxy; if the
-// transcript can't be found at all the signal is 0 (fail-open to the turn
-// ceiling alone).
+// The sub-agent's own transcript (`agent-<agent_id>.jsonl`) is located live
+// under the project dir and its last assistant `message.usage` tokens
+// summed. If no usage line is found the byte size of the file stands in as
+// a proxy. If the transcript can't be found at all the signal is 0, which
+// allows the call.
 //
-// Per-agent counters live as append/marker files (turns, checkpoint-spent, nudged,
-// hard-nudged) under one dir per (session_id, agent_id) — no read-modify-
-// write of a single state.json, so concurrent tool calls can't race a lost
-// increment or fail-open on a torn read.
+// Per-agent state lives as append/marker files (turns, checkpoint-spent,
+// nudged, hard-nudged) under one dir per (session_id, agent_id) — no
+// read-modify-write of a single state.json, so concurrent tool calls can't
+// race. The `turns` file is a count for the decision log only. It never
+// causes a deny or a nudge.
 //
 // Fail-open everywhere: malformed/empty stdin, missing agent_id, unreadable
 // state, or an unlocatable transcript → allow. The guard caps runaways; it
@@ -66,9 +69,9 @@ const BYTES_PER_TOKEN_ESTIMATE = 4;
 // it crosses this (see rotateLogIfLarge).
 const DECISION_LOG_MAX_BYTES = 5 * 1024 * 1024;
 
-// Per-agent_type budgets. Turn ceilings are hand-set. Context ceilings are
-// real token counts read from the transcript's last assistant
-// `message.usage` line (input_tokens + cache_creation_input_tokens +
+// One context budget for every agent type that does not compact itself.
+// Context ceilings are real token counts read from the transcript's last
+// assistant `message.usage` line (input_tokens + cache_creation_input_tokens +
 // cache_read_input_tokens — the summed live context the model last
 // ingested), not a byte proxy: ~150K-token soft / ~180K-token hard. When no
 // usage line can be read, `statSync(...).size / BYTES_PER_TOKEN_ESTIMATE`
@@ -76,51 +79,16 @@ const DECISION_LOG_MAX_BYTES = 5 * 1024 * 1024;
 // fallback proxy for the same thresholds — strictly monotonic, which is all
 // a ceiling needs. Per Claude Code's documented async transcript writes, the
 // reading can trail the model's live context by up to one turn; acceptable
-// for a monotonic ceiling. Unknown agent_types fall to `default`.
+// for a monotonic ceiling. `fork` differs only by its inherited baseline (see
+// chargedTokens).
 const CONTEXT_SOFT_TOKENS = 150_000;
 const CONTEXT_HARD_TOKENS = 180_000;
-const BUDGETS = {
-  coder: { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-  // general-purpose sub-agents run the same coder-shaped workloads.
-  'general-purpose': { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-  // generalist is the capped stand-in for the built-in general-purpose
-  // agent (agents/registry.yaml declares maxTurns: 100) — mirror
-  // general-purpose's budget exactly so it isn't halved by falling to
-  // `default`.
-  generalist: { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-  // milknado worker's exact reported agent_type is unobserved — key both
-  // plausible spellings at coder tier so whichever the plugin emits resolves
-  // correctly instead of silently falling to `default`.
-  'milknado-worker': { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-  'milknado:milknado-worker': { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-  // Workflow-tool agents report `workflow-subagent` and run cook/cure-shaped
-  // work. Project-local `implementer` agents (for example in the multiplier
-  // repository) are coder-shaped writers. Both fell to `default` and were
-  // turn-denied at 50 while a coder gets 100 (decision log, 2026-10-19).
-  'workflow-subagent': { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-  implementer: { turnSoft: 75, turnHard: 100, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-  reviewer: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-  explorer: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-  researcher: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-  // fork inherits the parent's full transcript at spawn; PreToolUse
-  // captures a baseline snapshot and charges only accumulation past it (see
-  // chargedTokens). Turn/context ceilings match `default`.
-  fork: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-  default: { turnSoft: 40, turnHard: 50, ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS },
-};
+const BUDGET = { ctxSoft: CONTEXT_SOFT_TOKENS, ctxHard: CONTEXT_HARD_TOKENS };
 
-function budgetFor(agentType) {
-  const key = String(agentType || '').trim().toLowerCase();
-  return BUDGETS[key] || BUDGETS.default;
-}
-
-// The budget key actually applied for `agentType` — the matched table key, or
-// 'default' when the type is unknown/empty. Kept separate from the raw
-// `agent_type` so operator-facing messages name the budget in force, not a
-// phantom type-specific budget that was never selected.
+// The type named in logs and messages: the lowercased `agent_type`, or
+// 'default' when empty.
 function resolvedType(agentType) {
-  const key = String(agentType || '').trim().toLowerCase();
-  return BUDGETS[key] ? key : 'default';
+  return String(agentType || '').trim().toLowerCase() || 'default';
 }
 
 // State base dir. An explicit CLAUDE_TURN_BUDGET_DIR is trusted as-is (the test
@@ -168,8 +136,6 @@ function writeDecision(event, fields) {
 
 function thresholdFields(budget) {
   return {
-    turnSoft: budget.turnSoft,
-    turnHard: budget.turnHard,
     ctxSoft: budget.ctxSoft,
     ctxHard: budget.ctxHard,
   };
@@ -436,7 +402,7 @@ function tokensFromTranscript(file) {
 // The real path is .../<session_id>/subagents/agent-<agent_id>.jsonl, but
 // the scheme is undocumented/internal, so walk for the file rather than
 // hardcode the join — tolerant of layout drift across CC versions. Any
-// miss / error → 0 (fail-open to the turn ceiling alone).
+// miss / error → 0 (fail-open: the call is allowed).
 function contextTokens(transcriptPath, sessionId, agentId) {
   try {
     if (!transcriptPath || !sessionId || !agentId) return { tokens: 0, source: 'none' };
@@ -584,10 +550,8 @@ const STRUCTURED_OUTPUT_TOOL = 'StructuredOutput';
 const FRESH_DISPATCH =
   'Tell the parent to dispatch a fresh agent with these observations; resuming this agent keeps its full context.';
 
-function checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent) {
-  const exceeded = [];
-  if (turns > budget.turnHard) exceeded.push(`turns ${turns}/${budget.turnHard}`);
-  if (tokens > budget.ctxHard) exceeded.push(`context ${tokens}/${budget.ctxHard} tokens`);
+function checkpointAllowance(agentType, tokens, budget, checkpointSpent) {
+  const exceeded = `context ${tokens}/${budget.ctxHard} tokens`;
   const status = checkpointSpent
     ? 'Stop calling tools now — synthesize your findings and return inline. The checkpoint allowance is spent. SubagentHandback stays allowed.'
     : `One mcp__tilth__tilth_write with ${CHECKPOINT_SHAPE} remains. No tool call is allowed except that constrained checkpoint write and SubagentHandback; after it, return inline.`;
@@ -595,12 +559,12 @@ function checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent) 
   const incomplete = coder
     ? 'If your task is incomplete, open your final reply with "status: needs-context" so the phase owner can persist observations and retry the same phase.'
     : 'If your task is incomplete, open your final reply with "status: blocked: <reason>" so the owner can handle the blocker.';
-  return `Local guard budget exceeded (type '${agentType || 'default'}': ${exceeded.join(', ')}). ` +
+  return `Local guard budget exceeded (type '${agentType || 'default'}': ${exceeded}). ` +
     `This is a local guard budget signal, not a provider context failure. ${status} ${incomplete} ${FRESH_DISPATCH}`;
 }
 
-function denyReason(agentType, turns, tokens, budget, checkpointSpent) {
-  return checkpointAllowance(agentType, turns, tokens, budget, checkpointSpent);
+function denyReason(agentType, tokens, budget, checkpointSpent) {
+  return checkpointAllowance(agentType, tokens, budget, checkpointSpent);
 }
 
 // The soft nudge is a heads-up, not a stop. Agents read the old "wrap up" text
@@ -612,8 +576,8 @@ function nudgeContext(agentType, budget) {
     ? 'When the remaining work does not fit, return compact checkpoint observations inline; do not persist a checkpoint.'
     : 'When the remaining work does not fit, persist compact handoff observations and return; if incomplete, return status: blocked: <reason>.';
   return `Local guard budget warning (type '${agentType || 'default'}': ` +
-    `soft ${budget.turnSoft} turns / ${budget.ctxSoft} context tokens passed; ` +
-    `hard ceiling ${budget.turnHard} turns / ${budget.ctxHard} context tokens). ` +
+    `soft ${budget.ctxSoft} context tokens passed; ` +
+    `hard ceiling ${budget.ctxHard} context tokens). ` +
     'This is a local guard budget signal, not a provider context failure. ' +
     'Do not stop yet: keep working on the current step, and use targeted section reads instead of broad reads. ' +
     `${handoff} ${FRESH_DISPATCH} ` +
@@ -676,6 +640,46 @@ function emitNudge(context) {
   }));
 }
 
+// A sub-agent whose definition sets `autoCompactWindow` compacts its own
+// context, so the guard must not cap it. Only plain agent names resolve to a
+// file: plugin-scoped names (`a:b`), path separators, and `..` never match.
+const AGENT_NAME_RE = /^[A-Za-z0-9_-]+$/;
+const AUTO_COMPACT_MIN = 100_000;
+const AUTO_COMPACT_MAX = 1_000_000;
+
+function frontmatterSetsAutoCompact(text) {
+  const lines = text.split(/\r?\n/);
+  if (lines[0] !== '---') return false;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i] === '---') return false;
+    const m = /^autoCompactWindow:\s*(\d+)\s*$/.exec(lines[i]);
+    if (m) {
+      const n = Number(m[1]);
+      return n >= AUTO_COMPACT_MIN && n <= AUTO_COMPACT_MAX;
+    }
+  }
+  return false;
+}
+
+// Any read or parse error → not self-compacting (fail toward the ceiling).
+function isSelfCompacting(agentType, cwd) {
+  try {
+    if (typeof agentType !== 'string' || !AGENT_NAME_RE.test(agentType)) return false;
+    const dirs = [];
+    if (typeof cwd === 'string' && cwd.trim()) dirs.push(path.join(cwd, '.claude', 'agents'));
+    dirs.push(path.join(os.homedir(), '.claude', 'agents'));
+    return dirs.some((dir) => {
+      try {
+        return frontmatterSetsAutoCompact(fs.readFileSync(path.join(dir, `${agentType}.md`), 'utf8'));
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
 function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
   const agentId = event.agent_id;
   if (!agentId) {
@@ -691,7 +695,7 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
   const sessionId = event.session_id;
   const agentType = event.agent_type;
   const dir = counterPath(sessionId, agentId);
-  const budget = budgetFor(agentType);
+  const budget = BUDGET;
   const type = resolvedType(agentType);
   const evt = event.hook_event_name;
 
@@ -712,13 +716,18 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
     return { action: 'cleanup', reason: 'subagent-stop' };
   }
 
+  if ((evt === 'PreToolUse' || evt === 'PostToolUse') && isSelfCompacting(agentType, event.cwd)) {
+    const turns = evt === 'PreToolUse' ? incrementTurn(dir).turns : readState(dir).turns;
+    writeDecision(event, { budget_type: type, turns, action: 'allow', reason: 'auto-compact' });
+    return { action: 'allow', reason: 'auto-compact' };
+  }
+
   if (evt === 'PreToolUse') {
     const { tokens, source: ctxSource } = contextTokensFromEvent(event);
     if (type === 'fork' && ctxSource === 'tokens') captureBaseline(dir, tokens);
     const state = incrementTurn(dir);
     const charged = chargedTokens(type, tokens, state.baseline, ctxSource);
-    debug(`pre type=${type} turns=${state.turns}/${budget.turnHard} ` +
-      `tokens=${charged}/${budget.ctxHard} checkpointSpent=${state.checkpointSpent}`);
+    debug(`pre type=${type} tokens=${charged}/${budget.ctxHard} checkpointSpent=${state.checkpointSpent}`);
     const fields = {
       budget_type: type,
       turns: state.turns,
@@ -729,7 +738,7 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
       checkpointSpent: state.checkpointSpent,
       ...thresholdFields(budget),
     };
-    if (state.turns > budget.turnHard || charged > budget.ctxHard) {
+    if (charged > budget.ctxHard) {
       if (HANDBACK_TOOLS.has(event.tool_name)) {
         writeDecision(event, { ...fields, action: 'allow', reason: 'handback' });
         return { action: 'allow', reason: 'handback' };
@@ -745,7 +754,7 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
         }
       }
       const checkpointSpent = fileExists(checkpointSpentFile(dir));
-      const reason = denyReason(type, state.turns, charged, budget, checkpointSpent);
+      const reason = denyReason(type, charged, budget, checkpointSpent);
       writeDecision(event, { ...fields, checkpointSpent, action: 'deny', reason: 'hard-ceiling' });
       emit.deny(reason);
       return { action: 'deny', reason };
@@ -774,7 +783,7 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
       if (created) {
         markNudged(dir); // suppress the soft nudge too — one nudge per agent max
         const checkpointSpent = fileExists(checkpointSpentFile(dir));
-        debug(`hard-nudge type=${type} turns=${state.turns} tokens=${charged} checkpointSpent=${checkpointSpent}`);
+        debug(`hard-nudge type=${type} tokens=${charged} checkpointSpent=${checkpointSpent}`);
         const context = hardNudgeContext(type, budget, checkpointSpent);
         writeDecision(event, { ...fields, action: 'nudge', reason: 'hard-threshold' });
         emit.nudge(context);
@@ -789,9 +798,9 @@ function handle(event, emit = { deny: emitDeny, nudge: emitNudge }) {
       writeDecision(event, { ...fields, action: 'allow', reason: 'already-nudged' });
       return { action: 'allow', reason: 'already-nudged' };
     }
-    if (state.turns >= budget.turnSoft || charged >= budget.ctxSoft) {
+    if (charged >= budget.ctxSoft) {
       markNudged(dir);
-      debug(`nudge type=${type} turns=${state.turns} tokens=${charged}`);
+      debug(`nudge type=${type} tokens=${charged}`);
       const context = nudgeContext(type, budget);
       writeDecision(event, { ...fields, action: 'nudge', reason: 'soft-threshold' });
       emit.nudge(context);
@@ -819,7 +828,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  budgetFor,
   resolvedType,
   baseDir,
   counterPath,

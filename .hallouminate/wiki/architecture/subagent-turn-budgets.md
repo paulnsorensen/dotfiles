@@ -14,6 +14,44 @@ enforcement moved to the `turn-budget-guard` hook. The data below still grounds
 the budget values; the hook's non-obvious mechanics are at the bottom of this
 page.
 
+## Compaction replaces turn caps (2026-10-20)
+
+Sub-agents now compact instead of stopping. There is no turn limit on any
+harness. The historical data below explains the old caps.
+
+- **Claude agents:** every `agents/registry.yaml` agent renders
+  `autoCompactWindow: 120000` (Claude Code v2.1.296+, range 100000 to 1000000).
+  `maxTurns` is gone from the registry, both renderers, and OpenCode `steps`.
+- **Built-in shadows:** `claude/agents/{Explore,Plan,general-purpose}.md` are
+  user agents with the built-ins' names, so they override the built-ins. A
+  live headless run confirmed it: the Explore tool list lacked Grep, Glob, and
+  Skill, which only the shadow removes. `workflow-subagent` and the `claude`
+  catch-all are not shadowed, because their runtime prompts are unknown.
+- **The window triggers early.** With `autoCompactWindow: 120000`, a Haiku 5.5
+  Explore compacted at `preTokens` 95,832, 92,125, and 89,543, and its context
+  peaked at 87,599. Claude Code reserves about 25K below the window. To
+  compact near 120K, set about 145000.
+- **Control:** the built-in Explore ran the same task with no compaction. It
+  peaked at 190,046 tokens, and the old guard stopped it.
+- **Guard:** `turn-budget-guard` has no turn ceiling. An agent whose definition
+  (`<cwd>/.claude/agents/<type>.md` or `~/.claude/agents/<type>.md`) sets
+  `autoCompactWindow` is exempt, with log reason `auto-compact`. Every other
+  type keeps the 150k/180k context ceiling: `workflow-subagent`, `claude`,
+  plugin agents such as `milknado:milknado-worker`, and project-local agents
+  without the field.
+- **Other harnesses:** OMP sets `task.agentCompactionThresholdOverrides` to
+  120000 per agent. Codex sets a global `model_auto_compact_token_limit` of
+  120000, which also covers the main session. Pi and OpenCode have no
+  per-agent compaction key. OpenCode sub-agents lost their `steps` cap and
+  compact only at the global trigger.
+- **Gotcha:** `dots sync` deploys `DOTFILES_DIR`, which defaults to
+  `~/Dev/dotfiles`. A worktree deploy (`DOTFILES_DIR=$PWD dots sync`) lasts
+  only until another session syncs main. One such sync reverted a live test
+  midway on 2026-10-20.
+- **Evidence:** the research report
+  `~/.local/share/cheese/briesearch/research/context-dumb-zone-compact-window/context-dumb-zone-compact-window.md`
+  records the long-context benchmarks behind the 120K choice.
+
 See [[agents-dir]] for the registry mechanics, [[agent-profile]] for the renderer
 that emits the field, and [[agent-vs-skill-tiering]] for why each agent earns its
 own context window in the first place.

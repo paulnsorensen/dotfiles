@@ -29,6 +29,12 @@ codex:
     approvals_reviewer: "guardian_subagent"
     sandbox_mode: "workspace-write"
     service_tier: "default"
+    # Compact at 120k tokens, below the measured context "dumb zone". Codex
+    # has no per-agent compaction key (role config files cannot carry it), so
+    # this global limit covers the main session and every sub-agent. Codex caps
+    # the value at 90% of the model window (244,800 on a 272K model), so
+    # 120000 applies as written.
+    model_auto_compact_token_limit: 120000
     sandbox_workspace_write:
       network_access: true
       # Keep Codex's temp dir off /tmp: its bubblewrap helper leaks empty

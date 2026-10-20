@@ -8,7 +8,14 @@
 # Bodies are instruction-only Markdown at body_path (frontmatter stripped);
 # all metadata lives here. tools/disallowedTools are LISTS; renderers join them
 # for Claude/Cursor and derive Codex sandbox policy.
-# models is per-harness; color/maxTurns/skills are Claude fields; effort is shared by Claude and Codex.
+# models is per-harness; color/autoCompactWindow/skills are Claude fields; effort is shared by Claude and Codex.
+#
+# autoCompactWindow is the token count at which Claude Code compacts the
+# sub-agent's context. 120000 keeps every agent below the measured "dumb
+# zone" (see .hallouminate/wiki/architecture/subagent-turn-budgets.md). The
+# field replaces the old maxTurns caps: Claude Code never enforced maxTurns,
+# and agents now compact instead of stopping. OMP mirrors the value in
+# chezmoi/.chezmoidata/omp.yaml (task.agentCompactionThresholdOverrides).
 #
 # The Skill TOOL is withheld from every agent that does not invoke a skill.
 # Granting it injects the full skill listing into the spawn context — measured
@@ -42,7 +49,7 @@ agents:
     - Glob
     - Skill
     - Agent
-    maxTurns: 50
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/ghostbuster.md
   nih-scanner:
     description: Structural NIH pattern scanner. Uses AST search and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Dispatched by the /nih-audit skill's structural-scan phase.
@@ -66,7 +73,7 @@ agents:
     - Skill
     - Agent
     skills: []
-    maxTurns: 50
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/nih-scanner.md
   roquefort-wrecker:
     description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with severity-tier scoring per finding.
@@ -87,7 +94,7 @@ agents:
     - mcp__tilth
     - mcp__tilth__tilth_write
     skills: []
-    maxTurns: 50
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/roquefort-wrecker.md
   duckdb-expert:
     description: Read-only analyst for one coding-agent session-analytics pack. Spawned with one absolute pack path, a target, a harness filter, a conventions path, and a default or explicit database choice. Reads the public package schema and runs SQL through uvx agent-session-analytics@latest; the package owns default freshness and validates explicit overrides. Returns one structured ~2 KB digest for tool-efficiency, prompt-analytics, or work-recovery.
@@ -112,7 +119,7 @@ agents:
     - Glob
     skills:
     - session-analytics
-    maxTurns: 50
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/duckdb-expert.md
   whey-drainer:
     description: Runs existing tests and returns only failures and summary counts (~2 KB digest). Use this agent to validate code without flooding the parent context with verbose test output. Fits easy-cheese's small/fast read-only sub-agent contract — dispatched by /xray, and callable from any skill that needs a test gate without the log. Does NOT write tests.
@@ -127,7 +134,7 @@ agents:
     - ToolSearch
     - mcp__tilth__tilth_read
     skills: []
-    maxTurns: 50
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/whey-drainer.md
   worktree-content-digest:
     description: Read-only worktree inspector. Given one worktree path, runs git log/diff/ls-files and returns a 2-3 line digest — unique commits, uncommitted diff summary, and whether untracked files look throwaway vs. worth keeping. Fanned out one-per-worktree (in parallel) by the worktree-triage skill so diff bodies stay in the sub-agent's window.
@@ -141,7 +148,7 @@ agents:
     - Bash
     - ToolSearch
     - mcp__tilth__tilth_read
-    maxTurns: 30
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/worktree-content-digest.md
   # ── easy-cheese general phase agents ──────────────────────────────────────
   # Four general-purpose agents that model the easy-cheese workflow: explore
@@ -173,7 +180,7 @@ agents:
     color: cyan
     effort: medium
     skills: []
-    maxTurns: 50
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/explorer.md
   researcher:
     description: External-research agent. Answers questions outside the codebase — library/API docs, current web facts, version/changelog checks, best-practice comparisons, GitHub examples — via Context7, Tavily, web fetch, and gh, then writes a durable cited research slug under .cheese/research/. Read-only against code. Returns a condensed claim-level digest (the heavy fetch bodies stay on disk, out of the parent's context). Models the easy-cheese research phase. Use PROACTIVELY before implementing against an unfamiliar library or API, when a claim needs a current source instead of a guess, or whenever a skill (/mold, /cook, /briesearch, or any user-installed skill) would otherwise rely on stale training data.
@@ -196,7 +203,7 @@ agents:
     effort: medium
     skills:
     - briesearch
-    maxTurns: 50
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/researcher.md
   reviewer:
     description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path through an explicit severity-report or taste-test contract. Source-read-only — never writes fixes; may write only its own .cheese artifact through tilth_write. A top-level /age orchestrator may supply specialist evidence. Models the easy-cheese review phase. `powerful` tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
@@ -217,7 +224,7 @@ agents:
     color: red
     effort: high
     skills: []
-    maxTurns: 50
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/reviewer.md
   taste-tester:
     # easy-cheese `reviewer (taste-test)`: `default` power, `medium` effort,
@@ -240,7 +247,7 @@ agents:
     color: yellow
     effort: medium
     skills: []
-    maxTurns: 30
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/taste-tester.md
   judge:
     # Read-only judge for Workflow scripts. `powerful` tier on every harness:
@@ -261,7 +268,7 @@ agents:
     color: purple
     effort: high
     skills: []
-    maxTurns: 40
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/judge.md
   runner:
     # Narrow command runner for Workflow steps that only run gh or git. Cheap
@@ -281,7 +288,7 @@ agents:
     color: cyan
     effort: medium
     skills: []
-    maxTurns: 20
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/runner.md
   formatter:
     # Text-to-structure formatter for Workflow repair and format steps. The
@@ -297,7 +304,7 @@ agents:
     color: blue
     effort: medium
     skills: []
-    maxTurns: 5
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/formatter.md
   coder:
     # Codex uses Sol for medium-capability work. OMP's native coder pairs the
@@ -334,19 +341,13 @@ agents:
     # role discipline is inlined in the coder body; Skill remains ungranted.
     # A workflow that needs a skill tells the coder to read its SKILL.md file.
     skills: []
-    maxTurns: 100
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/coder.md
   generalist:
-    # Capped catch-all. The built-in `general-purpose` is the default for untyped
-    # spawns and cannot carry a maxTurns cap (it lives outside the registry, see
-    # .hallouminate/wiki/architecture/subagent-turn-budgets.md). This is our own
-    # named stand-in: when the orchestrator routes a general, mixed task by
-    # subagent_type, picking `generalist` keeps it under a turn budget. It does
-    # NOT intercept genuinely untyped spawns — the harness hardcodes those to the
-    # built-in. Cap 100 matches measured general-purpose work (p90 101) so it
-    # clips only the runaway tail, not legitimate p90 runs. Denies Agent (a
-    # level-1 subagent cannot fan out).
-    description: General-purpose catch-all for an open-ended, multi-step task that does not fit a specialist phase agent — mixed research, code reading, and synthesis in one dispatch. The capped stand-in for the built-in general-purpose agent. Prefer a specialist when the task is cleanly one shape — explorer for "where/how/what" code questions, researcher for external/library/web facts, reviewer for checking a diff before it lands, coder for writing or changing code. Use this only as the fallback when no single specialist owns the task. Routes file I/O through the tilth MCP tools.
+    # Catch-all with tilth routing. Untyped spawns go to `general-purpose`,
+    # which claude/agents/general-purpose.md shadows with the same compaction
+    # window. Denies Agent (a level-1 subagent cannot fan out).
+    description: General-purpose catch-all for an open-ended, multi-step task that does not fit a specialist phase agent — mixed research, code reading, and synthesis in one dispatch. The tilth-routed stand-in for the built-in general-purpose agent. Prefer a specialist when the task is cleanly one shape — explorer for "where/how/what" code questions, researcher for external/library/web facts, reviewer for checking a diff before it lands, coder for writing or changing code. Use this only as the fallback when no single specialist owns the task. Routes file I/O through the tilth MCP tools.
     models:
       claude: sonnet
       codex: gpt-6-sol
@@ -360,5 +361,5 @@ agents:
     color: yellow
     effort: medium
     skills: []
-    maxTurns: 100
+    autoCompactWindow: 120000
     body_path: agents/agent_definitions/generalist.md

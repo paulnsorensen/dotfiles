@@ -14,12 +14,14 @@ Nothing here is symlinked into `~/.claude/` anymore — a directory symlink let 
 
 - `commands/`, `hooks/`, `reference/`, `workflows/` → **one-way copies** via `chezmoi/lib/install-claude-assets.sh` (manifest-tracked; edits need a `dots sync` to go live).
 - `agents/`, MCP servers, `skills/` → rendered/copied from the repo-root `agents/` registries by the `ap` tool + chezmoi (shared with Codex et al.).
+- `claude/agents/` → Claude-only shadows of the built-in `Explore`, `Plan`, and `general-purpose` agents. A user agent with a built-in's name overrides the built-in, so these files give the built-ins the registry's `autoCompactWindow`. `dots sync` copies them next to the rendered registry agents and fails if a name collides.
 - `settings.json` → seeded once by chezmoi, then jq-merged by `ap install global`.
 
 ## Directory Structure
 
 ```
 claude/
+├── agents/           # Shadows of built-in agents (Explore, Plan, general-purpose)
 ├── commands/         # Slash commands (/scaffold, /setup-perms, etc.)
 ├── hooks/            # Pre-tool enforcement hooks + lifecycle hooks
 ├── lib/              # Shared sync helpers (sync-common.sh)

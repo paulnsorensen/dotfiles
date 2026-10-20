@@ -90,7 +90,7 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-Default to an inline report. Only when it genuinely exceeds a digest, write your own artifact to the path supplied by the pipeline or `.cheese/age/<slug>.md` through `tilth_write`, then return that path as `artifact:`. The registry's `.agents.reviewer.maxTurns` is the role-limit source of truth. Before that limit or the context window is exhausted, checkpoint partial findings to the artifact and return `status: blocked: out of context` so the parent dispatches a fresh reviewer.
+Default to an inline report. Only when it genuinely exceeds a digest, write your own artifact to the path supplied by the pipeline or `.cheese/age/<slug>.md` through `tilth_write`, then return that path as `artifact:`. The registry's `.agents.reviewer.autoCompactWindow` sets the context size at which the harness compacts this agent. If the work still cannot finish, checkpoint partial findings to the artifact and return `status: blocked: out of context` so the parent dispatches a fresh reviewer.
 
 ## Rules
 

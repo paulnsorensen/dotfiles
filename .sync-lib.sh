@@ -453,12 +453,35 @@ _cz_render_claude_agent() {
             line("model";           .models.claude),
             line("color";           .color),
             line("effort";          .effort),
-            line("maxTurns";        (if .maxTurns then (.maxTurns | tostring) else null end)),
+            line("autoCompactWindow"; (if .autoCompactWindow then (.autoCompactWindow | tostring) else null end)),
             line("skills";          (if .skills then "[" + (.skills | join(", ")) + "]" else null end))
         '
         echo "---"
         cat "$root/$body_path"
     } > "$out"
+}
+
+# Copy the Claude-only built-in shadows (claude/agents/*.md) next to the
+# rendered registry agents. A shadow must not reuse a registry agent's name:
+# the copy would silently replace the rendered file.
+#   _cz_copy_claude_agent_shadows <src_dir> <dst_dir>
+_cz_copy_claude_agent_shadows() {
+    local src="$1" dst="$2" file name
+    [[ -d "$src" ]] || return 0
+    mkdir -p "$dst" || return 1
+    for file in "$src"/*.md; do
+        [[ -f "$file" ]] || continue
+        name=$(basename "$file")
+        if [[ -e "$dst/$name" ]]; then
+            log_error "claude agent shadow '$name' collides with a rendered registry agent"
+            return 1
+        fi
+        if ! cp -L "$file" "$dst/$name"; then
+            log_error "claude source assembly: copy failed: $file"
+            return 1
+        fi
+    done
+    return 0
 }
 
 # Vendor external skills from skills/_registry.yaml into <dst>. Clones each
@@ -640,6 +663,10 @@ sync_claude_chezmoi_sources() {
         _cz_render_claude_agent "$root/agents/registry.yaml" "$name" "$root" \
             "$staging/exact_agents/$name.md" || return 1
     done < <(yq -r '.claude.agents // [] | .[]' "$claude_reg")
+    # Claude-only shadows of built-in agents (Explore, Plan, general-purpose).
+    # A user agent with a built-in's name overrides that built-in, so these
+    # files give the built-ins the registry's autoCompactWindow.
+    _cz_copy_claude_agent_shadows "$root/claude/agents" "$staging/exact_agents" || return 1
 
     # commands / hooks / lib / reference / workflows
     _cz_copy_encoded "$root/claude/commands"  "$staging/exact_commands" || return 1
@@ -812,7 +839,6 @@ _cz_opencode_agents_json() {
                     description: .description,
                     mode: "subagent",
                     model: ("openai/" + $model),
-                    steps: .maxTurns,
                     prompt: $body,
                     permission: (if $tools != null then {"*": "deny", task: "deny"} + grants
                                  else {task: "deny"} + denied_tools end)
