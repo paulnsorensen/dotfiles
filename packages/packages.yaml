@@ -25,6 +25,7 @@ packages:
   - mise                                      # tool-version manager; declared so upgrade mode moves the binary too
   - ffmpeg                                    # audio/video encoder; VHS (mise pin) records TUI demos through it
   - graphviz                                  # `dot` graph renderer
+  - socat                                     # socket relay; Claude Code sandbox proxies network through it on Linux
 
   # Remote access (Tailscale mesh VPN → SSH bootstrap → mosh)
   - mosh                                      # resilient mobile shell (UDP 60000-61000); survives roaming/sleep
@@ -52,6 +53,7 @@ packages:
   - xclip: { platform: linux }
   - mold: { platform: linux }                 # fast linker for target.x86_64-unknown-linux-gnu (cargo/config.toml)
   - llvm: { platform: linux }                 # provides clang, required by cargo/config.toml's mold linker config
+  - bubblewrap: { platform: linux }           # `bwrap` namespace sandbox; Claude Code sandbox needs it on Linux (no macOS build)
 
   # Dev (DOTFILES_DEV=true)
   - pyenv: { dev: true }
