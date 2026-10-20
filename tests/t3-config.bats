@@ -65,6 +65,9 @@ setup() {
 @test "t3 wrapper paths follow a clone outside ~/Dev" {
     local clone="$TEST_HOME/code/my dots"
     mkdir -p "$clone/chezmoi/lib" "$clone/chezmoi/.chezmoidata"
+    # The script resolves the clone physically; macOS TMPDIR sits behind the
+    # /var -> /private/var symlink, so compare against the physical path.
+    clone="$(cd -P "$clone" && pwd)"
     cp "$REGISTRY" "$clone/chezmoi/.chezmoidata/t3.yaml"
     cp "$CZ_SRC"/lib/drift-gate.sh "$CZ_SRC"/lib/t3-settings-*.txt "$clone/chezmoi/lib/"
     run env CHEZMOI_SOURCE_DIR="$clone/chezmoi" HOME=/home/tester sh "$SCRIPT" </dev/null
