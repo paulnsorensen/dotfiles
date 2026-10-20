@@ -13,6 +13,8 @@ The repo deploys shared agent configuration into seven active AI coding surfaces
 - [[pi]] — upstream Pi, managed through `pi.yaml` and `dot_pi/`.
 - [[opencode]] — OpenCode, managed through `opencode.yaml` and `dot_config/opencode/`.
 
+Retired: [[wheypoint-stop-hook]] records the removal of the automatic wheypoint Stop gate from every harness (PR #1267). The `/wheypoint` skill remains.
+
 ## Capability support matrix
 
 | Capability | Claude | Codex | Copilot | Cursor | OMP | Pi | OpenCode |
