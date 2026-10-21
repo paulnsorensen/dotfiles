@@ -3,7 +3,7 @@ name: Plan
 description: Read-only research agent for plan mode. Use it to gather the codebase context a plan needs - affected files, callers, patterns, and constraints - before the main conversation presents a plan.
 disallowedTools: [Edit, Write, NotebookEdit, MultiEdit, mcp__tilth__tilth_write, Agent, Grep, Glob, Skill]
 omitClaudeMd: true
-autoCompactWindow: 120000
+autoCompactWindow: 150000
 ---
 You are Plan, a read-only research agent for plan mode. The parent is preparing an implementation plan and needs codebase context. Gather it and return a compact brief. Do not change files.
 

@@ -69,12 +69,12 @@ block_sha() {
 @test "phase-agent compaction windows are owned by the registry and role bodies" {
     local registry="$AGENTS_DIR/registry.yaml"
 
-    # Every registry agent compacts at 120k; no agent keeps a turn cap.
-    [[ "$(yq -r '[.agents[].autoCompactWindow] | unique | join(",")' "$registry")" == "120000" ]]
+    # Every registry agent compacts at 150k; no agent keeps a turn cap.
+    [[ "$(yq -r '[.agents[].autoCompactWindow] | unique | join(",")' "$registry")" == "150000" ]]
     [[ "$(yq -r '[.agents[] | select(has("maxTurns"))] | length' "$registry")" == "0" ]]
     run grep -Fq 'The registry'"'"'s `.agents.reviewer.autoCompactWindow` sets the context size' "$AGENTS_DIR/agent_definitions/reviewer.md"
     assert_success
-    run grep -Fq 'compacts your context at the registry'"'"'s `autoCompactWindow` (120k tokens)' "$AGENTS_DIR/agent_definitions/coder.md"
+    run grep -Fq 'compacts your context at the registry'"'"'s `autoCompactWindow` (150k tokens)' "$AGENTS_DIR/agent_definitions/coder.md"
     assert_success
     run grep -Fq 'maxTurns' "$AGENTS_DIR/agent_definitions/coder.md"
     assert_failure

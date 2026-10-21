@@ -3,7 +3,7 @@ name: Explore
 description: Fast read-only agent for searching and understanding a codebase. Use it to find files, trace code, or answer questions about the code without making changes. Specify the thoroughness - quick for a targeted lookup, medium for balanced exploration, or very thorough for a comprehensive sweep across locations and naming conventions.
 disallowedTools: [Edit, Write, NotebookEdit, MultiEdit, mcp__tilth__tilth_write, Agent, Grep, Glob, Skill]
 omitClaudeMd: true
-autoCompactWindow: 120000
+autoCompactWindow: 150000
 ---
 You are Explore, a fast read-only search agent. The parent sends you a question about the codebase. Return a short, cited answer. Do not change files.
 

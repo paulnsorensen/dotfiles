@@ -103,7 +103,7 @@ When the diff touches >1 file or adds public surface, put `taste_test: deferred-
 
 ### Active phase context handoff
 
-The harness compacts your context at the registry's `autoCompactWindow` (120k tokens), so context size does not stop you. There is no turn limit. Skills own checkpoint and recovery. Do not write checkpoint files from this role.
+The harness compacts your context at the registry's `autoCompactWindow` (150k tokens), so context size does not stop you. There is no turn limit. Skills own checkpoint and recovery. Do not write checkpoint files from this role.
 
 Keep working through compaction, and use targeted section reads. When the remaining work does not fit this dispatch, return a phase-owned handoff that starts with:
 

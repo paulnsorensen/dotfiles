@@ -41,8 +41,8 @@ def test_claude_agent_frontmatter_emits_auto_compact_window():
     # autoCompactWindow flows from the registry field into the Claude
     # frontmatter as a bare int, and is omitted when unset. maxTurns is no
     # longer a registry field, so the renderer drops it.
-    fm = shared.claude_agent_frontmatter({"name": "a", "autoCompactWindow": 120000})
-    assert fm["autoCompactWindow"] == "120000"
+    fm = shared.claude_agent_frontmatter({"name": "a", "autoCompactWindow": 150000})
+    assert fm["autoCompactWindow"] == "150000"
     assert "autoCompactWindow" not in shared.claude_agent_frontmatter({"name": "a"})
     assert "maxTurns" not in shared.claude_agent_frontmatter({"name": "a", "maxTurns": 50})
 

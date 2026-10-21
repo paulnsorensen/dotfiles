@@ -45,7 +45,7 @@ agents:
     disallowedTools:
     - Edit
     color: cyan
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     skills:
     - alpha-skill
     body_path: agents/agent_definitions/tester.md
@@ -139,7 +139,7 @@ tools: Bash, Read
 disallowedTools: [Edit]
 model: haiku
 color: cyan
-autoCompactWindow: 120000
+autoCompactWindow: 150000
 skills: [alpha-skill]
 ---
 Agent body.
@@ -148,7 +148,7 @@ EXPECTED
 
 @test "assembly: built-in shadows in claude/agents land next to rendered agents" {
     mkdir -p "$ROOT/claude/agents"
-    printf -- '---\nname: Explore\nautoCompactWindow: 120000\n---\nShadow body.\n' > "$ROOT/claude/agents/Explore.md"
+    printf -- '---\nname: Explore\nautoCompactWindow: 150000\n---\nShadow body.\n' > "$ROOT/claude/agents/Explore.md"
     run_assembly
     [ "$status" -eq 0 ]
     [ -f "$SRC/dot_claude/exact_agents/tester.md" ]
@@ -229,7 +229,7 @@ EXPECTED
 @test "repo: every built-in shadow compacts at the registry's window" {
     local shadow window
     window=$(yq -r '[.agents[].autoCompactWindow] | unique | .[]' "$REAL_DOTFILES_DIR/agents/registry.yaml")
-    [ "$window" = "120000" ]
+    [ "$window" = "150000" ]
     for shadow in Explore Plan general-purpose; do
         [ -f "$REAL_DOTFILES_DIR/claude/agents/$shadow.md" ]
         [ "$(yq --front-matter=extract -r '.name' "$REAL_DOTFILES_DIR/claude/agents/$shadow.md")" = "$shadow" ]

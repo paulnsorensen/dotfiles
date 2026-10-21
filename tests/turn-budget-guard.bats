@@ -973,7 +973,7 @@ with_cwd() {
 }
 
 @test "A14: self-compacting coder over the hard ceiling is allowed on PreToolUse" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     seed_usage_transcript s14 sc1 "250000:0:0"
     fire "$(pre_event s14 sc1 coder)"
     [[ "$(verdict)" == "allow" ]]
@@ -982,7 +982,7 @@ with_cwd() {
 }
 
 @test "A14: self-compacting coder over the hard ceiling gets no nudge on PostToolUse" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     seed_usage_transcript s14 sc2 "250000:0:0"
     fire "$(post_event s14 sc2 coder)"
     [[ "$(verdict)" == "allow" ]]
@@ -1000,7 +1000,7 @@ with_cwd() {
 }
 
 @test "A14: a definition under <cwd>/.claude/agents also counts" {
-    write_agent_def "$PROJ/.claude/agents" coder 120000
+    write_agent_def "$PROJ/.claude/agents" coder 150000
     seed_usage_transcript s14 cw1 "250000:0:0"
     fire "$(with_cwd "$(pre_event s14 cw1 coder)" "$PROJ")"
     [[ "$(verdict)" == "allow" ]]
@@ -1009,21 +1009,21 @@ with_cwd() {
 
 @test "A14: a definition without the field does not exempt the agent" {
     mkdir -p "$HOME/.claude/agents"
-    printf -- '---\nname: coder\n---\nautoCompactWindow: 120000\n' > "$HOME/.claude/agents/coder.md"
+    printf -- '---\nname: coder\n---\nautoCompactWindow: 150000\n' > "$HOME/.claude/agents/coder.md"
     seed_usage_transcript s14 nf1 "250000:0:0"
     fire "$(pre_event s14 nf1 coder)"
     [[ "$(verdict)" == "deny" ]]
 }
 
 @test "A14: a plugin-scoped agent_type is not self-compacting" {
-    write_agent_def "$HOME/.claude/agents" milknado-worker 120000
+    write_agent_def "$HOME/.claude/agents" milknado-worker 150000
     seed_usage_transcript s14 pl1 "250000:0:0"
     fire "$(pre_event s14 pl1 milknado:milknado-worker)"
     [[ "$(verdict)" == "deny" ]]
 }
 
 @test "A14: a path-traversal agent_type is not self-compacting" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     mkdir -p "$HOME/.claude/agents/sub"
     seed_usage_transcript s14 tr1 "250000:0:0"
     fire "$(pre_event s14 tr1 ../coder)"
@@ -1040,7 +1040,7 @@ with_cwd() {
 }
 
 @test "A14: a self-compacting agent's SubagentStop still cleans up its counter dir" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     fire "$(pre_event s14 sc3 coder)"
     [[ -d "$CLAUDE_TURN_BUDGET_DIR/s14/sc3" ]]
     fire "$(jq -nc '{hook_event_name:"SubagentStop", agent_id:"sc3", agent_type:"coder", session_id:"s14"}')"
@@ -1066,24 +1066,24 @@ fire_with_raw_def() {
 }
 
 @test "A15: CRLF frontmatter with a valid window is exempt" {
-    fire_with_raw_def coder '---\r\nname: coder\r\nautoCompactWindow: 120000\r\n---\r\nbody\r\n'
+    fire_with_raw_def coder '---\r\nname: coder\r\nautoCompactWindow: 150000\r\n---\r\nbody\r\n'
     [[ "$(verdict)" == "allow" ]]
     [[ "$(log_record | jq -r '.reason')" == "auto-compact" ]]
 }
 
 @test "A15: quoted autoCompactWindow is not exempt (strict integer only)" {
-    fire_with_raw_def coder '---\nname: coder\nautoCompactWindow: "120000"\n---\n'
+    fire_with_raw_def coder '---\nname: coder\nautoCompactWindow: "150000"\n---\n'
     [[ "$(verdict)" == "deny" ]]
 }
 
 @test "A15: autoCompactWindow with a trailing YAML comment is not exempt" {
     # speculative: valid YAML, but the guard's strict regex rejects it (fails toward the ceiling)
-    fire_with_raw_def coder '---\nname: coder\nautoCompactWindow: 120000 # tuned\n---\n'
+    fire_with_raw_def coder '---\nname: coder\nautoCompactWindow: 150000 # tuned\n---\n'
     [[ "$(verdict)" == "deny" ]]
 }
 
 @test "A15: indented autoCompactWindow key is not exempt" {
-    fire_with_raw_def coder '---\nname: coder\n  autoCompactWindow: 120000\n---\n'
+    fire_with_raw_def coder '---\nname: coder\n  autoCompactWindow: 150000\n---\n'
     [[ "$(verdict)" == "deny" ]]
 }
 
@@ -1108,31 +1108,31 @@ fire_with_raw_def() {
 }
 
 @test "A15: negative and decimal windows are not exempt" {
-    fire_with_raw_def coder '---\nautoCompactWindow: -120000\n---\n'
+    fire_with_raw_def coder '---\nautoCompactWindow: -150000\n---\n'
     [[ "$(verdict)" == "deny" ]]
-    fire_with_raw_def coder '---\nautoCompactWindow: 120000.5\n---\n' s15 r2
+    fire_with_raw_def coder '---\nautoCompactWindow: 150000.5\n---\n' s15 r2
     [[ "$(verdict)" == "deny" ]]
 }
 
 @test "A15: field only in a second frontmatter block is not exempt" {
-    fire_with_raw_def coder '---\nname: coder\n---\n---\nautoCompactWindow: 120000\n---\n'
+    fire_with_raw_def coder '---\nname: coder\n---\n---\nautoCompactWindow: 150000\n---\n'
     [[ "$(verdict)" == "deny" ]]
 }
 
 @test "A15: file without an opening --- fence is not exempt" {
-    fire_with_raw_def coder 'name: coder\nautoCompactWindow: 120000\n---\n'
+    fire_with_raw_def coder 'name: coder\nautoCompactWindow: 150000\n---\n'
     [[ "$(verdict)" == "deny" ]]
 }
 
 @test "A15: unterminated frontmatter that still carries the field is exempt" {
     # speculative: documents current behavior (no closing fence required)
-    fire_with_raw_def coder '---\nautoCompactWindow: 120000\n'
+    fire_with_raw_def coder '---\nautoCompactWindow: 150000\n'
     [[ "$(verdict)" == "allow" ]]
 }
 
 @test "A15: UTF-8 BOM before the opening fence is not exempt" {
     # speculative: documents fail-toward-ceiling on BOM-prefixed files
-    fire_with_raw_def coder '\xef\xbb\xbf---\nautoCompactWindow: 120000\n---\n'
+    fire_with_raw_def coder '\xef\xbb\xbf---\nautoCompactWindow: 150000\n---\n'
     [[ "$(verdict)" == "deny" ]]
 }
 
@@ -1150,7 +1150,7 @@ fire_with_raw_def() {
 
 @test "A15: definition that is a symlink to a valid file is exempt" {
     mkdir -p "$HOME/.claude/agents" "$TEST_HOME/elsewhere"
-    printf -- '---\nautoCompactWindow: 120000\n---\n' > "$TEST_HOME/elsewhere/real.md"
+    printf -- '---\nautoCompactWindow: 150000\n---\n' > "$TEST_HOME/elsewhere/real.md"
     ln -s "$TEST_HOME/elsewhere/real.md" "$HOME/.claude/agents/coder.md"
     seed_usage_transcript s15 l1 "250000:0:0"
     fire "$(pre_event s15 l1 coder)"
@@ -1166,7 +1166,7 @@ fire_with_raw_def() {
 }
 
 @test "A15: uppercase agent_type (Explore) resolves to Explore.md and is exempt" {
-    write_agent_def "$HOME/.claude/agents" Explore 120000
+    write_agent_def "$HOME/.claude/agents" Explore 150000
     seed_usage_transcript s15 u1 "250000:0:0"
     fire "$(pre_event s15 u1 Explore)"
     [[ "$(verdict)" == "allow" ]]
@@ -1174,7 +1174,7 @@ fire_with_raw_def() {
 }
 
 @test "A15: agent_type with a space is not exempt" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     cp "$HOME/.claude/agents/coder.md" "$HOME/.claude/agents/my coder.md"
     seed_usage_transcript s15 sp1 "250000:0:0"
     fire "$(pre_event s15 sp1 'my coder')"
@@ -1182,28 +1182,28 @@ fire_with_raw_def() {
 }
 
 @test "A15: empty agent_type is not exempt" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     seed_usage_transcript s15 e1 "250000:0:0"
     fire "$(pre_event s15 e1 '')"
     [[ "$(verdict)" == "deny" ]]
 }
 
 @test "A15: agent_type with a trailing newline is not exempt" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     seed_usage_transcript s15 nl1 "250000:0:0"
     fire "$(pre_event s15 nl1 coder | jq -c '.agent_type = "coder\n"')"
     [[ "$(verdict)" == "deny" ]]
 }
 
 @test "A15: nonexistent cwd falls back to the HOME definition" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     seed_usage_transcript s15 c1 "250000:0:0"
     fire "$(with_cwd "$(pre_event s15 c1 coder)" "$TEST_HOME/does/not/exist")"
     [[ "$(verdict)" == "allow" ]]
 }
 
 @test "A15: relative cwd does not crash and HOME definition still exempts" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     seed_usage_transcript s15 c2 "250000:0:0"
     fire "$(with_cwd "$(pre_event s15 c2 coder)" "relative/dir")"
     [[ "$(verdict)" == "allow" ]]
@@ -1216,7 +1216,7 @@ fire_with_raw_def() {
 }
 
 @test "A15: invalid cwd definition still exempts via a valid HOME definition" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     write_agent_def "$PROJ/.claude/agents" coder 50000
     seed_usage_transcript s15 c4 "250000:0:0"
     fire "$(with_cwd "$(pre_event s15 c4 coder)" "$PROJ")"
@@ -1226,14 +1226,14 @@ fire_with_raw_def() {
 
 @test "A15: valid cwd definition still exempts when the HOME definition is invalid" {
     write_agent_def "$HOME/.claude/agents" coder 50000
-    write_agent_def "$PROJ/.claude/agents" coder 120000
+    write_agent_def "$PROJ/.claude/agents" coder 150000
     seed_usage_transcript s15 c5 "250000:0:0"
     fire "$(with_cwd "$(pre_event s15 c5 coder)" "$PROJ")"
     [[ "$(verdict)" == "allow" ]]
 }
 
 @test "A15: exempt agent in the soft zone (160k) gets no soft nudge on PreToolUse or PostToolUse" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     seed_usage_transcript s15 z1 "160000:0:0"
     fire "$(pre_event s15 z1 coder)"
     [[ "$(verdict)" == "allow" ]]
@@ -1245,7 +1245,7 @@ fire_with_raw_def() {
 }
 
 @test "A15: exempt agent at 1M context never hard-nudges across repeated PostToolUse" {
-    write_agent_def "$HOME/.claude/agents" coder 120000
+    write_agent_def "$HOME/.claude/agents" coder 150000
     seed_usage_transcript s15 z2 "1000000:0:0"
     local _
     for _ in 1 2 3; do

@@ -20,7 +20,9 @@ Sub-agents now compact instead of stopping. There is no turn limit on any
 harness. The historical data below explains the old caps.
 
 - **Claude agents:** every `agents/registry.yaml` agent renders
-  `autoCompactWindow: 120000` (Claude Code v2.1.296+, range 100000 to 1000000).
+  `autoCompactWindow: 150000` (Claude Code v2.1.296+, range 100000 to 1000000).
+  The window was 120000 in PR #1414 and rose to 150000 on 2026-10-21, so
+  compaction fires near 125K.
   `maxTurns` is gone from the registry, both renderers, and OpenCode `steps`.
 - **Built-in shadows:** `claude/agents/{Explore,Plan,general-purpose}.md` are
   user agents with the built-ins' names, so they override the built-ins. A
@@ -30,7 +32,7 @@ harness. The historical data below explains the old caps.
 - **The window triggers early.** With `autoCompactWindow: 120000`, a Haiku 5.5
   Explore compacted at `preTokens` 95,832, 92,125, and 89,543, and its context
   peaked at 87,599. Claude Code reserves about 25K below the window. To
-  compact near 120K, set about 145000.
+  compact near 120K, set about 145000. That is why the window is 150000.
 - **Control:** the built-in Explore ran the same task with no compaction. It
   peaked at 190,046 tokens, and the old guard stopped it.
 - **Guard:** `turn-budget-guard` has no turn ceiling. An agent whose definition
@@ -40,8 +42,14 @@ harness. The historical data below explains the old caps.
   plugin agents such as `milknado:milknado-worker`, and project-local agents
   without the field.
 - **Other harnesses:** OMP sets `task.agentCompactionThresholdOverrides` to
-  120000 per agent. Codex sets a global `model_auto_compact_token_limit` of
-  120000, which also covers the main session. Pi and OpenCode have no
+  150000 per agent. Codex sets a global `model_auto_compact_token_limit` of
+  150000, which also covers the main session.
+- **No model exceptions:** the user considered keeping Fable (Claude) and
+  Astra (Codex) on their defaults, then chose 150000 for every model. Claude
+  can exclude a model through `modelSettings.<model>.autoCompactWindow: "auto"`
+  in `settings.json`, but agent frontmatter acts as a ceiling over it. Codex
+  can exclude a model only through a static `model_catalog_json`, which turns
+  off remote model discovery. Pi and OpenCode have no
   per-agent compaction key. OpenCode sub-agents lost their `steps` cap and
   compact only at the global trigger.
 - **Gotcha:** `dots sync` deploys `DOTFILES_DIR`, which defaults to

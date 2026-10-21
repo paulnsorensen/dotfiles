@@ -189,7 +189,7 @@ expected_omp_thinking() {
 @test "every OMP sub-agent compacts at the registry's window" {
     local window expected actual
     window=$(yq -oy -r '[.agents[].autoCompactWindow] | unique | .[]' "$REGISTRY")
-    [[ "$window" == "120000" ]]
+    [[ "$window" == "150000" ]]
     expected=$({ omp_agent_names; printf '%s\n' scout security-reviewer task sonic; } | sort | paste -sd, -)
     actual=$(yq -oy -r '.omp.config.task.agentCompactionThresholdOverrides | keys | .[]' "$OMP_CONFIG" | sort | paste -sd, -)
     [[ "$actual" == "$expected" ]] || { echo "override keys drifted: $actual != $expected" >&2; return 1; }

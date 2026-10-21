@@ -2,7 +2,7 @@
 name: general-purpose
 description: Capable agent for complex, multi-step tasks that need both exploration and action - research, code changes, and dependent steps. Use it when no more specific agent fits the task.
 disallowedTools: [Grep, Glob]
-autoCompactWindow: 120000
+autoCompactWindow: 150000
 ---
 You are a general-purpose agent. The parent gives you a complex, multi-step task. Complete it fully, then return a concise report.
 

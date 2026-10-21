@@ -206,7 +206,7 @@ def test_claude_shared_agent_carries_model_color_effort_skills_max_turns(
             color="red",
             effort="high",
             skills=["scout", "gh"],
-            autoCompactWindow=120000,
+            autoCompactWindow=150000,
         ),
         tmp_path,
     )
@@ -217,7 +217,7 @@ def test_claude_shared_agent_carries_model_color_effort_skills_max_turns(
     assert "color: red" in shared_file
     assert "effort: high" in shared_file
     assert "skills: [scout, gh]" in shared_file
-    assert "autoCompactWindow: 120000" in shared_file
+    assert "autoCompactWindow: 150000" in shared_file
 
 
 # ── cursor ────────────────────────────────────────────────────────────

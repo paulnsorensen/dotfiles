@@ -11,7 +11,8 @@
 # models is per-harness; color/autoCompactWindow/skills are Claude fields; effort is shared by Claude and Codex.
 #
 # autoCompactWindow is the token count at which Claude Code compacts the
-# sub-agent's context. 120000 keeps every agent below the measured "dumb
+# sub-agent's context. Claude Code fires about 25K early, so 150000 compacts
+# near the measured 120K "dumb
 # zone" (see .hallouminate/wiki/architecture/subagent-turn-budgets.md). The
 # field replaces the old maxTurns caps: Claude Code never enforced maxTurns,
 # and agents now compact instead of stopping. OMP mirrors the value in
@@ -49,7 +50,7 @@ agents:
     - Glob
     - Skill
     - Agent
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/ghostbuster.md
   nih-scanner:
     description: Structural NIH pattern scanner. Uses AST search and ast-grep to find code that reinvents well-known library functionality. Returns JSON candidate list (~2 KB digest) with usage counts and categories. Does not judge — the orchestrator scores and filters. Dispatched by the /nih-audit skill's structural-scan phase.
@@ -73,7 +74,7 @@ agents:
     - Skill
     - Agent
     skills: []
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/nih-scanner.md
   roquefort-wrecker:
     description: Writes and executes unit, integration, or other tests for new or modified code. Use PROACTIVELY to validate code functionality and find bugs. Adversarial approach with severity-tier scoring per finding.
@@ -94,7 +95,7 @@ agents:
     - mcp__tilth
     - mcp__tilth__tilth_write
     skills: []
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/roquefort-wrecker.md
   duckdb-expert:
     description: Read-only analyst for one coding-agent session-analytics pack. Spawned with one absolute pack path, a target, a harness filter, a conventions path, and a default or explicit database choice. Reads the public package schema and runs SQL through uvx agent-session-analytics@latest; the package owns default freshness and validates explicit overrides. Returns one structured ~2 KB digest for tool-efficiency, prompt-analytics, or work-recovery.
@@ -119,7 +120,7 @@ agents:
     - Glob
     skills:
     - session-analytics
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/duckdb-expert.md
   whey-drainer:
     description: Runs existing tests and returns only failures and summary counts (~2 KB digest). Use this agent to validate code without flooding the parent context with verbose test output. Fits easy-cheese's small/fast read-only sub-agent contract — dispatched by /xray, and callable from any skill that needs a test gate without the log. Does NOT write tests.
@@ -134,7 +135,7 @@ agents:
     - ToolSearch
     - mcp__tilth__tilth_read
     skills: []
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/whey-drainer.md
   worktree-content-digest:
     description: Read-only worktree inspector. Given one worktree path, runs git log/diff/ls-files and returns a 2-3 line digest — unique commits, uncommitted diff summary, and whether untracked files look throwaway vs. worth keeping. Fanned out one-per-worktree (in parallel) by the worktree-triage skill so diff bodies stay in the sub-agent's window.
@@ -148,7 +149,7 @@ agents:
     - Bash
     - ToolSearch
     - mcp__tilth__tilth_read
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/worktree-content-digest.md
   # ── easy-cheese general phase agents ──────────────────────────────────────
   # Four general-purpose agents that model the easy-cheese workflow: explore
@@ -180,7 +181,7 @@ agents:
     color: cyan
     effort: medium
     skills: []
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/explorer.md
   researcher:
     description: External-research agent. Answers questions outside the codebase — library/API docs, current web facts, version/changelog checks, best-practice comparisons, GitHub examples — via Context7, Tavily, web fetch, and gh, then writes a durable cited research slug under .cheese/research/. Read-only against code. Returns a condensed claim-level digest (the heavy fetch bodies stay on disk, out of the parent's context). Models the easy-cheese research phase. Use PROACTIVELY before implementing against an unfamiliar library or API, when a claim needs a current source instead of a guess, or whenever a skill (/mold, /cook, /briesearch, or any user-installed skill) would otherwise rely on stale training data.
@@ -203,7 +204,7 @@ agents:
     effort: medium
     skills:
     - briesearch
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/researcher.md
   reviewer:
     description: Multi-dimension code reviewer. Reviews a diff, PR, branch, or path through an explicit severity-report or taste-test contract. Source-read-only — never writes fixes; may write only its own .cheese artifact through tilth_write. A top-level /age orchestrator may supply specialist evidence. Models the easy-cheese review phase. `powerful` tier. Use PROACTIVELY before merging or shipping any change, after /cook or /cure, and whenever a user-installed skill produces a diff that should be checked before it lands.
@@ -224,7 +225,7 @@ agents:
     color: red
     effort: high
     skills: []
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/reviewer.md
   taste-tester:
     # easy-cheese `reviewer (taste-test)`: `default` power, `medium` effort,
@@ -247,7 +248,7 @@ agents:
     color: yellow
     effort: medium
     skills: []
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/taste-tester.md
   judge:
     # Read-only judge for Workflow scripts. `powerful` tier on every harness:
@@ -268,7 +269,7 @@ agents:
     color: purple
     effort: high
     skills: []
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/judge.md
   runner:
     # Narrow command runner for Workflow steps that only run gh or git. Cheap
@@ -288,7 +289,7 @@ agents:
     color: cyan
     effort: medium
     skills: []
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/runner.md
   formatter:
     # Text-to-structure formatter for Workflow repair and format steps. The
@@ -304,7 +305,7 @@ agents:
     color: blue
     effort: medium
     skills: []
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/formatter.md
   coder:
     # Codex uses Sol for medium-capability work. OMP's native coder pairs the
@@ -341,7 +342,7 @@ agents:
     # role discipline is inlined in the coder body; Skill remains ungranted.
     # A workflow that needs a skill tells the coder to read its SKILL.md file.
     skills: []
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/coder.md
   generalist:
     # Catch-all with tilth routing. Untyped spawns go to `general-purpose`,
@@ -361,5 +362,5 @@ agents:
     color: yellow
     effort: medium
     skills: []
-    autoCompactWindow: 120000
+    autoCompactWindow: 150000
     body_path: agents/agent_definitions/generalist.md
