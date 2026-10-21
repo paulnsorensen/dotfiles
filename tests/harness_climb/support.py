@@ -86,6 +86,7 @@ class RepoCase(unittest.TestCase):
         self.git("config", "user.email", "t@example.com")
         self.git("config", "user.name", "T")
         self.git("config", "commit.gpgsign", "false")
+        self.git("config", "maintenance.auto", "false")
 
     def git(self, *args: str, date: int | None = None) -> str:
         env = {
