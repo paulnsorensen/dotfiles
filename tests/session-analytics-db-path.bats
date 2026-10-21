@@ -25,9 +25,10 @@ teardown() { teardown_test_env; }
 
 @test "db-path: relative SESSIONS_DB resolves against PWD" {
     cd "$TEST_HOME" || return
+    expected="$(pwd -P)/relative.duckdb"
     SESSIONS_DB="relative.duckdb" run package_fixture_db
     assert_success
-    [ "$output" = "$TEST_HOME/relative.duckdb" ]
+    [ "$output" = "$expected" ]
 }
 
 @test "db-path: absolute XDG_CACHE_HOME is honored" {
