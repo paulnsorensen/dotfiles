@@ -66,18 +66,18 @@ block_sha() {
     done
 }
 
-@test "phase-agent turn caps are owned by the registry and role bodies" {
+@test "phase-agent compaction windows are owned by the registry and role bodies" {
     local registry="$AGENTS_DIR/registry.yaml"
 
-    run yq '.agents.reviewer.maxTurns' "$registry"
-    [[ "$output" == "50" ]] || { echo "reviewer maxTurns drifted: $output" >&2; return 1; }
-    run grep -Fq 'The registry'"'"'s `.agents.reviewer.maxTurns` is the role-limit source of truth.' "$AGENTS_DIR/agent_definitions/reviewer.md"
+    # Every registry agent compacts at 150k; no agent keeps a turn cap.
+    [[ "$(yq -r '[.agents[].autoCompactWindow] | unique | join(",")' "$registry")" == "150000" ]]
+    [[ "$(yq -r '[.agents[] | select(has("maxTurns"))] | length' "$registry")" == "0" ]]
+    run grep -Fq 'The registry'"'"'s `.agents.reviewer.autoCompactWindow` sets the context size' "$AGENTS_DIR/agent_definitions/reviewer.md"
     assert_success
-
-    run yq '.agents.coder.maxTurns' "$registry"
-    [[ "$output" == "100" ]] || { echo "coder maxTurns drifted: $output" >&2; return 1; }
-    run grep -Fq '180k tokens / 100 turns' "$AGENTS_DIR/agent_definitions/coder.md"
+    run grep -Fq 'compacts your context at the registry'"'"'s `autoCompactWindow` (150k tokens)' "$AGENTS_DIR/agent_definitions/coder.md"
     assert_success
+    run grep -Fq 'maxTurns' "$AGENTS_DIR/agent_definitions/coder.md"
+    assert_failure
 }
 
 @test "runtime phase prompts keep rules but not dispatch analytics" {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PreToolUse / PostToolUse / SubagentStop hook: enforce a per-sub-agent turn
-# and context-byte ceiling. The logic lives in the sibling Node module
+# PreToolUse / PostToolUse / SubagentStop hook: enforce a per-sub-agent
+# context-token ceiling. The logic lives in the sibling Node module
 # (lib/turn-budget-guard.js); this bridge exists so the entry deploys as a
 # `.sh` that runs correctly whether invoked directly via shebang (the `ap`
 # plugin-tree path) or as `bash <path>` (the legacy sync path) — a `.js`

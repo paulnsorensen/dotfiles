@@ -43,3 +43,20 @@ this ADR's decision is unchanged in effect. The registry
 migrated values, and `modify_config.yml` lists
 `["compaction","strategy"]` as a retired path so pre-v18 machines migrate
 instead of halting the unknown-key gate. `thresholdTokens` remains absent.
+
+### Update — fixed sub-agent and Codex triggers (2026-10-20)
+
+This update partly supersedes the decision above. Sub-agents now compact at a
+fixed 150000 tokens, near the measured context "dumb zone" (see
+[[architecture/subagent-turn-budgets]]).
+
+- **OMP sub-agents:** `task.agentCompactionThresholdOverrides` sets 150000 for
+  every OMP agent file plus the bundled `scout`, `security-reviewer`, `task`,
+  and `sonic`. An entry is an exact trigger and turns off `modelThresholds`
+  for that agent only. The main OMP session keeps the model-relative trigger,
+  and `thresholdTokens` stays absent.
+- **Codex:** the user chose a global `model_auto_compact_token_limit: 150000`.
+  Codex has no per-agent key, because a role `config_file` passes only a fixed
+  field list. The value therefore also applies to the main Codex session. This
+  reverses "leave Codex's auto-compaction settings undeclared". Codex caps the
+  value at 90% of the model window (244,800 on a 272K model).

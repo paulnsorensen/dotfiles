@@ -45,7 +45,7 @@ agents:
     disallowedTools:
     - Edit
     color: cyan
-    maxTurns: 42
+    autoCompactWindow: 150000
     skills:
     - alpha-skill
     body_path: agents/agent_definitions/tester.md
@@ -139,11 +139,102 @@ tools: Bash, Read
 disallowedTools: [Edit]
 model: haiku
 color: cyan
-maxTurns: 42
+autoCompactWindow: 150000
 skills: [alpha-skill]
 ---
 Agent body.
 EXPECTED
+}
+
+@test "assembly: built-in shadows in claude/agents land next to rendered agents" {
+    mkdir -p "$ROOT/claude/agents"
+    printf -- '---\nname: Explore\nautoCompactWindow: 150000\n---\nShadow body.\n' > "$ROOT/claude/agents/Explore.md"
+    run_assembly
+    [ "$status" -eq 0 ]
+    [ -f "$SRC/dot_claude/exact_agents/tester.md" ]
+    diff "$SRC/dot_claude/exact_agents/Explore.md" "$ROOT/claude/agents/Explore.md"
+}
+
+@test "assembly: a shadow that reuses a registry agent name aborts loud" {
+    mkdir -p "$ROOT/claude/agents"
+    printf -- '---\nname: tester\n---\nImpostor.\n' > "$ROOT/claude/agents/tester.md"
+    run_assembly
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"claude agent shadow 'tester.md' collides with a rendered registry agent"* ]]
+}
+
+@test "shadow copy: missing source dir is a no-op success and creates nothing" {
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && _cz_copy_claude_agent_shadows '$TEST_HOME/no-such-src' '$TEST_HOME/dst'"
+    [ "$status" -eq 0 ]
+    [ ! -e "$TEST_HOME/dst" ]
+}
+
+@test "shadow copy: non-md files and nested subdirs are ignored" {
+    mkdir -p "$TEST_HOME/s/nested" "$TEST_HOME/d"
+    echo a > "$TEST_HOME/s/Explore.md"
+    echo b > "$TEST_HOME/s/notes.txt"
+    echo c > "$TEST_HOME/s/README"
+    echo d > "$TEST_HOME/s/nested/Deep.md"
+    echo e > "$TEST_HOME/s/Plan.md.bak"
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && _cz_copy_claude_agent_shadows '$TEST_HOME/s' '$TEST_HOME/d'"
+    [ "$status" -eq 0 ]
+    [ -f "$TEST_HOME/d/Explore.md" ]
+    [ "$(find "$TEST_HOME/d" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = "1" ]
+}
+
+@test "shadow copy: filename with spaces is copied intact" {
+    mkdir -p "$TEST_HOME/s" "$TEST_HOME/d"
+    echo a > "$TEST_HOME/s/my agent.md"
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && _cz_copy_claude_agent_shadows '$TEST_HOME/s' '$TEST_HOME/d'"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$TEST_HOME/d/my agent.md")" = "a" ]
+}
+
+@test "shadow copy: empty source dir succeeds and leaves dst empty" {
+    mkdir -p "$TEST_HOME/s"
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && _cz_copy_claude_agent_shadows '$TEST_HOME/s' '$TEST_HOME/d'"
+    [ "$status" -eq 0 ]
+    [ -z "$(ls -A "$TEST_HOME/d")" ]
+}
+
+@test "shadow copy: collision names the file, returns non-zero, keeps the rendered file" {
+    mkdir -p "$TEST_HOME/s" "$TEST_HOME/d"
+    echo shadow > "$TEST_HOME/s/tester.md"
+    echo rendered > "$TEST_HOME/d/tester.md"
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && _cz_copy_claude_agent_shadows '$TEST_HOME/s' '$TEST_HOME/d'"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"collides with a rendered registry agent"* ]]
+    [ "$(cat "$TEST_HOME/d/tester.md")" = "rendered" ]
+}
+
+@test "shadow copy: a symlinked shadow is dereferenced into a regular file" {
+    mkdir -p "$TEST_HOME/s" "$TEST_HOME/d" "$TEST_HOME/real"
+    echo body > "$TEST_HOME/real/x.md"
+    ln -s "$TEST_HOME/real/x.md" "$TEST_HOME/s/Linked.md"
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && _cz_copy_claude_agent_shadows '$TEST_HOME/s' '$TEST_HOME/d'"
+    [ "$status" -eq 0 ]
+    [ -f "$TEST_HOME/d/Linked.md" ] && [ ! -L "$TEST_HOME/d/Linked.md" ]
+}
+
+@test "shadow copy: a dangling symlinked shadow is skipped without failing" {
+    mkdir -p "$TEST_HOME/s" "$TEST_HOME/d"
+    ln -s "$TEST_HOME/nope.md" "$TEST_HOME/s/Dead.md"
+    echo ok > "$TEST_HOME/s/Good.md"
+    run bash -c "source '$REAL_DOTFILES_DIR/.sync-lib.sh' && _cz_copy_claude_agent_shadows '$TEST_HOME/s' '$TEST_HOME/d'"
+    [ "$status" -eq 0 ]
+    [ -f "$TEST_HOME/d/Good.md" ]
+    [ ! -e "$TEST_HOME/d/Dead.md" ]
+}
+
+@test "repo: every built-in shadow compacts at the registry's window" {
+    local shadow window
+    window=$(yq -r '[.agents[].autoCompactWindow] | unique | .[]' "$REAL_DOTFILES_DIR/agents/registry.yaml")
+    [ "$window" = "150000" ]
+    for shadow in Explore Plan general-purpose; do
+        [ -f "$REAL_DOTFILES_DIR/claude/agents/$shadow.md" ]
+        [ "$(yq --front-matter=extract -r '.name' "$REAL_DOTFILES_DIR/claude/agents/$shadow.md")" = "$shadow" ]
+        [ "$(yq --front-matter=extract -r '.autoCompactWindow' "$REAL_DOTFILES_DIR/claude/agents/$shadow.md")" = "$window" ]
+    done
 }
 
 @test "assembly: claude-harness hook scripts land executable; codex-only and command-only do not" {

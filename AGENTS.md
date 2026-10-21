@@ -39,6 +39,7 @@ Never edit a rendered target. Edit the source, then deploy.
 |---|---|---|
 | Claude MCP, hook, agent, skill, permissions, or marketplace | `chezmoi/.chezmoidata/claude.yaml` (+ referenced source files) | `dots sync` |
 | Sub-agent definition | `agents/registry.yaml` + `agents/agent_definitions/` + `claude.yaml` | `dots sync` |
+| Claude built-in agent shadow (`Explore`, `Plan`, `general-purpose`) | `claude/agents/<name>.md` | `dots sync` |
 | Local/external skill | `skills/` or `skills/_registry.yaml` + `claude.yaml` | `dots sync` |
 | Cross-harness plugin | `agents/plugins/registry.yaml` | `dots sync` or `plugin-sync` |
 | Claude-native plugin | `claude/plugins/registry.yaml` | `dots sync` |

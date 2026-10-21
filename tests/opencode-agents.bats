@@ -14,14 +14,15 @@ setup() {
 @test "all shared agents render their bodies, models, and step limits" {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
-    local name body model turns
+    local name body model
     [ "$(jq '.agent | length' <<<"$output")" -eq 20 ]
-    while IFS=$'\t' read -r name body model turns; do
+    while IFS=$'\t' read -r name body model; do
         [ "$(jq -r --arg n "$name" '.agent[$n].model' <<<"$output")" = "openai/$model" ]
-        [ "$(jq -r --arg n "$name" '.agent[$n].steps' <<<"$output")" = "$turns" ]
+        # Registry agents carry no turn cap, so OpenCode gets no steps limit.
+        [ "$(jq -r --arg n "$name" '.agent[$n] | has("steps")' <<<"$output")" = "false" ]
         [ "$(jq -r --arg n "$name" '.agent[$n].prompt' <<<"$output")" = "$(<"$REAL_DOTFILES_DIR/$body")" ]
         [ "$(jq -r --arg n "$name" '.agent[$n].permission.task' <<<"$output")" = "deny" ]
-    done < <(yq -o=json '.agents' "$REAL_DOTFILES_DIR/agents/registry.yaml" | jq -r 'to_entries[] | [.key,.value.body_path,.value.models.opencode,.value.maxTurns] | @tsv')
+    done < <(yq -o=json '.agents' "$REAL_DOTFILES_DIR/agents/registry.yaml" | jq -r 'to_entries[] | [.key,.value.body_path,.value.models.opencode] | @tsv')
 }
 
 @test "role tiers and model catalog use the approved OpenAI IDs" {

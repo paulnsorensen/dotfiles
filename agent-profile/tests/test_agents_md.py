@@ -37,12 +37,14 @@ def test_shared_claude_agent_frontmatter_matches_golden(tmp_path, golden):
     assert out == [".claude/agents/shared-agent.md"]
 
 
-def test_claude_agent_frontmatter_emits_max_turns():
-    # maxTurns flows from the registry field into the Claude frontmatter as a
-    # bare int, and is omitted when unset (caps a runaway sub-agent's turns).
-    fm = shared.claude_agent_frontmatter({"name": "a", "maxTurns": 50})
-    assert fm["maxTurns"] == "50"
-    assert "maxTurns" not in shared.claude_agent_frontmatter({"name": "a"})
+def test_claude_agent_frontmatter_emits_auto_compact_window():
+    # autoCompactWindow flows from the registry field into the Claude
+    # frontmatter as a bare int, and is omitted when unset. maxTurns is no
+    # longer a registry field, so the renderer drops it.
+    fm = shared.claude_agent_frontmatter({"name": "a", "autoCompactWindow": 150000})
+    assert fm["autoCompactWindow"] == "150000"
+    assert "autoCompactWindow" not in shared.claude_agent_frontmatter({"name": "a"})
+    assert "maxTurns" not in shared.claude_agent_frontmatter({"name": "a", "maxTurns": 50})
 
 
 def test_shared_claude_agent_no_frontmatter_when_empty(tmp_path):

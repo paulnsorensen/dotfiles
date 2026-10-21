@@ -63,7 +63,7 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-Default to an inline verdict. The registry's `.agents.taste-tester.maxTurns` is the role-limit source of truth. Before that limit or the context window is exhausted, return `status: blocked: out of context` with the lenses already settled.
+Default to an inline verdict. The registry's `.agents.taste-tester.autoCompactWindow` sets the context size at which the harness compacts this agent. If the work still cannot finish, return `status: blocked: out of context` with the lenses already settled.
 
 ## Rules
 

@@ -131,7 +131,8 @@ EOF
     [ "$(yq -p=toml -oy -r '.agents.custom_runtime_key' "$TEST_HOME/out.toml")" = "keep" ]
     [ "$(yq -oy -r '.codex.agents | type' "$CHEZMOI_SOURCE_DIR/.chezmoidata/codex.yaml")" = "!!seq" ]
     [ "$(yq -p=toml -oy -r '.model_context_window // "ABSENT"' "$TEST_HOME/out.toml")" = "ABSENT" ]
-    [ "$(yq -p=toml -oy -r '.model_auto_compact_token_limit // "ABSENT"' "$TEST_HOME/out.toml")" = "ABSENT" ]
+    # The registry sets one global compaction limit for Codex sessions and sub-agents.
+    [ "$(yq -p=toml -oy -r '.model_auto_compact_token_limit // "ABSENT"' "$TEST_HOME/out.toml")" = "150000" ]
 }
 
 @test "modify_config.toml evicts an MCP server absent from the registry" {

@@ -197,7 +197,7 @@ def test_claude_shared_agent_carries_model_color_effort_skills_max_turns(
 ) -> None:
     # The user-scoped shared file wins over the plugin copy (priority 4 > 5),
     # so it must carry the full claude metadata — a model-neutral shared file
-    # would silently drop the agent's pinned model and its color/effort/maxTurns/skills.
+    # would silently drop the agent's pinned model and its color/effort/autoCompactWindow/skills.
     ClaudeRenderer().render(
         _agent_manifest(
             tmp_path,
@@ -206,7 +206,7 @@ def test_claude_shared_agent_carries_model_color_effort_skills_max_turns(
             color="red",
             effort="high",
             skills=["scout", "gh"],
-            maxTurns=20,
+            autoCompactWindow=150000,
         ),
         tmp_path,
     )
@@ -217,7 +217,7 @@ def test_claude_shared_agent_carries_model_color_effort_skills_max_turns(
     assert "color: red" in shared_file
     assert "effort: high" in shared_file
     assert "skills: [scout, gh]" in shared_file
-    assert "maxTurns: 20" in shared_file
+    assert "autoCompactWindow: 150000" in shared_file
 
 
 # ── cursor ────────────────────────────────────────────────────────────

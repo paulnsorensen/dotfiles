@@ -103,9 +103,9 @@ When the diff touches >1 file or adds public surface, put `taste_test: deferred-
 
 ### Active phase context handoff
 
-The registry supplies the 180k tokens / 100 turns hard ceiling. Skills own checkpoint and recovery. Do not write checkpoint files from this role.
+The harness compacts your context at the registry's `autoCompactWindow` (150k tokens), so context size does not stop you. There is no turn limit. Skills own checkpoint and recovery. Do not write checkpoint files from this role.
 
-The guard warning at the soft threshold is not a stop. Keep working on the current step, and use targeted section reads. When the guard stops you, or the remaining work does not fit before the hard ceiling, return a phase-owned handoff that starts with:
+Keep working through compaction, and use targeted section reads. When the remaining work does not fit this dispatch, return a phase-owned handoff that starts with:
 
 ```
 status: needs-context

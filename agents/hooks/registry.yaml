@@ -174,30 +174,28 @@ hooks:
     timeout: 5
     description: Nudge a checkpoint-and-relaunch on opus/high for deep-synthesis skills at effort below high
 
-  # ─── Sub-agent turn/context budget ──────────────────────────────────
-  # Enforces a per-sub-agent turn + context-token ceiling that Claude Code's
-  # `maxTurns` frontmatter fails to (upstream #41143: the hardcoded default
-  # always wins; background spawns drop the config entirely). Claude-only —
-  # Codex has no hook deployment for this guard today.
+  # ─── Sub-agent context budget ───────────────────────────────────────
+  # Enforces a per-sub-agent context-token ceiling. The guard sets no turn
+  # limit. An agent whose definition sets `autoCompactWindow` compacts its
+  # own context, so the guard allows all its calls. Claude-only — Codex has
+  # no hook deployment for this guard today.
   # Three events fire inside the sub-agent with a consistent `agent_id`; the
   # main orchestrator's tool calls carry none, so the shared logic fail-opens
-  # on them. Budgets are keyed by `agent_type`.
-  #   turn-budget-guard-pre  — PreToolUse: increment the per-agent turn
-  #                            counter, read live context tokens, and DENY
-  #                            the call past either hard ceiling. There is no
+  # on them.
+  #   turn-budget-guard-pre  — PreToolUse: read live context tokens and DENY
+  #                            the call past the hard ceiling. There is no
   #                            grace window: a resumed sub-agent keeps its
   #                            transcript, so it is denied on its first call
   #                            when it already sits past the ceiling. One
   #                            checkpoint write, SubagentHandback, and
   #                            StructuredOutput stay allowed at the ceiling.
   #   turn-budget-guard-post — PostToolUse: inject a one-time warning
-  #                            (additionalContext) when either signal crosses
-  #                            its soft threshold. The warning says to keep
+  #                            (additionalContext) when context tokens cross
+  #                            the soft threshold. The warning says to keep
   #                            working and names the hard ceiling. A sterner
   #                            one-time nudge fires when tokens cross the
   #                            hard ceiling.
   #   turn-budget-guard-stop — SubagentStop: delete the agent's counter dir.
-  # All three share the one Node logic module and dispatch on hook_event_name.
   # matcher ".*" on pre/post covers every supported tool (the no-agent_id
   # guard excludes the orchestrator); SubagentStop takes no matcher.
   # Fail-open: missing logic file, absent node, malformed input, logger errors,
@@ -210,7 +208,7 @@ hooks:
     harnesses: [claude]
     matcher: ".*"
     timeout: 5
-    description: Deny sub-agent tool calls past the per-agent_type turn/context hard ceiling
+    description: Deny sub-agent tool calls past the context-token hard ceiling, unless the agent compacts itself
 
   turn-budget-guard-post:
     event: PostToolUse
@@ -220,7 +218,7 @@ hooks:
     harnesses: [claude]
     matcher: ".*"
     timeout: 5
-    description: Nudge a sub-agent to wrap up once past the soft turn/context threshold
+    description: Nudge a sub-agent to wrap up once past the soft context-token threshold
 
   turn-budget-guard-stop:
     event: SubagentStop

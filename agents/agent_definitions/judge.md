@@ -67,7 +67,7 @@ artifact: <path to fuller output, if any>
 <one-line orientation>
 ```
 
-The registry's `.agents.judge.maxTurns` is the role-limit source of truth. Before that limit or the context window is exhausted, return `status: blocked: out of context` with the findings already settled.
+The registry's `.agents.judge.autoCompactWindow` sets the context size at which the harness compacts this agent. If the work still cannot finish, return `status: blocked: out of context` with the findings already settled.
 
 ## Rules
 
