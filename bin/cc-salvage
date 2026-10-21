@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# cc-salvage — reopen recent Claude sessions that died (box restart, crash).
+#
+# Usage: cc-salvage [--since 24h] [--until 0s] [--session NAME] [--limit 6] [--dry-run]
+#
+# Reads ~/.claude/sessions, skips sessions that still run, and opens one tmux
+# window per dead session: `claude --resume <id>` in its original cwd.
+# The logic lives in bin/lib/cc-salvage.sh.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export DOTFILES_DIR="${DOTFILES_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+# shellcheck source=bin/lib/resume.sh
+source "${SCRIPT_DIR}/lib/resume.sh"
+# shellcheck source=bin/lib/cc-salvage.sh
+source "${SCRIPT_DIR}/lib/cc-salvage.sh"
+
+salvage_main "$@"
