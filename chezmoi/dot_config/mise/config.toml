@@ -92,7 +92,7 @@ node = "26.12.0"
 bun = "1.4.3"
 rust = "1.99.1"
 
-"npm:t3" = "0.1.0"
+"npm:t3" = "0.1.1"
 "npm:bash-language-server" = "5.8.1"
 "npm:yaml-language-server" = "2.0.0"
 "npm:basedpyright" = "1.40.2"
