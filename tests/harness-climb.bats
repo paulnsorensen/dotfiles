@@ -4,10 +4,19 @@ REPO_ROOT="$BATS_TEST_DIRNAME/.."
 SKILL="$REPO_ROOT/skills/harness-climb/SKILL.md"
 WORKFLOW="$REPO_ROOT/.github/workflows/test.yml"
 
-@test "harness-climb unittest suite passes through the Bats gate" {
-    run python3 -m unittest discover -s "$REPO_ROOT/tests/harness_climb" -t "$REPO_ROOT/tests" -p 'test_*.py'
+# One Bats test per unittest module, so `bats --jobs` runs the modules in
+# parallel. A single discover run was the longest test in the suite.
+# Registration globs the directory, so a new module gets a test automatically.
+run_unittest_module() {
+    run python3 -m unittest discover -s "$REPO_ROOT/tests/harness_climb" -t "$REPO_ROOT/tests" -p "$1"
     [ "$status" -eq 0 ] || { echo "$output" >&2; false; }
+    [[ "$output" =~ Ran\ [1-9][0-9]*\ test ]] || { echo "$1 ran no tests: $output" >&2; false; }
 }
+
+for module in "$REPO_ROOT"/tests/harness_climb/test_*.py; do
+    bats_test_function --description "harness-climb unittest ${module##*/} passes through the Bats gate" \
+        -- run_unittest_module "${module##*/}"
+done
 
 @test "skill layout" {
     head -n 5 "$SKILL" | grep -qx 'name: harness-climb'
