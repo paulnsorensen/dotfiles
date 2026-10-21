@@ -2,17 +2,19 @@
 
 ## 0.1 Find Manifest Files
 
+Find files that match these patterns with the host's file-search tool:
+
 ```
-Glob: **/package.json
-Glob: **/Cargo.toml
-Glob: **/pyproject.toml
-Glob: **/go.mod
-Glob: **/Gemfile
-Glob: **/requirements.txt
-Glob: **/composer.json
-Glob: **/build.gradle
-Glob: **/pom.xml
-Glob: **/mix.exs
+**/package.json
+**/Cargo.toml
+**/pyproject.toml
+**/go.mod
+**/Gemfile
+**/requirements.txt
+**/composer.json
+**/build.gradle
+**/pom.xml
+**/mix.exs
 ```
 
 Filter out manifests inside node_modules/, vendor/, .git/, build/.

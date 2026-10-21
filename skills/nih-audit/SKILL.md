@@ -2,25 +2,25 @@
 name: nih-audit
 model: opus
 effort: high
-context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
-allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Bash(npm audit:*), Bash(uv pip audit:*), Bash(pip-audit:*), Bash(cargo audit:*), Bash(govulncheck:*), Agent, mcp__serena__*
+allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Bash(npm audit:*), Bash(uv pip audit:*), Bash(pip-audit:*), Bash(cargo audit:*), Bash(govulncheck:*), Agent
+disallowed-tools: Edit, Write, NotebookEdit
 description: >
-  Scan for custom code that duplicates well-supported libraries, then recommend
-  migrations with effort estimates. Detects hand-rolled utilities, retry logic,
-  validation, date handling, and DIY parsers. Use when the user mentions
+  Audits code that reinvents well-supported libraries when the user mentions
   reinventing the wheel, asks "is there a library/crate for this", wants a build
   vs buy audit, says "what are we maintaining that we shouldn't be", or "should
-  we just use lodash for this". Also covers dependency health — vulnerable,
-  unused, overweight, or stdlib-replaceable deps. Do NOT use for code-quality
-  review (/age) or dead-code removal (/simplify or /ghostbuster).
+  we just use lodash for this". Detects hand-rolled utilities, retry logic,
+  validation, date handling, and DIY parsers, then recommends migrations with
+  effort estimates. Also covers dependency health — vulnerable, unused,
+  overweight, or stdlib-replaceable deps. Do NOT use for code-quality review
+  (/age) or dead-code removal (/simplify or /ghostbuster).
 ---
 
 # /nih-audit — Not Invented Here Audit
 
 Find code reinventing the wheel. Recommend libraries. Score with evidence.
 
-**Scope**: $ARGUMENTS (or repo root if blank)
+**Scope**: the text after the skill name, or the repo root when it is blank.
 
 ## Phase 0: Detect Build System & Extract Dependencies
 
@@ -37,13 +37,18 @@ extensions, then run dependency health. Dependency-health findings are not NIH
 candidates: they skip Phases 2–3 and go straight to the Dependency Health block
 of the report.
 
+**Done when**: `depManifest` and the language list exist, and each audit tool
+ran or is recorded as skipped. With no manifest files, report that and stop.
+
 **Tool budget**: ~10 calls.
 
 ## Phase 1: Structural NIH Scanning
 
 **Goal**: Find code that smells like reinvented wheels.
 
-Spawn the `nih-scanner` agent:
+Dispatch the `nih-scanner` agent in a fresh, read-only, sonnet-tier context
+and wait for it. Claude example (Codex `spawn_agent`, OMP `task` are
+equivalent):
 
 ```
 Agent(
@@ -51,7 +56,7 @@ Agent(
   model="sonnet",
   prompt="Scan for NIH patterns.
     Languages: <detected languages>
-    Scope: <$ARGUMENTS or repo root>
+    Scope: <scope>
     depManifest: <JSON>
     Slug: <slug>",
   run_in_background=false
@@ -61,7 +66,8 @@ Agent(
 The scanner returns the full JSON candidate list inline in its response,
 along with a summary (file count, candidate count, categories).
 
-Parse the candidates from the response. If 0 candidates, report clean and stop.
+**Done when**: the candidates are parsed from the response. If 0 candidates,
+report clean and stop.
 
 **Tool budget**: ~30 calls (in sub-agent).
 
@@ -78,23 +84,27 @@ each candidate. Drop libraries already in `depManifest`, flag stdlib
 alternatives (highest value), and drop candidates whose category yielded no
 good alternative.
 
+**Done when**: every candidate maps to one library, or it drops out.
+
 **Tool budget**: ~15 calls.
 
 ## Phase 3: Spec/Roadmap Alignment
 
 **Goal**: Check if NIH code is intentional or if a library covers planned work too.
 
-1. **Find and read specs**: `Glob: **/specs/*.md` across the repo, not just
+1. **Find and read specs**: find `**/specs/*.md` files across the repo, not just
    `.claude/specs/` (filter node_modules/, vendor/, .git/, build/). Read each
    spec's first 100 lines (summary, requirements, goals sections).
 2. **Check for intentional NIH**: in specs, look for the candidate's concept +
    words like "intentionally", "we chose to build", "build vs buy", "don't
-   use", "avoid dependency on". In code, grep candidate files only for
+   use", "avoid dependency on". In code, search candidate files only for
    `"intentionally|deliberately|don't use|avoid|instead of|rather than|we chose|NOTE:|DECISION:"`.
 3. **Check library-spec alignment**: a library that handles current NIH code
    AND future planned spec features is a stronger recommendation.
 
 These signals become the context modifiers in Phase 4 scoring.
+
+**Done when**: every candidate has its spec and comment signals, or none.
 
 **Tool budget**: ~10 calls.
 
@@ -112,15 +122,12 @@ per-finding block and the full report template. Return everything inline in
 the summary response; never write to `$TMPDIR` or any file. Include ALL
 candidates, no threshold filtering.
 
+**Done when**: every candidate has two scoring passes and one finding block.
+
 **Tool budget**: ~10 calls.
 
-## Implementation Notes
-
-- **Parallel execution**: Spawn research agents with `run_in_background=true`. Wait for all before Phase 4.
-- **Cost-aware research**: Research agents use the cost routing from the research agent (free → cheap → expensive).
-- **Monorepo handling**: Phase 0 builds per-workspace dep manifests. Candidates are scoped to their workspace.
-- **Wrap-up signal**: After ~60 total tool calls across all phases, synthesize from available data. Note incomplete coverage.
-- **Empty results**: If Phase 1 finds 0 candidates, report clean and stop. Don't force findings.
+**Wrap-up signal**: after ~60 total tool calls across all phases, synthesize
+from available data and note the incomplete coverage.
 
 ## What This Skill Never Does
 
@@ -133,7 +140,6 @@ candidates, no threshold filtering.
 ## Gotchas
 
 - **ast-grep patterns are approximate**: A `clearTimeout` + `setTimeout` combo isn't always a debounce. The orchestrator's scoring step (Phase 4) catches generic matches via the -15 modifier.
-- **Serena cold start**: First scan in a session may miss results if the Serena MCP hasn't indexed the project yet. The nih-scanner has an availability check, but note failures.
 - **Stdlib alternatives are the highest value**: `crypto.randomUUID()` replacing a hand-rolled UUID is a no-brainer (no new dep). Always score these highest.
 - **"Already installed" is the most common false positive**: A codebase that has lodash installed but hand-rolls `deepClone` might have done so intentionally (bundle size). The spec/comment check catches this.
 - **Monorepo dep scoping**: A function in `packages/api/` might be NIH in that workspace but the library is installed in `packages/web/`. Each workspace's depManifest is independent.
