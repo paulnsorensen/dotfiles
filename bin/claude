@@ -17,11 +17,11 @@ if [[ "${CLAUDE_GUARD:-1}" != "0" && -r /proc/meminfo ]]; then
     echo "claude-guard: BLOCKED — only ${avail_pct}% RAM available (<15%). Close a session or CLAUDE_GUARD=0 to override." >&2
     exit 1
   fi
-  if (( sessions >= 8 )); then
-    echo "claude-guard: BLOCKED — ${sessions} claude sessions already running (ceiling 8). CLAUDE_GUARD=0 to override." >&2
+  if (( sessions >= 14 )); then
+    echo "claude-guard: BLOCKED — ${sessions} claude sessions already running (ceiling 14). CLAUDE_GUARD=0 to override." >&2
     exit 1
   fi
-  if (( sessions >= 6 )); then
+  if (( sessions >= 10 )); then
     echo "claude-guard: warning — ${sessions} sessions running, ${avail_pct}% RAM available. Treat sessions like browser tabs." >&2
   fi
 fi
