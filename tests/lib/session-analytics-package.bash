@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Isolated session logs for package-backed Bats tests.
-# -q keeps uv install progress out of asserted output; the sandbox starts with a cold uv cache.
+# -q keeps uv install progress out of asserted output. Each test runs with its own HOME, so a
+# per-test uv cache would refetch the package index under parallel load. One warm step per bats
+# run fills a shared cache; tests then run with UV_OFFLINE=1.
 PACKAGE_CLI=(uvx -q agent-session-analytics@latest)
 
 package_real_binary() {
@@ -14,11 +16,33 @@ package_real_binary() {
     command -v mise >/dev/null && mise which "$1"
 }
 
+# Fill the run-wide uv cache once; parallel jobs wait on a mkdir lock.
+package_warm_cache() {
+    local root="${BATS_RUN_TMPDIR:?package tests need a bats run directory}/session-analytics-uv"
+    local lock="$root.lock" waited=0
+    until [[ -f "$root/warm" ]]; do
+        if mkdir "$lock" 2>/dev/null; then
+            if mkdir -p "$root/cache" "$root/python" &&
+                UV_CACHE_DIR="$root/cache" UV_PYTHON_INSTALL_DIR="$root/python" \
+                    uvx -q agent-session-analytics@latest --help >/dev/null 2>&1; then
+                : >"$root/warm"
+            fi
+            rmdir "$lock"
+            [[ -f "$root/warm" ]] || return 1
+        else
+            sleep 1
+            ((++waited < 600)) || return 1
+        fi
+    done
+    export UV_CACHE_DIR="$root/cache" UV_PYTHON_INSTALL_DIR="$root/python" UV_OFFLINE=1
+}
+
 package_fixture_env() {
     local uvx_bin duckdb_bin
     uvx_bin="$(package_real_binary uvx)" || return
     duckdb_bin="$(package_real_binary duckdb)" || return
     export PATH="${uvx_bin%/*}:${duckdb_bin%/*}:$PATH"
+    package_warm_cache || return
     export HOME="$TEST_HOME"
     export XDG_CACHE_HOME="$TEST_HOME/.cache"
     export CLAUDE_CONFIG_DIR="$TEST_HOME/.claude"
