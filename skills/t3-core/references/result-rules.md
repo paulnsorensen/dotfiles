@@ -6,6 +6,8 @@ The parent checks every child result before it uses the result.
 
 Cheap roles are gate-runner, runner, recon, worktree-digest, formatter, and verifier. Each returns exactly one JSON object.
 
+Every non-write result carries a non-empty string `status`.
+
 1. Write the object to a file.
 2. Run `bin/t3-run validate <role> <file>`.
 3. On a failed check, retry once as a new call. Use the target from `t3-run role gate-runner`. The retry takes the next index `n+1` and gets its own `t3-run ledger record` entry.
