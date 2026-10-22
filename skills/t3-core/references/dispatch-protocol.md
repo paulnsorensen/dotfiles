@@ -8,6 +8,8 @@ The parent is the T3 thread. It launches children with `delegate_task` and track
 2. Read `inheritedModel`.
 3. When `inheritedModel` is not `claude-opus-5-5`, warn the user and ask before any child launch.
 
+The wrapper frontmatter pins the parent to Opus. The `orchestrator_capabilities` check still runs and warns when the inherited model differs.
+
 ## Run ledger
 
 The ledger is `.cheese/t3/<run>.json`. Create it with `t3-run ledger init <run>`. `bin/t3-run` is on PATH as `t3-run`.

@@ -3,6 +3,8 @@ name: t3-cure
 description: >-
   Run `/cure` with T3 delegated subagents. Use in a T3 thread to apply
   selected review findings. Outside T3, use `/cure`.
+model: opus
+effort: high
 ---
 
 # t3-cure

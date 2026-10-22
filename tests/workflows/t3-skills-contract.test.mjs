@@ -60,9 +60,11 @@ for (const name of WRAPPERS) {
     assert.ok(text.includes(CORE_POINTER), `expected ${CORE_POINTER}`)
   })
 
-  test(`${name}: no model or effort frontmatter key`, () => {
+  test(`${name}: frontmatter pins model: opus and effort: high`, () => {
     const fm = frontmatter(read(wrapperPath(name)))
-    assert.doesNotMatch(fm, /^\s*(model|effort)\s*:/m)
+    assert.match(fm, /^model: opus$/m)
+    assert.match(fm, /^effort: high$/m)
+    assert.doesNotMatch(fm, /^disable-model-invocation\s*:/m)
   })
 
   test(`${name}: pointers resolve where deployed`, (t) => {
@@ -108,4 +110,9 @@ test('claude.yaml registers t3-core and all ten wrappers', () => {
   for (const name of ['t3-core', ...WRAPPERS]) {
     assert.ok(entries.has(name), `${name} not listed in claude.yaml`)
   }
+})
+
+test('t3-core: frontmatter is inline (disable-model-invocation: true)', () => {
+  const fm = frontmatter(read(join(CORE_DIR, 'SKILL.md')))
+  assert.match(fm, /^disable-model-invocation: true$/m)
 })

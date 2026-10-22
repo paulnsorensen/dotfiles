@@ -3,6 +3,8 @@ name: t3-factory
 description: >
   Run the cheese-factory workflow phases with T3 delegated subagents in a T3
   thread. Outside T3, use the Workflow tool with cheese-factory instead.
+model: opus
+effort: high
 ---
 
 # t3-factory

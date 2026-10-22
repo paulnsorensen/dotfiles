@@ -3,6 +3,8 @@ name: t3-cook
 description: >-
   Run `/cook` with T3 delegated subagents. Use in a T3 thread to implement an
   approved spec or focused task. Outside T3, use `/cook`.
+model: opus
+effort: high
 ---
 
 # t3-cook

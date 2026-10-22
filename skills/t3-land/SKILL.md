@@ -3,6 +3,8 @@ name: t3-land
 description: >
   Run the move-my-cheese landing workflow phases with T3 delegated subagents
   in a T3 thread. Outside T3, use the Workflow tool with move-my-cheese.
+model: opus
+effort: high
 ---
 
 # t3-land

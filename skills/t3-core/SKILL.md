@@ -5,6 +5,7 @@ description: >
   protocol, the result rules, and the role map. Not run directly. Each
   `t3-*` wrapper points here.
 user-invocable: false
+disable-model-invocation: true
 ---
 
 # t3-core

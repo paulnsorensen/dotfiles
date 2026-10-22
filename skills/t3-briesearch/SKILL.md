@@ -3,6 +3,8 @@ name: t3-briesearch
 description: >-
   Run `/briesearch` with T3 delegated subagents. Use in a T3 thread for cited
   research on heavy sources. Outside T3, use `/briesearch`.
+model: opus
+effort: high
 ---
 
 # t3-briesearch

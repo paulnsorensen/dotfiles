@@ -4,6 +4,8 @@ description: >
   Run grounded research (brie-ground) or issue triage (rennet) with T3
   delegated subagents in a T3 thread. Outside T3, use the Workflow tool or
   `/rennet`.
+model: opus
+effort: high
 ---
 
 # t3-research

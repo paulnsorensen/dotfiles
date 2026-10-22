@@ -3,6 +3,8 @@ name: t3-mold
 description: >-
   Run `/mold` with T3 delegated subagents. Use in a T3 thread when the user
   wants a spec or plan from Mold. Outside T3, use `/mold`.
+model: opus
+effort: high
 ---
 
 # t3-mold

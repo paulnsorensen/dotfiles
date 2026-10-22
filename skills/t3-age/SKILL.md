@@ -3,6 +3,8 @@ name: t3-age
 description: >-
   Run `/age` with T3 delegated subagents. Use in a T3 thread to review a diff,
   PR, branch, or path. Outside T3, use `/age`.
+model: opus
+effort: high
 ---
 
 # t3-age
