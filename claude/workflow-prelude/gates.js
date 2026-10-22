@@ -142,7 +142,17 @@ function structuralHit(check) {
 
 const ASSIGN_RE = /^[A-Za-z_]\w*=/
 const WRAPPERS = new Set(['env', 'command', 'time', 'sudo', 'doas', 'xargs', 'nohup', 'nice', 'timeout', 'builtin', 'stdbuf', 'setsid', 'ionice'])
-const WRAPPER_VALUE_OPTS = { xargs: ['-I', '-L', '-n', '-P', '-s', '-E', '-d', '-a'], env: ['-u', '-C', '-S'], sudo: ['-u', '-g', '-C', '-h', '-p', '-r', '-t', '-U'], timeout: ['-s', '-k'], nice: ['-n'] }
+const WRAPPER_VALUE_OPTS = {
+  xargs: ['-I', '-L', '-n', '-P', '-s', '-E', '-d', '-a', '--max-args', '--max-procs', '--max-lines', '--max-chars', '--delimiter', '--arg-file', '--eof'],
+  env: ['-u', '-C', '-S', '--unset', '--chdir', '--split-string'],
+  sudo: ['-u', '-g', '-C', '-h', '-p', '-r', '-t', '-U', '--user', '--group', '--close-from', '--host', '--prompt', '--role', '--type', '--other-user', '--chdir'],
+  doas: ['-u', '-C'],
+  timeout: ['-s', '-k', '--signal', '--kill-after'],
+  nice: ['-n', '--adjustment'],
+  stdbuf: ['-i', '-o', '-e', '--input', '--output', '--error'],
+  ionice: ['-c', '-n', '-p', '-P', '-t', '--class', '--classdata', '--pid', '--pgid'],
+}
+const SPLIT_STRING_OPTS = new Set(['-S', '--split-string'])
 const SHELL_KEYWORDS = new Set(['{', '}', 'if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until', 'for', 'case', 'esac', 'function', 'select', 'coproc'])
 const MUTATION_COMMANDS = new Set(['touch', 'mkdir', 'rmdir', 'cp', 'mv', 'chmod', 'chown', 'chgrp', 'ln', 'install', 'truncate', 'dd', 'patch', 'rm', 'unlink', 'shred', 'mkfifo', 'mknod'])
 const NETWORK_COMMANDS = new Set(['curl', 'wget', 'nc', 'ncat', 'netcat', 'telnet', 'ftp', 'sftp', 'ssh', 'scp', 'rsync', 'socat'])
@@ -158,11 +168,25 @@ const GIT_VALUE_OPTS = new Set(['-C', '--git-dir', '--work-tree', '--namespace',
 const GIT_MUTATIONS = new Set(['push', 'add', 'commit', 'reset', 'checkout', 'switch', 'merge', 'rebase', 'stash', 'clean', 'tag', 'am', 'apply', 'restore', 'rm', 'mv', 'init', 'cherry-pick', 'revert', 'pull', 'worktree', 'update-ref', 'config', 'fetch', 'clone', 'ls-remote', 'submodule', 'gc', 'prune', 'maintenance', 'notes', 'replace', 'filter-branch', 'bisect', 'sparse-checkout', 'format-patch', 'checkout-index', 'read-tree', 'write-tree', 'commit-tree', 'fast-import', 'unpack-objects', 'bundle', 'archive', 'send-email', 'difftool', 'mergetool'])
 
 // Skips wrapper commands and their options so the real command head shows.
-function unwrap(words) {
+function unwrap(input) {
+  const words = [...input]
   let i = 0
   while (WRAPPERS.has(words[i])) {
-    const valued = WRAPPER_VALUE_OPTS[words[i++]] ?? []
-    while (i < words.length && (words[i].startsWith('-') || ASSIGN_RE.test(words[i]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[i]))) i += valued.includes(words[i]) ? 2 : 1
+    const wrapper = words[i++]
+    const valued = WRAPPER_VALUE_OPTS[wrapper] ?? []
+    while (i < words.length && (words[i].startsWith('-') || ASSIGN_RE.test(words[i]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[i]))) {
+      const word = words[i]
+      const eq = word.startsWith('--') ? word.indexOf('=') : -1
+      const opt = eq < 0 ? word : word.slice(0, eq)
+      const splits = wrapper === 'env' && SPLIT_STRING_OPTS.has(opt)
+      if (splits && (eq >= 0 || i + 1 < words.length)) {
+        // env -S carries a command string: split it so the inner command shows.
+        const text = eq >= 0 ? word.slice(eq + 1) : words[i + 1]
+        words.splice(i, eq >= 0 ? 1 : 2, ...text.split(/\s+/).filter(Boolean))
+        break
+      }
+      i += eq < 0 && valued.includes(opt) ? 2 : 1
+    }
   }
   return words.slice(i)
 }

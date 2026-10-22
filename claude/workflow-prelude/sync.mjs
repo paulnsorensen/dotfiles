@@ -66,10 +66,11 @@ const makeBlock = (name, blockSource, blockFiles) => {
   return { name, BEGIN, END, source: blockSource, files: blockFiles, isBegin, isEnd, split }
 }
 
-const blocks = [
+const allBlocks = [
   makeBlock('prelude', source, targets),
   makeBlock('gates', gatesSource, targets.filter((f) => basename(f) === GATES_FILE)),
-].filter((b) => b.files.length)
+]
+const blocks = allBlocks.filter((b) => b.files.length)
 
 // Check every input before any write, so a bad input leaves all targets unchanged.
 for (const file of new Set([...blocks.map((b) => b.source), ...targets])) {
@@ -77,9 +78,9 @@ for (const file of new Set([...blocks.map((b) => b.source), ...targets])) {
 }
 for (const b of blocks) {
   b.text = readFileSync(b.source, 'utf8')
-  if (b.text.split('\n').some((line) => b.isBegin(line) || b.isEnd(line))) {
-    fail(`${b.source}: source contains a shared ${b.name} marker line; remove it`)
-  }
+  const lines = b.text.split('\n')
+  const other = allBlocks.find((o) => lines.some((line) => o.isBegin(line) || o.isEnd(line)))
+  if (other) fail(`${b.source}: source contains a shared ${other.name} marker line; remove it`)
   if (b.text && !b.text.endsWith('\n')) b.text += '\n'
 }
 
