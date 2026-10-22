@@ -4,7 +4,11 @@ REPO_ROOT="$BATS_TEST_DIRNAME/.."
 SKILL="$REPO_ROOT/skills/harness-climb/SKILL.md"
 WORKFLOW="$REPO_ROOT/.github/workflows/test.yml"
 
+load lib/session-analytics-package
+
 @test "harness-climb unittest suite passes through the Bats gate" {
+    # The suite runs the real package; a shared warm uv cache avoids a PyPI fetch per call.
+    package_warm_cache
     run python3 -m unittest discover -s "$REPO_ROOT/tests/harness_climb" -t "$REPO_ROOT/tests" -p 'test_*.py'
     [ "$status" -eq 0 ] || { echo "$output" >&2; false; }
 }
