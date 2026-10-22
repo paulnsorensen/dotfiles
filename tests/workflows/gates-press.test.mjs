@@ -381,3 +381,43 @@ test('no top-level gates.js name is declared again in cheese-factory.js outside 
   const dupes = outside.filter((l) => names.some((n) => new RegExp(`^(?:export )?(?:async )?(?:const|let|var|function\\*?) ${n}\\b`).test(l)))
   assert.deepEqual(dupes, [])
 })
+
+// Command gate bypasses closed by the t3-easy-cheese cure (group G1).
+const DQ = '"'
+const gateBypassesFlagged = [
+  `git push --force origin main #'`, `shred -u secret #'`, 'cat <(git push origin main)', 'f()(git reset --hard);f', `busybox sh -c 'git push'`, 'flock /tmp/l git push',
+  'watch rm x', 'script -c x f', 'chroot / sh',
+  `env -S${DQ}touch foo${DQ}`, `env '-Schmod 777 file'`, `env -vS ${DQ}touch x${DQ}`, `env -iS${DQ}mkdir d${DQ}`, `env -S ${DQ}FOO=1 mkdir x${DQ}`,
+  `sed 's#a#chmod 777 file#e' input`, `sed 's|a|b|w out' input`,
+  'gh --repo owner/repo pr merge 1', 'gh -R owner/repo issue close 1',
+  'git branch injected', 'git branch -u origin/x', 'git branch --list --force x',
+  'ionice -t mkdir build', 'echo d | xargs --eof mkdir',
+  'git remote set-url origin x', 'git merge-file a b c', 'git update-index --skip-worktree f', 'git symbolic-ref HEAD refs/heads/x', 'git hash-object -w f', 'git reflog expire --all', 'git lfs pull',
+  'go install x@latest', 'brew install foo', 'Git push origin main', 'Sudo rm x',
+]
+for (const check of gateBypassesFlagged) {
+  test(`gate bypass flagged: ${JSON.stringify(check)}`, () => {
+    assert.ok(g.unsafeCheck(check), `not flagged: ${check}`)
+  })
+}
+const gateStillSafe = [
+  'nice -n 5 just test', 'timeout 60 npm test', 'git status', 'git log --oneline', 'git diff', 'ls -la', 'cat README.md',
+  'git branch', 'git branch --list', 'git branch -a', 'git branch -r', 'git branch -v', 'git branch -vv', 'git branch --show-current',
+  'git branch --contains HEAD', 'git branch --merged main', 'git branch --no-merged main', 'git branch --list feat*',
+  'env FOO=1 ls', 'env -i ls', 'sed s/a/b/g f', `sed -n '/warn/p' f`, 'gh pr view 1', 'gh --repo owner/repo pr view 1', 'xargs -n 1 echo', 'ionice -c 3 ls',
+  `grep '#' f`, `echo 'a(b'`, 'ls && (ls)',
+]
+for (const check of gateStillSafe) {
+  test(`gate still safe: ${JSON.stringify(check)}`, () => {
+    assert.equal(g.unsafeCheck(check), null)
+  })
+}
+
+test('sync rejects nested shared blocks before any write', () => {
+  const text = ['// BEGIN shared prelude', '// BEGIN shared gates', '// END shared gates', '// END shared prelude', ''].join(NL)
+  const p = fixture({ factoryText: text })
+  const r = sync(p)
+  assert.equal(r.status, 1)
+  assert.ok(!r.stderr.includes('TypeError'), r.stderr)
+  assert.equal(readFileSync(p.factory, 'utf8'), text)
+})

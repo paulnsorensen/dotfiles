@@ -357,7 +357,6 @@ const VACUOUS = [
   ['negated rg without guard', '! rg -q foo src/x.js'],
   ['negated git grep without guard', '! git grep -q foo -- src/x.js'],
   ['guard reset by cd', 'test -e src/x.js && cd sub && ! grep -q foo src/x.js'],
-  ['unclosed quote', "test -e src/x.js && ! grep -q 'foo src/x.js"],
   ['guard from a negated test', '! test -e src/x.js && ! grep -q foo src/x.js'],
 ]
 for (const [name, check] of VACUOUS) {
@@ -368,6 +367,15 @@ for (const [name, check] of VACUOUS) {
     assert.equal(starting(trace, 'cook:').length, 0)
   })
 }
+
+// An unclosed quote makes the command unparseable, so the unsafe gate rejects it before the vacuity check.
+test('checkCriteria_unclosed_quote_isRejectedAsUnparseable', async () => {
+  const check = "test -e src/x.js && ! grep -q 'foo src/x.js"
+  const { result, trace } = await run(single, { criteria: () => criteria(['AC-1', 'AC-2'], { check }) })
+
+  assert.match(result.error, /unparseable shell words/)
+  assert.equal(starting(trace, 'cook:').length, 0)
+})
 
 const TESTED = [
   ['guarded negated grep', 'test -e src/x.js && ! grep -q foo src/x.js'],

@@ -417,8 +417,8 @@ function mergeCoupledCurds(curds) {
 const isMediumPlus = (f) => f.severity !== 'low'
 const needsCure = (f) => isMediumPlus(f) || f.fix_cost_now === 'contained'
 // A finding owned by two curds routes to the first owner in slug order. Each other owner lands in shared, keyed to the owners that cure it.
-// unrouted is true when a finding that needs cure has no owner (an unowned low that needs no cure stays out),
-// or when the result claims medium+ findings or contained lows that its list does not carry.
+// unrouted is true when a finding that needs cure has no owner. An unowned low that needs no cure stays out.
+// unrouted is also true when the result claims medium+ findings or contained lows that its list does not carry.
 // A finding file may carry a leading ./ or a worktree prefix; both name the same repo path.
 // The prefix is the producer's own worktree_path, or any scratch worktree root.
 const SCRATCH_PREFIX_RE = new RegExp(`^${SCRATCH_PATH_SRC}\\/`)
@@ -469,7 +469,7 @@ const UNSAFE_CHECKS = [
   ['in-place edit', /\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i/i],
   ['file removal', /\brm\s|\s-delete\b|\bunlink\b|\btruncate\b/i],
   ['package publish or install', /\b(?:npm|pnpm|yarn|cargo|pip3?|uv)\s+(?:publish|install|add|ci)\b/i],
-  ['GitHub mutation', /\bgh\s+(?:pr\s+(?:merge|close|comment|edit|ready|review|create|reopen)|issue|release|workflow\s+run|run\s+(?:rerun|cancel)|repo\s+(?:edit|delete|rename)|secret|variable|label)\b/i],
+  ['GitHub mutation', /\bgh\s+(?:-\S*\s+(?:[^-\s]\S*\s+)?)*(?:pr\s+(?:merge|close|comment|edit|ready|review|create|reopen)|issue|release|workflow\s+run|run\s+(?:rerun|cancel)|repo\s+(?:edit|delete|rename)|secret|variable|label)\b/i],
   ['GitHub API write', /\bgh\s+api\b.*(?:-X|--method)[\s=]*(?:POST|PATCH|PUT|DELETE)\b/i],
   ['GitHub API field write', /\bgh\s+api\b.*\s(?:-f|-F|--field|--raw-field|--input)[\s=]/i],
 ]
@@ -512,40 +512,65 @@ function structuralHit(check) {
 
 const ASSIGN_RE = /^[A-Za-z_]\w*=/
 const WRAPPERS = new Set(['env', 'command', 'time', 'sudo', 'doas', 'xargs', 'nohup', 'nice', 'timeout', 'builtin', 'stdbuf', 'setsid', 'ionice'])
+const UNKNOWN_WRAPPERS = new Set(['busybox', 'flock', 'watch', 'script', 'chroot'])
 const WRAPPER_VALUE_OPTS = {
-  xargs: ['-I', '-L', '-n', '-P', '-s', '-E', '-d', '-a', '--max-args', '--max-procs', '--max-lines', '--max-chars', '--delimiter', '--arg-file', '--eof'],
+  xargs: ['-I', '-L', '-n', '-P', '-s', '-E', '-d', '-a', '--max-args', '--max-procs', '--max-lines', '--max-chars', '--delimiter', '--arg-file'],
   env: ['-u', '-C', '-S', '--unset', '--chdir', '--split-string'],
   sudo: ['-u', '-g', '-C', '-h', '-p', '-r', '-t', '-U', '--user', '--group', '--close-from', '--host', '--prompt', '--role', '--type', '--other-user', '--chdir'],
   doas: ['-u', '-C'],
   timeout: ['-s', '-k', '--signal', '--kill-after'],
   nice: ['-n', '--adjustment'],
   stdbuf: ['-i', '-o', '-e', '--input', '--output', '--error'],
-  ionice: ['-c', '-n', '-p', '-P', '-t', '--class', '--classdata', '--pid', '--pgid'],
+  ionice: ['-c', '-n', '-p', '-P', '--class', '--classdata', '--pid', '--pgid'],
 }
 const SPLIT_STRING_OPTS = new Set(['-S', '--split-string'])
 const SHELL_KEYWORDS = new Set(['{', '}', 'if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until', 'for', 'case', 'esac', 'function', 'select', 'coproc'])
 const MUTATION_COMMANDS = new Set(['touch', 'mkdir', 'rmdir', 'cp', 'mv', 'chmod', 'chown', 'chgrp', 'ln', 'install', 'truncate', 'dd', 'patch', 'rm', 'unlink', 'shred', 'mkfifo', 'mknod'])
 const NETWORK_COMMANDS = new Set(['curl', 'wget', 'nc', 'ncat', 'netcat', 'telnet', 'ftp', 'sftp', 'ssh', 'scp', 'rsync', 'socat'])
 const FETCH_RUNNERS = new Set(['npx', 'pnpx', 'bunx', 'uvx', 'pipx'])
-const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun', 'pip', 'pip3', 'cargo', 'uv', 'gem'])
+const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun', 'pip', 'pip3', 'cargo', 'uv', 'gem', 'go', 'brew'])
 const INSTALL_SUBCOMMANDS = new Set(['install', 'i', 'ci', 'add', 'exec', 'x', 'dlx', 'create', 'init', 'update', 'upgrade', 'publish', 'remove', 'uninstall', 'link'])
 const SHELL_HEAD_RE = /^(?:sh|bash|zsh|dash|ksh|fish|csh|tcsh)$/
 const CODE_HEAD_RE = /^(?:python|ruby|perl|php|lua|node|nodejs|deno|bun|osascript)[\d.]*$/
 const AWK_HEAD_RE = /^[gmn]?awk$/
 const AWK_DANGER_RE = /\bsystem\s*\(|\bgetline\b|\bprintf?\b[^}]*[>|]|-i\s*inplace|@(?:include|load)|\|&/
-const SED_WRITE_RE = /(?:^|[;{}])\s*(?:\d+|\$|\/[^/]*\/)?\s*(?:w\s*\S|e\b)|s\/[^/]*\/[^/]*\/[a-zA-Z0-9]*[we]\b/
+const SED_WRITE_RE = /(?:^|[;{}])\s*(?:\d+|\$|\/[^/]*\/)?\s*(?:w\s*\S|e\b)|s([^\w\s\\])(?:(?!\1).)*\1(?:(?!\1).)*\1[a-zA-Z0-9]*[we]\b/
 const GIT_VALUE_OPTS = new Set(['-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--exec-path'])
-const GIT_MUTATIONS = new Set(['push', 'add', 'commit', 'reset', 'checkout', 'switch', 'merge', 'rebase', 'stash', 'clean', 'tag', 'am', 'apply', 'restore', 'rm', 'mv', 'init', 'cherry-pick', 'revert', 'pull', 'worktree', 'update-ref', 'config', 'fetch', 'clone', 'ls-remote', 'submodule', 'gc', 'prune', 'maintenance', 'notes', 'replace', 'filter-branch', 'bisect', 'sparse-checkout', 'format-patch', 'checkout-index', 'read-tree', 'write-tree', 'commit-tree', 'fast-import', 'unpack-objects', 'bundle', 'archive', 'send-email', 'difftool', 'mergetool'])
+const GIT_MUTATIONS = new Set(['push', 'add', 'commit', 'reset', 'checkout', 'switch', 'merge', 'rebase', 'stash', 'clean', 'tag', 'am', 'apply', 'restore', 'rm', 'mv', 'init', 'cherry-pick', 'revert', 'pull', 'worktree', 'update-ref', 'config', 'fetch', 'clone', 'ls-remote', 'submodule', 'gc', 'prune', 'maintenance', 'notes', 'replace', 'filter-branch', 'bisect', 'sparse-checkout', 'format-patch', 'checkout-index', 'read-tree', 'write-tree', 'commit-tree', 'fast-import', 'unpack-objects', 'bundle', 'archive', 'send-email', 'difftool', 'mergetool', 'remote', 'merge-file', 'update-index', 'symbolic-ref', 'hash-object', 'reflog', 'lfs'])
+const BRANCH_READ_FLAGS = new Set(['-a', '-r', '-v', '-vv', '--all', '--remotes', '--verbose', '--show-current', '--list'])
+const BRANCH_COMMIT_FLAGS = new Set(['--contains', '--no-contains', '--merged', '--no-merged'])
+
+// Only the read-only branch forms pass. A bare word names a branch to create, unless --list makes it a pattern.
+function branchMutates(rest) {
+  const listing = rest.includes('--list')
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i]
+    if (BRANCH_COMMIT_FLAGS.has(arg)) { if (rest[i + 1] !== undefined && !rest[i + 1].startsWith('-')) i++ } else if (BRANCH_READ_FLAGS.has(arg)) continue
+    else if (listing && !arg.startsWith('-')) continue
+    else return true
+  }
+  return false
+}
 
 // Skips wrapper commands and their options so the real command head shows.
 function unwrap(input) {
   const words = [...input]
   let i = 0
-  while (WRAPPERS.has(words[i])) {
-    const wrapper = words[i++]
+  while (WRAPPERS.has(words[i]?.toLowerCase())) {
+    const wrapper = words[i++].toLowerCase()
     const valued = WRAPPER_VALUE_OPTS[wrapper] ?? []
     while (i < words.length && (words[i].startsWith('-') || ASSIGN_RE.test(words[i]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[i]))) {
       const word = words[i]
+      if (wrapper === 'env' && /^-[^-]/.test(word)) {
+        // A short cluster such as -iS or -vu: S takes a command string, u and C take a value.
+        const k = [...word.slice(1)].findIndex((c) => c === 'S' || c === 'u' || c === 'C')
+        if (k >= 0) {
+          const attached = word.slice(2 + k)
+          if (word[1 + k] === 'S') words.splice(i, attached ? 1 : 2, ...(attached || words[i + 1] || '').split(/\s+/).filter(Boolean))
+          else i += attached ? 1 : 2
+          continue
+        }
+      }
       const eq = word.startsWith('--') ? word.indexOf('=') : -1
       const opt = eq < 0 ? word : word.slice(0, eq)
       const splits = wrapper === 'env' && SPLIT_STRING_OPTS.has(opt)
@@ -553,7 +578,7 @@ function unwrap(input) {
         // env -S carries a command string: split it so the inner command shows.
         const text = eq >= 0 ? word.slice(eq + 1) : words[i + 1]
         words.splice(i, eq >= 0 ? 1 : 2, ...text.split(/\s+/).filter(Boolean))
-        break
+        continue
       }
       i += eq < 0 && valued.includes(opt) ? 2 : 1
     }
@@ -572,7 +597,7 @@ function gitHit(args) {
   const sub = (args[i] ?? '').toLowerCase()
   const rest = args.slice(i + 1)
   if (GIT_MUTATIONS.has(sub)) return hit('git mutation', `git ${sub}`)
-  if (sub === 'branch' && rest.some((a) => /^-[a-zA-Z]*[dDmMfcC]|^--(?:delete|move|copy|force|set-upstream|unset-upstream|edit-description)/.test(a))) return hit('git mutation', 'git branch')
+  if (sub === 'branch' && branchMutates(rest)) return hit('git mutation', 'git branch')
   const output = rest.find((a) => /^--output(?:=|$)/.test(a) || (sub === 'grep' && /^(?:-O|--open-files-in-pager)/.test(a)))
   return output ? hit('git option that writes a file or runs a program', output) : null
 }
@@ -631,11 +656,13 @@ function commandHit(raw) {
   while (words[0] === '!') words.shift()
   if (!words.length) return null
   if (ASSIGN_RE.test(words[0])) return hit('NAME=value prefix', words[0])
-  const [head, ...args] = unwrap(words)
-  if (head === undefined) return null
+  const [rawHead, ...args] = unwrap(words)
+  if (rawHead === undefined) return null
+  const head = rawHead.toLowerCase()
   if (head.includes('/')) return hit('command path', head)
   if (['eval', 'exec', 'source', '.'].includes(head)) return hit('eval, exec, or source', head)
   if (SHELL_KEYWORDS.has(head)) return hit('shell keyword or group', head)
+  if (UNKNOWN_WRAPPERS.has(head)) return hit('wrapper that runs another command', head)
   if (MUTATION_COMMANDS.has(head)) return hit('tree mutation', head)
   if (NETWORK_COMMANDS.has(head)) return hit('network access', head)
   if (FETCH_RUNNERS.has(head)) return hit('package fetch or execution', head)
@@ -668,8 +695,12 @@ function unsafeCheck(check) {
     const m = re.exec(subject)
     if (m) return hit(name, subject.slice(m.index, m.index + 24).trim())
   }
+  const comment = /(?:^|[\s;&|(])#/.exec(masked)
+  if (comment) return hit('shell comment', masked.slice(comment.index, comment.index + 24).trim())
+  const subshell = /[<>]\(|[^\s(;&|]\(/.exec(masked)
+  if (subshell) return hit('process substitution or function definition', masked.slice(subshell.index, subshell.index + 24).trim())
   const words = shellWords(check)
-  if (!words) return null
+  if (!words) return hit('unparseable shell words', check.slice(0, 24))
   let command = []
   for (const w of [...words, ';']) {
     if (COMMAND_OPS.includes(w) || w === '|') {
