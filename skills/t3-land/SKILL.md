@@ -18,6 +18,7 @@ Run the Boot in `~/.claude/skills/t3-core/SKILL.md`.
 ## Overrides
 
 - **Integrate and restack.** The parent runs git by SHA itself. Dispatch no child for these steps.
+- **Target builds.** The Assemble target build (`buildTarget`) has no agent type. Dispatch it with `t3-run role coder --depth <child depth>`.
 - **Chained phases.** Use `t3-age` for Age and re-age, `t3-cure` for Cure, and `t3-affinage` for Affinage.
 
 ## Gates
