@@ -21,9 +21,9 @@ Get each target from `t3-run role <role>` (`bin/t3-run role`). Never write a mod
 
 | Hard-cheese dispatch | Role |
 | --- | --- |
-| Grade the explanation (fresh judge) | `advisor` |
+| Grade the explanation (fresh judge) | `reviewer` |
 
-The `advisor` role uses shared isolation.
+The `reviewer` role uses shared isolation.
 
 ## Nested phases
 

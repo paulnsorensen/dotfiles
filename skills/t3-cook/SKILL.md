@@ -24,6 +24,7 @@ Get each target from `t3-run role <role>` (`bin/t3-run role`). Never write a mod
 | Decompose the spec | `planner` |
 | Implementation | `coder` |
 | Press loop | `press` |
+| Fresh writer after a needs-context stop | `continuation` |
 | Taste-test | `taste-test` |
 | Gate digest | `gate-runner` |
 | Plan gate, done gate, or judge advice | `advisor` |

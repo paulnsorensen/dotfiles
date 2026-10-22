@@ -25,6 +25,7 @@ Replace the age router's native fan-out and the `age-fanout.js` child workflow w
 | --- | --- |
 | One child per router lens group | `reviewer` |
 | One child over the whole diff | `second-reviewer` (exactly one) |
+| Packet explorer | `explorer` |
 | Verifier | `verifier` |
 | Judge advice | `advisor` |
 
