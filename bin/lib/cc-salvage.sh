@@ -145,8 +145,9 @@ salvage_launch() {
     local sid cwd name pid start file
     IFS=$'\t' read -r _ sid cwd name pid start file <<< "$row"
     [[ "$name" == - ]] && name="${sid:0:8}"
-    local -a cmd=(claude --resume "$sid")
-    [[ -x "$dotfiles/bin/dotsclaude" ]] && cmd=(env CLAUDE_BIN=claude "$dotfiles/bin/dotsclaude" --resume "$sid")
+    # --remote-control takes an optional name, so it must stay the last argument.
+    local -a cmd=(claude --resume "$sid" --remote-control)
+    [[ -x "$dotfiles/bin/dotsclaude" ]] && cmd=(env CLAUDE_BIN=claude "$dotfiles/bin/dotsclaude" --resume "$sid" --remote-control)
     # shellcheck disable=SC2016 # Variables expand in the window's shell.
     tmux new-window -d -t "$target:" -n "${name//#/##}" -c "${cwd//#/##}" \
         bash -c '
@@ -167,13 +168,14 @@ salvage_usage() {
 Usage: cc-salvage [--since DUR] [--until DUR] [--session NAME] [--limit N] [--dry-run]
 
 Reopen Claude sessions that died (box restart, crash) in tmux windows.
-Each window runs `claude --resume <id>` in the session's original cwd.
+Each window runs `claude --resume <id> --remote-control` in the session's
+original cwd.
 
   --since DUR     oldest last activity to include (default 24h)
   --until DUR     newest last activity to include (default 0s = now)
   --session NAME  tmux session for the windows (default: current, else "salvage")
-  --limit N       resume at most N sessions, newest first (default 6;
-                  bin/claude refuses past 8 running sessions)
+  --limit N       resume at most N sessions, newest first (default 10;
+                  bin/claude refuses at 14 running sessions)
   --dry-run       list the candidates; open no windows
 
 DUR is <number><s|m|h|d>, counted back from now.
@@ -212,7 +214,7 @@ salvage_resume_rows() {
 
 # salvage_main [args] — parse, list candidates, and launch each one.
 salvage_main() {
-    local since=24h until=0s session="" limit=6 dry_run=false since_s until_s now rows
+    local since=24h until=0s session="" limit=10 dry_run=false since_s until_s now rows
     while (($#)); do
         case "$1" in
             --since|--until|--session|--limit)
