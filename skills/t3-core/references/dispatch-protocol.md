@@ -14,12 +14,14 @@ The wrapper frontmatter pins the parent to Opus. The check warns when the inheri
 
 ## Run ledger
 
-The ledger is `.cheese/t3/<run>.json`. Create it with `t3-run ledger init <run>`. `bin/t3-run` is on PATH as `t3-run`.
+The ledger is `.cheese/t3/<run>.json`. Create it with `t3-run ledger init <run>`. `t3-run` is on PATH.
 
 - Run id: one id per `t3-*` skill invocation, for example `<skill>-<UTC timestamp>`. It is not the T3 `childRunId`.
-- clientRequestId: run `t3-run ledger reserve <run> --phase <p> --role <r>`. It prints the next id.
+- clientRequestId: run `t3-run ledger reserve <run> --phase <p> --role <r> --depth <child depth>`. It prints the next id.
 - Reuse a clientRequestId only for a transport retry of the same call.
-- A validation retry is a new call. Call `reserve` again, and give the retry its own `t3-run ledger record` entry.
+- A validation retry is a new call.
+- Call `reserve` again for the retry.
+- Give the retry its own `t3-run ledger record` entry.
 
 Ledger commands:
 
@@ -29,10 +31,12 @@ t3-run ledger {init|reserve|record|complete|status|barrier} <run> ...
 
 ## Launch
 
-1. Get the target with `t3-run role ... --depth <n>`. It prints `{role, providerInstanceId, model, options, isolation}`. The CLI refuses a depth above 2 before launch.
-2. Reserve the clientRequestId. Call `delegate_task` with that target, the role's `isolation` value, and `mode: async`.
-3. Run `t3-run ledger record` with the clientRequestId and the `taskId`. Do this before the turn ends.
-4. End the turn.
+1. Get the target with `t3-run role ... --depth <child depth>`. It prints `{role, providerInstanceId, model, options, isolation}`. The CLI refuses depth 3 or more before launch.
+2. Reserve the clientRequestId. Call `delegate_task` with the target, the role's `isolation` value, and `mode: async`.
+3. Pass only `providerInstanceId`, `model`, and `options` into the `target` of `delegate_task`.
+4. Keep the printed `role` for the ledger. Never pass it as the top-level `role` parameter of `delegate_task`.
+5. Run `t3-run ledger record` with the clientRequestId and the `taskId`. Do this before the turn ends.
+6. End the turn.
 
 Never fan out with `mode: wait`. Wait calls run one at a time (probe S-5).
 

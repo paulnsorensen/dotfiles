@@ -57,11 +57,11 @@ for (const name of WRAPPERS) {
     assert.ok(existsSync(wrapperPath(name)), `missing ${wrapperPath(name)}`)
   })
 
-  test(`${name}: names a source pointer, the Boot line, and agent-type role resolution`, () => {
+  test(`${name}: names a source pointer and the Boot line, and repeats no role resolve step`, () => {
     const text = read(wrapperPath(name))
     assert.ok(wrapperPointers(text).length >= 1, 'expected a ~/.claude/skills or workflows pointer')
     assert.ok(text.includes(BOOT_LINE), `expected: ${BOOT_LINE}`)
-    assert.ok(text.includes('t3-run role --agent-type'), 'expected role resolution through --agent-type')
+    assert.ok(!text.includes('t3-run role --agent-type'), 'resolve step belongs in the t3-core Boot')
     assert.doesNotMatch(text, /^## (?:Role table|Phase to role)/m, 'hand-written role table')
   })
 
@@ -99,8 +99,24 @@ test('t3-core: Boot stops on a missing source, names the path, and checks depth 
   assert.match(text, /depth 1 or more, skip it/)
 })
 
-test('t3-core: Boot stop check rejects word presence without the exact sentence', () => {
-  assert.ok(!'The source is missing. We stop later.'.includes(BOOT_STOP))
+test('t3-core: Boot holds the role resolve step exactly once', () => {
+  const text = read(join(CORE_DIR, 'SKILL.md'))
+  const boot = text.match(/^## Boot$([\s\S]*?)^## /m)?.[1] ?? ''
+  assert.equal(boot.split('t3-run role --agent-type').length - 1, 1)
+  assert.match(boot, /--depth <n>/)
+  assert.equal(text.split('Resolve each dispatch the source makes with').length - 1, 1)
+})
+
+test('shared references: name the PATH command t3-run, never bin/t3-run', () => {
+  for (const f of ['references/dispatch-protocol.md', 'references/result-rules.md']) {
+    assert.doesNotMatch(read(join(CORE_DIR, f)), /bin\/t3-run/, f)
+  }
+})
+
+test('dispatch protocol: only providerInstanceId, model, and options go into target', () => {
+  const text = read(join(CORE_DIR, 'references/dispatch-protocol.md'))
+  assert.match(text, /Pass only `providerInstanceId`, `model`, and `options` into the `target`/)
+  assert.match(text, /Never pass it as the top-level `role` parameter/)
 })
 
 test('model id: t3-core docs name only role-map ids', () => {

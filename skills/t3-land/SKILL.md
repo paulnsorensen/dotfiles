@@ -15,13 +15,10 @@ Source: `~/.claude/workflows/move-my-cheese.js` (deployed copy of `claude/workfl
 
 Run the Boot in `~/.claude/skills/t3-core/SKILL.md`.
 
-Resolve each dispatch the source makes with `t3-run role --agent-type <type> [--tier <tier>] [--mode <mode>] --depth <n>`. For prose skills that name a preferred type in their `## Agent resolution` table, pass that type.
-
 ## Overrides
 
 - **Integrate and restack.** The parent runs git by SHA itself. Dispatch no child for these steps.
 - **Chained phases.** Use `t3-age` for Age and re-age, `t3-cure` for Cure, and `t3-affinage` for Affinage.
-- **Exception list.** A dispatch with no agent type uses these roles: formatter repair uses `formatter`; recon uses `recon`; status, merge, and stamp use `runner`.
 
 ## Gates
 

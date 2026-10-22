@@ -19,9 +19,13 @@ Choose the source by mode. Follow its phase order, prompts, and stop rules.
 
 Run the Boot in `~/.claude/skills/t3-core/SKILL.md`.
 
-Resolve each dispatch the source makes with `t3-run role --agent-type <type> [--tier <tier>] [--mode <mode>] --depth <n>`. For prose skills that name a preferred type in their `## Agent resolution` table, pass that type.
-
 ## Overrides
 
 - **Exception list.** A dispatch with no agent type uses these roles: rennet per-issue triage uses `explorer`.
+- **Grounded research phases.** These brie-ground phases override the agent type. Each retry uses the same role as its phase.
+  - Verify (`brie-ground.js:697`) uses `verifier`.
+  - Plan (`brie-ground.js:791`) uses `planner`.
+  - Synthesize (`brie-ground.js:840`) uses `researcher`.
+  - Prototype (`brie-ground.js:851`) uses `coder`.
+- **Rennet mode.** Rennet keeps its role mapping.
 - **Gates.** Run `t3-run gate check-safe` for each check command that you extract.

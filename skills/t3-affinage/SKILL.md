@@ -15,8 +15,6 @@ Source: `~/.claude/skills/affinage/SKILL.md`.
 
 Run the Boot in `~/.claude/skills/t3-core/SKILL.md`.
 
-Resolve each dispatch the source makes with `t3-run role --agent-type <type> [--tier <tier>] [--mode <mode>] --depth <n>`. For prose skills that name a preferred type in their `## Agent resolution` table, pass that type.
-
 ## Overrides
 
 When Affinage chains to Cure, use `t3-cure`.

@@ -21,13 +21,14 @@ Every `t3-*` wrapper runs this Boot before its first dispatch.
 3. Read this file, `references/dispatch-protocol.md`, and `references/result-rules.md` in this directory.
 4. At depth 0 (the prompt has no `T3-Depth` line), run the parent check in the dispatch protocol. At depth 1 or more, skip it.
 5. Apply the T3 override block below.
+6. Resolve each dispatch the source makes with `t3-run role --agent-type <type> [--tier <tier>] [--mode <mode>] --depth <n>`. When the source has an `## Agent resolution` table that names a preferred type, pass that type.
 
 ## T3 override block
 
 A wrapper follows its real skill or workflow source. It applies only these two overrides.
 
 1. **Dispatch.** Send every subagent through the T3 `delegate_task` tool. Follow [the dispatch protocol](references/dispatch-protocol.md). Do not use native host subagents.
-2. **Targets.** Take each dispatch target only from `t3-run role`. The command prints `{role, providerInstanceId, model, options, isolation}`. Pass `--depth <n>` with the current depth. Depth above 2 exits 1 before launch.
+2. **Targets.** Take each dispatch target only from `t3-run role`. The command prints `{role, providerInstanceId, model, options, isolation}`. Pass `--depth <n>` with the child's depth (the sender's depth + 1). Depth 3 or more exits before launch.
 
 `bin/t3-run` is on PATH as `t3-run`; call it as `t3-run` from any repository.
 
@@ -35,7 +36,14 @@ Model ids live only in `role-map.json`. Do not write a model id or a bare alias 
 
 ## Role resolution
 
-Resolve each dispatch the source makes with `t3-run role --agent-type <type> [--tier <tier>] [--mode <mode>] --depth <n>`. For prose skills that name a preferred type in their `## Agent resolution` table, pass that type. The rules live in `agent-type-rules.json`. Use `t3-run role <role> --depth <n>` only for a wrapper override that names a role.
+Every role lookup passes `--depth <child depth>`. The command refuses a lookup without it.
+
+- **Tier.** Pass the `model:` value of the source dispatch. An unknown tier exits 2.
+- **Mode.** Pass the judge prompt mode: `advise` or `verify`. An unknown mode exits 2.
+
+The rules live in `agent-type-rules.json`. A judge in `advise` mode, or on tier `opus`, resolves to `advisor`. Other judges resolve to `gate-runner`. An explorer on tier `opus` resolves to `planner`. The types `general-purpose`, `generalist`, and `general` resolve to `explorer`.
+
+Use `t3-run role <role> --depth <n>` only for a wrapper override that names a role.
 
 ## References
 

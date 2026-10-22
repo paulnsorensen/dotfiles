@@ -15,8 +15,6 @@ Source: `~/.claude/skills/cure/SKILL.md`.
 
 Run the Boot in `~/.claude/skills/t3-core/SKILL.md`.
 
-Resolve each dispatch the source makes with `t3-run role --agent-type <type> [--tier <tier>] [--mode <mode>] --depth <n>`. For prose skills that name a preferred type in their `## Agent resolution` table, pass that type.
-
 ## Overrides
 
 Commit before you delegate a write child. A write child returns a branch and a full head SHA. When Cure chains to a phase that dispatches, use the matching `t3-*` wrapper.
