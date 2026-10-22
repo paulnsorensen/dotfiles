@@ -94,17 +94,20 @@ for (const b of blocks) {
   }
 }
 // Simulate the sequential rewrites, so an overlapping or nested block fails here and not after a partial write.
+// A later block can erase an earlier block's markers, so split every block again on the final text.
 for (const file of targets) {
   let next = originals.get(file)
+  let broken = false
   for (const b of blocks) {
     if (!b.files.includes(file)) continue
     const parts = b.split(next)
-    if (!parts) {
-      console.error(`${file}: the shared ${b.name} block overlaps or nests another shared block`)
-      failed = true
-      break
-    }
+    if (!parts) { broken = true; break }
     next = parts.head + b.text + parts.tail
+  }
+  if (!broken) broken = blocks.some((b) => b.files.includes(file) && !b.split(next))
+  if (broken) {
+    console.error(`${file}: a shared block overlaps or nests another shared block`)
+    failed = true
   }
 }
 if (failed) process.exit(1)

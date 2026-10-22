@@ -172,7 +172,7 @@ test('the pasted blocks define every gates symbol in a vm context that holds onl
   assert.ok(topLevel.length > 30, `parsed ${topLevel.length} top-level names`)
   for (const name of topLevel) assert.notEqual(runInContext(`typeof ${name}`, context), 'undefined', name)
   assert.equal(runInContext(`normalizeFile('/home/u/repo/.claude/worktrees/agent-1/src/a.js')`, context), 'src/a.js')
-  assert.equal(runInContext(`unsafeCheck('curl x').name`, context), 'network access')
+  assert.equal(runInContext(`unsafeCheck('curl x').name`, context), 'command not on the read-only allowlist')
 })
 
 test('gates.js alone fails to load: it needs SCRATCH_PATH_SRC from the prelude block', () => {
@@ -320,12 +320,12 @@ const blocked = [
   // sequencing
   'ls; rm x', 'ls && touch f', 'true || mkdir d', 'ls & chmod 1 f', 'cat f | tee g', 'ls | sh', '(rm x)', '(mkdir d)', 'ls |& sh',
   // other mutation
-  'dd if=a of=b', 'shred f', 'ln -s a b', 'patch -p1', 'gh pr merge 1', 'gh api x -X POST', 'gh api x -f a=b',
+  'dd if=a of=b', 'shred f', 'ln -s a b', 'patch -p1', 'gh pr merge 1', 'gh api x -X POST', 'gh api x -f a=b', 'npm run lint', 'python script.py',
 ]
 const allowed = [
   'test -e a.js && git status', 'grep -n foo src/a.js | head -5', 'git diff --stat 5ae89056..HEAD', 'node --test tests/workflows/', 'just lint-shell', 'ls -la | wc -l', 'git log --oneline -5',
   'git status', 'git -C /tmp status', 'git --git-dir=x status', 'git branch --list', 'git branch -a', 'git branch --show-current', 'git branch -vv', 'git diff --name-only', 'git show HEAD:a.js',
-  'rg foo src', `rg ${'"'}foo|bar${'"'} src`, 'jq . package.json', 'echo hi 2>&1', 'cmd > /dev/null', 'cmd >/dev/null; echo x', 'cmd 2>&-', 'test -f x || echo missing', 'npm test', 'npm run lint', 'python script.py', 'python3 -m pytest',
+  'rg foo src', `rg ${'"'}foo|bar${'"'} src`, 'jq . package.json', 'echo hi 2>&1', 'ls > /dev/null', 'ls >/dev/null; echo x', 'ls 2>&-', 'test -f x || echo missing', 'npm test', 'npm run test', 'python3 -m pytest',
   'find . -name x', 'sed -n 1,5p f', `sed -n '/warn/p' f`, 'sed y/abc/xyz/ f', `awk '{print $1}' f`, `awk -F: '{print $1}' f`, 'sed s/a/b/ f',
   // quoted metacharacters are data
   `echo ${'"'}a > b${'"'}`, `echo '>' x`, `grep ';' f`, `grep 'a|b' f`, `echo '$(id)'`, `echo '$HOME'`, `echo '${BT}id${BT}'`, `echo '<<'`, `echo 'a; rm'`, `echo ${BS}> f`, `echo ${BS}$HOME`,
@@ -359,9 +359,9 @@ for (const [name, check] of wrapperBypasses) {
 
 test('unsafeCheck reports a stable category for representative bypass attempts', () => {
   const name = (c) => g.unsafeCheck(c)?.name
-  assert.equal(name('env rm x'), 'file removal')
-  assert.equal(name('xargs rm'), 'tree mutation')
-  assert.equal(name('sh -c x'), 'inline interpreter code')
+  assert.equal(name('env rm x'), 'command not on the read-only allowlist')
+  assert.equal(name('xargs rm'), 'command not on the read-only allowlist')
+  assert.equal(name('sh -c x'), 'command not on the read-only allowlist')
   assert.equal(name('git config user.name x'), 'git mutation')
   assert.equal(name('git -c core.pager=sh log'), 'git config override')
   assert.equal(name('git diff --output=x'), 'git option that writes a file or runs a program')
@@ -370,6 +370,15 @@ test('unsafeCheck reports a stable category for representative bypass attempts',
   assert.equal(name('echo $HOME'), 'shell expansion or substitution')
   assert.equal(name('cat <<EOF'), 'here document')
   assert.equal(name('ls' + NL + 'ls'), 'raw newline or carriage return')
+  assert.equal(name('ls # x'), 'shell comment')
+  assert.equal(name('ls {a,b}'), 'brace expansion')
+})
+
+test('the allowlist reason names the head that is not allowed', () => {
+  const reason = (c) => { const h = g.unsafeCheck(c); return [h?.name, h?.text] }
+  assert.deepEqual(reason('ls; rm x'), ['command not on the read-only allowlist', 'rm'])
+  assert.deepEqual(reason('NICE -n 5 touch x'), ['command not on the read-only allowlist', 'touch'])
+  assert.deepEqual(reason('ENV touch x'), ['command not on the read-only allowlist', 'touch'])
 })
 
 test('no top-level gates.js name is declared again in cheese-factory.js outside the gates block', () => {
@@ -382,7 +391,7 @@ test('no top-level gates.js name is declared again in cheese-factory.js outside 
   assert.deepEqual(dupes, [])
 })
 
-// Command gate bypasses closed by the t3-easy-cheese cure (group G1).
+// These bypasses of the command gate stay closed. The allowlist flags each one.
 const DQ = '"'
 const gateBypassesFlagged = [
   `git push --force origin main #'`, `shred -u secret #'`, 'cat <(git push origin main)', 'f()(git reset --hard);f', `busybox sh -c 'git push'`, 'flock /tmp/l git push',
@@ -394,6 +403,18 @@ const gateBypassesFlagged = [
   'ionice -t mkdir build', 'echo d | xargs --eof mkdir',
   'git remote set-url origin x', 'git merge-file a b c', 'git update-index --skip-worktree f', 'git symbolic-ref HEAD refs/heads/x', 'git hash-object -w f', 'git reflog expire --all', 'git lfs pull',
   'go install x@latest', 'brew install foo', 'Git push origin main', 'Sudo rm x',
+  // brace and glob forms, quoted heads
+  'ls {a,b}', 'ls {1..3}', 'cat {a,b}.js', 'git st*', 'gh pr v* 1', 'l* -l', `'gh' pr merge 1`, `g${DQ}h${DQ} pr merge 1`, `${DQ}tee${DQ} f`, `t'ee' f`, 'echo x | tee f',
+  // gh forms
+  'gh pr -R o/r merge 1', 'gh --repo o/r api repos/o/r -X PATCH -f description=x', 'gh api repos/o/r --method=DELETE', 'gh api repos/o/r -XPOST', 'gh api repos/o/r --input f',
+  // wrappers
+  'echo push | xargs git', `env -S '${DQ}chmod${DQ} 777 file'`, 'parallel rm ::: x', 'taskset 1 touch x', 'chrt 1 touch x', 'uv run touch x', 'strace touch x', 'unbuffer touch x', 'caffeinate touch x', 'NICE -n 5 touch x', 'ENV touch x',
+  // sed programs that write or run
+  `sed -n '1w out' f`, `sed 's/a/b/;w out' f`, `sed -e 'e id' f`, `sed 's/a/b/e' f`, `sed -n '/x/W out' f`, `sed --expression='1e id' f`,
+  // output files and other writers
+  'sort -o out f', 'sort f -o out', 'sort --output=out f', 'uniq in out', 'gzip f', 'tar xf a.tar', 'split f', 'yq -i . f', 'cargo fmt',
+  // git subcommands that write
+  'git repack', 'git credential approve', 'git unpack-file x', 'git rerere', 'git pack-refs', 'git merge-tree --write-tree a b', 'git instaweb', 'git cat-file --batch', 'xargs git status',
 ]
 for (const check of gateBypassesFlagged) {
   test(`gate bypass flagged: ${JSON.stringify(check)}`, () => {
@@ -406,6 +427,8 @@ const gateStillSafe = [
   'git branch --contains HEAD', 'git branch --merged main', 'git branch --no-merged main', 'git branch --list feat*',
   'env FOO=1 ls', 'env -i ls', 'sed s/a/b/g f', `sed -n '/warn/p' f`, 'gh pr view 1', 'gh --repo owner/repo pr view 1', 'xargs -n 1 echo', 'ionice -c 3 ls',
   `grep '#' f`, `echo 'a(b'`, 'ls && (ls)',
+  '[[ -d src ]]', `awk '$1 > 3' f`, 'sort f', 'sort -u f', 'uniq -c f', 'gh pr view 1', 'gh pr list', 'gh api repos/o/r', 'gh api repos/o/r -X GET', 'git cat-file -p HEAD', 'echo push | xargs echo',
+  'ls src/*.js', 'git log --oneline -3 -- src', `sed -n '1,5p' f`, 'ls > /dev/null',
 ]
 for (const check of gateStillSafe) {
   test(`gate still safe: ${JSON.stringify(check)}`, () => {
@@ -419,5 +442,14 @@ test('sync rejects nested shared blocks before any write', () => {
   const r = sync(p)
   assert.equal(r.status, 1)
   assert.ok(!r.stderr.includes('TypeError'), r.stderr)
+  assert.equal(readFileSync(p.factory, 'utf8'), text)
+})
+
+test('sync rejects a prelude block nested inside the gates block before any write', () => {
+  const text = ['// BEGIN shared gates', '// BEGIN shared prelude', '// END shared prelude', '// END shared gates', ''].join(NL)
+  const p = fixture({ factoryText: text })
+  const r = sync(p)
+  assert.equal(r.status, 1)
+  assert.ok(r.stderr.includes('nests'), r.stderr)
   assert.equal(readFileSync(p.factory, 'utf8'), text)
 })

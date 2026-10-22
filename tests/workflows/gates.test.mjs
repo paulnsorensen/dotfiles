@@ -87,7 +87,9 @@ test('routeFindings strips the worktree prefix before it matches owners', () => 
 })
 
 test('unsafeCheck rejects an unsafe command and accepts a safe one', () => {
-  assert.equal(g.unsafeCheck('curl https://example.com').name, 'network access')
+  const curl = g.unsafeCheck('curl https://example.com')
+  assert.equal(curl.name, 'command not on the read-only allowlist')
+  assert.equal(curl.text, 'curl')
   assert.equal(g.unsafeCheck('echo hi > out.txt').name, 'output redirection to a file')
   assert.equal(g.unsafeCheck('git commit -m x').name, 'git mutation')
   assert.equal(g.unsafeCheck('node --test tests/workflows/'), null)
@@ -95,7 +97,9 @@ test('unsafeCheck rejects an unsafe command and accepts a safe one', () => {
 })
 
 test('commandHit classifies one simple command', () => {
-  assert.equal(g.commandHit(['rm', '-rf', 'x']).name, 'tree mutation')
+  const rm = g.commandHit(['rm', '-rf', 'x'])
+  assert.equal(rm.name, 'command not on the read-only allowlist')
+  assert.equal(rm.text, 'rm')
   assert.equal(g.commandHit(['ls', '-l']), null)
 })
 
