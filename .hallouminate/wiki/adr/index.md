@@ -10,4 +10,5 @@
 - [machine-aware-vault-selection-002](./machine-aware-vault-selection-002.md) — ADR-002 — Tag vault cache provenance and invalidate source changes
 - [manifest-pinned-packages](./manifest-pinned-packages.md) — ADRs — manifest-pinned packages (supply-chain redesign)
 - [subagent-routing-overhaul](./subagent-routing-overhaul.md) — ADRs — subagent-routing-overhaul
+- [t3-easy-cheese](./t3-easy-cheese.md) — ADRs — t3-easy-cheese
 <!-- HALLOUMINATE:INDEX-END -->
