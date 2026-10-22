@@ -9,10 +9,10 @@ import subprocess
 from typing import Any
 from unittest import mock
 
-import hc_freeze
-
 from .support import call, cli, hc_db
 from .test_freeze import QUERY, FreezeCase, needs_duckdb
+
+hc_freeze = cli.hc_freeze
 
 
 class ContractTests(FreezeCase):

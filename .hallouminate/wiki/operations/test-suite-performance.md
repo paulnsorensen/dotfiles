@@ -110,6 +110,22 @@ The general lesson: a per-test `setup()` that builds a tool environment is a cac
 
 [^15]: CI measurements, 2026-09-12: baseline runs 34673627407, 34663469445, 34663461747, 34651972813, 34627641215, 34626470685, 34626441391, 34626407468; post-change runs 34675258516 (shards only), 34677837749 (git-hooks fixed), 34678074937 (weights refreshed). Per-file costs from each run's `bats-timings-N` JUnit artifacts.
 
+## One-test unittest wrappers set the Bats tail (2026-10-21)
+
+A Bats test that runs a whole Python unittest suite is one serial job. `bats --jobs` cannot split it. `harness-climb.bats` ran all 11 `tests/harness_climb` modules in one `unittest discover` call. Under suite load that one test took 479 s, and the whole Bats leg took 599 s. The leg could not end before that test.[^16]
+
+`harness-climb.bats` now registers one test per module with `bats_test_function` (bats-core 1.11+). The loop globs `test_*.py`, so a new module gets a test without an edit. The file fell to 54 s at 15 jobs. Per-module discovery loads the same 420 test IDs as the single run. A failing module fails its test, and a module that runs no tests also fails.
+
+Gotchas:
+
+- **Discover order hid import bugs.** Two modules passed only because an earlier module had imported something. `test_ledger` used `unittest.mock` without the import. `test_freeze_query` imported `hc_freeze` before `support` put the scripts directory on `sys.path`. Run each module alone before you split a suite.
+- **The run-tests.sh header count misses dynamic tests.** It counts `^@test` lines. The TAP plan line is correct.
+- **Interleave A/B runs on a shared host.** Sequential runs of `just check-all` ranged from 375 s to 745 s as other agents changed the load. An ABBA order gave a helper-comparable result: median 412 s before and 363 s after, 4 eligible runs each. The new revision was faster in all 6 adjacent pairs.
+
+Look for other single tests that wrap a whole suite before you tune `--jobs`. `check-affected.bats` runs the affected-selector unittest suite in one test (18.6 s in the same run).
+
+[^16]: Local benchmark, 2026-10-21, macOS 15-core host: `./tests/run-tests.sh --timings DIR` JUnit report; `bats --jobs 15 --timing tests/harness-climb.bats`; interleaved `nice -n 10 just check-all` on revisions fc03b007 and fd2ebdcb.
+
 ## Benchmarking protocol
 
 Use at least three warm runs and report the median. Bats supports `-T/--timing`; use JUnit output to aggregate testcase duration by `classname`, but validate suspected files alone because parallel resource contention inflates individual test durations. Compare the existing CPU-count job setting with one lower and one oversubscribed value before changing it.
