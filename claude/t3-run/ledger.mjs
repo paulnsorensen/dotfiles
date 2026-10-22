@@ -2,7 +2,7 @@
 import { execFileSync } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { parseFlags, print, usage } from './util.mjs'
+import { childDepth, parseFlags, print, usage } from './util.mjs'
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'blocked'])
 const SAFE_RUN_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
@@ -32,9 +32,10 @@ function load(run) {
   }
 }
 
-const LOCK_TRIES = 500
+const LOCK_STALE_MS = 3_000
 const LOCK_WAIT_MS = 10
-const LOCK_STALE_MS = 30_000
+// The wait outlasts the stale limit, so a waiting caller always recovers a crashed holder's lock.
+const LOCK_TRIES = Math.ceil((LOCK_STALE_MS * 2) / LOCK_WAIT_MS)
 
 const pidAlive = (pid) => {
   try {
@@ -45,11 +46,11 @@ const pidAlive = (pid) => {
   }
 }
 
-// A lock is stale when its owner pid is dead or it is older than 30 s. A lock with no readable body ages by mtime.
-function staleLockBody(lock) {
+// A file is stale when its owner pid is dead or it is older than the stale limit. A file with no readable body ages by mtime.
+function staleBody(file) {
   let body
   try {
-    body = readFileSync(lock, 'utf8')
+    body = readFileSync(file, 'utf8')
   } catch {
     return null
   }
@@ -57,35 +58,42 @@ function staleLockBody(lock) {
   try {
     info = JSON.parse(body)
   } catch {}
-  const created = Number.isFinite(info?.created) ? info.created : statSync(lock, { throwIfNoEntry: false })?.mtimeMs
+  const created = Number.isFinite(info?.created) ? info.created : statSync(file, { throwIfNoEntry: false })?.mtimeMs
   if (created === undefined) return null
   const dead = Number.isInteger(info?.pid) && !pidAlive(info.pid)
   return dead || Date.now() - created > LOCK_STALE_MS ? body : null
 }
 
-// Moves a stale lock aside so only one taker wins. A fresh lock moved by mistake goes back.
-function takeOverStale(lock) {
-  const body = staleLockBody(lock)
+// Removes a stale lock. An exclusive `.break` file admits one taker at a time. The taker re-checks that the lock body
+// is still the stale body it saw, and never removes a lock whose body changed. A stale `.break` file is cleared first.
+export function takeOverStale(lock, hooks = {}) {
+  const brk = `${lock}.break`
+  const body = staleBody(lock)
   if (body === null) return
-  const aside = `${lock}.stale.${process.pid}`
   try {
-    renameSync(lock, aside)
-  } catch {
+    closeSync(openSync(brk, 'wx'))
+  } catch (error) {
+    if (error.code === 'EEXIST' && staleBody(brk) !== null) rmSync(brk, { force: true })
     return
   }
-  if (readFileSync(aside, 'utf8') !== body && !existsSync(lock)) renameSync(aside, lock)
-  else rmSync(aside, { force: true })
+  try {
+    hooks.afterBreak?.()
+    if (staleBody(lock) === body) rmSync(lock, { force: true })
+  } finally {
+    rmSync(brk, { force: true })
+  }
 }
 
 // Holds an exclusive lock file around one read-modify-write.
 function withLock(run, fn) {
   const lock = `${ledgerPath(run)}.lock`
   mkdirSync(dirname(lock), { recursive: true })
+  const mine = JSON.stringify({ pid: process.pid, created: Date.now(), nonce: Math.random() })
   let acquired = false
   for (let i = 0; i < LOCK_TRIES && !acquired; i++) {
     try {
       const fd = openSync(lock, 'wx')
-      writeSync(fd, JSON.stringify({ pid: process.pid, created: Date.now() }))
+      writeSync(fd, mine)
       closeSync(fd)
       acquired = true
     } catch (error) {
@@ -98,7 +106,9 @@ function withLock(run, fn) {
   try {
     return fn()
   } finally {
-    rmSync(lock, { force: true })
+    try {
+      if (readFileSync(lock, 'utf8') === mine) rmSync(lock, { force: true })
+    } catch {}
   }
 }
 
@@ -154,8 +164,9 @@ export function runLedger([sub, run, ...rest]) {
       })
     }
     case 'reserve': {
-      const { flags } = parseFlags(rest, ['phase', 'role'])
+      const { flags } = parseFlags(rest, ['phase', 'role', 'depth'])
       required(flags, ['phase', 'role'])
+      childDepth(flags.depth)
       for (const name of ['phase', 'role']) if (flags[name].includes('/')) throw usage(`--${name} must not contain '/'`)
       const prefix = `${run}/${flags.phase}/${flags.role}/`
       return withLock(run, () => {

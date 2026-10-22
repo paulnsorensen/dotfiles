@@ -1,6 +1,8 @@
 [
   {"agentType": "judge", "mode": "advise", "role": "advisor"},
-  {"agentType": "judge", "role": "verifier"},
+  {"agentType": "judge", "tier": "opus", "role": "advisor"},
+  {"agentType": "judge", "mode": "verify", "role": "gate-runner"},
+  {"agentType": "judge", "role": "gate-runner"},
   {"agentType": "explorer", "tier": "opus", "role": "planner"},
   {"agentType": "explorer", "role": "explorer"},
   {"agentType": "Plan", "role": "planner"},
@@ -14,5 +16,8 @@
   {"agentType": "whey-drainer", "role": "gate-runner"},
   {"agentType": "worktree-content-digest", "role": "worktree-digest"},
   {"agentType": "verifier", "role": "verifier"},
-  {"agentType": "planner", "role": "planner"}
+  {"agentType": "planner", "role": "planner"},
+  {"agentType": "general-purpose", "role": "explorer"},
+  {"agentType": "generalist", "role": "explorer"},
+  {"agentType": "general", "role": "explorer"}
 ]

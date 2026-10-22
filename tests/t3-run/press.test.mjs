@@ -185,7 +185,7 @@ test('ledger outside any git repo falls back to the cwd', () => {
 
 test('every role in role-map.json round-trips through role', () => {
   for (const [name, def] of Object.entries(roleMap)) {
-    const r = run(repo, 'role', name)
+    const r = run(repo, 'role', name, '--depth', '1')
     assert.equal(r.status, 0, `${name}: ${r.stderr}`)
     assert.deepEqual(JSON.parse(r.stdout), {
       role: name,
@@ -199,7 +199,7 @@ test('every role in role-map.json round-trips through role', () => {
 
 test('role rejects unknown, prototype-key, and wrong-arity input with exit 2', () => {
   for (const args of [['nope'], ['__proto__'], ['constructor'], ['toString'], [], ['coder', 'extra']]) {
-    const r = run(repo, 'role', ...args)
+    const r = run(repo, 'role', ...args, '--depth', '1')
     assert.equal(r.status, 2, JSON.stringify(args))
     noStack(r)
   }
@@ -207,9 +207,9 @@ test('role rejects unknown, prototype-key, and wrong-arity input with exit 2', (
 
 test('role output options are fresh per call and do not mutate the role map file', () => {
   const before = readFileSync(join(repo, 'skills/t3-core/role-map.json'), 'utf8')
-  const a = JSON.parse(run(repo, 'role', 'coder').stdout)
+  const a = JSON.parse(run(repo, 'role', 'coder', '--depth', '1').stdout)
   a.options.poison = true
-  assert.equal(JSON.parse(run(repo, 'role', 'coder').stdout).options.poison, undefined)
+  assert.equal(JSON.parse(run(repo, 'role', 'coder', '--depth', '1').stdout).options.poison, undefined)
   assert.equal(readFileSync(join(repo, 'skills/t3-core/role-map.json'), 'utf8'), before)
 })
 
@@ -308,7 +308,7 @@ test('bin/t3-run works through a symlink in another directory', () => {
   const dir = tmp('t3-link-')
   const link = join(dir, 'tr')
   symlinkSync(shim, link)
-  const r = spawnSync(link, ['role', 'coder'], { cwd: dir, encoding: 'utf8' })
+  const r = spawnSync(link, ['role', 'coder', '--depth', '1'], { cwd: dir, encoding: 'utf8' })
   assert.equal(r.status, 0, r.stderr)
   assert.equal(JSON.parse(r.stdout).isolation, 'worktree')
   const nested = join(dir, 'x')

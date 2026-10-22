@@ -35,3 +35,15 @@ export function parseFlags(args, allowed) {
   }
   return { positional, flags }
 }
+
+export const MAX_CHILD_DEPTH = 2
+
+// Validates --depth, the depth of the child that the caller launches (1..2).
+export function childDepth(value) {
+  if (value === undefined) throw usage('missing --depth (the depth of the child to launch: 1 or 2)')
+  if (!/^[0-9]+$/.test(value)) throw usage(`--depth must be an integer from 1 to ${MAX_CHILD_DEPTH}, got '${value}'`)
+  const depth = Number(value)
+  if (depth > MAX_CHILD_DEPTH) throw Object.assign(new Error(`child depth ${depth} exceeds the cap of ${MAX_CHILD_DEPTH}`), { exitCode: 1 })
+  if (depth < 1) throw usage(`--depth must be an integer from 1 to ${MAX_CHILD_DEPTH}, got '${value}'`)
+  return depth
+}

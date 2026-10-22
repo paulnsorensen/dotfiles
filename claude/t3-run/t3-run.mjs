@@ -6,11 +6,11 @@ import { runRole } from './role.mjs'
 import { runValidate } from './validate.mjs'
 
 const USAGE = `Usage: t3-run <command> [args]
-  role <role> [--depth <n>]
-  role --agent-type <type> [--tier <tier>] [--mode <mode>] [--depth <n>]
+  role <role> --depth <n>
+  role --agent-type <type> [--tier <tier>] [--mode <mode>] --depth <n>
   ledger init <run> [--skill <name>]
   ledger record <run> --phase <p> --role <r> --client-request-id <id> --task-id <id> [--depth <n>]
-  ledger reserve <run> --phase <p> --role <r>
+  ledger reserve <run> --phase <p> --role <r> --depth <n>
   ledger complete <run> --task-id <id> --status <s> [--head-sha <sha>] [--result-file <f>]
   ledger status <run>
   ledger barrier <run> <phase>
