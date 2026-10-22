@@ -943,20 +943,26 @@ class Broker:
         except BaseException:
             signal.pthread_sigmask(signal.SIG_SETMASK, mask)
             raise
-        # Raise from the handler: Event.set() takes a non-reentrant lock that
-        # the main thread can hold inside _stop.wait(), which deadlocks.
-        signal.signal(signal.SIGTERM, _raise_terminated)
+        # The handler only sets a flag. Raising from it is unsafe: the signal
+        # can land inside a lock wait (Thread.start() or Event.wait()), where
+        # the raise skips the lock re-acquire. The release that follows then
+        # fails with RuntimeError, and the broker exits 1 instead of 143.
         terminated = False
+
+        def _on_sigterm(_signum: int, _frame: object) -> None:
+            nonlocal terminated
+            terminated = True
+
+        signal.signal(signal.SIGTERM, _on_sigterm)
         try:
             signal.pthread_sigmask(signal.SIG_SETMASK, mask)
             self._serve()
-            while not self._stop.wait(1):
+            while not terminated and not self._stop.is_set():
+                time.sleep(0.05)
                 if os.getppid() != parent:
                     break
         except KeyboardInterrupt:
             return 0
-        except _Terminated:
-            terminated = True
         finally:
             self.close()
         if terminated:
@@ -965,14 +971,6 @@ class Broker:
             signal.signal(signal.SIGTERM, signal.SIG_DFL)
             os.kill(os.getpid(), signal.SIGTERM)
         return 0
-
-
-class _Terminated(Exception):
-    """SIGTERM arrived; unwind to Broker.run so close() runs."""
-
-
-def _raise_terminated(_signum: int, _frame: object) -> NoReturn:
-    raise _Terminated
 
 
 def _proxy_socket(args: argparse.Namespace) -> pathlib.Path:
