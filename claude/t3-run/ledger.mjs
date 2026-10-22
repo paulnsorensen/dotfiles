@@ -1,6 +1,6 @@
 // ledger <sub> <run> ...: the run ledger at .cheese/t3/<run>.json under the git top-level of the cwd.
 import { execFileSync } from 'node:child_process'
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { parseFlags, print, usage } from './util.mjs'
 
@@ -34,6 +34,48 @@ function load(run) {
 
 const LOCK_TRIES = 500
 const LOCK_WAIT_MS = 10
+const LOCK_STALE_MS = 30_000
+
+const pidAlive = (pid) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return error.code === 'EPERM'
+  }
+}
+
+// A lock is stale when its owner pid is dead or it is older than 30 s. A lock with no readable body ages by mtime.
+function staleLockBody(lock) {
+  let body
+  try {
+    body = readFileSync(lock, 'utf8')
+  } catch {
+    return null
+  }
+  let info = null
+  try {
+    info = JSON.parse(body)
+  } catch {}
+  const created = Number.isFinite(info?.created) ? info.created : statSync(lock, { throwIfNoEntry: false })?.mtimeMs
+  if (created === undefined) return null
+  const dead = Number.isInteger(info?.pid) && !pidAlive(info.pid)
+  return dead || Date.now() - created > LOCK_STALE_MS ? body : null
+}
+
+// Moves a stale lock aside so only one taker wins. A fresh lock moved by mistake goes back.
+function takeOverStale(lock) {
+  const body = staleLockBody(lock)
+  if (body === null) return
+  const aside = `${lock}.stale.${process.pid}`
+  try {
+    renameSync(lock, aside)
+  } catch {
+    return
+  }
+  if (readFileSync(aside, 'utf8') !== body && !existsSync(lock)) renameSync(aside, lock)
+  else rmSync(aside, { force: true })
+}
 
 // Holds an exclusive lock file around one read-modify-write.
 function withLock(run, fn) {
@@ -42,10 +84,13 @@ function withLock(run, fn) {
   let acquired = false
   for (let i = 0; i < LOCK_TRIES && !acquired; i++) {
     try {
-      closeSync(openSync(lock, 'wx'))
+      const fd = openSync(lock, 'wx')
+      writeSync(fd, JSON.stringify({ pid: process.pid, created: Date.now() }))
+      closeSync(fd)
       acquired = true
     } catch (error) {
       if (error.code !== 'EEXIST') throw error
+      takeOverStale(lock)
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, LOCK_WAIT_MS)
     }
   }
@@ -91,6 +136,10 @@ export function runLedger([sub, run, ...rest]) {
           if (prior.taskId === flags['task-id']) return 0
           throw Object.assign(new Error(`client request id '${prior.clientRequestId}' already maps to task '${prior.taskId}', not '${flags['task-id']}'`), { exitCode: 1 })
         }
+        const sameTask = ledger.children.find((c) => c.taskId === flags['task-id'])
+        if (sameTask) {
+          throw Object.assign(new Error(`task id '${sameTask.taskId}' already recorded under client request id '${sameTask.clientRequestId}', not '${flags['client-request-id']}'`), { exitCode: 1 })
+        }
         ledger.children.push({
           clientRequestId: flags['client-request-id'],
           taskId: flags['task-id'],
@@ -101,6 +150,26 @@ export function runLedger([sub, run, ...rest]) {
           recordedAt: new Date().toISOString(),
         })
         save(run, ledger)
+        return 0
+      })
+    }
+    case 'reserve': {
+      const { flags } = parseFlags(rest, ['phase', 'role'])
+      required(flags, ['phase', 'role'])
+      for (const name of ['phase', 'role']) if (flags[name].includes('/')) throw usage(`--${name} must not contain '/'`)
+      const prefix = `${run}/${flags.phase}/${flags.role}/`
+      return withLock(run, () => {
+        const ledger = load(run)
+        const reserved = Array.isArray(ledger.reserved) ? ledger.reserved : []
+        const used = [...ledger.children.map((c) => c.clientRequestId), ...reserved]
+        const highest = used.reduce((max, id) => {
+          const tail = typeof id === 'string' && id.startsWith(prefix) ? id.slice(prefix.length) : ''
+          return /^[0-9]+$/.test(tail) ? Math.max(max, Number(tail)) : max
+        }, 0)
+        const id = `${prefix}${highest + 1}`
+        ledger.reserved = [...reserved, id]
+        save(run, ledger)
+        process.stdout.write(`${id}\n`)
         return 0
       })
     }
@@ -136,6 +205,6 @@ export function runLedger([sub, run, ...rest]) {
       return 1
     }
     default:
-      throw usage('ledger needs a subcommand: init, record, complete, status, barrier')
+      throw usage('ledger needs a subcommand: init, record, reserve, complete, status, barrier')
   }
 }

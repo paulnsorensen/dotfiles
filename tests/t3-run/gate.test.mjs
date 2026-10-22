@@ -73,7 +73,22 @@ test('ranges keeps valid ranges and reports the dropped ones', () => {
   const out = JSON.parse(r.stdout)
   assert.deepEqual(out.kept, j(g.groundedRanges(ranges)))
   assert.deepEqual(out.kept, ['a/b.js#1-5', 'd.js#4-4'])
-  assert.deepEqual(out.dropped, ['../x#1-2', 'c.js#9-3'])
+  assert.deepEqual(out.dropped, [
+    { range: '../x#1-2', reason: 'invalid' },
+    { range: 'c.js#9-3', reason: 'invalid' },
+  ])
+})
+
+test('ranges reports valid ranges past the cap of 16 as overflow', () => {
+  const valid = Array.from({ length: 20 }, (_, i) => `f${i}.js#1-2`)
+  const ranges = [...valid.slice(0, 10), '../x#1-2', ...valid.slice(10)]
+  const out = JSON.parse(cli('ranges', file(ranges)).stdout)
+  assert.deepEqual(out.kept, valid.slice(0, 16))
+  assert.deepEqual(out.dropped, [
+    { range: '../x#1-2', reason: 'invalid' },
+    ...valid.slice(16).map((range) => ({ range, reason: 'overflow' })),
+  ])
+  assert.equal(out.kept.length + out.dropped.length, ranges.length)
 })
 
 test('sha accepts a full 40-hex SHA and rejects short or malformed values', () => {

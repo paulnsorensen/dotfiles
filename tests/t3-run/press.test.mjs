@@ -76,7 +76,7 @@ test('complete rejects a non-terminal status', () => {
   assert.equal(led(cwd, 'complete', 'r1', '--task-id', 't1', '--status', 'running').status, 2)
 })
 
-test('REAL BUG: two parallel complete calls both land (lost update in read-modify-write)', async () => {
+test('two parallel complete calls both land under the ledger lock', async () => {
   const cwd = tempRepo()
   led(cwd, 'init', 'r1')
   const ids = Array.from({ length: 8 }, (_, i) => `t${i}`)
@@ -129,13 +129,14 @@ test('record is idempotent on the same clientRequestId and task', () => {
   assert.equal(JSON.parse(readFileSync(ledgerFile(cwd, 'r1'), 'utf8')).children.length, 1)
 })
 
-test('REAL BUG: duplicate clientRequestId with a different taskId is silently dropped', () => {
+test('a duplicate clientRequestId with a different taskId exits 1 and stores nothing', () => {
   const cwd = tempRepo()
   led(cwd, 'init', 'r1')
   rec(cwd, 'r1', 'c1', 't1')
   const r = rec(cwd, 'r1', 'c1', 't2')
   const children = JSON.parse(readFileSync(ledgerFile(cwd, 'r1'), 'utf8')).children
-  assert.ok(r.status !== 0 || children.some((c) => c.taskId === 't2'), 'a conflicting record must fail or be stored, not exit 0 and vanish')
+  assert.equal(r.status, 1)
+  assert.deepEqual(children.map((c) => c.taskId), ['t1'])
 })
 
 test('record rejects bad depth', () => {
@@ -187,6 +188,7 @@ test('every role in role-map.json round-trips through role', () => {
     const r = run(repo, 'role', name)
     assert.equal(r.status, 0, `${name}: ${r.stderr}`)
     assert.deepEqual(JSON.parse(r.stdout), {
+      role: name,
       providerInstanceId: def.providerInstanceId,
       model: def.model,
       options: def.options,

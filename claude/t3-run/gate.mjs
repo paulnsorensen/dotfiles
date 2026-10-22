@@ -61,7 +61,14 @@ export function runGate([name, ...args]) {
       need(args, 1, 'ranges <ranges.json>')
       const ranges = readJson(args[0])
       if (!Array.isArray(ranges)) throw usage('ranges.json must hold an array')
-      print({ kept: plain(g.groundedRanges(ranges)), dropped: ranges.filter((r) => !g.validGroundedRange(r)) })
+      const kept = plain(g.groundedRanges(ranges))
+      let validSeen = 0
+      const dropped = []
+      for (const range of ranges) {
+        if (!g.validGroundedRange(range)) dropped.push({ range, reason: 'invalid' })
+        else if (++validSeen > kept.length) dropped.push({ range, reason: 'overflow' })
+      }
+      print({ kept, dropped })
       return 0
     }
     case 'sha': {

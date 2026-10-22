@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { after } from 'node:test'
@@ -38,13 +38,73 @@ test('parallel record calls all land', async () => {
   assert.equal(JSON.parse(readFileSync(file(cwd), 'utf8')).children.length, 12)
 })
 
-test('a held lock times out with exit 1 naming the lock file', () => {
+test('a live-pid fresh lock times out with exit 1 naming the lock file', () => {
   const cwd = tempRepo()
   cli(cwd, 'init', 'r')
-  writeFileSync(`${file(cwd)}.lock`, '')
+  writeFileSync(`${file(cwd)}.lock`, JSON.stringify({ pid: process.pid, created: Date.now() }))
   const r = rec(cwd, 'c1', 't1')
   assert.equal(r.status, 1)
   assert.match(r.stderr, /r\.json\.lock/)
+})
+
+test('a lock whose pid is dead is taken over', () => {
+  const cwd = tempRepo()
+  cli(cwd, 'init', 'r')
+  const dead = spawnSync(process.execPath, ['-e', '']).pid
+  writeFileSync(`${file(cwd)}.lock`, JSON.stringify({ pid: dead, created: Date.now() }))
+  assert.equal(rec(cwd, 'c1', 't1').status, 0)
+  assert.equal(JSON.parse(readFileSync(file(cwd), 'utf8')).children.length, 1)
+  assert.equal(existsSync(`${file(cwd)}.lock`), false)
+})
+
+test('a lock older than 30 s is taken over even when its pid is alive', () => {
+  const cwd = tempRepo()
+  cli(cwd, 'init', 'r')
+  writeFileSync(`${file(cwd)}.lock`, JSON.stringify({ pid: process.pid, created: Date.now() - 31_000 }))
+  assert.equal(rec(cwd, 'c1', 't1').status, 0)
+})
+
+test('record with a task id already recorded under another client request id exits 1 naming both', () => {
+  const cwd = tempRepo()
+  cli(cwd, 'init', 'r')
+  assert.equal(rec(cwd, 'c1', 't1').status, 0)
+  const r = rec(cwd, 'c2', 't1')
+  assert.equal(r.status, 1)
+  assert.match(r.stderr, /c1/)
+  assert.match(r.stderr, /c2/)
+  assert.equal(JSON.parse(readFileSync(file(cwd), 'utf8')).children.length, 1)
+})
+
+const reserve = (cwd, phase = 'p', role = 'coder') => cli(cwd, 'reserve', 'r', '--phase', phase, '--role', role)
+
+test('reserve prints the next id per phase and role without recording a child', () => {
+  const cwd = tempRepo()
+  cli(cwd, 'init', 'r')
+  assert.equal(reserve(cwd).stdout.trim(), 'r/p/coder/1')
+  assert.equal(reserve(cwd).stdout.trim(), 'r/p/coder/2')
+  assert.equal(reserve(cwd, 'p', 'reviewer').stdout.trim(), 'r/p/reviewer/1')
+  assert.equal(reserve(cwd, 'q').stdout.trim(), 'r/q/coder/1')
+  assert.equal(JSON.parse(readFileSync(file(cwd), 'utf8')).children.length, 0)
+  assert.equal(rec(cwd, 'r/p/coder/7', 't7').status, 0)
+  assert.equal(reserve(cwd).stdout.trim(), 'r/p/coder/8')
+  assert.equal(reserve(cwd, 'a/b').status, 2)
+})
+
+test('parallel reserve calls return distinct ids', async () => {
+  const cwd = tempRepo()
+  cli(cwd, 'init', 'r')
+  const outs = await Promise.all(
+    Array.from({ length: 10 }, () =>
+      new Promise((resolve) => {
+        let out = ''
+        const p = spawn(shim, ['ledger', 'reserve', 'r', '--phase', 'p', '--role', 'coder'], { cwd })
+        p.stdout.on('data', (d) => (out += d))
+        p.on('close', (code) => resolve({ code, id: out.trim() }))
+      }),
+    ),
+  )
+  assert.deepEqual(outs.map((o) => o.code), Array(10).fill(0))
+  assert.equal(new Set(outs.map((o) => o.id)).size, 10)
 })
 
 test('same client request id with a different task id is a conflict', () => {
