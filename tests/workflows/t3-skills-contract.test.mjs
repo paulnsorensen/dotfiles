@@ -24,6 +24,10 @@ const WRAPPERS = [
 const CORE_DIR = join(ROOT, 'skills/t3-core')
 const CORE_POINTER = '~/.claude/skills/t3-core/SKILL.md'
 const MODEL_ID_RE = /claude-[a-z0-9-]+|gpt-[0-9][a-z0-9.-]*/g
+const BARE_ALIAS_RE = /\b(?:sonnet|haiku)\b|\bgemini-[a-z0-9.-]+/gi
+const BOOT_LINE = 'Run the Boot in `~/.claude/skills/t3-core/SKILL.md`.'
+const BOOT_STOP = 'If the source is missing, stop with an error that names the path. Launch no child.'
+const SKILLS_ROOT = join(homedir(), '.claude/skills')
 const POINTER_RE = /~\/\.claude\/(?:skills\/[a-z0-9-]+\/SKILL\.md|workflows\/[a-z0-9-]+\.js)/g
 
 const read = (p) => readFileSync(p, 'utf8')
@@ -53,11 +57,12 @@ for (const name of WRAPPERS) {
     assert.ok(existsSync(wrapperPath(name)), `missing ${wrapperPath(name)}`)
   })
 
-  test(`${name}: names a pointer, a stop on missing, and the override block`, () => {
+  test(`${name}: names a source pointer, the Boot line, and agent-type role resolution`, () => {
     const text = read(wrapperPath(name))
     assert.ok(wrapperPointers(text).length >= 1, 'expected a ~/.claude/skills or workflows pointer')
-    assert.match(text, /missing[^\n]*stop|stop[^\n]*missing/i, 'expected a stop when the pointer is missing')
-    assert.ok(text.includes(CORE_POINTER), `expected ${CORE_POINTER}`)
+    assert.ok(text.includes(BOOT_LINE), `expected: ${BOOT_LINE}`)
+    assert.ok(text.includes('t3-run role --agent-type'), 'expected role resolution through --agent-type')
+    assert.doesNotMatch(text, /^## (?:Role table|Phase to role)/m, 'hand-written role table')
   })
 
   test(`${name}: frontmatter pins model: opus and effort: high`, () => {
@@ -71,9 +76,7 @@ for (const name of WRAPPERS) {
     const targets = wrapperPointers(read(wrapperPath(name))).map((p) => p.replace('~', homedir()))
     let checked = 0
     for (const target of targets) {
-      const root = target.includes('/workflows/')
-        ? join(homedir(), '.claude/workflows')
-        : dirname(target)
+      const root = target.includes('/workflows/') ? join(homedir(), '.claude/workflows') : SKILLS_ROOT
       if (!existsSync(root)) continue
       checked += 1
       assert.ok(existsSync(target), `pointer target missing: ${target}`)
@@ -81,11 +84,24 @@ for (const name of WRAPPERS) {
     if (checked === 0) t.skip('pointer targets not deployed on this machine')
   })
 
-  test(`${name}: model id check — wrapper names no model id`, () => {
-    const ids = read(wrapperPath(name)).match(MODEL_ID_RE) ?? []
-    assert.deepEqual(ids, [])
+  test(`${name}: model id check — wrapper body names no model id or bare alias`, () => {
+    const body = read(wrapperPath(name)).replace(/^---\n[\s\S]*?\n---/, '')
+    assert.deepEqual(body.match(MODEL_ID_RE) ?? [], [])
+    assert.deepEqual(body.match(BARE_ALIAS_RE) ?? [], [])
   })
 }
+
+test('t3-core: Boot stops on a missing source, names the path, and checks depth 0', () => {
+  const text = read(join(CORE_DIR, 'SKILL.md'))
+  assert.match(text, /^## Boot$/m)
+  assert.ok(text.includes(BOOT_STOP), `expected: ${BOOT_STOP}`)
+  assert.match(text, /depth 0 \(the prompt has no `T3-Depth` line\)/)
+  assert.match(text, /depth 1 or more, skip it/)
+})
+
+test('t3-core: Boot stop check rejects word presence without the exact sentence', () => {
+  assert.ok(!'The source is missing. We stop later.'.includes(BOOT_STOP))
+})
 
 test('model id: t3-core docs name only role-map ids', () => {
   for (const f of ['SKILL.md', 'references/result-rules.md']) {

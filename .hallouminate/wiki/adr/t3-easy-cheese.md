@@ -37,5 +37,6 @@ The parent is the T3 thread on `claude-opus-5-5`. Opus also does primary review,
 
 - `delegate_task` with `isolation: worktree` starts from the parent HEAD and names its own branch (`t3/<slug>`). Uncommitted parent edits do not copy.
 - A Codex child routes file reads through tilth, not Bash.
+- `t3-run` reads `role-map.json`, `agent-type-rules.json`, and `gates.js` from the live clone. Wrappers read deployed copies. Run `dots sync` after edits.
 
 _Source: Mold session 2026-10-22, probes S-1..S-9 · Updated: 2026-10-22_

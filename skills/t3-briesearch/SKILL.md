@@ -11,23 +11,12 @@ effort: high
 
 Run `/briesearch` in a T3 thread. Children run through T3 `delegate_task`.
 
-1. Read `~/.claude/skills/briesearch/SKILL.md` in full and follow it.
-2. If that file is missing, stop with an error that names the path. Launch no child.
-3. Read `~/.claude/skills/t3-core/SKILL.md`, `references/dispatch-protocol.md`, and `references/result-rules.md` in that directory before the first dispatch.
-4. Run the parent check in the dispatch protocol first.
-5. Apply the T3 override block in `~/.claude/skills/t3-core/SKILL.md`.
+Source: `~/.claude/skills/briesearch/SKILL.md`.
 
-Get each target from `t3-run role <role>` (`bin/t3-run role`). Never write a model id.
+Run the Boot in `~/.claude/skills/t3-core/SKILL.md`.
 
-## Role table
+Resolve each dispatch the source makes with `t3-run role --agent-type <type> [--tier <tier>] [--mode <mode>] --depth <n>`. For prose skills that name a preferred type in their `## Agent resolution` table, pass that type.
 
-| Briesearch dispatch | Role |
-| --- | --- |
-| Fetch and synthesize one heavy source | `researcher` |
-| Judge advice | `advisor` |
+## Overrides
 
-The `researcher` role uses shared isolation. The parent writes the cited report.
-
-## Nested phases
-
-When Briesearch chains to a phase that dispatches, use the matching `t3-*` wrapper.
+The parent writes the cited report. When Briesearch chains to a phase that dispatches, use the matching `t3-*` wrapper.

@@ -11,40 +11,21 @@ effort: high
 
 This wrapper runs the move-my-cheese landing workflow as a T3 parent thread. The workflow source stays the reference.
 
-## Source
+Source: `~/.claude/workflows/move-my-cheese.js` (deployed copy of `claude/workflows/move-my-cheese.js`). Follow its phase order, prompts, and stop rules. The design rationale is in `.hallouminate/wiki/architecture/move-my-cheese-workflow.md`.
 
-Read `~/.claude/workflows/move-my-cheese.js` in full (deployed copy of `claude/workflows/move-my-cheese.js`). Follow its phase order, prompts, and stop rules.
+Run the Boot in `~/.claude/skills/t3-core/SKILL.md`.
 
-If the file is missing, stop with an error that names the path. Launch no child.
-
-The design rationale is in `.hallouminate/wiki/architecture/move-my-cheese-workflow.md`.
+Resolve each dispatch the source makes with `t3-run role --agent-type <type> [--tier <tier>] [--mode <mode>] --depth <n>`. For prose skills that name a preferred type in their `## Agent resolution` table, pass that type.
 
 ## Overrides
 
-Read `~/.claude/skills/t3-core/SKILL.md`, `references/dispatch-protocol.md`, and `references/result-rules.md` in that directory before the first dispatch.
-
-1. Run the parent check in the dispatch protocol first.
-2. Apply the T3 override block in `~/.claude/skills/t3-core/SKILL.md`.
-3. Get each target from `t3-run role <role>`. Never write a model id.
-
-## Phase to role
-
-| Phase | Role |
-|---|---|
-| Planners | `planner` |
-| Advisor | `advisor` |
-| Builders, integrate, restack | `coder` |
-| Verify judge | `verifier` |
-| Age, re-age | `t3-age` wrapper |
-| Cure | `t3-cure` wrapper |
-| Affinage | `t3-affinage` wrapper |
-| Formatter repair | `formatter` |
-| Recon, status | `recon`, `runner` |
-| Merge, stamp | `runner` |
+- **Integrate and restack.** The parent runs git by SHA itself. Dispatch no child for these steps.
+- **Chained phases.** Use `t3-age` for Age and re-age, `t3-cure` for Cure, and `t3-affinage` for Affinage.
+- **Exception list.** A dispatch with no agent type uses these roles: formatter repair uses `formatter`; recon uses `recon`; status, merge, and stamp use `runner`.
 
 ## Gates
 
-Use the cheese-factory gates through `bin/t3-run gate <name>`. Do not use the copy of UNSAFE_CHECKS in the workflow source.
+Use the cheese-factory gates through `t3-run gate <name>`. Do not use the copy of UNSAFE_CHECKS in the workflow source.
 
 - `merge-curds` for a coupled-curd merge.
 - `check-safe` for each check command that you extract.
@@ -53,7 +34,3 @@ Use the cheese-factory gates through `bin/t3-run gate <name>`. Do not use the co
 - `sha` for every writer head.
 
 Integrate each builder child by branch and full head SHA through `t3-run gate sha`.
-
-## Nesting
-
-A nested phase uses the matching `t3-*` wrapper. Follow `~/.claude/skills/t3-core/references/dispatch-protocol.md` § Nesting for depth.
