@@ -19,27 +19,25 @@ The design rationale is in `.hallouminate/wiki/adr/cheese-factory-workflow.md`.
 
 ## Overrides
 
-Apply the T3 override block in `~/.claude/skills/t3-core/SKILL.md`:
+Read `~/.claude/skills/t3-core/SKILL.md`, `references/dispatch-protocol.md`, and `references/result-rules.md` in that directory before the first dispatch.
 
-- Run the parent check first.
-- In each phase, launch async, record each child in the ledger, and wait at the barrier.
-- Start each child prompt with `T3-Depth: <n>`.
-- Take each role target only from `t3-run role <role>`.
-
-Read `~/.claude/skills/t3-core/references/result-rules.md` before you accept a child result.
+1. Run the parent check in the dispatch protocol first.
+2. Apply the T3 override block in `~/.claude/skills/t3-core/SKILL.md`.
+3. Get each target from `t3-run role <role>`. Never write a model id.
 
 ## Phase to role
 
 | Phase | Role |
 |---|---|
 | Resolve, Ground | `explorer` |
-| Criteria, plan advise, done advise | `advisor` |
+| Plan advise, done advise | `advisor` |
+| Criteria | `planner` |
 | Decompose | `planner` |
 | Cook, continuation | `coder`, `continuation` |
 | Press | `press` |
 | Cure | `cure` |
 | Taste | `taste-test` |
-| Integrate, merge | `runner` |
+| Integrate, merge | `coder` (worktree; integrate by head SHA) |
 | Barrier age | `t3-age` wrapper (reviewer lens groups and `second-reviewer`) |
 | Verify judges | `verifier` |
 | Plate | parent, with `/plate` |
@@ -58,4 +56,4 @@ Integrate each writer child by branch and full head SHA through `t3-run gate sha
 
 ## Nesting
 
-A nested phase uses the matching `t3-*` wrapper. Depth caps at 2. A depth 2 child runs inline.
+A nested phase uses the matching `t3-*` wrapper. Follow `~/.claude/skills/t3-core/references/dispatch-protocol.md` § Nesting for depth.
