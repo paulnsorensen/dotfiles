@@ -19,8 +19,10 @@ max_tokens = 600
 # 750: room for a 16-token harness-climb candidate that overrides built-in prompts
 # suggesting cat, grep, or sed; 14-day session analytics showed reroute blocks in
 # 194 of 208 Claude sessions (2026-10-16).
+# 850: eatmydata rules for throwaway tests, gates, and builds; crabbot NVMe flush
+# pressure from parallel test fsyncs (2026-10-24).
 path = "agents/AGENTS.md"
-max_tokens = 750
+max_tokens = 850
 
 [[source]]
 # 520: PR #1051 added section-read and coder re-dispatch rules (2026-09-24).
@@ -117,15 +119,16 @@ max_tokens = 5000
 # 1120: preamble tilth_write and no-redirect rules (2026-10-01).
 # 1310: global AGENTS.md acceptance-check lifecycle rules (2026-10-14).
 # 1320: the agents/AGENTS.md raise to 750 (2026-10-16).
+# 1420: the agents/AGENTS.md raise to 850 (2026-10-24).
 [[stack]]
 name = "global_codex"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1320
+max_tokens = 1420
 
 [[stack]]
 name = "global_claude"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1320
+max_tokens = 1420
 
 [[stack]]
 name = "repo_codex"
@@ -148,10 +151,11 @@ sources = ["chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md"]
 max_tokens = 500
 
 # 900: global AGENTS.md acceptance-check lifecycle rules (2026-10-14).
+# 960: global AGENTS.md eatmydata rules (2026-10-24).
 [[stack]]
 name = "pi"
 sources = ["agents/AGENTS.md", "chezmoi/dot_pi/private_agent/APPEND_SYSTEM.md"]
-max_tokens = 900
+max_tokens = 960
 
 [[stack]]
 name = "copilot_coding_max"
