@@ -12,11 +12,11 @@ setup() {
 
 teardown() { teardown_test_env; }
 
-@test "duckdb-memory: SQL uses the default 8GB limit" {
+@test "duckdb-memory: SQL uses the default 4GB limit" {
     package_fixture_ingest >/dev/null
     run "$QUERY_SH" sql "SELECT current_setting('memory_limit') AS m"
     assert_success
-    assert_output_contains "7.4 GiB"
+    assert_output_contains "3.7 GiB"
 }
 
 @test "duckdb-memory: SQL honors SESSIONS_DUCKDB_MEMORY_LIMIT" {
@@ -40,5 +40,5 @@ SHIM
     chmod +x "$bindir/duckdb"
     PATH="$bindir:$PATH" run package_fixture_ingest
     assert_success
-    [[ "$(< "$log")" == *"SET memory_limit='8GB'"* ]]
+    [[ "$(< "$log")" == *"SET memory_limit='4GB'"* ]]
 }

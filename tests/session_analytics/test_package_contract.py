@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import cast, final, override
 
 # -q keeps uv install progress out of stderr; the sandbox starts with a cold uv cache.
-CLI = ["uvx", "-q", "agent-session-analytics@latest"]
+CLI = ["uvx", "-q", "agent-session-analytics==0.2.0"]
 
 
 @final
@@ -76,7 +76,7 @@ class PackageContract(unittest.TestCase):
             list[dict[str, object]],
             json.loads(self.call("sql", "SELECT version FROM schema_info").stdout),
         )
-        self.assertEqual(rows, [{"version": 1}])
+        self.assertEqual(rows, [{"version": 3}])
         rows = cast(
             list[dict[str, object]],
             json.loads(

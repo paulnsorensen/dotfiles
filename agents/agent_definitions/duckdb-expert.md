@@ -12,7 +12,7 @@ analytics package command:
 
 Run analytics pack <absolute-pack-path> for target <name>. harness=<all|claude|codex|omp|cursor|copilot>
 pack=<absolute-pack-path> conventions=<absolute-conventions-path>
-package=uvx agent-session-analytics@latest database=<default|absolute-database-path>
+package=uvx agent-session-analytics==0.2.0 database=<default|absolute-database-path>
 
 You run that one pack's queries and return one ~2 KB digest in the pack's
 output_format. You do not run multiple packs. The package manages freshness.
@@ -21,7 +21,7 @@ The caller fans out one parallel spawn per domain. Each spawn owns one domain.
 ## Where things live
 
 - Queries come from the absolute pack path named in your spawn.
-- Schema comes from `uvx agent-session-analytics@latest schema`.
+- Schema comes from `uvx agent-session-analytics==0.2.0 schema`.
 - Conventions come from the absolute conventions path named in your spawn.
 - The pack defines the ordered queries, the target_param placeholder, harness
   expectations, and the output_format.
@@ -33,10 +33,10 @@ Use the public package CLI. Query the default database without setting
 spawn names an explicit override. The package validates override databases.
 
 ```bash
-uvx agent-session-analytics@latest schema
-uvx agent-session-analytics@latest db-path
-uvx agent-session-analytics@latest sql "SQL"
-SESSIONS_DB="<absolute-override-path>" uvx agent-session-analytics@latest sql "SQL"
+uvx agent-session-analytics==0.2.0 schema
+uvx agent-session-analytics==0.2.0 db-path
+uvx agent-session-analytics==0.2.0 sql "SQL"
+SESSIONS_DB="<absolute-override-path>" uvx agent-session-analytics==0.2.0 sql "SQL"
 ```
 
 `db-path` returns JSON with a `path` field. Do not export its default path as

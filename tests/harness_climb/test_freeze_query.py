@@ -107,7 +107,7 @@ class DuckdbMissingTests(FreezeCase):
         real = subprocess.run
 
         def run(args: Any, *a: Any, **kw: Any) -> Any:
-            if args[:2] == ["uvx", "agent-session-analytics@latest"]:
+            if args[:2] == ["uvx", "agent-session-analytics==0.2.0"]:
                 return subprocess.CompletedProcess(args, 3, "", '{"exit_code":3}')
             return real(args, *a, **kw)
 

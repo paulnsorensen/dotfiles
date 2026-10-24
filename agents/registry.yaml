@@ -98,7 +98,7 @@ agents:
     autoCompactWindow: 150000
     body_path: agents/agent_definitions/roquefort-wrecker.md
   duckdb-expert:
-    description: Read-only analyst for one coding-agent session-analytics pack. Spawned with one absolute pack path, a target, a harness filter, a conventions path, and a default or explicit database choice. Reads the public package schema and runs SQL through uvx agent-session-analytics@latest; the package owns default freshness and validates explicit overrides. Returns one structured ~2 KB digest for tool-efficiency, prompt-analytics, or work-recovery.
+    description: Read-only analyst for one coding-agent session-analytics pack. Spawned with one absolute pack path, a target, a harness filter, a conventions path, and a default or explicit database choice. Reads the public package schema and runs SQL through uvx agent-session-analytics==0.2.0; the package owns default freshness and validates explicit overrides. Returns one structured ~2 KB digest for tool-efficiency, prompt-analytics, or work-recovery.
     models:
       claude: haiku
       codex: gpt-6-luna

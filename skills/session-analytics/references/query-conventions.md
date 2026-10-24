@@ -62,12 +62,12 @@ block on one empty result. A pack that returns all-empty should say
 Use the public package CLI for JSON row dictionaries:
 
 ```bash
-uvx agent-session-analytics@latest sql "SQL"
+uvx agent-session-analytics==0.2.0 sql "SQL"
 ```
 
 The package manages freshness for its default database. Set `SESSIONS_DB` to
 an existing package-compatible database to query that database without refresh.
-Use `uvx agent-session-analytics@latest db-path` to resolve the active path.
+Use `uvx agent-session-analytics==0.2.0 db-path` to resolve the active path.
 
 ## Signal-quality honesty
 

@@ -1,7 +1,7 @@
 # Canonical Schema
 
 The published `agent-session-analytics` package owns this schema and ingestion.
-Run `uvx agent-session-analytics@latest schema` for its current table reference.
+Run `uvx agent-session-analytics==0.2.0 schema` for its current table reference.
 This local guide explains report-facing fields; it is not an engine definition.
 The package loads canonical rows into `${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/session-analytics/sessions.duckdb` by default.
 **Pack authors: write SQL against these tables; never reach into native log formats.**

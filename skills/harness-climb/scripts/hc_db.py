@@ -11,7 +11,7 @@ from typing import Any
 from hc_core import InputError
 from hc_stats import HARNESSES
 
-PACKAGE = ("uvx", "agent-session-analytics@latest")
+PACKAGE = ("uvx", "agent-session-analytics==0.2.0")
 IN_SCOPE = f"harness IN ({','.join(repr(h) for h in HARNESSES)})"
 PACKAGE_TIMEOUT_S = 600
 
