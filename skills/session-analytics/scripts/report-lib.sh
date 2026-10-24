@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Public package command and Markdown presentation for local reports.
 sessions_package() {
-    uvx agent-session-analytics@latest "$@"
+    uvx agent-session-analytics==0.2.0 "$@"
 }
 
 sessions_package_sql_markdown() {

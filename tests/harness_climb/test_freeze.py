@@ -37,7 +37,7 @@ class FreezeCase(RepoCase):
                 self.dir / "sessions.duckdb",
                 "CREATE TABLE sessions (harness VARCHAR, sessionId VARCHAR, project VARCHAR)",
                 "CREATE TABLE schema_info (version INTEGER)",
-                "INSERT INTO schema_info VALUES (1)",
+                "INSERT INTO schema_info VALUES (3)",
             )
             patch = mock.patch.dict(os.environ, {"SESSIONS_DB": str(db)})
             patch.start()

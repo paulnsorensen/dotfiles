@@ -152,7 +152,7 @@ class AnalyzeCommandTests(unittest.TestCase):
     def test_db_path_is_never_hardcoded_in_the_cli(self) -> None:
         source = (CLI_PATH.parent / "hc_db.py").read_text()
         self.assertNotIn("sessions.duckdb", source)
-        self.assertIn("agent-session-analytics@latest", source)
+        self.assertIn("agent-session-analytics==0.2.0", source)
         self.assertIn('"db-path"', source)
 
     def test_invalid_findings_exit_2_with_errors_and_no_db_read(self) -> None:
@@ -183,7 +183,7 @@ class AnalyzeCommandTests(unittest.TestCase):
         sql = """
         CREATE TABLE sessions(harness VARCHAR, sessionId VARCHAR, first_seen VARCHAR);
         CREATE TABLE schema_info(version INTEGER);
-        INSERT INTO schema_info VALUES (1);
+        INSERT INTO schema_info VALUES (3);
         CREATE TABLE tool_results(harness VARCHAR, sessionId VARCHAR, timestamp VARCHAR, is_error VARCHAR);
         INSERT INTO sessions SELECT h, h || i::VARCHAR, CAST(now() AS VARCHAR)
           FROM (VALUES ('claude'), ('codex'), ('pi')) AS v(h), range(2) AS r(i);

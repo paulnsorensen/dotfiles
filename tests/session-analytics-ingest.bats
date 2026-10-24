@@ -361,7 +361,7 @@ for call_id, (output, _) in cases.items():
     })
 fixture.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
 result = subprocess.run(
-    ["uvx", "agent-session-analytics@latest", "ingest", "--force"],
+    ["uvx", "agent-session-analytics==0.2.0", "ingest", "--force"],
     env={**os.environ, "PYTHONINTMAXSTRDIGITS": "4300"},
     capture_output=True, text=True,
 )

@@ -75,15 +75,17 @@ The Codex ingest writes each non-duplicate `token_count` event as a `raw_entries
 
 Token fields differ by harness. Claude `input_tokens` excludes cache reads and cache creation. Codex `input_tokens` includes cached tokens. Use `model_turns.context_tokens` for a cross-harness context measure.
 
-A Codex sub-agent rollout keeps its own session id. Its first `session_meta` names the parent in `source.subagent.thread_spawn.parent_thread_id`, which becomes `sessions.parent_session_id`. Claude sidechains share the parent `sessionId` instead. Filter or fold on `parent_session_id` when sessions must be independent samples. A database built before PR #1224 needs `uvx agent-session-analytics@latest ingest --force` to gain these columns.
+A Codex sub-agent rollout keeps its own session id. Its first `session_meta` names the parent in `source.subagent.thread_spawn.parent_thread_id`, which becomes `sessions.parent_session_id`. Claude sidechains share the parent `sessionId` instead. Filter or fold on `parent_session_id` when sessions must be independent samples. A database built before PR #1224 needs `uvx agent-session-analytics==0.2.0 ingest --force` to gain these columns.
 
 ## Published package owns the engine (2026-10-11)
 
-The package now owns discovery, ingestion, database placement, and the canonical schema. Dotfiles keeps report SQL and consumer tests, not a second engine. This removes drift between local adapters and the published CLI. Use `uvx agent-session-analytics@latest schema` for the current schema and `uvx agent-session-analytics@latest db-path` for the database path.[^package-ownership]
+The package now owns discovery, ingestion, database placement, and the canonical schema. Dotfiles keeps report SQL and consumer tests, not a second engine. This removes drift between local adapters and the published CLI. Use `uvx agent-session-analytics==0.2.0 schema` for the current schema and `uvx agent-session-analytics==0.2.0 db-path` for the database path.[^package-ownership]
 
 A package test that uses native OMP or Pi logs must set an isolated `HOME`. The package discovers those roots below `HOME`; Claude, Codex, and Cursor overrides alone do not isolate them. Keep `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `CURSOR_HOME` in the same fixture environment. This prevents a test from ingesting personal sessions.[^fixture-isolation]
 
-_Source: PR #1224 cure; `agent-session-analytics` 0.1.0 package and C4 consumer tests · Updated: 2026-10-11_
+Never call the package unpinned. The skillz skill bundles its own package build, and both versions share `~/.cache/dotfiles/session-analytics/sessions.duckdb`. A schema skew makes each version treat the other's database as stale and rebuild it, which takes about 75 s or runs out of memory. `@latest` also re-resolves against PyPI and rebuilds an ephemeral environment on every call. Use `uvx agent-session-analytics==0.2.0`; Renovate moves the pin.[^package-pin]
+
+_Source: PR #1224 cure; `agent-session-analytics` 0.1.0 package and C4 consumer tests; 0.2.0 pin · Updated: 2026-10-24_
 
 [^codeql-race]: <https://raw.githubusercontent.com/github/codeql/main/javascript/ql/src/Security/CWE-367/FileSystemRace.ql>; PR 878 alerts 110 and 111.
 
@@ -91,4 +93,5 @@ _Source: PR #1224 cure; `agent-session-analytics` 0.1.0 package and C4 consumer 
 [^log-safety]: PR 878 review reproductions; `agents/lib/jsonl-log.js`; `agents/lib/permission-log.js`; `tests/permission-log.bats`.
 
 [^package-ownership]: `skills/session-analytics/SKILL.md`; `tests/session-analytics-ingest.bats`; `agent-session-analytics` package README.
+[^package-pin]: skillz-that-grillz PR #511 (0.2.0, schema 3); `skills/session-analytics/scripts/report-lib.sh`; `skills/harness-climb/scripts/hc_db.py`; `renovate.json5`.
 [^fixture-isolation]: `tests/lib/session-analytics-package.bash`; package `tests/conftest.py`.

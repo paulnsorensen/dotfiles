@@ -67,6 +67,23 @@
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "can1357/oh-my-pi"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the agent-session-analytics pin in session-analytics code, tests, agents, and docs",
+      "managerFilePatterns": [
+        "/^\\.hallouminate\\/wiki\\/.+\\.md$/",
+        "/^agents\\/agent_definitions\\/duckdb-expert\\.md$/",
+        "/^agents\\/registry\\.yaml$/",
+        "/^chezmoi\\/dot_omp\\/private_agent\\/agents\\/duckdb-expert\\.md$/",
+        "/^skills\\/(harness-climb|session-analytics)\\/.+$/",
+        "/^tests\\/.+$/"
+      ],
+      "matchStrings": [
+        'agent-session-analytics==(?<currentValue>\\d+\\.\\d+\\.\\d+)'
+      ],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "agent-session-analytics"
     }
   ],
 
