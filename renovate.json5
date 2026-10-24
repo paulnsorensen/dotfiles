@@ -118,7 +118,8 @@
         "@sysid/pi-vim",
         "@upstash/context7-mcp",
         "tavily-mcp",
-        "tavily-cli"
+        "tavily-cli",
+        "agent-session-analytics"
       ],
       "minimumReleaseAge": "4 hours"
     },
