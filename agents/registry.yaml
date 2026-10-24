@@ -272,12 +272,12 @@ agents:
     autoCompactWindow: 150000
     body_path: agents/agent_definitions/judge.md
   runner:
-    # Narrow command runner for Workflow steps that only run gh or git. Cheap
-    # tier: the work is mechanical. Allowlist keeps the spawn context small;
-    # no edit or write tool is granted. Bash still mutates git state, which the
-    # prompt bounds to the commands the dispatch names.
+    # Narrow command runner for Workflow steps that only run gh, git, or wfx.
+    # Cheap tier: the work is mechanical. Allowlist keeps the spawn context
+    # small; no edit or write tool is granted. Bash still mutates git state,
+    # which the prompt bounds to the commands the dispatch names.
     description: >-
-      Command runner for Workflow scripts. Use it for workflow steps that only run gh or git commands, such as PR lookup, push, or worktree cleanup. Runs only the commands its prompt names and returns their results. May change git state but never edits file contents. Do NOT use for code changes (use `coder`) or checks that need judgment (use `judge`).
+      Command runner for Workflow scripts. Use it for workflow steps that only run gh, git, or wfx commands, such as PR lookup, push, worktree cleanup, or one `wfx` effects command whose JSON envelope the step returns. Runs only the commands its prompt names and returns their results. May change git state but never edits file contents. Do NOT use for code changes (use `coder`) or checks that need judgment (use `judge`).
     models:
       claude: sonnet
       codex: gpt-6-luna

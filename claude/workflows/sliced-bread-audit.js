@@ -26,6 +26,79 @@ export const meta = {
 // ~/.agents/reference/sliced-bread.md so evaluators work in any repo without
 // depending on that file being readable.
 
+// BEGIN module budget
+// module: budget; provides: DEFAULT_LIMITS, floorReached, floorReason; requires: none
+// The LIMITS values that every workflow shares. A workflow spreads these into its own LIMITS.
+const DEFAULT_LIMITS = { minBudget: 50000, agentCap: 1000 }
+
+// True when the budget is known and less than the floor remains. budget and LIMITS resolve at call time.
+const floorReached = (floor = LIMITS.minBudget) => Boolean(budget.total && budget.remaining() < floor)
+
+// The text that names the stage a budget floor stopped.
+const floorReason = (stage, floor = LIMITS.minBudget) => `budget floor reached before ${stage}: ${budget.remaining()} remaining, below ${floor}`
+// END module budget
+// BEGIN module fanout
+// module: fanout; provides: errorMessage, safeAgent, runBounded, chunk, dedupe, capList, withRedo; requires: none
+// The message of a thrown value, or its text when it has none.
+const errorMessage = (e) => (e && e.message ? e.message : String(e))
+
+// agent() resolves to null when the agent ends without a structured result. Treat null as a failure so a caller never dereferences a missing value. agent resolves at call time.
+const safeAgent = async (prompt, opts) => {
+  try {
+    const value = await agent(prompt, opts)
+    if (value === null || value === undefined) return { ok: false, error: `agent ${(opts && opts.label) || 'call'} returned no result` }
+    return { ok: true, value }
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) }
+  }
+}
+
+// Runs task(item, index) for each item with at most limit tasks at once. Results keep the item order.
+const runBounded = async (items, task, limit = 4) => {
+  const results = new Array(items.length)
+  let next = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await task(items[index], index)
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
+// Splits items into groups of at most size.
+const chunk = (items, size) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size))
+
+// Keeps the first item for each key. dropped holds the later items with a key that was already seen.
+function dedupe(items, keyOf) {
+  const seen = new Set()
+  const kept = []
+  const dropped = []
+  for (const item of items) {
+    const key = keyOf(item)
+    if (seen.has(key)) dropped.push(item)
+    else {
+      seen.add(key)
+      kept.push(item)
+    }
+  }
+  return { kept, dropped }
+}
+
+// Keeps the first max items. dropped holds the rest.
+const capList = (items, max) => ({ kept: items.slice(0, max), dropped: items.slice(max) })
+
+// Runs an expensive agent call, and redoes it up to rounds times when it returns no result. agent and log resolve at call time.
+const withRedo = async (prompt, opts, rounds = 1) => {
+  for (let round = 0; round <= rounds; round++) {
+    const out = await agent(prompt, round ? { ...opts, label: `${opts.label}:redo${round}` } : opts)
+    if (out) return out
+    log(`${opts.label}: no result${round < rounds ? '; redoing once' : ''}.`)
+  }
+  return null
+}
+// END module fanout
 // ── args ────────────────────────────────────────────────────────────────
 const ARG_KEYS = ['scope', 'min_severity', 'dry_run', 'max_issues', 'workers', 'file_findings']
 const USAGE =
@@ -34,7 +107,7 @@ const USAGE =
 // A string that starts with "{" is JSON object args, not a scope path.
 // Unknown keys and a non-boolean dry_run are errors, so a typo such as
 // dryRun or dry_run:"true" never files real issues.
-function parseArgs(raw) {
+function parseAuditArgs(raw) {
   if (raw === undefined || raw === null) return { opts: {} }
   let value = raw
   if (typeof value === 'string') {
@@ -60,7 +133,7 @@ function parseArgs(raw) {
   return { opts: value }
 }
 
-const parsedArgs = parseArgs(args)
+const parsedArgs = parseAuditArgs(args)
 if (parsedArgs.error) return { error: parsedArgs.error }
 const opts = parsedArgs.opts
 const SCOPE = (opts.scope || '.').trim() || '.'
@@ -186,7 +259,7 @@ const FINDINGS_SCHEMA = {
   },
 }
 
-const VERDICT_SCHEMA = {
+const REFUTE_SCHEMA = {
   type: 'object',
   required: ['verdicts'],
   properties: {
@@ -440,36 +513,8 @@ function fileBatchPrompt(findings) {
 }
 
 // ── Map (+ gh setup in parallel) ────────────────────────────────────────
-function errorMessage(error) {
-  return error && error.message ? String(error.message) : String(error)
-}
-
-// agent() resolves to null when the agent ends without a structured result.
-// Treat null as a failure so callers never dereference a missing value.
-async function safeAgent(prompt, opts) {
-  try {
-    const value = await agent(prompt, opts)
-    if (value === null || value === undefined) {
-      return { ok: false, error: `agent ${(opts && opts.label) || 'call'} returned no result` }
-    }
-    return { ok: true, value }
-  } catch (error) {
-    return { ok: false, error: errorMessage(error) }
-  }
-}
-
-async function runBounded(items, task, limit = WORKERS) {
-  const results = new Array(items.length)
-  let next = 0
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const index = next++
-      results[index] = await task(items[index], index)
-    }
-  })
-  await Promise.all(workers)
-  return results
-}
+// The fanout runBounded defaults to 4 workers. This script lets the caller set the count.
+const runWorkers = (items, task) => runBounded(items, task, WORKERS)
 
 phase('Map')
 const [mapOutcome, setupOutcome] = await parallel([
@@ -498,8 +543,7 @@ log(`Mapped ${sliceMap.slices.length} slices (${sliceMap.layout}); gh ${setup.gh
 
 // ── Evaluate + Verify ───────────────────────────────────────────────────
 phase('Evaluate')
-const budgetExhausted = () => budget.total != null && budget.remaining() < MIN_BUDGET
-if (!RESUME && budgetExhausted()) {
+if (!RESUME && floorReached(MIN_BUDGET)) {
   log('Budget exhausted before Evaluate — returning partial report with no slice findings.')
   return {
     scope: SCOPE,
@@ -525,7 +569,6 @@ const REFUTE_BATCH = 4
 const sortDesc = (fs) => [...fs].sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity])
 const refuterOutcomes = []
 const voteKey = (f) => `${issueFingerprint(f)}\n${String(f.claim || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
-const chunk = (items, size) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size))
 const sliceNames = (fs) => [...new Set(fs.map((f) => f.slice))].join(', ')
 const failures = []
 let skippedSlices = 0
@@ -540,8 +583,8 @@ const auditedSlices = uniqueSlices.slice(0, MAX_SLICES)
 for (const s of uniqueSlices.slice(MAX_SLICES)) failures.push({ stage: 'evaluate', slice: s.name, error: `over the ${MAX_SLICES}-slice cap` })
 if (uniqueSlices.length > MAX_SLICES) log(`Slice cap: evaluating ${MAX_SLICES} of ${uniqueSlices.length} slices.`)
 const evaluationItems = RESUME ? [] : [...auditedSlices, crossItem]
-const evaluationResults = await runBounded(evaluationItems, async (item) => {
-  if (budgetExhausted()) {
+const evaluationResults = await runWorkers(evaluationItems, async (item) => {
+  if (floorReached(MIN_BUDGET)) {
     skippedSlices++
     return { item, outcome: { ok: false, error: 'budget exhausted before evaluator dispatch' } }
   }
@@ -582,7 +625,7 @@ const floorAll = sortDesc(validAll.filter((f) => SEV_RANK[f.severity] >= SEV_RAN
 // Citation check after the Evaluate barrier: one explorer per CITE_BATCH floor findings, across slices.
 phase('Verify')
 const citeBatches = chunk(floorAll, CITE_BATCH)
-const citeOutcomes = await runBounded(citeBatches, (batch, index) => budgetExhausted()
+const citeOutcomes = await runWorkers(citeBatches, (batch, index) => floorReached(MIN_BUDGET)
   ? { ok: false, error: 'budget exhausted before citation verification' }
   : safeAgent(citationPrompt(batch), {
     label: `cite:batch-${index + 1}`,
@@ -621,12 +664,12 @@ for (const finding of contested) if (!distinct.has(voteKey(finding))) distinct.s
 const selected = [...distinct.values()].slice(0, MAX_REFUTES)
 const refuteCapHits = distinct.size - selected.length
 const refuteBatches = chunk(selected, REFUTE_BATCH)
-const verdictOutcomes = await runBounded(refuteBatches, (batch, index) => budgetExhausted()
+const verdictOutcomes = await runWorkers(refuteBatches, (batch, index) => floorReached(MIN_BUDGET)
   ? { ok: false, skipped: true, error: 'budget exhausted before refutation' }
   : safeAgent(refutePrompt(batch), {
     label: `refute:batch-${index + 1}`,
     phase: 'Verify',
-    schema: VERDICT_SCHEMA,
+    schema: REFUTE_SCHEMA,
     model: 'opus',
     effort: 'high',
   })
@@ -705,7 +748,7 @@ if (DRY_RUN) {
 } else if (toFile.length) {
   const chunks = []
   for (let i = 0; i < toFile.length; i += FILE_CHUNK) chunks.push(toFile.slice(i, i + FILE_CHUNK))
-  const batches = await runBounded(chunks, (chunk, index) =>
+  const batches = await runWorkers(chunks, (chunk, index) =>
     safeAgent(fileBatchPrompt(chunk), {
       label: `issues:batch-${index + 1}`,
       phase: 'File',

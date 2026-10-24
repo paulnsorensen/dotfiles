@@ -139,9 +139,68 @@ function coerceArgs(a) {
   return a && typeof a === 'object' && !Array.isArray(a) ? a : {}
 }
 
-function errorText(e) {
-  return e && e.message ? e.message : String(e)
+// BEGIN module fanout
+// module: fanout; provides: errorMessage, safeAgent, runBounded, chunk, dedupe, capList, withRedo; requires: none
+// The message of a thrown value, or its text when it has none.
+const errorMessage = (e) => (e && e.message ? e.message : String(e))
+
+// agent() resolves to null when the agent ends without a structured result. Treat null as a failure so a caller never dereferences a missing value. agent resolves at call time.
+const safeAgent = async (prompt, opts) => {
+  try {
+    const value = await agent(prompt, opts)
+    if (value === null || value === undefined) return { ok: false, error: `agent ${(opts && opts.label) || 'call'} returned no result` }
+    return { ok: true, value }
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) }
+  }
 }
+
+// Runs task(item, index) for each item with at most limit tasks at once. Results keep the item order.
+const runBounded = async (items, task, limit = 4) => {
+  const results = new Array(items.length)
+  let next = 0
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await task(items[index], index)
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
+// Splits items into groups of at most size.
+const chunk = (items, size) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, (i + 1) * size))
+
+// Keeps the first item for each key. dropped holds the later items with a key that was already seen.
+function dedupe(items, keyOf) {
+  const seen = new Set()
+  const kept = []
+  const dropped = []
+  for (const item of items) {
+    const key = keyOf(item)
+    if (seen.has(key)) dropped.push(item)
+    else {
+      seen.add(key)
+      kept.push(item)
+    }
+  }
+  return { kept, dropped }
+}
+
+// Keeps the first max items. dropped holds the rest.
+const capList = (items, max) => ({ kept: items.slice(0, max), dropped: items.slice(max) })
+
+// Runs an expensive agent call, and redoes it up to rounds times when it returns no result. agent and log resolve at call time.
+const withRedo = async (prompt, opts, rounds = 1) => {
+  for (let round = 0; round <= rounds; round++) {
+    const out = await agent(prompt, round ? { ...opts, label: `${opts.label}:redo${round}` } : opts)
+    if (out) return out
+    log(`${opts.label}: no result${round < rounds ? '; redoing once' : ''}.`)
+  }
+  return null
+}
+// END module fanout
 
 function clampInt(value, fallback, max) {
   return Number.isInteger(value) && value > 0 ? Math.min(value, max) : fallback
@@ -371,7 +430,7 @@ if (explicit) {
   phase('Survey')
   const survey = await agent(surveyPrompt(), { label: 'survey', phase: 'Survey', agentType: 'explorer', schema: SURVEY_SCHEMA })
     .catch((e) => {
-      log(`Survey failed: ${errorText(e)}`)
+      log(`Survey failed: ${errorMessage(e)}`)
       return null
     })
   threads = cleanThreads((survey && survey.threads) || [], threadCount)
@@ -396,8 +455,8 @@ if (adopt) {
   phase('Adopt')
   adopt = (await agent(adoptPrompt(), { label: 'adopt', phase: 'Adopt', agentType: 'coder', model: WORKER_MODEL, isolation: 'worktree', schema: ADOPT_SCHEMA })
     .catch((e) => {
-      log(`Adopt failed: ${errorText(e)}`)
-      return { status: 'failed', branch: '', note: errorText(e) }
+      log(`Adopt failed: ${errorMessage(e)}`)
+      return { status: 'failed', branch: '', note: errorMessage(e) }
     })) || { status: 'failed', branch: '', note: 'adopt agent returned nothing' }
   log(`Adopt: ${adopt.status} — ${adopt.note}`)
 }
@@ -409,7 +468,7 @@ const sameCommit = (a, b) => a && b && (a.startsWith(b) || b.startsWith(a))
 async function verify(t, claim, label) {
   return agent(verifyPrompt(t, claim), { label, phase: 'Verify', model: WORKER_MODEL, schema: VERIFY_SCHEMA })
     .catch((e) => {
-      log(`${t.slug}: verify agent ${label} failed: ${errorText(e)}`)
+      log(`${t.slug}: verify agent ${label} failed: ${errorMessage(e)}`)
       return null
     })
 }
@@ -430,7 +489,7 @@ async function climb(t) {
       isolation: 'worktree',
       schema: CLIMB_SCHEMA,
     }).catch((e) => {
-      log(`${t.slug}: climb agent failed in round ${round}: ${errorText(e)}`)
+      log(`${t.slug}: climb agent failed in round ${round}: ${errorMessage(e)}`)
       return null
     })
     if (!result) {
@@ -538,8 +597,8 @@ if (publish && publishable.length) {
   phase('Publish')
   const reply = await agent(publishPrompt(publishable), { label: 'publish', phase: 'Publish', model: WORKER_MODEL, isolation: 'worktree', schema: PUBLISH_SCHEMA })
     .catch((e) => {
-      log(`Publish agent failed: ${errorText(e)}`)
-      return { error: errorText(e) }
+      log(`Publish agent failed: ${errorMessage(e)}`)
+      return { error: errorMessage(e) }
     })
   const results = reply && Array.isArray(reply.results) ? reply.results : []
   for (const t of publishable) {

@@ -19,16 +19,8 @@ export const meta = {
   ],
 }
 
-// BEGIN shared prelude: sync.mjs copies this block from claude/workflow-prelude/prelude.js. Edit that file. Then run node claude/workflow-prelude/sync.mjs.
-// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
-const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
-// The anchored form of SCRATCH_PATH_SRC matches a whole path.
-const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
-// A full commit SHA has 40 hex digits in either case.
-const FULL_SHA_RE = /^[0-9a-f]{40}$/i
-// True when the budget is known and less than LIMITS.minBudget remains. Both names resolve at call time.
-const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
-// A form error is mechanical, so a cheap model repairs it.
+// BEGIN module call
+// module: call; provides: form, substance, errorText, schemaErrors, data, prompt, redoPrompt, repairPrompt, isWriter, attempt, typed, unwrapEnvelope, wfxCommandOf; requires: none
 const form = (msg) => ({ kind: 'form', msg })
 // A substance error needs new facts, so the producer redoes the answer.
 const substance = (msg) => ({ kind: 'substance', msg })
@@ -66,13 +58,162 @@ const repairPrompt = (value, errors) => prompt(
   data('errors', errors.map((e) => e.msg)),
   data('object', value),
 )
+// A writer call may change the tree, so a throw from it never retries. A reviewer worktree only holds reports.
+const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'worktree' && opts.agentType !== 'reviewer')
+// An agent call can throw, for example at the budget ceiling. The throw becomes a value, so the caller decides what to do.
+const attempt = async (text, opts) => {
+  try {
+    return { value: await agent(text, opts), threw: null }
+  } catch (e) {
+    const message = e && e.message ? e.message : String(e)
+    log(`${opts.label}: agent threw: ${message}`)
+    return { value: null, threw: message }
+  }
+}
+// One validated agent call: check the answer, then repair form errors or redo substance errors, each up to LIMITS.fixRounds.
+// A throw from a read-only call retries once. A throw from a writer call never retries.
+// hooks: normalize(value) cleans an answer before the check.
+//   expandShas(value, opts) returns a fixed copy of the value, or null, when the check fails once.
+//   onWorktree(value, opts) runs for each answer of a call with isolation 'worktree'.
+//   nullIsFinal makes a null answer final at once, with no redo.
+//   noRedo makes an answer that fails with substance errors final at once. A formatter repair of form errors still runs.
+//   retryOnThrow is a flag, or a predicate on the call options, that replaces the default read-only rule.
+//   driftOf(before, after, schema) names a decision field that a formatter repair changed, or returns null.
+// Returns { value, errors, lost, threw }. lost is 'threw' or 'missing' when the value is null for that reason.
+const typed = async (text, opts, check, hooks = {}) => {
+  const { normalize = (v) => v, expandShas, onWorktree, nullIsFinal = false, noRedo = false, retryOnThrow, driftOf } = hooks
+  const mayRetry = (o) => (typeof retryOnThrow === 'function' ? retryOnThrow(o) : (retryOnThrow ?? !isWriter(o)))
+  let sent = { text, opts }
+  let { value, threw } = await attempt(sent.text, sent.opts)
+  let retried = false
+  let expanded = false
+  let repairedFrom = null
+  let repairErrors = []
+  for (let round = 1; ; round++) {
+    if (threw != null) {
+      if (retried || !mayRetry(sent.opts)) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw', threw: true }
+      retried = true
+      sent = { text: sent.text, opts: { ...sent.opts, label: `${opts.label}:retry${round}` } }
+      ;({ value, threw } = await attempt(sent.text, sent.opts))
+      continue
+    }
+    if (value != null) {
+      value = normalize(value)
+      if (opts.isolation === 'worktree' && onWorktree) onWorktree(value, opts)
+    }
+    let errors = value == null ? [substance('agent returned no output')] : check(value)
+    if (errors.length && expandShas && !expanded && !nullIsFinal && value != null) {
+      expanded = true
+      const full = await expandShas(value, opts)
+      // A repair or redo then starts from the expanded value, so only the remaining errors drive it.
+      if (full) {
+        value = full
+        errors = check(value)
+      }
+    }
+    // A formatter repairs form only. A repair that rewrites a decision field changes the answer, so the producer redoes the call.
+    if (driftOf && repairedFrom && value != null) {
+      const changed = driftOf(repairedFrom, value, opts.schema)
+      if (changed) errors = [substance(`a formatter repair changed ${changed}; fix the original errors yourself`), ...repairErrors.map((e) => substance(e.msg)), ...errors]
+    }
+    repairedFrom = null
+    if (!errors.length) return { value, errors, lost: null, threw: false }
+    if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
+    const formOnly = errors.every((e) => e.kind === 'form')
+    if (noRedo && !formOnly) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
+    repairedFrom = formOnly ? value : null
+    repairErrors = formOnly ? errors : []
+    sent = formOnly
+      ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low', agentType: 'formatter' } }
+      : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
+    ;({ value, threw } = await attempt(sent.text, sent.opts))
+  }
+}
+// A runner can wrap the envelope that wfx printed in a second envelope of its own.
+// Returns the innermost envelope: an object whose data is itself an envelope gives that data.
+function unwrapEnvelope(value) {
+  let env = value
+  while (env && typeof env === 'object' && env.data && typeof env.data === 'object' && typeof env.data.ok === 'boolean' && typeof env.data.cmd === 'string') env = env.data
+  return env
+}
+// The wfx command name in a command line: the word after the last 'wfx '. A wfx envelope carries it as cmd.
+function wfxCommandOf(command) {
+  const names = [...String(command).matchAll(/(?:^|[\s|&;(])wfx\s+([a-z][a-z-]*)/g)].map((m) => m[1])
+  return names.length ? names[names.length - 1] : ''
+}
+// END module call
+// BEGIN module budget
+// module: budget; provides: DEFAULT_LIMITS, floorReached, floorReason; requires: none
+// The LIMITS values that every workflow shares. A workflow spreads these into its own LIMITS.
+const DEFAULT_LIMITS = { minBudget: 50000, agentCap: 1000 }
 
+// True when the budget is known and less than the floor remains. budget and LIMITS resolve at call time.
+const floorReached = (floor = LIMITS.minBudget) => Boolean(budget.total && budget.remaining() < floor)
+
+// The text that names the stage a budget floor stopped.
+const floorReason = (stage, floor = LIMITS.minBudget) => `budget floor reached before ${stage}: ${budget.remaining()} remaining, below ${floor}`
+// END module budget
+// BEGIN module stale
+// module: stale; provides: SCRATCH_PATH_SRC, SCRATCH_WORKTREE_RE, FULL_SHA_RE, SHA_RE, SHORT_SHA_RE, DIGEST_RE, stampedBy, markersOf, shaErrors, staleVerdict; requires: call
+// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
+const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
+// The anchored form of SCRATCH_PATH_SRC matches a whole path.
+const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
+// A full commit SHA has 40 hex digits in either case.
+const FULL_SHA_RE = /^[0-9a-f]{40}$/i
+// A move-my-cheese SHA has 7 to 40 hex digits.
+const SHA_RE = /^[0-9a-f]{7,40}$/i
+// A writer may return a short SHA. A read-only call expands it.
+const SHORT_SHA_RE = /^[0-9a-f]{7,16}$/i
+// A landing digest has 16 lowercase hex digits.
+const DIGEST_RE = /^[0-9a-f]{16}$/
+// This approval recorded the PR's current head at the end of an earlier run.
+const stampedBy = (p, d) => p.landing_digest === d && p.landing_head === p.head_sha
+// Only well-formed markers count; anything else reads as no marker.
+function markersOf(pr) {
+  const aged = FULL_SHA_RE.test(pr.aged_sha.trim()) && FULL_SHA_RE.test(pr.aged_patch.trim())
+  const landing = DIGEST_RE.test(pr.landing_digest.trim())
+  return {
+    aged_sha: aged ? pr.aged_sha.trim() : '', aged_patch: aged ? pr.aged_patch.trim() : '', aged_dirty: aged && pr.aged_dirty,
+    landing_digest: landing ? pr.landing_digest.trim() : '',
+    landing_head: landing && FULL_SHA_RE.test(pr.landing_head.trim()) ? pr.landing_head.trim() : '',
+  }
+}
+// Code checks a SHA, not a schema pattern. A bad SHA is always substance: a formatter has no repo access and could only invent one.
+// typed() trims the SHA fields in TRIM_FIELDS before a check runs, so a padded SHA in those fields never reaches this test.
+const shaErrors = (path, value) =>
+  (typeof value === 'string' && FULL_SHA_RE.test(value) ? [] : [substance(`${path} must be a 40-hex commit SHA`)])
+// Compares a plan snapshot with the live repo. snapshot is { base, heads: { pr: sha }, files: [plan files] }.
+// live is { base, heads }. changedFiles lists the files that changed between the two bases, or null when unknown.
+// A moved head or a changed PR set needs a new plan. A moved base needs a new plan only when it touches a plan file.
+function staleVerdict(snapshot, live, changedFiles) {
+  const reasons = []
+  const planned = Object.keys(snapshot.heads).sort()
+  const current = Object.keys(live.heads).sort()
+  if (planned.join(',') !== current.join(',')) reasons.push(`the PR set is now ${current.join(', ') || 'empty'}, not ${planned.join(', ') || 'empty'}`)
+  for (const pr of planned) {
+    if (Object.hasOwn(live.heads, pr) && live.heads[pr] !== snapshot.heads[pr]) reasons.push(`#${pr} head moved from ${snapshot.heads[pr]} to ${live.heads[pr]}`)
+  }
+  if (reasons.length) return { verdict: 'replan', reasons }
+  if (snapshot.base === live.base) return { verdict: 'fresh', reasons: [] }
+  const moved = `the base moved from ${snapshot.base} to ${live.base}`
+  if (!Array.isArray(changedFiles)) return { verdict: 'replan', reasons: [`${moved}; the changed files are unknown`] }
+  const hit = changedFiles.filter((f) => snapshot.files.includes(f)).sort()
+  if (hit.length) return { verdict: 'replan', reasons: [`${moved}; it changed plan files: ${hit.join(', ')}`] }
+  return { verdict: 'rebase', reasons: [`${moved}; it touched no plan file`] }
+}
+// END module stale
+// BEGIN module mold
+// module: mold; provides: MOLD, DECISION_KINDS, RESEARCH_CONFIDENCE; requires: none
 // mold resolves the spec, research, and notes artifact paths.
 const MOLD = 'python3 ~/.claude/skills/mold/scripts/mold.pyz'
 // A Ground explorer sorts each recorded wiki decision into one of these kinds.
 const DECISION_KINDS = ['adr', 'locked', 'roadmap', 'gotcha', 'strategy']
 // brie-ground returns one of these confidence values.
 const RESEARCH_CONFIDENCE = ['certain', 'speculating', 'dont_know']
+// END module mold
+// BEGIN module ground
+// module: ground; provides: GROUNDING_SCHEMA, GROUND_RESEARCH_SCHEMA, GROUND_RULES, researchRule, BRIE_GROUND_MAX_AGENTS, brieGround; requires: mold
 // The Ground contract: wiki decisions and prior research, each tied to the item refs it constrains.
 const GROUNDING_SCHEMA = {
   type: 'object',
@@ -142,7 +283,9 @@ const brieGround = async (question) => {
   const citations = evidence.slice(0, 5).map((e) => e && e.citation).filter(Boolean)
   return capped({ found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }, evidence, 5, 'citation row(s)')
 }
-
+// END module ground
+// BEGIN module checkpoint
+// module: checkpoint; provides: stable, fnv1a, digestOf, matchAnswers, isObject, plain, stateShapeErrors, askCheckpoint, needsInputResult, approveError, digestError, approveUsage; requires: none
 // Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
@@ -183,7 +326,823 @@ function matchAnswers(questions, raw) {
   const answers = [...byIndex.keys()].sort((a, b) => a - b).map((i) => ({ id: questions[i].id, question: questions[i].question, answer: byIndex.get(i) }))
   return { errors, answers }
 }
-// END shared prelude
+
+// True for a plain object: not null and not an array.
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+// A deep copy through JSON, so a checkpoint state holds plain data only.
+const plain = (v) => JSON.parse(JSON.stringify(v))
+
+// Checks the shape of a resumed state. shape maps a key to 'array', 'object', 'string', 'boolean', 'integer', a '?' variant of one (null or undefined passes), or {type: 'integer', min, max}. Returns the error texts; none means the shape holds.
+function stateShapeErrors(state, shape, prefix = 'args.state') {
+  if (!isObject(state)) return [`${prefix} must be an object`]
+  const errors = []
+  for (const [key, spec] of Object.entries(shape)) {
+    const raw = typeof spec === 'string' ? spec : spec.type
+    const optional = raw.endsWith('?')
+    const type = optional ? raw.slice(0, -1) : raw
+    const value = state[key]
+    if (optional && value == null) continue
+    const where = `${prefix}.${key}`
+    if (type === 'array') {
+      if (!Array.isArray(value)) errors.push(`${where} must be an array`)
+    } else if (type === 'object') {
+      if (!isObject(value)) errors.push(`${where} must be an object`)
+    } else if (type === 'string') {
+      if (typeof value !== 'string') errors.push(optional ? `${where} must be a string or null` : `${where} must be a string`)
+    } else if (type === 'boolean') {
+      if (typeof value !== 'boolean') errors.push(`${where} must be a boolean`)
+    } else if (type === 'integer') {
+      const min = typeof spec === 'object' ? spec.min : undefined
+      const max = typeof spec === 'object' ? spec.max : undefined
+      if (!Number.isInteger(value) || (min !== undefined && value < min) || (max !== undefined && value > max)) {
+        const range = min !== undefined && max !== undefined ? ` from ${min} to ${max}` : min !== undefined ? ` of at least ${min}` : max !== undefined ? ` of at most ${max}` : ''
+        errors.push(`${where} must be an integer${range}`)
+      }
+    } else {
+      errors.push(`${where} has the unknown shape type ${type}`)
+    }
+  }
+  return errors
+}
+
+// Builds a needs-input checkpoint result. A checkpoint with no question cannot resume, so it carries no state or digest. stamp binds the digest to the run.
+function askCheckpoint(checkpoint, questions, state, { stamp, usage, extra = {} } = {}) {
+  const full = plain({ ...state, checkpoint, questions })
+  const resumable = full.questions.length ? { state: full, digest: digestOf({ stamp, checkpoint, state: full }) } : {}
+  return { status: 'needs-input', checkpoint, questions: full.questions, ...resumable, usage, ...extra }
+}
+
+// Builds a needs-input result for a run that resumes from a plan and its digest. fields come before usage in the result.
+function needsInputResult(questions, fields = {}, usage = '') {
+  return { status: 'needs-input', questions, ...fields, usage }
+}
+
+// The error text when a resumed plan has no approve digest, or an empty string.
+function approveError(approve, plan = 'args.plan') {
+  return approve ? '' : `${plan} needs args.approve set to the digest that the same result returned`
+}
+
+// The error text when approve is not the digest of the value, or an empty string.
+function digestError(value, approve, plan = 'args.plan') {
+  return digestOf(value) === approve ? '' : `approve does not match the digest of ${plan}; the plan changed after approval`
+}
+
+// The usage text for an approval re-run. fields names the argument fields to pass back.
+function approveUsage({ fields = 'prs: landing.inputs, plan: landing, approve: digest', land = true, revise = true } = {}) {
+  return `To execute, re-run with { ${fields} }.${land ? ' Add land:true to merge.' : ''}${revise ? ` To change the plan first, re-run with the same fields and revise: "<change>".` : ''}`
+}
+// END module checkpoint
+// BEGIN module guard
+// module: guard; provides: UNSAFE_CHECKS, GUARD_PREFERRED, unsafeCheck, guardedReaderReason, vacuousReason, shellWords; requires: none
+// The check-safety guard for criterion checks. It holds the stricter cheese-factory rules.
+// Public: unsafeCheck, vacuousReason, guardedReaderReason. Tests also use shellWords, UNSAFE_CHECKS, and GUARD_PREFERRED.
+// Every other top-level name is a private helper of this module.
+
+// A judge runs each criterion check, so a check must not fetch, write, or mutate.
+// Three layers run in order: a structural pre-filter on the raw text, this denylist, and per-command rules.
+// The layers are defense in depth; the judge agent definition is the other guard.
+// The third field marks a rule that reads the text with quoted spans masked.
+const UNSAFE_CHECKS = [
+  ['network access', /\b(?:curl|wget|nc|ssh|scp)\b/i],
+  ['pipe into a shell', /\|\s*(?:sh|bash|zsh)\b/i],
+  // Only fd duplication (>&1, 2>&1, >&-) and a redirect to the whole token /dev/null stay allowed.
+  ['output redirection to a file', />(?!>?\s*\/dev\/null(?![^\s;|&)])|&(?:\d+|-)(?![^\s;|&)]))/, true],
+  ['tree mutation', /(?:^|[;&|(]\s*|\b(?:sudo|xargs|env|command|time)\s+)(?:touch|mkdir|rmdir|cp|mv|chmod|chown|chgrp|ln|install|truncate|dd|patch)\s/i],
+  ['tee to a file', /\btee\b/i],
+  ['inline interpreter code', /\b(?:python3?|node|perl|ruby)\s+-[ce]\b/i],
+  ['in-place edit', /\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i/i],
+  ['file removal', /\brm\s|\s-delete\b|\bunlink\b|\btruncate\b/i],
+  ['package publish or install', /\b(?:npm|pnpm|yarn|cargo|pip3?|uv)\s+(?:publish|install|add|ci)\b/i],
+  ['GitHub mutation', /\bgh\s+(?:pr\s+(?:merge|close|comment|edit|ready|review|create|reopen)|issue|release|workflow\s+run|run\s+(?:rerun|cancel)|repo\s+(?:edit|delete|rename)|secret|variable|label)\b/i],
+  ['GitHub API write', /\bgh\s+api\b.*(?:-X|--method)[\s=]*(?:POST|PATCH|PUT|DELETE)\b/i],
+  ['GitHub API field write', /\bgh\s+api\b.*\s(?:-f|-F|--field|--raw-field|--input)[\s=]/i],
+]
+
+const hit = (name, text = '') => ({ name, text })
+
+// Replaces each quoted span and each backslash escape with Q, so an operator inside a quote is data.
+// Double quotes stay readable unless maskDouble is true, because $ and backticks expand inside them.
+function maskQuotes(check, maskDouble) {
+  let out = ''
+  for (let i = 0; i < check.length; i++) {
+    const c = check[i]
+    if (c === '\\') { out += 'Q'; i++ } else if (c === "'") {
+      const close = check.indexOf("'", i + 1)
+      if (close < 0) return out + check.slice(i)
+      out += 'Q'
+      i = close
+    } else if (c === '"') {
+      let j = i + 1
+      let inner = ''
+      for (; j < check.length && check[j] !== '"'; j++) inner += check[j] === '\\' ? (j++, 'Q') : check[j]
+      if (j >= check.length) return out + check.slice(i)
+      out += maskDouble ? 'Q' : `"${inner}"`
+      i = j
+    } else out += c
+  }
+  return out
+}
+
+// Shapes that hide a command from the lexical rules: raw newlines, here documents, and shell expansion.
+function structuralHit(check) {
+  if (/[\r\n]/.test(check)) return hit('raw newline or carriage return')
+  const heredoc = /<<-?/.exec(maskQuotes(check, true))
+  if (heredoc) return hit('here document', heredoc[0])
+  const readable = maskQuotes(check, false)
+  const expansion = /\$(?:[({A-Za-z_]|\d|[?!@*#$-])|`/.exec(readable)
+  if (expansion) return hit('shell expansion or substitution', readable.slice(expansion.index, expansion.index + 24).trim())
+  return null
+}
+
+const ASSIGN_RE = /^[A-Za-z_]\w*=/
+const WRAPPERS = new Set(['env', 'command', 'time', 'sudo', 'doas', 'xargs', 'nohup', 'nice', 'timeout', 'builtin', 'stdbuf', 'setsid', 'ionice'])
+const WRAPPER_VALUE_OPTS = { xargs: ['-I', '-L', '-n', '-P', '-s', '-E', '-d', '-a'], env: ['-u', '-C', '-S'], sudo: ['-u', '-g', '-C', '-h', '-p', '-r', '-t', '-U'], timeout: ['-s', '-k'], nice: ['-n'] }
+const SHELL_KEYWORDS = new Set(['{', '}', 'if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until', 'for', 'case', 'esac', 'function', 'select', 'coproc'])
+const MUTATION_COMMANDS = new Set(['touch', 'mkdir', 'rmdir', 'cp', 'mv', 'chmod', 'chown', 'chgrp', 'ln', 'install', 'truncate', 'dd', 'patch', 'rm', 'unlink', 'shred', 'mkfifo', 'mknod'])
+const NETWORK_COMMANDS = new Set(['curl', 'wget', 'nc', 'ncat', 'netcat', 'telnet', 'ftp', 'sftp', 'ssh', 'scp', 'rsync', 'socat'])
+const FETCH_RUNNERS = new Set(['npx', 'pnpx', 'bunx', 'uvx', 'pipx'])
+const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun', 'pip', 'pip3', 'cargo', 'uv', 'gem'])
+const INSTALL_SUBCOMMANDS = new Set(['install', 'i', 'ci', 'add', 'exec', 'x', 'dlx', 'create', 'init', 'update', 'upgrade', 'publish', 'remove', 'uninstall', 'link'])
+const SHELL_HEAD_RE = /^(?:sh|bash|zsh|dash|ksh|fish|csh|tcsh)$/
+const CODE_HEAD_RE = /^(?:python|ruby|perl|php|lua|node|nodejs|deno|bun|osascript)[\d.]*$/
+const AWK_HEAD_RE = /^[gmn]?awk$/
+const AWK_DANGER_RE = /\bsystem\s*\(|\bgetline\b|\bprintf?\b[^}]*[>|]|-i\s*inplace|@(?:include|load)|\|&/
+const SED_WRITE_RE = /(?:^|[;{}])\s*(?:\d+|\$|\/[^/]*\/)?\s*(?:w\s*\S|e\b)|s\/[^/]*\/[^/]*\/[a-zA-Z0-9]*[we]\b/
+const GIT_VALUE_OPTS = new Set(['-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--exec-path'])
+const GIT_MUTATIONS = new Set(['push', 'add', 'commit', 'reset', 'checkout', 'switch', 'merge', 'rebase', 'stash', 'clean', 'tag', 'am', 'apply', 'restore', 'rm', 'mv', 'init', 'cherry-pick', 'revert', 'pull', 'worktree', 'update-ref', 'config', 'fetch', 'clone', 'ls-remote', 'submodule', 'gc', 'prune', 'maintenance', 'notes', 'replace', 'filter-branch', 'bisect', 'sparse-checkout', 'format-patch', 'checkout-index', 'read-tree', 'write-tree', 'commit-tree', 'fast-import', 'unpack-objects', 'bundle', 'archive', 'send-email', 'difftool', 'mergetool'])
+
+// Skips wrapper commands and their options so the real command head shows.
+function unwrap(words) {
+  let i = 0
+  while (WRAPPERS.has(words[i])) {
+    const valued = WRAPPER_VALUE_OPTS[words[i++]] ?? []
+    while (i < words.length && (words[i].startsWith('-') || ASSIGN_RE.test(words[i]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[i]))) i += valued.includes(words[i]) ? 2 : 1
+  }
+  return words.slice(i)
+}
+
+// Reads the git subcommand from tokens, so the cost stays linear in the option count.
+function gitHit(args) {
+  let i = 0
+  for (; i < args.length && args[i].startsWith('-'); i++) {
+    const arg = args[i]
+    if ((arg.startsWith('-c') && !arg.startsWith('--')) || arg.startsWith('--config-env')) return hit('git config override', arg)
+    if (GIT_VALUE_OPTS.has(arg)) i++
+  }
+  const sub = (args[i] ?? '').toLowerCase()
+  const rest = args.slice(i + 1)
+  if (GIT_MUTATIONS.has(sub)) return hit('git mutation', `git ${sub}`)
+  if (sub === 'branch' && rest.some((a) => /^-[a-zA-Z]*[dDmMfcC]|^--(?:delete|move|copy|force|set-upstream|unset-upstream|edit-description)/.test(a))) return hit('git mutation', 'git branch')
+  const output = rest.find((a) => /^--output(?:=|$)/.test(a) || (sub === 'grep' && /^(?:-O|--open-files-in-pager)/.test(a)))
+  return output ? hit('git option that writes a file or runs a program', output) : null
+}
+
+function sedHit(args) {
+  const programs = []
+  let bare = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (/^-[a-zA-Z]*[if]|^--(?:in-place|file)/.test(arg)) return hit('in-place edit or script file', arg)
+    if (arg === '-e' || arg === '--expression') { programs.push(args[++i] ?? ''); bare = false } else if (arg.startsWith('--expression=')) { programs.push(arg.slice(13)); bare = false } else if (bare && !arg.startsWith('-')) { programs.push(arg); bare = false }
+  }
+  const bad = programs.find((p) => SED_WRITE_RE.test(p))
+  return bad === undefined ? null : hit('sed command that writes or runs', bad)
+}
+
+// These commands take a pattern or text as data, so a quoted "git push" operand is not a command.
+const DATA_HEADS = new Set(['echo', 'printf', 'test', '[', '[[', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'awk', 'gawk', 'mawk', 'sed', 'gsed', 'find'])
+
+// Finds git at any word position after an unlisted wrapper (watch, gtimeout, su -c, strace).
+// A word that holds spaces, such as "git push" after su -c, splits into its own tokens.
+function embeddedGit(args) {
+  for (let i = 0; i < args.length; i++) {
+    const tokens = args[i].split(/\s+/).filter(Boolean)
+    if (tokens[0]?.toLowerCase() !== 'git') continue
+    const found = gitHit([...tokens.slice(1), ...args.slice(i + 1)])
+    if (found) return found
+  }
+  return null
+}
+
+// Classifies one simple command. Returns a hit or null.
+function commandHit(raw) {
+  const words = unparen(raw)
+  while (words[0] === '!') words.shift()
+  if (!words.length) return null
+  if (ASSIGN_RE.test(words[0])) return hit('NAME=value prefix', words[0])
+  const [head, ...args] = unwrap(words)
+  if (head === undefined) return null
+  if (head.includes('/')) return hit('command path', head)
+  if (['eval', 'exec', 'source', '.'].includes(head)) return hit('eval, exec, or source', head)
+  if (SHELL_KEYWORDS.has(head)) return hit('shell keyword or group', head)
+  if (MUTATION_COMMANDS.has(head)) return hit('tree mutation', head)
+  if (NETWORK_COMMANDS.has(head)) return hit('network access', head)
+  if (FETCH_RUNNERS.has(head)) return hit('package fetch or execution', head)
+  if (PACKAGE_MANAGERS.has(head) && INSTALL_SUBCOMMANDS.has(args[0])) return hit('package install or execution', `${head} ${args[0]}`)
+  // A case-insensitive file system runs GIT as git, so the head match ignores case.
+  if (head.toLowerCase() === 'git') return gitHit(args)
+  if (!DATA_HEADS.has(head)) {
+    const embedded = embeddedGit(args)
+    if (embedded) return embedded
+  }
+  if (head === 'find') {
+    const action = args.find((a) => /^-(?:exec|execdir|ok|okdir|delete|fprint0?|fprintf|fls)$/.test(a))
+    return action ? hit('find action that writes or runs a command', action) : null
+  }
+  if (head === 'sed') return sedHit(args)
+  if (AWK_HEAD_RE.test(head)) {
+    const bad = args.find((a) => AWK_DANGER_RE.test(a) || /^(?:-f|--file|-i|--include|-l|--load)/.test(a))
+    return bad === undefined ? null : hit('awk program that writes or runs a command', bad)
+  }
+  if (SHELL_HEAD_RE.test(head) && (!args.length || args.some((a) => a === '-' || /^-[a-zA-Z]*[cs]/.test(a)))) return hit('inline interpreter code', `${head} ${args[0] ?? ''}`.trim())
+  if (CODE_HEAD_RE.test(head)) {
+    const code = !args.length || args.some((a) => a === '-' || /^-[a-zA-Z]*[cepE]/.test(a) || /^--(?:eval|print|exec|command)\b/.test(a)) || (head === 'deno' && ['eval', 'repl'].includes(args[0]))
+    if (code) return hit('inline interpreter code', `${head} ${args[0] ?? ''}`.trim())
+  }
+  return null
+}
+
+// Returns { name, text } for the first unsafe shape in a check, or null.
+function unsafeCheck(check) {
+  const structural = structuralHit(check)
+  if (structural) return structural
+  const masked = maskQuotes(check, true)
+  for (const [name, re, useMask] of UNSAFE_CHECKS) {
+    const subject = useMask ? masked : check
+    const m = re.exec(subject)
+    if (m) return hit(name, subject.slice(m.index, m.index + 24).trim())
+  }
+  const words = shellWords(check)
+  if (!words) return null
+  let command = []
+  for (const w of [...words, ';']) {
+    if (COMMAND_OPS.includes(w) || w === '|') {
+      const found = commandHit(command)
+      if (found) return found
+      command = []
+    } else command.push(w)
+  }
+  return null
+}
+
+// The user's PreToolUse hook (agents/lib/tool-reroute) denies a shell reader or searcher that reads a file.
+// A check that names a file operand never runs, so the judge cannot give a verdict. This gate mirrors the hook.
+// A filter on a pipe (git log | grep x) reads no file and stays allowed.
+const GUARD_PREFERRED = "run the repository's own test for the criterion (node --test --test-name-pattern, pytest -k, bats -f, a just recipe), or use test -e or git plumbing"
+const GUARD_READERS = {
+  cat: '', tac: 's', head: 'nc', tail: 'ncs', less: 'bhjkoOpPtTxyz#', more: 'n', nl: 'bdfhilnsvw', bat: 'lHmr', batcat: 'lHmr',
+  sed: 'efl', gsed: 'efl', awk: 'Fvfei', gawk: 'Fvfei', mawk: 'Fvfei',
+  grep: 'efmABCdD', egrep: 'efmABCdD', fgrep: 'efmABCdD', rg: 'efgtTmABCjMrdE', ag: 'ABCGgm', ack: 'ABCm',
+}
+// The first operand of these is a pattern or program, unless -e or -f supplies it.
+const GUARD_SCRIPTED = new Set(['sed', 'gsed', 'awk', 'gawk', 'mawk', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack'])
+const GUARD_VALUED_LONG = ['regexp', 'file', 'expression', 'max-count', 'context', 'after-context', 'before-context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth', 'lines', 'bytes', 'line-range', 'style', 'language', 'theme']
+const GUARD_WRAPPERS = new Set(['xargs', 'time', 'command', 'env', 'sudo', 'nice', 'nohup'])
+const GUARD_LISTING = ['--files', '--type-list', '--list-file-types', '--help-types']
+
+// The files that one reader or searcher stage reads. first is true when no pipe feeds the stage.
+function guardedFiles(head, args, first) {
+  const valued = GUARD_READERS[head]
+  if (valued === undefined) return []
+  if (args.some((a) => GUARD_LISTING.includes(a)) || ((head === 'ag' || head === 'ack') && args.includes('-g')) || (head === 'ack' && args.includes('-f'))) return []
+  const operands = []
+  let scripted = false
+  let options = true
+  let recursive = head === 'rg' || head === 'ag' || head === 'ack'
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (/^\d*<<<$/.test(a) || /^\d*<<-?$/.test(a)) i++
+    else if (/^\d*<</.test(a)) continue
+    else if (/^\d*<$/.test(a)) { if (args[i + 1] !== undefined) operands.push(args[++i]) }
+    else if (/^\d*<./.test(a)) operands.push(a.replace(/^\d*</, ''))
+    else if (/^(?:\d*|&)>/.test(a)) { if (/^(?:\d*|&)>>?&?$/.test(a)) i++ }
+    else if (options && a === '--') options = false
+    else if (options && a.startsWith('--')) {
+      const [name, value] = a.slice(2).split('=')
+      if (['regexp', 'file', 'expression'].includes(name)) scripted = true
+      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
+      if (value === undefined && GUARD_VALUED_LONG.includes(name)) i++
+    } else if (options && a.length > 1 && a.startsWith('-')) {
+      const letters = a.slice(1)
+      for (let k = 0; k < letters.length; k++) {
+        if (/grep$/.test(head) && 'rR'.includes(letters[k])) recursive = true
+        if (!valued.includes(letters[k])) continue
+        if ('ef'.includes(letters[k])) scripted = true
+        if (k === letters.length - 1) i++
+        break
+      }
+    } else if (a !== '-' && !a.startsWith('+')) operands.push(a)
+  }
+  if (GUARD_SCRIPTED.has(head) && !scripted) operands.shift()
+  if (!operands.length && first && recursive) return ['.']
+  return operands
+}
+
+// Returns why a check cannot run under the PreToolUse guard, or '' when it can.
+function guardedReaderReason(check) {
+  const words = shellWords(check)
+  if (!words) return ''
+  let stage = []
+  let first = true
+  for (const w of [...words, ';']) {
+    if (!COMMAND_OPS.includes(w) && w !== '|') { stage.push(w); continue }
+    const command = stage.map((s) => s.replace(/^\(+|\)+$/g, '')).filter(Boolean)
+    let wrapped = false
+    while (command.length && (command[0] === '!' || ASSIGN_RE.test(command[0]) || GUARD_WRAPPERS.has(command[0]) || (wrapped && command[0].startsWith('-')))) {
+      wrapped = wrapped || GUARD_WRAPPERS.has(command[0])
+      command.shift()
+    }
+    const files = command.length ? guardedFiles(command[0], command.slice(1), first) : []
+    if (files.length) return `\`${command[0]}\` reads ${files.join(', ')}, which the repository's PreToolUse guard denies, so the check never runs. Instead ${GUARD_PREFERRED}`
+    first = w !== '|'
+    stage = []
+  }
+  return ''
+}
+
+// A negated search passes when its input is missing. Grep and rg exit 2 on a missing file.
+// Git grep exits 1 on an unmatched pathspec. Grep with no file reads empty input.
+// So each path of a negated search needs an existence test earlier in the same && chain.
+// A negated pipeline also hides a failed producer. This check is lexical.
+// The verify judge also tests each path that a check reads.
+const SEARCH_TOOLS = ['grep', 'egrep', 'fgrep', 'rg']
+// Short options whose value is the next word when the option ends its cluster.
+const VALUE_LETTERS = { rg: 'efgtTmABCjMEr', grep: 'efmABCdD' }
+const LONG_VALUE_OPTS = ['regexp', 'file', 'max-count', 'after-context', 'before-context', 'context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth']
+
+// Splits a check into words and the operators && || ; | &, with POSIX quotes removed. A newline counts as ;. Returns null on an open quote.
+function shellWords(check) {
+  const words = []
+  let word = null
+  const end = () => { if (word !== null) words.push(word); word = null }
+  for (let i = 0; i < check.length; i++) {
+    const c = check[i]
+    const pair = check.slice(i, i + 2)
+    if (c === '\n') { end(); words.push(';') }
+    else if (/\s/.test(c)) end()
+    else if (pair === '&&' || pair === '||') { end(); words.push(pair); i++ }
+    else if (pair === '|&') { end(); words.push('|'); i++ }
+    else if (c === '&' && check[i - 1] !== '>' && check[i - 1] !== '<' && check[i + 1] !== '>') { end(); words.push('&') }
+    else if (c === ';' || c === '|') { end(); words.push(c) }
+    else if (c === "'") {
+      const close = check.indexOf("'", i + 1)
+      if (close < 0) return null
+      word = (word ?? '') + check.slice(i + 1, close)
+      i = close
+    } else if (c === '"') {
+      let j = i + 1
+      let text = ''
+      for (; j < check.length && check[j] !== '"'; j++) text += check[j] === '\\' && j + 1 < check.length ? check[++j] : check[j]
+      if (j >= check.length) return null
+      word = (word ?? '') + text
+      i = j
+    } else if (c === '\\' && i + 1 < check.length) word = (word ?? '') + check[++i]
+    else word = (word ?? '') + c
+  }
+  end()
+  return words
+}
+
+// A redirect such as 2>/dev/null, >&2, or &> is not an operand; a bare operator such as > takes the next word.
+const REDIRECT_RE = /^(?:\d*|&)[<>]/
+const BARE_REDIRECT_RE = /^(?:\d*|&)(?:[<>]|>>)&?$/
+// ./a and a name the same path.
+const samePath = (path) => path.replace(/^(?:\.\/)+/, '')
+
+// test -e P, [ -e P ], or [[ -e P ]] with -e, -f, -d, -s, or -r; returns P or ''.
+function guardedPath(words) {
+  const flag = /^-[efdsr]$/
+  if (words.length === 3 && words[0] === 'test' && flag.test(words[1])) return samePath(words[2])
+  if (words.length === 4 && flag.test(words[1]) && ((words[0] === '[' && words[3] === ']') || (words[0] === '[[' && words[3] === ']]'))) return samePath(words[2])
+  return ''
+}
+
+// Returns { tool, paths, stdin } for a grep, rg, or git grep command, or null for any other command.
+function searchOf(words) {
+  const git = words[0] === 'git' && words[1] === 'grep'
+  if (!git && !SEARCH_TOOLS.includes(words[0])) return null
+  const tool = git ? 'git grep' : words[0]
+  const args = words.slice(git ? 2 : 1)
+  const valueLetters = tool === 'rg' ? VALUE_LETTERS.rg : VALUE_LETTERS.grep
+  const positional = []
+  let patternGiven = false
+  let recursive = false
+  let options = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (REDIRECT_RE.test(arg)) {
+      if (BARE_REDIRECT_RE.test(arg)) i++
+    } else if (options && arg === '--') options = false
+    else if (options && arg.startsWith('--')) {
+      const [name, value] = arg.slice(2).split('=')
+      if (name === 'regexp' || name === 'file') patternGiven = true
+      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
+      if (value === undefined && LONG_VALUE_OPTS.includes(name)) i++
+    } else if (options && arg.length > 1 && arg.startsWith('-')) {
+      const letters = arg.slice(1)
+      for (let k = 0; k < letters.length; k++) {
+        if (tool !== 'rg' && 'rR'.includes(letters[k])) recursive = true
+        if (!valueLetters.includes(letters[k])) continue
+        if ('ef'.includes(letters[k])) patternGiven = true
+        if (k === letters.length - 1) i++
+        break
+      }
+    } else positional.push(arg)
+  }
+  const paths = (patternGiven ? positional : positional.slice(1)).map(samePath)
+  return { tool, paths, stdin: tool !== 'rg' && tool !== 'git grep' && !paths.length && !recursive }
+}
+
+const COMMAND_OPS = ['&&', '||', ';', '&']
+// A pipe sink reads its input, so it cannot fail on a failed producer.
+const PIPE_SINKS = new Set(['wc', 'head', 'tail', 'cat'])
+const unparen = (words) => words.map((w) => w.replace(/^\(+|\)+$/g, '')).filter(Boolean)
+
+function withoutRedirects(words) {
+  const kept = []
+  for (let i = 0; i < words.length; i++) {
+    if (!REDIRECT_RE.test(words[i])) kept.push(words[i])
+    else if (BARE_REDIRECT_RE.test(words[i])) i++
+  }
+  return kept
+}
+
+function pipelineStages(words) {
+  const stages = [[]]
+  for (const w of words) {
+    if (w === '|') stages.push([])
+    else stages[stages.length - 1].push(w)
+  }
+  return stages.filter((s) => s.length)
+}
+
+const exitsZero = (stage) => stage[0] === 'exit' && (stage.length === 1 || (stage.length === 2 && stage[1] === '0'))
+
+// True when a pipeline stage returns 0 whatever the earlier commands did.
+function cannotFail(stage, piped) {
+  const [head] = stage
+  if (['true', ':', 'echo', 'printf'].includes(head)) return true
+  return (piped && PIPE_SINKS.has(head)) || exitsZero(stage)
+}
+
+// Returns why a check can pass without testing anything, or '' when it can fail.
+function vacuousReason(check) {
+  const words = shellWords(check)
+  if (!words) return 'it has an unclosed quote'
+  const commands = [{ op: '', words: [] }]
+  for (const w of words) {
+    if (COMMAND_OPS.includes(w)) commands.push({ op: w, words: [] })
+    else commands[commands.length - 1].words.push(w)
+  }
+  const shapes = commands.map(({ words: command }) => pipelineStages(withoutRedirects(unparen(command))))
+  if (shapes.every((stages) => stages.every((stage, i) => cannotFail(stage, i > 0)))) return 'every command in it always succeeds'
+  let guarded = new Set()
+  for (const [index, { op, words: command }] of commands.entries()) {
+    const last = index === commands.length - 1
+    const shape = shapes[index]
+    const tail = shape[shape.length - 1]
+    if (tail) {
+      const quiet = cannotFail(tail, shape.length > 1)
+      if (shape.length === 1 && op !== '&&' && exitsZero(tail)) return 'it exits 0 whatever the earlier commands return'
+      if (op === '||' && quiet) return 'it ends in an always-true fallback, which hides every failure'
+      if (shape.length > 1 && quiet) return `its pipeline ends in ${tail[0]}, which hides a failed earlier stage`
+      if (op !== '&&' && last && quiet) return 'its last command always succeeds'
+    }
+    if (op !== '&&' || command[0] === 'cd') guarded = new Set()
+    const negated = command[0] === '!'
+    const body = negated ? command.slice(1) : command
+    const stages = [[]]
+    for (const w of body) {
+      if (w === '|') stages.push([])
+      else stages[stages.length - 1].push(w)
+    }
+    if (!negated) {
+      const path = guardedPath(body)
+      if (path) guarded.add(path)
+      continue
+    }
+    const search = searchOf(stages[stages.length - 1])
+    if (!search) continue
+    if (stages.length > 1) return `it negates a pipeline into ${search.tool}, which passes when the producer fails`
+    if (search.stdin) return `it negates ${search.tool} with no file, which reads empty input`
+    const open = search.paths.filter((p) => !guarded.has(p))
+    if (open.length) return `it negates ${search.tool} over ${open.join(', ')} with no existence test of that path earlier in the same && chain`
+  }
+  return ''
+}
+// END module guard
+// BEGIN module schema
+// module: schema; provides: str, int, bool, strs, ints, text, oneOf, list, obj, CHECK_KINDS, ADVICE_VERDICTS, FIX_STATUSES, PHASE_STATUSES, FINDING_SEVERITIES, FIX_COSTS; requires: none
+// Schema builders: one constant per shape, so a contract reads as data.
+const str = { type: 'string' }
+const int = { type: 'integer' }
+const bool = { type: 'boolean' }
+const strs = { type: 'array', items: { type: 'string' } }
+const ints = { type: 'array', items: { type: 'integer' } }
+const text = (description) => ({ type: 'string', description })
+const oneOf = (values) => ({ type: 'string', enum: values })
+const list = (items) => ({ type: 'array', items })
+const obj = (properties) => ({ type: 'object', required: Object.keys(properties), properties })
+// Closed sets that more than one workflow shares.
+const CHECK_KINDS = ['command', 'test', 'inspection', 'ci']
+const ADVICE_VERDICTS = ['approve', 'revise', 'stop']
+const FIX_STATUSES = ['fixed', 'partial', 'blocked']
+const PHASE_STATUSES = ['ok', 'partial', 'blocked']
+const FINDING_SEVERITIES = ['blocker', 'high', 'medium', 'low']
+const FIX_COSTS = ['contained', 'moderate', 'sprawling', 'n/a']
+// END module schema
+// BEGIN module graph
+// module: graph; provides: waves, duplicates, baseChain, mergeWaitErrors; requires: call
+// Returns the sorted ids that appear more than once.
+function duplicates(ids) {
+  return [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))].sort()
+}
+// Groups items by dependency. Each wave holds the ids whose depends_on all finished earlier. cycle lists the ids that never become ready.
+function waves(items) {
+  const pending = new Map(items.map((t) => [t.id, new Set(t.depends_on)]))
+  const out = []
+  while (pending.size) {
+    const ready = [...pending].filter(([, deps]) => deps.size === 0).map(([id]) => id).sort()
+    if (!ready.length) return { order: out, cycle: [...pending.keys()].sort() }
+    out.push(ready)
+    for (const id of ready) pending.delete(id)
+    for (const deps of pending.values()) for (const id of ready) deps.delete(id)
+  }
+  return { order: out, cycle: [] }
+}
+// The target ids under a target, nearest first: its base, that target's base, and so on.
+// The chain stops at the default branch, which is not a target id, and at a repeated id.
+function baseChain(targets, id) {
+  const byId = new Map(targets.map((t) => [t.id, t]))
+  const chain = []
+  let next = byId.get(id)?.base
+  while (byId.has(next) && !chain.includes(next) && next !== id) {
+    chain.push(next)
+    next = byId.get(next).base
+  }
+  return chain
+}
+// The plan has no merge-wait field. A target waits for a merge when it depends on a target that is not on its base chain.
+// A stacked base needs no merge, because the target builds on that branch.
+function mergeWaitErrors(plan) {
+  const errors = []
+  for (const t of plan.targets) {
+    const chain = baseChain(plan.targets, t.id)
+    for (const d of t.depends_on) {
+      if (!chain.includes(d)) errors.push(substance(`${t.id} waits for ${d}'s merge before publish`))
+    }
+  }
+  return errors
+}
+// END module graph
+// BEGIN module criteria
+// module: criteria; provides: norm, blank, refError, checkVerdicts, checkCriteria, CRITERIA_SCHEMA, VERDICT_SCHEMA, VERIFY_BATCH_SCHEMA; requires: call, schema, graph
+const norm = (id) => String(id).trim().toUpperCase()
+const blank = (value) => typeof value !== 'string' || !value.trim()
+// A wrong-case id is a form slip. An unknown id is substance. fixOf maps a ref to its canonical form.
+function refError(ref, known, where, fixOf = norm) {
+  if (known.includes(ref)) return null
+  const fix = fixOf(ref)
+  return known.includes(fix) ? form(`${where}: '${ref}' should be '${fix}'`) : substance(`${where}: unknown id '${ref}'`)
+}
+const VERDICT_SCHEMA = {
+  type: 'object',
+  required: ['criterion', 'passes', 'evidence', 'tree_clean', 'missing_paths'],
+  properties: {
+    criterion: { type: 'string' },
+    passes: { type: 'boolean' },
+    evidence: { type: 'string', description: 'Command run and its observed result' },
+    tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' },
+    missing_paths: { type: 'array', items: { type: 'string' }, description: 'Paths that the check reads and that do not exist in the worktree' },
+    guard_blocked: { type: 'boolean', description: 'true when a hook or guard denied the check command, so the check never ran' },
+  },
+}
+const VERIFY_BATCH_SCHEMA = { type: 'object', required: ['verdicts'], properties: { verdicts: { type: 'array', items: VERDICT_SCHEMA } } }
+const CRITERIA_SCHEMA = {
+  type: 'object',
+  required: ['criteria'],
+  properties: {
+    criteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'statement', 'check_kind', 'check'],
+        properties: {
+          id: { type: 'string', pattern: '^AC-[0-9]+$' },
+          statement: { type: 'string' },
+          check_kind: { type: 'string', enum: CHECK_KINDS },
+          check: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+// One verdict for each criterion in the batch, and no other. With requireAll false, a missing id is no error: the Verify phase fails it as unchecked.
+function checkVerdicts(result, batch, { requireAll = true } = {}) {
+  const ids = batch.map((ac) => ac.id)
+  const errors = []
+  result.verdicts.forEach((v, n) => {
+    errors.push(refError(v.criterion, ids, `verdicts[${n}].criterion`))
+    if (blank(v.evidence)) errors.push(substance(`verdicts[${n}].evidence must name the check run and its result`))
+  })
+  const seen = result.verdicts.map((v) => norm(v.criterion))
+  for (const id of duplicates(seen)) errors.push(substance(`verdicts lists ${id} twice`))
+  if (requireAll) for (const id of ids) if (!seen.includes(id)) errors.push(substance(`no verdict for ${id}; run its check`))
+  return errors.filter(Boolean)
+}
+// Exact coverage: one criterion per spec AC id. gate(criterion, where) returns the errors for one check.
+// The caller passes its own gate for command safety, so this module stays pure. CI-owned checks skip the gate.
+const checkCriteria = (acIds, gate = () => []) => (value) => {
+  const errors = []
+  const seen = new Set()
+  value.criteria.forEach((c, i) => {
+    const where = `$.criteria[${i}]`
+    const idError = refError(c.id, acIds, `${where}.id`)
+    if (idError) errors.push(idError)
+    else if (seen.has(c.id)) errors.push(substance(`${where}.id: duplicate id '${c.id}'`))
+    seen.add(c.id)
+    if (blank(c.statement)) errors.push(substance(`${where}.statement must not be blank`))
+    if (blank(c.check)) errors.push(substance(`${where}.check must not be blank`))
+    else if (c.check_kind !== 'ci') errors.push(...gate(c, where))
+  })
+  for (const id of acIds) if (!seen.has(id)) errors.push(substance(`${id} has no criterion`))
+  return errors
+}
+// END module criteria
+// BEGIN module advise
+// module: advise; provides: adviceSchema, ADVICE_SCHEMA, ROUND_TWO_RULE, checkAdvice, checkPlanAdvice, checkRoundTwo, adviceStep, adviseLoop, adviceResult, blockingOf; requires: call, schema, criteria
+// blocking true adds blocking_questions: questions only the user can settle.
+const adviceSchema = ({ blocking = false } = {}) => ({
+  type: 'object',
+  required: ['verdict', 'concerns', 'guidance', ...(blocking ? ['blocking_questions'] : [])],
+  properties: {
+    verdict: { type: 'string', enum: ADVICE_VERDICTS },
+    concerns: { type: 'array', items: { type: 'string' } },
+    guidance: { type: 'string', description: 'Under 80 words' },
+    ...(blocking ? {
+      blocking_questions: { type: 'array', description: 'Questions only the user can settle; leave empty when none', items: {
+        type: 'object',
+        required: ['question', 'options', 'recommended', 'evidence'],
+        properties: {
+          question: { type: 'string' },
+          options: { type: 'array', items: { type: 'string' } },
+          recommended: { type: 'string', description: 'one of options, or empty' },
+          evidence: { type: 'string' },
+        },
+      } },
+    } : {}),
+  },
+})
+const ADVICE_SCHEMA = adviceSchema()
+// A second review judges the first review's concerns. It does not reopen the plan.
+const ROUND_TWO_RULE = 'payload.prior_concerns holds your concerns from the last round. Judge only whether each prior concern is resolved. Raise a new concern only when it makes the work wrong or unsafe, and start it with "NEW:". Never reverse a prior concern.'
+function checkAdvice(advice) {
+  return advice.verdict !== 'approve' && !advice.concerns.length
+    ? [substance(`verdict ${advice.verdict} needs at least one concern`)]
+    : []
+}
+function checkPlanAdvice(advice, ids) {
+  const errors = []
+  const idError = refError(advice.chosen, ids, 'chosen')
+  if (idError) errors.push(idError)
+  if (advice.verdict !== 'approve' && !advice.concerns.length) errors.push(substance(`verdict ${advice.verdict} needs at least one concern`))
+  return errors
+}
+// ROUND_TWO_RULE as code: a round-two concern repeats a prior concern or starts with "NEW:".
+function checkRoundTwo(advice, priorConcerns) {
+  return advice.concerns
+    .filter((c) => !priorConcerns.includes(c) && !(typeof c === 'string' && c.startsWith('NEW:')))
+    .map((c) => substance(`concern '${c}' is neither a prior concern nor marked NEW:`))
+}
+// round counts the revisions done so far. A revise verdict ends unsettled once the revisions are spent.
+function adviceStep(advice, round, maxRevisions) {
+  if (!advice) return 'unsettled'
+  if (advice.verdict === 'approve') return 'approve'
+  if (advice.verdict === 'stop') return 'stop'
+  return round < maxRevisions ? 'revise' : 'unsettled'
+}
+// ask(round, priorConcerns) returns advice. revise(advice, round) changes the work. Returns { outcome, advice, rounds }.
+const adviseLoop = async ({ ask, revise, maxRevisions }) => {
+  let prior = []
+  for (let round = 0; ; round++) {
+    const advice = await ask(round, prior)
+    const outcome = adviceStep(advice, round, maxRevisions)
+    if (outcome !== 'revise') return { outcome, advice, rounds: round }
+    await revise(advice, round)
+    prior = advice.concerns
+  }
+}
+// The record of one advice stage: ok is true when no error remains.
+const adviceResult = (stage, value, errors) => ({ stage, value, errors, ok: errors.length === 0 })
+function blockingOf(advice) {
+  return (Array.isArray(advice.blocking_questions) ? advice.blocking_questions : []).filter((b) => b && typeof b.question === 'string' && b.question.trim())
+}
+// END module advise
+// BEGIN module findings
+// module: findings; provides: isMediumPlus, needsCure, normalizeFile, routeFindings, findingErrors, enumErrors, splitBlocked, cureBatches; requires: call, stale, schema
+const isMediumPlus = (f) => f.severity !== 'low'
+const needsCure = (f) => isMediumPlus(f) || f.fix_cost_now === 'contained'
+// A finding file may carry a leading ./ or a worktree prefix; both name the same repo path.
+// The prefix is the producer's own worktree_path, or any scratch worktree root.
+const normalizeFile = (file, worktreePath) => {
+  let p = String(file).trim()
+  const root = worktreePath ? String(worktreePath).replace(/\/+$/, '') + '/' : null
+  p = root && p.startsWith(root) ? p.slice(root.length) : p.replace(new RegExp(`^${SCRATCH_PATH_SRC}\\/`), '')
+  return p.replace(/^(\.\/)+/, '')
+}
+// A finding owned by two curds routes to the first owner in slug order. Each other owner lands in shared, keyed to the owners that cure it.
+// unrouted is true when a finding that needs cure has no owner (an unowned low that needs no cure stays out),
+// or when the result claims medium+ findings or contained lows that its list does not carry.
+function routeFindings(result, filesBySlug, slugs, worktreePath) {
+  const bySlug = new Map()
+  const shared = new Map()
+  const sharedFindings = new Map()
+  // unownedMedium marks a medium+ finding that no curd owns. unrouted also fires for an unowned contained low.
+  let unownedMedium = Boolean(result.has_medium_plus_findings) && !result.findings.some(isMediumPlus)
+  let unrouted = unownedMedium ||
+    (Boolean(result.has_cheap_lows) && !result.findings.some((f) => f.severity === 'low' && f.fix_cost_now === 'contained'))
+  for (const f of result.findings.filter(needsCure)) {
+    const file = normalizeFile(f.file, worktreePath)
+    const owners = slugs.filter((s) => (filesBySlug[s] || []).includes(file))
+    if (!owners.length) {
+      unrouted = true
+      if (isMediumPlus(f)) unownedMedium = true
+      continue
+    }
+    const [first, ...others] = owners
+    bySlug.set(first, [...(bySlug.get(first) || []), { ...f, file }])
+    for (const s of others) {
+      shared.set(s, new Set([...(shared.get(s) || []), first]))
+      sharedFindings.set(s, [...(sharedFindings.get(s) || []), { ...f, file }])
+    }
+  }
+  return { bySlug, shared, sharedFindings, unrouted, unownedMedium }
+}
+// A closed set checked in code: the schema keeps the field a plain string.
+const enumErrors = (path, value, allowed, kind = form) => (allowed.includes(value) ? [] : [kind(`${path} must be one of ${allowed.join(', ')}`)])
+const findingErrors = (v) => v.findings.flatMap((f, i) => [
+  ...enumErrors(`$.findings[${i}].severity`, f.severity, FINDING_SEVERITIES, substance),
+  ...enumErrors(`$.findings[${i}].fix_cost_now`, f.fix_cost_now, FIX_COSTS, substance),
+])
+// A reviewer may answer status "blocked: <reason>" as one string. Code splits it into status and reason.
+// A halt is a blocked review too. Every caller still treats a status other than ok as no review.
+const splitBlocked = (v) => {
+  const m = v !== null && typeof v === 'object' && typeof v.status === 'string' ? /^(blocked|halt)\s*:\s*(.+)$/i.exec(v.status.trim()) : null
+  if (m) {
+    v.status = 'blocked'
+    v.reason = typeof v.reason === 'string' && v.reason.trim() ? v.reason : m[2]
+  }
+  return v
+}
+// bySlug maps a curd slug to its findings. Returns { slug, findings } batches in map order. A batch holds at most cap findings.
+function cureBatches(bySlug, cap) {
+  const size = Math.max(1, cap)
+  const batches = []
+  for (const [slug, found] of bySlug) {
+    for (let i = 0; i < found.length; i += size) batches.push({ slug, findings: found.slice(i, i + size) })
+  }
+  return batches
+}
+// END module findings
+// BEGIN module status
+// module: status; provides: STATUS, finish, blockedResult, gapField, report, donePayload, runStatus, countStatuses; requires: none
+// The status values that a workflow result carries.
+const STATUS = Object.freeze({ ok: 'ok', partial: 'partial', blocked: 'blocked', needsInput: 'needs-input', needsApproval: 'needs-approval' })
+
+// A result with a status. base holds the keys that every result of the workflow carries; extra overrides them.
+const finish = (status, extra = {}, base = {}) => ({ ...base, status, ...extra })
+
+// A blocked result. The key reason holds the cause.
+const blockedResult = (reason, extra = {}, base = {}) => finish(STATUS.blocked, { reason, ...extra }, base)
+
+// The gaps key of a result, or nothing when there is no gap.
+const gapField = (gaps) => (gaps.length ? { gaps } : {})
+
+// A report result. The note is logged and returned, as an empty string when absent. log resolves at call time.
+function report(status, note, fields = {}) {
+  if (note) log(note)
+  return { status, note: note || '', ...fields }
+}
+
+// A done payload: fields and extra merged, without the keys whose value is undefined.
+function donePayload(fields, extra = {}) {
+  const merged = { ...fields, ...extra }
+  return Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== undefined))
+}
+
+// A run is ok only when something was produced, every row has the clean status, nothing stopped it, and no gap remains.
+function runStatus({ stopped = '', gaps = [], produced = 0, rows = [], clean = 'clean' } = {}) {
+  return stopped || gaps.length || !produced || rows.some((r) => r.status !== clean) ? STATUS.partial : STATUS.ok
+}
+
+// Counts the rows for each status. A status in seed starts at its seed count.
+function countStatuses(rows, seed = { clean: 0, dirty: 0, failed: 0 }) {
+  const counts = { ...seed }
+  for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1
+  return counts
+}
+// END module status
 
 // Tracked source: claude/workflows/move-my-cheese.js in the dotfiles repo.
 // Design notes: .hallouminate/wiki/architecture/move-my-cheese-workflow.md.
@@ -258,39 +1217,23 @@ const PLAN_ANGLES = [
 ]
 const DISPOSITIONS = ['keep', 'modify', 'supersede', 'close']
 const TARGET_KINDS = ['existing', 'new']
-const CHECK_KINDS = ['command', 'test', 'inspection', 'ci']
 const TENSION_KINDS = ['conflict', 'duplicate', 'supersedes', 'ordering', 'semantic']
 const TENSION_SEVERITIES = ['blocking', 'material', 'minor']
 const COMPLETENESS = ['complete', 'partial', 'wip']
 const TASK_STATUSES = ['done', 'partial', 'blocked']
-const ADVICE_VERDICTS = ['approve', 'revise', 'stop']
-const INTEGRATE_STATUSES = ['done', 'blocked']
 const CI_STATES = ['pass', 'fail', 'pending', 'none']
 const MERGE_STATES = ['BEHIND', 'BLOCKED', 'CLEAN', 'DIRTY', 'DRAFT', 'HAS_HOOKS', 'UNKNOWN', 'UNSTABLE']
 const PR_STATES = ['OPEN', 'CLOSED', 'MERGED']
 const REVIEW_DECISIONS = ['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED', 'NONE']
 const AGE_MODES = ['skipped-unchanged', 'incremental', 'full']
-const FIX_STATUSES = ['ok', 'partial', 'blocked']
-const MERGE_RESULTS = ['merged', 'queued', 'refused']
 const MARK_ACTIONS = ['drafted', 'closed', 'skipped']
 
 const SAFE_REF_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
-const SHA_RE = /^[0-9a-f]{7,40}$/i
 const VIEWER_RE = /^[A-Za-z0-9][A-Za-z0-9-]*(?:\[bot\])?$/
 const isSafeRef = (ref) => typeof ref === 'string' && SAFE_REF_RE.test(ref) && !ref.includes('..') && !ref.endsWith('.lock')
 const SAFE_PATH_RE = /^\/[A-Za-z0-9._/@+-]+$/
 
 // ---- Schemas: one constant per contract; enums for closed sets ----
-const str = { type: 'string' }
-const int = { type: 'integer' }
-const bool = { type: 'boolean' }
-const strs = { type: 'array', items: { type: 'string' } }
-const ints = { type: 'array', items: { type: 'integer' } }
-const text = (description) => ({ type: 'string', description })
-const oneOf = (values) => ({ type: 'string', enum: values })
-const list = (items) => ({ type: 'array', items })
-const obj = (properties) => ({ type: 'object', required: Object.keys(properties), properties })
-
 const INDEX_SCHEMA = obj({
   default_branch: str,
   base_sha: text('git rev-parse origin/<default branch>'),
@@ -303,7 +1246,6 @@ const SELECT_SCHEMA = obj({ prs: ints, note: text('How the description maps to t
 // At the end of a run, each open target's marker also records the head the run last saw (head=<sha>).
 // A later run of the same approval accepts a moved head only when it equals that recorded head.
 const LANDING_PREFIX = 'move-my-cheese:landing'
-const DIGEST_RE = /^[0-9a-f]{16}$/
 const landingMarker = (d, head = '') => `<!-- ${LANDING_PREFIX} digest=${d}${head ? ` head=${head}` : ''} -->`
 const DETAIL_SCHEMA = obj({
   prs: list(obj({
@@ -373,272 +1315,20 @@ const LANDING_GROUNDING = obj({
 const LANDING_SCHEMA = { ...obj(LANDING_FIELDS), properties: { ...LANDING_FIELDS, grounding: LANDING_GROUNDING } }
 
 const PLAN_ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), chosen: { type: 'string', pattern: '^P-[0-9]+$' }, concerns: strs, guidance: text('Under 80 words') })
-const ADVICE_SCHEMA = obj({ verdict: oneOf(ADVICE_VERDICTS), concerns: strs, guidance: text('Under 80 words') })
 const TARGET_SCHEMA = obj({ status: oneOf(TASK_STATUSES), completed: strs, remaining: strs, checkpoint: text('Last commit SHA, or empty'), head_sha: str, worktree_path: str, note: str })
 const SALVAGE_SCHEMA = obj({ found: bool, checkpoint: str, completed: strs, remaining: strs })
-const INTEGRATE_SCHEMA = obj({ status: oneOf(INTEGRATE_STATUSES), worktree_path: text('Absolute path of the integration worktree'), head: text('Commit SHA of the integration HEAD'), merged: strs, conflicted: strs })
-const VERDICT_ITEM = obj({ criterion: str, passes: bool, evidence: text('Command run and its observed result'), tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' }, missing_paths: { type: 'array', items: str, description: 'Paths that the check reads and that do not exist in the worktree' } })
-// guard_blocked is optional: obj() requires every key, so the property joins after it.
-VERDICT_ITEM.properties.guard_blocked = { type: 'boolean', description: 'true when a hook or guard denied the check command, so the check never ran' }
-// One judge runs a batch of checks and returns one verdict for each criterion.
-const VERDICTS_SCHEMA = obj({ verdicts: list(VERDICT_ITEM) })
-const PUBLISH_SCHEMA = obj({ results: list(obj({ target: str, pr_number: int, url: str, head_sha: str, changed_files: int, lines_changed: int })) })
+const STAT_SCHEMA = obj({ changed_files: int, lines_changed: int })
 const AGE_SCHEMA = obj({ mode: oneOf(AGE_MODES), scope: text('The exact ref range reviewed, empty when skipped'), slug: text('The /age handoff slug, empty when skipped'), artifact: str, worktree_path: str, has_medium_plus_findings: bool, has_cheap_lows: bool })
-const CURE_SCHEMA = obj({ status: oneOf(FIX_STATUSES), committed: bool, pushed: bool, head_sha: str, worktree_path: str, artifact: str, note: str })
+const CURE_SCHEMA = obj({ status: oneOf(PHASE_STATUSES), committed: bool, pushed: bool, head_sha: str, worktree_path: str, artifact: str, note: str })
 const PREP_SCHEMA = obj({ worktree_path: str })
 const FINALIZE_SCHEMA = obj({ marker_updated: bool })
 const STATUS_SCHEMA = obj({ state: oneOf(PR_STATES), head_sha: str, ci: oneOf(CI_STATES), merge_state: oneOf(MERGE_STATES), review_decision: oneOf(REVIEW_DECISIONS), unresolved_threads: int })
-const FIX_SCHEMA = obj({ status: oneOf(FIX_STATUSES), pushed: bool, worktree_path: str, note: str })
-const MERGE_SCHEMA = obj({ result: oneOf(MERGE_RESULTS), note: str })
-const STATE_SCHEMA = obj({ state: oneOf(PR_STATES) })
+const FIX_SCHEMA = obj({ status: oneOf(PHASE_STATUSES), pushed: bool, worktree_path: str, note: str })
 const MARK_SCHEMA = obj({ results: list(obj({ pr: int, action: oneOf(MARK_ACTIONS), note: str })) })
-const CLEANUP_SCHEMA = obj({ removed: strs, note: str })
 
 // ---- Validators: the schema checks shape; code checks meaning ----
-const norm = (id) => String(id).trim().toUpperCase()
-const blank = (value) => typeof value !== 'string' || !value.trim()
 const absolute = (path) => typeof path === 'string' && path.trim().startsWith('/')
 const ascending = (a, b) => a - b
-
-function duplicates(ids) {
-  return [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))].sort()
-}
-
-function refError(ref, known, where) {
-  if (known.includes(ref)) return null
-  const fix = norm(ref)
-  return known.includes(fix) ? form(`${where}: '${ref}' should be '${fix}'`) : substance(`${where}: unknown id '${ref}'`)
-}
-
-function waves(items) {
-  const pending = new Map(items.map((t) => [t.id, new Set(t.depends_on)]))
-  const out = []
-  while (pending.size) {
-    const ready = [...pending].filter(([, deps]) => deps.size === 0).map(([id]) => id).sort()
-    if (!ready.length) return { order: out, cycle: [...pending.keys()].sort() }
-    out.push(ready)
-    for (const id of ready) pending.delete(id)
-    for (const deps of pending.values()) for (const id of ready) deps.delete(id)
-  }
-  return { order: out, cycle: [] }
-}
-
-// A judge runs each criterion check, so a check must not fetch, write, or mutate.
-// This denylist is defense in depth; the judge agent definition is the other guard.
-const UNSAFE_CHECKS = [
-  ['network access', /\b(?:curl|wget|nc|ssh|scp)\b/i],
-  ['pipe into a shell', /\|\s*(?:sh|bash|zsh)\b/i],
-  ['output redirection to a file', />(?!&|\s*\/dev\/null)/],
-  ['tee to a file', /\btee\b/i],
-  ['inline interpreter code', /\b(?:python3?|node|perl|ruby)\s+-[ce]\b/i],
-  ['in-place edit', /\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i/i],
-  ['git mutation', /\bgit\b(?:\s+-{1,2}[\w-]+(?:[\s=]\S+)?)*\s+(?:push|commit|reset|checkout|switch|merge|rebase|stash|clean|tag|am|apply|restore|rm|mv|worktree|update-ref|config|branch\s+-[dDmMfc])\b/i],
-  ['file removal', /\brm\s|\s-delete\b|\bunlink\b|\btruncate\b/i],
-  ['package publish or install', /\b(?:npm|pnpm|yarn|cargo|pip3?|uv)\s+(?:publish|install|add|ci)\b/i],
-  ['GitHub mutation', /\bgh\s+(?:pr\s+(?:merge|close|comment|edit|ready|review|create|reopen)|issue|release|workflow\s+run|run\s+(?:rerun|cancel)|repo\s+(?:edit|delete|rename)|secret|variable|label)\b/i],
-  ['GitHub API write', /\bgh\s+api\b.*(?:-X|--method)[\s=]*(?:POST|PATCH|PUT|DELETE)\b/i],
-  ['GitHub API field write', /\bgh\s+api\b.*\s(?:-f|-F|--field|--raw-field|--input)[\s=]/i],
-]
-
-// A negated search passes when its input is missing: grep and rg exit 2 on a missing file, git grep
-// exits 1 on an unmatched pathspec, and grep with no file reads empty input. So each path of a negated
-// search needs an existence test earlier in the same && chain. A negated pipeline also hides a failed
-// producer. This check is lexical; the verify judge also tests each path that a check reads.
-const SEARCH_TOOLS = ['grep', 'egrep', 'fgrep', 'rg']
-// Short options whose value is the next word when the option ends its cluster.
-const VALUE_LETTERS = { rg: 'efgtTmABCjMEr', grep: 'efmABCdD' }
-const LONG_VALUE_OPTS = ['regexp', 'file', 'max-count', 'after-context', 'before-context', 'context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth']
-
-// Splits a check into words and the operators && || ; |, with POSIX quotes removed. Returns null on an open quote.
-function shellWords(check) {
-  const words = []
-  let word = null
-  const end = () => { if (word !== null) words.push(word); word = null }
-  for (let i = 0; i < check.length; i++) {
-    const c = check[i]
-    const pair = check.slice(i, i + 2)
-    if (/\s/.test(c)) end()
-    else if (pair === '&&' || pair === '||') { end(); words.push(pair); i++ }
-    else if (c === ';' || c === '|') { end(); words.push(c) }
-    else if (c === "'") {
-      const close = check.indexOf("'", i + 1)
-      if (close < 0) return null
-      word = (word ?? '') + check.slice(i + 1, close)
-      i = close
-    } else if (c === '"') {
-      let j = i + 1
-      let text = ''
-      for (; j < check.length && check[j] !== '"'; j++) text += check[j] === '\\' && j + 1 < check.length ? check[++j] : check[j]
-      if (j >= check.length) return null
-      word = (word ?? '') + text
-      i = j
-    } else if (c === '\\' && i + 1 < check.length) word = (word ?? '') + check[++i]
-    else word = (word ?? '') + c
-  }
-  end()
-  return words
-}
-
-// A redirect such as 2>/dev/null, >&2, or &> is not an operand; a bare operator such as > takes the next word.
-const REDIRECT_RE = /^(?:\d*|&)[<>]/
-const BARE_REDIRECT_RE = /^(?:\d*|&)(?:[<>]|>>)&?$/
-// ./a and a name the same path.
-const samePath = (path) => path.replace(/^(?:\.\/)+/, '')
-
-// The user's PreToolUse hook (agents/lib/tool-reroute) denies a shell reader or searcher that reads a file.
-// A check that names a file operand never runs, so the judge cannot give a verdict. This gate mirrors the hook.
-// A filter on a pipe (git log | grep x) reads no file and stays allowed.
-const GUARD_PREFERRED = "run the repository's own test for the criterion (node --test --test-name-pattern, pytest -k, bats -f, a just recipe), or use test -e or git plumbing"
-const GUARD_READERS = {
-  cat: '', tac: 's', head: 'nc', tail: 'ncs', less: 'bhjkoOpPtTxyz#', more: 'n', nl: 'bdfhilnsvw', bat: 'lHmr', batcat: 'lHmr',
-  sed: 'efl', gsed: 'efl', awk: 'Fvfei', gawk: 'Fvfei', mawk: 'Fvfei',
-  grep: 'efmABCdD', egrep: 'efmABCdD', fgrep: 'efmABCdD', rg: 'efgtTmABCjMrdE', ag: 'ABCGgm', ack: 'ABCm',
-}
-// The first operand of these is a pattern or program, unless -e or -f supplies it.
-const GUARD_SCRIPTED = new Set(['sed', 'gsed', 'awk', 'gawk', 'mawk', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack'])
-const GUARD_VALUED_LONG = ['regexp', 'file', 'expression', 'max-count', 'context', 'after-context', 'before-context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth', 'lines', 'bytes', 'line-range', 'style', 'language', 'theme']
-const GUARD_WRAPPERS = new Set(['xargs', 'time', 'command', 'env', 'sudo', 'nice', 'nohup'])
-const GUARD_LISTING = ['--files', '--type-list', '--list-file-types', '--help-types']
-const GUARD_BREAKS = ['&&', '||', ';', '&', '|']
-
-// The files that one reader or searcher stage reads. first is true when no pipe feeds the stage.
-function guardedFiles(head, args, first) {
-  const valued = GUARD_READERS[head]
-  if (valued === undefined) return []
-  if (args.some((a) => GUARD_LISTING.includes(a)) || ((head === 'ag' || head === 'ack') && args.includes('-g')) || (head === 'ack' && args.includes('-f'))) return []
-  const operands = []
-  let scripted = false
-  let options = true
-  let recursive = head === 'rg' || head === 'ag' || head === 'ack'
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i]
-    if (/^\d*<<<$/.test(a) || /^\d*<<-?$/.test(a)) i++
-    else if (/^\d*<</.test(a)) continue
-    else if (/^\d*<$/.test(a)) { if (args[i + 1] !== undefined) operands.push(args[++i]) }
-    else if (/^\d*<./.test(a)) operands.push(a.replace(/^\d*</, ''))
-    else if (/^(?:\d*|&)>/.test(a)) { if (/^(?:\d*|&)>>?&?$/.test(a)) i++ }
-    else if (options && a === '--') options = false
-    else if (options && a.startsWith('--')) {
-      const [name, value] = a.slice(2).split('=')
-      if (['regexp', 'file', 'expression'].includes(name)) scripted = true
-      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
-      if (value === undefined && GUARD_VALUED_LONG.includes(name)) i++
-    } else if (options && a.length > 1 && a.startsWith('-')) {
-      const letters = a.slice(1)
-      for (let k = 0; k < letters.length; k++) {
-        if (/grep$/.test(head) && 'rR'.includes(letters[k])) recursive = true
-        if (!valued.includes(letters[k])) continue
-        if ('ef'.includes(letters[k])) scripted = true
-        if (k === letters.length - 1) i++
-        break
-      }
-    } else if (a !== '-' && !a.startsWith('+')) operands.push(a)
-  }
-  if (GUARD_SCRIPTED.has(head) && !scripted) operands.shift()
-  if (!operands.length && first && recursive) return ['.']
-  return operands
-}
-
-// Returns why a check cannot run under the PreToolUse guard, or '' when it can.
-function guardedReaderReason(check) {
-  const words = shellWords(check)
-  if (!words) return ''
-  let stage = []
-  let first = true
-  for (const w of [...words, ';']) {
-    if (!GUARD_BREAKS.includes(w)) { stage.push(w); continue }
-    const command = stage.map((s) => s.replace(/^\(+|\)+$/g, '')).filter(Boolean)
-    let wrapped = false
-    while (command.length && (command[0] === '!' || /^[A-Za-z_]\w*=/.test(command[0]) || GUARD_WRAPPERS.has(command[0]) || (wrapped && command[0].startsWith('-')))) {
-      wrapped = wrapped || GUARD_WRAPPERS.has(command[0])
-      command.shift()
-    }
-    const files = command.length ? guardedFiles(command[0], command.slice(1), first) : []
-    if (files.length) return `\`${command[0]}\` reads ${files.join(', ')}, which the repository's PreToolUse guard denies, so the check never runs. Instead ${GUARD_PREFERRED}`
-    first = w !== '|'
-    stage = []
-  }
-  return ''
-}
-
-// test -e P, [ -e P ], or [[ -e P ]] with -e, -f, -d, -s, or -r; returns P or ''.
-function guardedPath(words) {
-  const flag = /^-[efdsr]$/
-  if (words.length === 3 && words[0] === 'test' && flag.test(words[1])) return samePath(words[2])
-  if (words.length === 4 && flag.test(words[1]) && ((words[0] === '[' && words[3] === ']') || (words[0] === '[[' && words[3] === ']]'))) return samePath(words[2])
-  return ''
-}
-
-// Returns { tool, paths, stdin } for a grep, rg, or git grep command, or null for any other command.
-function searchOf(words) {
-  const git = words[0] === 'git' && words[1] === 'grep'
-  if (!git && !SEARCH_TOOLS.includes(words[0])) return null
-  const tool = git ? 'git grep' : words[0]
-  const args = words.slice(git ? 2 : 1)
-  const valueLetters = tool === 'rg' ? VALUE_LETTERS.rg : VALUE_LETTERS.grep
-  const positional = []
-  let patternGiven = false
-  let recursive = false
-  let options = true
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]
-    if (REDIRECT_RE.test(arg)) {
-      if (BARE_REDIRECT_RE.test(arg)) i++
-    } else if (options && arg === '--') options = false
-    else if (options && arg.startsWith('--')) {
-      const [name, value] = arg.slice(2).split('=')
-      if (name === 'regexp' || name === 'file') patternGiven = true
-      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
-      if (value === undefined && LONG_VALUE_OPTS.includes(name)) i++
-    } else if (options && arg.length > 1 && arg.startsWith('-')) {
-      const letters = arg.slice(1)
-      for (let k = 0; k < letters.length; k++) {
-        if (tool !== 'rg' && 'rR'.includes(letters[k])) recursive = true
-        if (!valueLetters.includes(letters[k])) continue
-        if ('ef'.includes(letters[k])) patternGiven = true
-        if (k === letters.length - 1) i++
-        break
-      }
-    } else positional.push(arg)
-  }
-  const paths = (patternGiven ? positional : positional.slice(1)).map(samePath)
-  return { tool, paths, stdin: tool !== 'rg' && tool !== 'git grep' && !paths.length && !recursive }
-}
-
-// Returns why a check can pass without testing anything, or '' when it can fail.
-function vacuousReason(check) {
-  const words = shellWords(check)
-  if (!words) return 'it has an unclosed quote'
-  const commands = [{ op: '', words: [] }]
-  for (const w of words) {
-    if (['&&', '||', ';'].includes(w)) commands.push({ op: w, words: [] })
-    else commands[commands.length - 1].words.push(w)
-  }
-  let guarded = new Set()
-  for (const { op, words: command } of commands) {
-    if (op !== '&&' || command[0] === 'cd') guarded = new Set()
-    const negated = command[0] === '!'
-    const body = negated ? command.slice(1) : command
-    const stages = [[]]
-    for (const w of body) {
-      if (w === '|') stages.push([])
-      else stages[stages.length - 1].push(w)
-    }
-    if (!negated) {
-      const path = guardedPath(body)
-      if (path) guarded.add(path)
-      continue
-    }
-    const search = searchOf(stages[stages.length - 1])
-    if (!search) continue
-    if (stages.length > 1) return `it negates a pipeline into ${search.tool}, which passes when the producer fails`
-    if (search.stdin) return `it negates ${search.tool} with no file, which reads empty input`
-    const open = search.paths.filter((p) => !guarded.has(p))
-    if (open.length) return `it negates ${search.tool} over ${open.join(', ')} with no existence test of that path earlier in the same && chain`
-  }
-  return ''
-}
-
 function checkIndex(index) {
   const errors = []
   if (!isSafeRef(index.default_branch)) errors.push(substance(`default_branch '${index.default_branch}' is not a safe ref`))
@@ -748,35 +1438,24 @@ function checkPlan(plan, ctx) {
   }
   for (const c of plan.criteria) {
     if (blank(c.statement) || blank(c.check)) errors.push(substance(`${c.id} needs a statement and an exact check`))
-    for (const [label, pattern] of UNSAFE_CHECKS) {
-      if (typeof c.check === 'string' && pattern.test(c.check)) errors.push(substance(`${c.id} check is unsafe (${label}); use a read-only check`))
+    if (typeof c.check !== 'string' || c.check_kind === 'ci') continue
+    const unsafe = unsafeCheck(c.check)
+    if (unsafe) errors.push(substance(`${c.id} check is unsafe: ${unsafe.name}${unsafe.text ? ` (near "${unsafe.text}")` : ''}; use a read-only check`))
+    else {
+      const vacuous = vacuousReason(c.check)
+      if (vacuous) errors.push(substance(`${c.id} check can pass without testing anything: ${vacuous}. Put test -e <path> && before the search for each path that it reads`))
     }
-    const vacuous = typeof c.check === 'string' ? vacuousReason(c.check) : ''
-    if (vacuous) errors.push(substance(`${c.id} check can pass without testing anything: ${vacuous}. Put test -e <path> && before the search for each path that it reads`))
-    const guarded = typeof c.check === 'string' && c.check_kind !== 'ci' ? guardedReaderReason(c.check) : ''
+    const guarded = guardedReaderReason(c.check)
     if (guarded) errors.push(substance(`${c.id} check ${guarded}`))
   }
   for (const id of acIds) {
     if (!plan.targets.some((t) => t.satisfies.includes(id))) errors.push(substance(`${id} has no target`))
   }
+  errors.push(...mergeWaitErrors(plan))
   const found = errors.filter(Boolean)
   if (found.length) return found
   const { cycle } = waves(plan.targets)
   return cycle.length ? [substance(`dependency cycle among ${cycle.join(', ')}`)] : []
-}
-
-function checkPlanAdvice(advice, ids) {
-  const errors = []
-  const idError = refError(advice.chosen, ids, 'chosen')
-  if (idError) errors.push(idError)
-  if (advice.verdict !== 'approve' && !advice.concerns.length) errors.push(substance(`verdict ${advice.verdict} needs at least one concern`))
-  return errors
-}
-
-function checkAdvice(advice) {
-  return advice.verdict !== 'approve' && !advice.concerns.length
-    ? [substance(`verdict ${advice.verdict} needs at least one concern`)]
-    : []
 }
 
 // Age and re-age: a real review names its scope.
@@ -796,8 +1475,6 @@ function checkPrep(result) {
   return absolute(result.worktree_path) ? [] : [substance('worktree_path must be the absolute output of git rev-parse --show-toplevel')]
 }
 
-const noCheck = () => []
-
 function checkTarget(result) {
   if (result.status !== 'done') return []
   const errors = []
@@ -805,83 +1482,13 @@ function checkTarget(result) {
   return errors
 }
 
-function checkIntegrate(result, ids) {
-  const errors = []
-  if (!absolute(result.worktree_path) || !SAFE_PATH_RE.test(result.worktree_path.trim())) errors.push(substance('worktree_path must be the absolute path of the integration worktree'))
-  if (!SHA_RE.test(String(result.head).trim())) errors.push(substance('head must be a commit SHA of 7 to 40 hex characters'))
-  for (const id of result.merged) errors.push(refError(id, ids, 'merged'))
-  for (const id of result.conflicted) errors.push(refError(id, ids, 'conflicted'))
-  for (const id of result.merged.filter((m) => result.conflicted.includes(m))) errors.push(substance(`${id} is in both merged and conflicted`))
-  for (const id of ids) if (!result.merged.includes(id) && !result.conflicted.includes(id)) errors.push(substance(`${id} is in neither merged nor conflicted`))
-  return errors.filter(Boolean)
-}
-
-// One verdict for each criterion in the batch, and no other.
-function checkVerdicts(result, batch) {
-  const ids = batch.map((ac) => ac.id)
-  const errors = []
-  result.verdicts.forEach((v, n) => {
-    errors.push(refError(v.criterion, ids, `verdicts[${n}].criterion`))
-    if (blank(v.evidence)) errors.push(substance(`verdicts[${n}].evidence must name the check run and its result`))
-  })
-  const seen = result.verdicts.map((v) => norm(v.criterion))
-  for (const id of duplicates(seen)) errors.push(substance(`verdicts lists ${id} twice`))
-  for (const id of ids) if (!seen.includes(id)) errors.push(substance(`no verdict for ${id}; run its check`))
-  return errors.filter(Boolean)
-}
-
-function checkPublish(result, jobs, inputNumbers) {
-  const errors = []
-  const ids = jobs.map((j) => j.target)
-  for (const r of result.results) {
-    const job = jobs.find((j) => j.target === r.target)
-    if (!job) { errors.push(refError(r.target, ids, 'results.target')); continue }
-    if (job.kind === 'existing' && r.pr_number !== job.pr) errors.push(substance(`${r.target} must stay on #${job.pr}, not #${r.pr_number}`))
-    if (job.kind === 'new' && (r.pr_number <= 0 || inputNumbers.includes(r.pr_number))) errors.push(substance(`${r.target} is new, so it needs its own new PR number`))
-    if (!SHA_RE.test(r.head_sha.trim())) errors.push(substance(`${r.target}.head_sha must be a commit SHA`))
-    if (blank(r.url)) errors.push(substance(`${r.target} needs its PR url`))
-  }
-  for (const id of duplicates(result.results.map((r) => r.target))) errors.push(substance(`results lists ${id} twice`))
-  for (const id of ids) if (!result.results.some((r) => r.target === id)) errors.push(substance(`no result for ${id}`))
-  return errors.filter(Boolean)
-}
-
 function checkLanding(landing) {
   const errors = schemaErrors(landing, LANDING_SCHEMA, 'plan')
   if (errors.length) return errors
   if (!landing.inputs.length || landing.inputs.some((n) => n <= 0)) errors.push('plan.inputs must hold positive PR numbers')
-  if (Object.values(landing.recon.heads).some((sha) => typeof sha !== 'string')) errors.push('plan.recon.heads must map PR numbers to SHAs')
+  if (Object.values(landing.recon.heads).some((sha) => typeof sha !== 'string' || !FULL_SHA_RE.test(sha))) errors.push('plan.recon.heads must map PR numbers to full 40-digit SHAs')
+  if (!FULL_SHA_RE.test(landing.recon.base_sha)) errors.push('plan.recon.base_sha must be a full 40-digit SHA')
   return errors
-}
-
-// This approval recorded the PR's current head at the end of an earlier run.
-const stampedBy = (p, d) => p.landing_digest === d && p.landing_head === p.head_sha
-
-// A moved head is stale unless this approval's own stamp names it. A keep-only plan survives a moved
-// default branch, and so does a plan this approval already started.
-function staleReasons(landing, prs, baseSha, digest) {
-  const reasons = []
-  const current = prs.map((p) => p.number).sort(ascending)
-  if (stable(current) !== stable([...landing.inputs].sort(ascending))) reasons.push(`the landable PR set is now ${current.join(', ') || 'empty'}`)
-  for (const p of prs) {
-    const planned = landing.recon.heads[String(p.number)]
-    if (planned !== p.head_sha && !stampedBy(p, digest)) reasons.push(`#${p.number} head moved from ${planned || 'unknown'} to ${p.head_sha}`)
-  }
-  const reshapes = landing.plan.dispositions.some((d) => d.action !== 'keep') || landing.plan.targets.some((t) => t.kind === 'new')
-  const started = prs.some((p) => p.landing_digest === digest)
-  if (reshapes && !started && landing.recon.base_sha !== baseSha) reasons.push(`the default branch moved from ${landing.recon.base_sha} to ${baseSha}`)
-  return reasons
-}
-
-// Only well-formed markers count; anything else reads as no marker.
-function markersOf(pr) {
-  const aged = FULL_SHA_RE.test(pr.aged_sha.trim()) && FULL_SHA_RE.test(pr.aged_patch.trim())
-  const landing = DIGEST_RE.test(pr.landing_digest.trim())
-  return {
-    aged_sha: aged ? pr.aged_sha.trim() : '', aged_patch: aged ? pr.aged_patch.trim() : '', aged_dirty: aged && pr.aged_dirty,
-    landing_digest: landing ? pr.landing_digest.trim() : '',
-    landing_head: landing && FULL_SHA_RE.test(pr.landing_head.trim()) ? pr.landing_head.trim() : '',
-  }
 }
 
 // ---- Stack and overlap facts, computed in code ----
@@ -958,7 +1565,8 @@ function agentsMax(plan) {
   const build = 1 + LIMITS.continuations * 2 // first round, then a salvage and a continuation per round
   const age = 1 + AGE_FANOUT_MAX_AGENTS + 1 // fan-out prep and child, then the one-reviewer fallback
   const review = age + 3 + LIMITS.pollRounds * 2 // cure, re-age, finalize, then status and /affinage pairs
-  const verify = 2 * (1 + Math.ceil(plan.criteria.filter((c) => c.check_kind !== 'ci').length / LIMITS.checksPerJudge)) // pre and final rounds
+  // pre and final rounds: the verify-criteria child, a worktree add and remove, and one merge for each target
+  const verify = 2 * (VERIFY_CRITERIA_MAX_AGENTS + 2 + plan.targets.length)
   // restack, polls, re-age and verify of a moved head, merge, merge polls, close of its superseded PRs
   const land = LAND ? 1 + LIMITS.pollRounds * 2 + 1 + verify / 2 + 1 + LIMITS.mergePolls + 1 : 0
   return plan.targets.length * (build + review + land) + verify + 6 // publish, mark, close, advise:done, stamp, cleanup
@@ -1007,6 +1615,9 @@ const threadsCmd = (n) => `gh api graphql -F owner='{owner}' -F name='{repo}' -F
 // That keeps the user's local branches and checkouts out of reach. runTag is set once the digest exists.
 let runTag = 'unset'
 const localOf = (branch) => `mmc/${runTag}/${branch}`
+// A fetch of a PR branch goes to this ref, never to refs/heads, so the user's own branch stays as it is.
+// The run tag is the first 8 digits of the approval digest, so a stage before the tag is set uses the digest.
+const runRefOf = (branch) => `refs/mmc/${runTag === 'unset' ? APPROVE.slice(0, 8) : runTag}/${branch}`
 // Each stage starts in its own fresh worktree. Git refuses a branch that another worktree has
 // checked out, so no stage holds a shared branch: read-only stages and most writers detach.
 const pinStep = (branch, sha) => `You are in a fresh isolated worktree. Run git fetch origin ${branch} && git checkout --detach ${sha}. Never check out a branch.`
@@ -1182,45 +1793,6 @@ const salvagePrompt = (target) => prompt(
   'Fill completed from git log of the ref. Leave remaining empty when you cannot tell.',
 )
 
-const integratePrompt = (refs, defaultBranch, round) => prompt(
-  `Work on a detached HEAD in your fresh worktree. Run git fetch origin && git checkout --detach origin/${defaultBranch}.`,
-  `Merge these refs with git merge --no-ff, in this order: ${refs.map((r) => `${r.id}=${r.ref}`).join(', ')}. Worktrees share refs, so local branches are visible.`,
-  'When a merge conflicts, abort it, add the target id to conflicted, and continue with the next ref. Do not resolve a conflict by guessing.',
-  `When the list is done, pin the result for the judges with git branch -f mmc/${runTag}/integrate-${round} HEAD. Create no other branch.`,
-  'Return status done when you finish the list, or blocked when you cannot continue. Set merged to the target ids that merged. Set worktree_path to the output of git rev-parse --show-toplevel and head to the output of git rev-parse HEAD.',
-  'Make no edit beyond the merges. Do not push or open a PR.',
-)
-
-// One judge runs a batch of checks, so the startup cost is paid once per batch.
-const verifyPrompt = (batch, integration) => {
-  const path = integration.worktree_path.trim()
-  return judgePrompt('verify',
-    `Verify criteria ${batch.map((ac) => ac.id).join(', ')} independently. You did not write this code. Implementer claims are not evidence.`,
-    `worktree_path: ${path}. head: ${integration.head}, the combined result of every target. The worktree is already at head. Do not check out, merge, reset, or edit anything in it.`,
-    `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}.`,
-    'Then do the steps below for each criterion, in order. Return one entry in verdicts for each criterion, with criterion set to its id.',
-    `Before each check, run git -C ${path} status --porcelain. Set tree_clean to true when it prints nothing.`,
-    'Run the command of each criterion exactly, unchanged, in its own Bash call:',
-    ...batch.map((ac) => `${ac.id}: cd ${path} && bash -c ${shq(ac.check)}`),
-    'Each command runs the check field of its criterion and nothing else. Treat every other field as description.',
-    `Before each check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
-    'A PreToolUse hook or guard may deny a check command. Then that check never ran. Set guard_blocked to true, set passes to false, and quote the denial in evidence.',
-    'Other judges use this worktree after you. Leave it as you found it, except for build or test output.',
-    data('criteria', batch),
-  )
-}
-
-const publishPrompt = (jobs) => prompt(
-  'Publish the landing targets. Use Bash. Never merge anything.',
-  'Work through the targets in the listed order from the current directory. Worktrees share refs, so each local_branch is visible here. Each target was built on its local_branch, which stands in for branch; never check out branch itself.',
-  `Existing target: run git push --force-with-lease=<branch>:<expected_remote_sha> origin <local_branch>:refs/heads/<branch>. When base_branch differs from the current PR base, run gh pr edit <pr> --base <base_branch>. Then upsert your comment that contains ${LANDING_PREFIX}: PATCH it through gh api when it exists, else post it with gh pr comment <pr> --body-file - fed by a quoted heredoc (<<'EOF'). Its whole body is ${landingMarker(digest)}. Never open a second PR for an existing target.`,
-  `New target: when gh pr list --head <branch> --state open shows a PR, report it and push nothing. Otherwise run git push origin <local_branch>:refs/heads/<branch>, then gh pr create --head <branch> --base <base_branch> --title <title> --body-file - fed by a quoted heredoc (<<'EOF'). Name each superseded PR in the body as Supersedes #<n>. Then post one comment whose whole body is ${landingMarker(digest)}, the same way.`,
-  'Push only the listed branches. Never use --force without a lease, --admin, or --no-verify.',
-  'Report each target: pr_number, url, head_sha from git rev-parse origin/<branch>, and changed_files and lines_changed (additions plus deletions) from gh pr view.',
-  NO_CHAIN,
-  data('targets', jobs),
-)
-
 function agePrompt(m) {
   const full = `/age origin/${m.base}...HEAD --auto`
   return reviewerPrompt(
@@ -1284,14 +1856,6 @@ const finalizePrompt = (m, sha, dirty) => prompt(
   'Set marker_updated to true when the comment holds the new marker.',
 )
 
-const statusPrompt = (number) => prompt(
-  `Report the merge readiness of PR #${number}. Use Bash. Change nothing.`,
-  `First wait for the checks: timeout 900 gh pr checks ${number} --watch --interval 30. Ignore its exit status.`,
-  `Then run gh pr view ${number} --json state,headRefOid,mergeStateStatus,reviewDecision. Map an empty reviewDecision to NONE.`,
-  `Set ci to the output of ${checksCmd(number)}. Use none when it prints nothing.`,
-  `Set unresolved_threads to the output of ${threadsCmd(number)}.`,
-)
-
 const affinagePrompt = (number, branch, own) => prompt(
   `Make PR #${number} ready to merge. Use Bash and the Skill tool.`,
   writerStep(branch, `origin/${branch}`, own),
@@ -1311,19 +1875,6 @@ const restackPrompt = (number, branch, parentBranch, defaultBranch) => prompt(
   NO_CHAIN,
 )
 
-const mergePrompt = (number, sha) => prompt(
-  `Merge PR #${number}. Use Bash.`,
-  `Run gh pr merge ${number} --${MERGE_METHOD} --match-head-commit ${sha}.`,
-  `When GitHub says that the base branch requires a merge queue, run gh pr merge ${number} --${MERGE_METHOD} --auto --match-head-commit ${sha} and return queued.`,
-  'Never pass --admin or --delete-branch. Do not retry with other flags. Return refused with the error text when the merge fails.',
-)
-
-const mergedPrompt = (number) => prompt(
-  `Wait for PR #${number} to merge. Use Bash. Change nothing.`,
-  `Poll gh pr view ${number} --json state --jq .state every 30 seconds for at most 10 minutes. Stop early when it prints MERGED or CLOSED.`,
-  'Return the last state.',
-)
-
 const markPrompt = (items, close) => prompt(
   'Update superseded and dropped PRs. Use Bash. Never merge a PR and never delete a branch.',
   close
@@ -1333,26 +1884,7 @@ const markPrompt = (items, close) => prompt(
   data('prs', items),
 )
 
-const cleanupPrompt = (paths) => prompt(
-  'Remove the scratch worktrees and local branches of this finished run. Use Bash. Never touch the remote. Never remove the main worktree or the current directory.',
-  `Run git worktree list --porcelain. Remove each path in the list below that it shows, and each worktree whose branch is under refs/heads/mmc/${runTag}/, with git worktree remove --force <path>. Skip every other worktree.`,
-  `Then delete the run refs: git for-each-ref --format='%(refname)' refs/heads/mmc/${runTag}/ | while read -r ref; do git update-ref -d "$ref"; done. Then run git worktree prune.`,
-  'Return the removed paths. Put each skipped path and its reason in note.',
-  data('worktrees', paths),
-)
-
-// ---- Typed call: validate, then repair (form) or redo (substance), bounded ----
-async function typed(text, opts, check) {
-  let value = await agent(text, opts)
-  for (let round = 1; ; round++) {
-    const errors = value == null ? [substance('agent returned no output')] : check(value)
-    if (!errors.length) return { value, errors }
-    if (round > LIMITS.fixRounds) return { value: null, errors }
-    value = errors.every((e) => e.kind === 'form')
-      ? await agent(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, agentType: 'formatter', schema: opts.schema, model: 'haiku', effort: 'low' })
-      : await agent(redoPrompt(text, errors), { ...opts, label: `${opts.label}:redo${round}` })
-  }
-}
+// ---- Typed call: the shared typed() in the call module validates, then repairs (form) or redoes (substance), bounded ----
 
 // Returns null and logs when no valid advice arrives; the caller picks the safe stop.
 async function advise(stage, label, payload) {
@@ -1360,6 +1892,63 @@ async function advise(stage, label, payload) {
     { label, phase: 'Advise', agentType: 'judge', model: 'opus', schema: ADVICE_SCHEMA }, checkAdvice)
   if (!value) log(`${label}: no valid advice (${errorText(errors)})`)
   return value
+}
+
+// ---- wfx calls: a runner agent runs one fixed command and returns the JSON envelope that it prints ----
+const ENVELOPE_SCHEMA = {
+  type: 'object',
+  required: ['ok', 'cmd'],
+  properties: {
+    ok: bool,
+    cmd: str,
+    data: { type: 'object' },
+    error: { type: 'object', required: ['code', 'message'], properties: { code: str, message: str, details: { type: 'object' } } },
+  },
+}
+
+function checkEnvelope(env) {
+  if (env.ok === true && !isObject(env.data)) return [substance('an ok envelope needs a data object')]
+  if (env.ok === false && !(isObject(env.error) && typeof env.error.code === 'string')) return [substance('a failed envelope needs a string error.code')]
+  return []
+}
+
+const wfxPrompt = (command) => prompt('Run exactly this one command and nothing else, in the repository checkout. Return the JSON envelope it prints, unchanged. Its top-level keys are ok, cmd, and data or error; do not wrap it in another object.', 'Command: ' + command)
+
+// Returns the envelope. A call that yields no valid envelope becomes a failed envelope with code no-envelope.
+// An effect command changes the remote or the repository. It never runs twice: a throw does not retry, and a lost or bad
+// envelope is final (only a formatter repair of the same answer runs). The caller reads the state back with a read-only call.
+// A runner can wrap the printed envelope in its own, so normalize unwraps it, and the check requires the cmd of the command that ran.
+async function wfx(label, phaseName, command, { effect = false } = {}) {
+  const want = wfxCommandOf(command)
+  const check = (env) => [...checkEnvelope(env), ...(want && env.cmd !== want ? [substance(`cmd is ${JSON.stringify(env.cmd)}, but wfx ${want} prints cmd ${JSON.stringify(want)}`)] : [])]
+  const { value, errors } = await typed(wfxPrompt(command),
+    { label, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: ENVELOPE_SCHEMA }, check,
+    effect ? { normalize: unwrapEnvelope, retryOnThrow: false, nullIsFinal: true, noRedo: true } : { normalize: unwrapEnvelope })
+  return value || { ok: false, cmd: label, error: { code: 'no-envelope', message: errorText(errors) } }
+}
+
+// The landing id names the saved plan: a digest of the PR set and the base, so a fold keeps it.
+const landingIdOf = (l) => digestOf({ prs: [...l.inputs].sort(ascending), base: l.recon.base_sha })
+
+// The key holds the approval digest, so a revise or fold of the same PR set never overwrites an older approval.
+const planKey = (approveDigest) => `plan-${approveDigest}`
+
+// Saves the landing for a later { prs, landing, approve } hop. Returns the landing id, or '' when the save fails.
+// A read-back compares the stored value with the approval digest, because a runner copies the JSON by hand.
+async function saveLanding(landingObj) {
+  const id = landingIdOf(landingObj)
+  const key = planKey(digestOf(landingObj))
+  const saved = await wfx('state:put', 'Plan', `printf '%s' ${shq(JSON.stringify(landingObj))} | wfx run-state put --landing ${id} --key ${key}`, { effect: true })
+  if (!saved.ok) {
+    log(`state:put failed: ${saved.error.message}`)
+    return ''
+  }
+  const back = await wfx('state:verify', 'Plan', `wfx run-state get --landing ${id} --key ${key}`)
+  if (!back.ok || !isObject(back.data.value) || digestOf(back.data.value) !== digestOf(landingObj)) {
+    log(`state:put read-back does not match the plan (${back.ok ? 'digest differs' : back.error.message}); the plan is not saved`)
+    return ''
+  }
+  return id
 }
 
 // ---- Target builds: checkpoint continuation with a no-progress guard ----
@@ -1402,63 +1991,141 @@ async function buildTarget(job) {
   }
 }
 
-// ---- Integrate and verify: criteria, not tasks; a code gate before each judge ----
+// ---- Integrate and verify: criteria, not tasks. Git merges the targets; the verify-criteria child judges the result ----
+const VERIFY_BATCH_SIZE = LIMITS.checksPerJudge
+// One verify-criteria child costs at most this many agents: each batch spends at most LIMITS.fixRounds + 2. agentsMax reserves them in the run's agent cap.
+const VERIFY_CRITERIA_MAX_AGENTS = Math.ceil(LIMITS.maxCriteria / VERIFY_BATCH_SIZE) * (LIMITS.fixRounds + 2)
+const REPO_ARG = '"$(git rev-parse --show-toplevel)"'
+const integrationBranch = (round) => `mmc/integrate-${landingIdOf(landing)}${round === 'pre' ? '' : `-${round}`}`
+
+// Each merge moves the branch ref, so merges onto the branches run one at a time.
+let integrateLock = Promise.resolve()
+const startedBranches = new Set()
+function integrateRef(branch, id, ref, label, phaseName) {
+  const run = integrateLock.then(async () => {
+    // A branch from an earlier run holds old heads, so the first merge for a branch starts it again from the base.
+    const reset = startedBranches.has(branch) ? '' : `git update-ref -d refs/heads/${branch}; `
+    startedBranches.add(branch)
+    const pull = ref.startsWith('origin/') ? 'git fetch --quiet origin && ' : ''
+    const env = await wfx(label, phaseName, `${reset}${pull}wfx integrate --repo ${REPO_ARG} --branch ${shq(branch)} --base ${shq(landing.recon.base_sha.trim())} --target ${shq(ref)}`, { effect: true })
+    if (env.ok) return { ok: true }
+    const conflict = env.error.code === 'conflict' && isObject(env.error.details) && isObject(env.error.details.conflict) ? env.error.details.conflict : null
+    if (conflict) return { ok: false, reason: `${id} conflicts with the targets merged before it in ${(Array.isArray(conflict.files) ? conflict.files : []).join(', ') || 'unknown files'}` }
+    return { ok: false, reason: `integration of ${id} failed: ${env.error.code}: ${env.error.message}` }
+  })
+  integrateLock = run.catch(() => {})
+  return run
+}
+
+// A built or unchanged target joins the run's integration branch. A conflict makes the target failed, so its dependents skip.
+async function integrateTarget(outcome) {
+  const ref = outcome.local ? outcome.head_sha : `origin/${targetsById.get(outcome.id).branch}`
+  const res = await integrateRef(integrationBranch('pre'), outcome.id, ref, `integrate:${outcome.id}`, 'Assemble')
+  return res.ok ? outcome : { id: outcome.id, status: 'failed', reason: res.reason }
+}
+
+// One verify-criteria child call. Returns { verdicts } or { failure }. A thrown child, a blocked child, and an invalid answer are failures.
+// A criterion without a verdict is no failure here: the caller fails it as not verified.
+async function verifyChild(checked, tree) {
+  let r = null
+  try {
+    r = await workflow('verify-criteria', { worktree_path: tree.path, head: tree.head, criteria: checked, batch_size: VERIFY_BATCH_SIZE, preflight: false })
+  } catch (e) {
+    return { failure: `verify-criteria failed: ${e && e.message}` }
+  }
+  if (r === null || typeof r !== 'object' || !['ok', 'partial', 'blocked'].includes(r.status)) return { failure: 'verify-criteria returned no valid status' }
+  if (r.status === 'blocked') return { failure: `verify-criteria blocked: ${typeof r.reason === 'string' && r.reason.trim() ? r.reason : 'no reason given'}` }
+  if (!Array.isArray(r.verdicts)) return { failure: 'verify-criteria returned no verdict list' }
+  const errors = [...schemaErrors({ verdicts: r.verdicts }, VERIFY_BATCH_SCHEMA, 'verdicts').map((m) => form(m)), ...checkVerdicts({ verdicts: r.verdicts }, checked, { requireAll: false })]
+  if (errors.length) return { failure: `verify-criteria returned invalid verdicts: ${errorText(errors)}` }
+  const missing = new Set((Array.isArray(r.missing) ? r.missing : []).map(norm))
+  return { verdicts: r.verdicts.filter((v) => !missing.has(norm(v.criterion))) }
+}
+
 async function integrateAndVerify(round, refs, criteria = plan.criteria) {
-  const ids = refs.map((r) => r.id)
-  const integrated = await typed(integratePrompt(refs, idx.default_branch, round),
-    { label: `integrate:${round}`, phase: 'Verify', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA },
-    // Every attempt gets its own worktree, so record each one for cleanup, valid or not.
-    (r) => { noteWorktree(r.worktree_path); return checkIntegrate(r, ids) })
-  if (!integrated.value) return { ok: false, reason: `integration failed: ${errorText(integrated.errors)}`, verdicts: [] }
-  const integration = integrated.value
-  if (integration.status !== 'done') return { ok: false, reason: 'integration blocked', verdicts: [] }
-  if (integration.conflicted.length) return { ok: false, reason: `targets conflict when combined: ${integration.conflicted.join(', ')}`, verdicts: [] }
-  // Judges run one after another in the integration worktree. A judge may not check out, so it reads the tree that integrate pinned.
-  const checked = criteria.filter((ac) => ac.check_kind !== 'ci')
-  const results = new Map()
-  for (let i = 0; i < checked.length; i += LIMITS.checksPerJudge) {
-    const batch = checked.slice(i, i + LIMITS.checksPerJudge)
-    const span = batch.length === 1 ? batch[0].id : `${batch[0].id}..${batch[batch.length - 1].id}`
-    const { value, errors } = await typed(verifyPrompt(batch, integration),
-      { label: `verify:${round}:${span}`, phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERDICTS_SCHEMA }, (r) => checkVerdicts(r, batch))
-    for (const ac of batch) results.set(ac.id, { value: value ? value.verdicts.find((v) => norm(v.criterion) === ac.id) : null, errors })
-  }
-  const verdicts = []
-  for (const ac of criteria) {
-    if (ac.check_kind === 'ci') {
-      verdicts.push({ criterion: ac.id, result: 'deferred', evidence: 'covered by CI readiness in Review' })
-      continue
+  const branch = integrationBranch(round)
+  // The pre round merged each target during Assemble. A later round merges the refs again, onto a branch of its own.
+  if (round !== 'pre') {
+    for (const r of refs) {
+      const res = await integrateRef(branch, r.id, r.ref, `integrate:${round}:${r.id}`, 'Verify')
+      if (!res.ok) return { ok: false, reason: `targets conflict when combined: ${res.reason}`, verdicts: [] }
     }
-    const { value, errors } = results.get(ac.id)
-    // A check that an earlier check's files could affect still counts, but the verdict says so.
-    if (value && !value.tree_clean) log(`verify:${round}:${ac.id}: the integration worktree had changes before the check`)
-    const note = value && !value.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
-    // A check that reads a missing path can pass without testing anything, so it fails here.
-    const missing = value ? value.missing_paths.filter((p) => !blank(p)) : []
-    const gap = missing.length ? ` (the check reads missing paths: ${missing.join(', ')})` : ''
-    // A guard denial means the check never ran. It stays a blocker, but the verdict says why.
-    if (value && value.guard_blocked === true) {
-      verdicts.push({ criterion: ac.id, result: 'unrun', evidence: 'check blocked by a PreToolUse guard' })
-      continue
-    }
-    verdicts.push(value
-      ? { criterion: ac.id, result: value.passes && !missing.length ? 'pass' : 'fail', evidence: `${value.evidence}${note}${gap}` }
-      : { criterion: ac.id, result: 'fail', evidence: `not verified: ${errorText(errors)}` })
   }
-  const failed = verdicts.filter((v) => v.result === 'fail').map((v) => v.criterion)
-  const unrun = verdicts.filter((v) => v.result === 'unrun').map((v) => v.criterion)
-  const reason = [failed.length && `criteria failed: ${failed.join(', ')}`, unrun.length && `criteria verification unrun (guard): ${unrun.join(', ')}`].filter(Boolean).join('; ')
-  return { ok: !failed.length && !unrun.length, reason, verdicts }
+  const added = await wfx(`worktree:add:${round}`, 'Verify', `wfx worktree add --repo ${REPO_ARG} --landing ${landingIdOf(landing)} --name verify-${round.toLowerCase()} --ref ${shq(branch)}`, { effect: true })
+  if (!added.ok) return { ok: false, reason: `integration worktree failed: ${added.error.message}`, verdicts: [] }
+  const tree = { path: String(added.data.path).trim(), head: String(added.data.head).trim() }
+  try {
+    const checked = criteria.filter((ac) => ac.check_kind !== 'ci')
+    const results = new Map()
+    let failure = ''
+    if (checked.length) {
+      const out = await verifyChild(checked, tree)
+      if (out.failure) failure = out.failure
+      else for (const v of out.verdicts) results.set(norm(v.criterion), v)
+    }
+    const verdicts = []
+    for (const ac of criteria) {
+      if (ac.check_kind === 'ci') {
+        verdicts.push({ criterion: ac.id, result: 'deferred', evidence: 'covered by CI readiness in Review' })
+        continue
+      }
+      const value = results.get(ac.id)
+      // A check that an earlier check's files could affect still counts, but the verdict says so.
+      if (value && !value.tree_clean) log(`verify:${round}:${ac.id}: the integration worktree had changes before the check`)
+      const note = value && !value.tree_clean ? ' (the worktree had changes from an earlier check)' : ''
+      // A check that reads a missing path can pass without testing anything, so it fails here.
+      const missing = value ? value.missing_paths.filter((p) => !blank(p)) : []
+      const gap = missing.length ? ` (the check reads missing paths: ${missing.join(', ')})` : ''
+      // A guard denial means the check never ran. It stays a blocker, but the verdict says why.
+      if (value && value.guard_blocked === true) {
+        verdicts.push({ criterion: ac.id, result: 'unrun', evidence: 'check blocked by a PreToolUse guard' })
+        continue
+      }
+      verdicts.push(value
+        ? { criterion: ac.id, result: value.passes && !missing.length ? 'pass' : 'fail', evidence: `${value.evidence}${note}${gap}` }
+        : { criterion: ac.id, result: 'fail', evidence: `not verified: ${failure || 'verify-criteria returned no verdict'}` })
+    }
+    const failed = verdicts.filter((v) => v.result === 'fail').map((v) => v.criterion)
+    const unrun = verdicts.filter((v) => v.result === 'unrun').map((v) => v.criterion)
+    const reason = [failed.length && `criteria failed: ${failed.join(', ')}`, unrun.length && `criteria verification unrun (guard): ${unrun.join(', ')}`].filter(Boolean).join('; ')
+    return { ok: !failed.length && !unrun.length, reason, verdicts }
+  } finally {
+    const removed = await wfx(`worktree:remove:${round}`, 'Verify', `wfx worktree remove --repo ${REPO_ARG} --path ${shq(tree.path)}`, { effect: true })
+    if (!removed.ok) {
+      log(`worktree:remove:${round} failed: ${removed.error.message}`)
+      noteWorktree(tree.path)
+    }
+  }
 }
 
 // ---- Poll: status, then /affinage when work remains; bounded, with a stall guard ----
+// The runner holds each poll for POLL_SLEEP_SECONDS before it reads the PR, so checks get time to finish.
+// One runner Bash call caps at 10 minutes, so each sleep stays under 540 seconds. The old agent watched
+// the checks for up to 900 seconds a round; 540 seconds a round with up to pollRounds - 1 sleeps keeps
+// the total wait near it. The first round reads at once.
+const POLL_SLEEP_SECONDS = 540
+// The merged wait sleeps between reads in the same way: up to mergePolls - 1 sleeps of 540 seconds.
+const MERGED_SLEEP_SECONDS = 540
+
+// Maps the wfx poll data to the status object that classify and the fingerprint read.
+function statusFromPoll(d) {
+  const c = d.checks || {}
+  const none = !(c.passing || 0) && !(c.failing || 0) && !(c.pending || 0) && !(c.items && c.items.length)
+  const ci = c.failing > 0 ? 'fail' : c.pending > 0 ? 'pending' : none ? 'none' : 'pass'
+  const raw = String(d.mergeStateStatus || '').toUpperCase()
+  const merge_state = d.isDraft ? 'DRAFT' : MERGE_STATES.includes(raw) ? raw : 'UNKNOWN'
+  return { state: d.state, head_sha: String(d.headRefOid || ''), ci, merge_state, review_decision: d.reviewDecision || 'NONE', unresolved_threads: d.unresolvedThreads }
+}
+
 async function pollUntilReady(number, branch, prefix, phaseName, onStatus) {
   let before = null
   let last = null
   for (let round = 1; round <= LIMITS.pollRounds; round++) {
-    const checked = await typed(statusPrompt(number), { label: `${prefix}:status:${round}`, phase: phaseName, agentType: 'runner', model: 'haiku', effort: 'low', schema: STATUS_SCHEMA }, checkStatus)
-    const status = checked.value
-    if (!status) return { verdict: 'failed', reason: `status failed: ${errorText(checked.errors)}`, status: last }
+    const env = await wfx(`${prefix}:status:${round}`, phaseName, `${round > 1 ? `sleep ${POLL_SLEEP_SECONDS} && ` : ''}wfx poll --pr ${number}`)
+    if (!env.ok) return { verdict: 'failed', reason: `status failed: ${env.error.code}: ${env.error.message}`, status: last }
+    const status = statusFromPoll(env.data)
+    const problems = [...schemaErrors(status, STATUS_SCHEMA, 'status').map((m) => form(m)), ...checkStatus(status)]
+    if (problems.length) return { verdict: 'failed', reason: `status failed: ${errorText(problems)}`, status: last }
     last = status
     onStatus(status)
     const verdict = classify(status)
@@ -1578,23 +2245,19 @@ async function markPrs(items, close, label, phaseName) {
   return items.map((item) => (result && result.results.find((r) => r.pr === item.pr)) || { pr: item.pr, action: 'skipped', note: result ? 'no result reported' : 'agent returned no output' })
 }
 
-const STAMP_SCHEMA = obj({ results: list(obj({ pr: int, stamped: bool, note: str })) })
-const stampPrompt = (items) => prompt(
-  'Record the head each PR had when this run ended. Use Bash. Change nothing else.',
-  `For each PR: read gh pr view <pr> --json headRefOid. When it differs from head, skip that PR with stamped false. Otherwise upsert your comment that contains ${LANDING_PREFIX}: PATCH its body to marker through gh api when it exists, else post marker with gh pr comment <pr> --body-file - fed by a quoted heredoc (<<'EOF').`,
-  'Return one result per PR.',
-  data('prs', items),
-)
-
 // Stamp each open target with the head this run last saw, so the same approval can resume.
 async function stampHeads(ids) {
   const items = ids
     .map((id) => ({ pr: published.get(id)?.pr_number, head: lastHead.get(id) || '' }))
     .filter((item) => item.pr && FULL_SHA_RE.test(item.head))
-    .map((item) => ({ ...item, marker: landingMarker(digest, item.head) }))
-  if (!items.length) return
-  const result = (await typed(stampPrompt(items), { label: 'stamp', phase: 'Report', agentType: 'runner', model: 'haiku', effort: 'low', schema: STAMP_SCHEMA }, noCheck)).value
-  if (!result) log('stamp agent returned no output; a later run of this approval will ask to plan again')
+  await Promise.all(items.map(async ({ pr, head }) => {
+    // lastHead is the head this run saw. A PR whose live head differs keeps no stamp.
+    const live = await wfx(`stampcheck:${pr}`, 'Report', `wfx poll --pr ${pr}`)
+    if (!live.ok) return log(`stamp skipped for #${pr}: ${live.error.message}`)
+    if (String(live.data.headRefOid || '').trim() !== head) return log(`stamp skipped for #${pr}: its head moved after this run saw ${head}`)
+    const stamped = await wfx(`stamp:${pr}`, 'Report', `wfx stamp --pr ${pr} --marker ${digest} --sha ${head}`, { effect: true })
+    if (!stamped.ok) log(`stamp failed for #${pr}: ${stamped.error.message}; a later run of this approval will ask to plan again`)
+  }))
 }
 
 // agent() throws once the budget is spent, so a failed stamp only logs.
@@ -1628,12 +2291,29 @@ async function recheck(id, t, n, sha) {
 
 const stopAt = (id, reason) => { landed.set(id, { status: 'failed', reason }); return `landing stopped at ${id}: ${reason}` }
 
+// Moves a stacked target onto the default branch. Returns '' on success, else the reason to stop.
+async function restackOne(n, t) {
+  const parent = targetsById.get(t.base).branch
+  const base = idx.default_branch
+  const fetchRefs = `git fetch --quiet origin && git fetch --quiet origin ${shq(`+refs/heads/${t.branch}:${runRefOf(t.branch)}`)}`
+  const moved = await wfx(`restack:${n}`, 'Land', `${fetchRefs} && wfx restack --repo ${REPO_ARG} --branch ${shq(t.branch)} --onto ${shq(`origin/${base}`)} --from ${shq(`origin/${parent}`)} --source ${shq(runRefOf(t.branch))} --expect "$(git rev-parse ${shq(runRefOf(t.branch))})" --push`, { effect: true })
+  if (moved.ok) {
+    const retarget = await wfx(`restack:${n}:retarget`, 'Land', `wfx pr retarget --pr ${n} --base ${shq(base)}`, { effect: true })
+    return retarget.ok ? '' : `restack retarget failed: ${retarget.error.code}: ${retarget.error.message}`
+  }
+  if (moved.error.code !== 'conflict') return `restack failed: ${moved.error.code}: ${moved.error.message}`
+  const files = moved.error.details && Array.isArray(moved.error.details.files) ? moved.error.details.files : []
+  log(`restack:${n} conflicts in ${files.join(', ') || 'unknown files'}; handing the rebase to /melt`)
+  const melted = await agent(restackPrompt(n, t.branch, parent, base), { label: `restack:${n}:melt`, phase: 'Land', model: 'sonnet', schema: FIX_SCHEMA, isolation: 'worktree' })
+  if (melted) noteWorktree(melted.worktree_path)
+  return !melted || melted.status !== 'ok' ? `restack failed: ${melted ? melted.note : 'no output'}` : ''
+}
+
 async function landOne(id, t, n) {
   const stop = (reason) => stopAt(id, reason)
   if (t.base !== idx.default_branch) {
-    const moved = await agent(restackPrompt(n, t.branch, targetsById.get(t.base).branch, idx.default_branch), { label: `restack:${n}`, phase: 'Land', model: 'sonnet', schema: FIX_SCHEMA, isolation: 'worktree' })
-    if (moved) noteWorktree(moved.worktree_path)
-    if (!moved || moved.status !== 'ok') return stop(`restack failed: ${moved ? moved.note : 'no output'}`)
+    const problem = await restackOne(n, t)
+    if (problem) return stop(problem)
   }
   const poll = await pollTarget(id, n, t.branch, `land:${n}`, 'Land')
   if (poll.verdict !== 'ready') return stop(`not ready before merge: ${poll.verdict}${poll.reason ? ` (${poll.reason})` : ''}`)
@@ -1646,13 +2326,19 @@ async function landOne(id, t, n) {
     const problem = await recheck(id, t, n, sha)
     if (problem) return stop(`changed-after-verify: ${problem}`)
   }
-  const merge = await agent(mergePrompt(n, sha), { label: `merge:${n}`, phase: 'Land', agentType: 'runner', model: 'haiku', effort: 'low', schema: MERGE_SCHEMA })
-  if (!merge || merge.result === 'refused') return stop(`merge refused: ${merge ? merge.note : 'no output'}`)
+  const mergeCmd = `wfx merge --pr ${n} --head ${sha} --method ${MERGE_METHOD}`
+  let merge = await wfx(`merge:${n}`, 'Land', mergeCmd, { effect: true })
+  // Queue only when GitHub demands it.
+  if (!merge.ok && /merge queue/i.test(merge.error.message)) merge = await wfx(`merge:${n}:queue`, 'Land', `${mergeCmd} --queue`, { effect: true })
+  // A lost envelope leaves the merge unknown. The poll below reads the PR state, and the merge never runs again.
+  const mergeLost = !merge.ok && merge.error.code === 'no-envelope'
+  if (!merge.ok && !mergeLost) return stop(`merge refused: ${merge.error.message}`)
   let state = ''
   for (let round = 1; round <= LIMITS.mergePolls && state !== 'MERGED' && state !== 'CLOSED'; round++) {
-    const seen = await typed(mergedPrompt(n), { label: `merged:${n}:${round}`, phase: 'Land', agentType: 'runner', model: 'haiku', effort: 'low', schema: STATE_SCHEMA }, noCheck)
-    state = seen.value ? seen.value.state : ''
+    const seen = await wfx(`merged:${n}:${round}`, 'Land', `${round > 1 ? `sleep ${MERGED_SLEEP_SECONDS} && ` : ''}wfx poll --pr ${n}`)
+    state = seen.ok && typeof seen.data.state === 'string' ? seen.data.state : ''
   }
+  if (state !== 'MERGED' && mergeLost) return stop(`merge refused: ${merge.error.message} (last state ${state || 'unknown'})`)
   if (state !== 'MERGED') return stop(`PR did not reach MERGED (last state ${state || 'unknown'})`)
   landed.set(id, { status: 'merged', reason: moved ? 'merged after a re-check of the moved head' : '' })
   return ''
@@ -1688,8 +2374,8 @@ async function landAll() {
   return stopped
 }
 
-function report(status, note) {
-  if (note) log(note)
+// The landing result. The status module report() logs the note and adds the status and note keys.
+function landingReport(status, note) {
   const targets = order.map((id) => {
     const t = targetsById.get(id)
     const built = outcomes.get(id) || {}
@@ -1709,7 +2395,7 @@ function report(status, note) {
     const mark = marks.find((m) => m.pr === n)
     return { number: n, action: d.action, target: d.target, reason: d.reason, mark: mark ? mark.action : '' }
   })
-  return { status, note: note || '', digest, plan_source: planSource, plan_summary: plan.summary, inputs, targets, tensions: landing.tensions, verification, skipped, advice: adviceLog, ...gapField() }
+  return report(status, note, { digest, plan_source: planSource, plan_summary: plan.summary, inputs, targets, tensions: landing.tensions, verification, skipped, advice: adviceLog, ...(leftoverWorktrees.length ? { leftover_worktrees: leftoverWorktrees } : {}), ...gapField(gaps) })
 }
 
 // The action an approved plan gives a PR, or '' on a planning run.
@@ -1745,14 +2431,44 @@ const EXPAND_STACKS = input.expandStacks !== false
 const ALLOW_NO_CHECKS = input.allowNoChecks === true
 const MERGE_METHOD = input.mergeMethod === undefined ? 'squash' : input.mergeMethod
 if (!MERGE_METHODS.includes(MERGE_METHOD)) return { status: 'blocked', error: `mergeMethod must be one of ${MERGE_METHODS.join(', ')}` }
-const APPROVED = input.plan === undefined ? null : input.plan
+let APPROVED = input.plan === undefined ? null : input.plan
+const LANDING_ID = typeof input.landing === 'string' ? input.landing.trim() : ''
+if (input.landing !== undefined && !DIGEST_RE.test(LANDING_ID)) return { status: 'blocked', error: 'args.landing must be the landing_id of a needs-approval result: 16 lowercase hex digits' }
+if (LANDING_ID && input.plan !== undefined) return { status: 'blocked', error: 'pass args.landing or args.plan, not both' }
 const APPROVE = typeof input.approve === 'string' ? input.approve.trim() : ''
+
+// ---- Preflight: the tools and the checkout must work before any other agent runs ----
+if (requested.length || DESCRIPTION || input.plan !== undefined || input.landing !== undefined) {
+  phase('Recon')
+  // A pasted plan shows its checks here. A saved plan loads later, and its verify-criteria child checks pytest itself.
+  // Preflight needs an existing directory, so it gets the repo root and not the scratch root, which the runtime creates on demand.
+  const pastedCriteria = input.plan && input.plan.plan && Array.isArray(input.plan.plan.criteria) ? input.plan.plan.criteria : []
+  const needPytest = pastedCriteria.some((c) => c && typeof c.check === 'string' && /pytest/i.test(c.check))
+  const pre = await wfx('preflight', 'Recon', `wfx preflight --worktree "$(git rev-parse --show-toplevel)" --need git,node,wfx,gh${needPytest ? ',pytest' : ''}`)
+  if (!pre.ok) {
+    const failed = ((pre.error.details && pre.error.details.checks) || []).filter((c) => !c.ok).map((c) => c.name)
+    if (!failed.length) failed.push(pre.error.code)
+    return { status: 'blocked', reason: `preflight failed: ${failed.join(', ')}`, preflight: { ok: false, failed } }
+  }
+}
+
+// The landing hop reads the plan that an earlier needs-approval result saved.
+if (LANDING_ID) {
+  const approveProblem = approveError(APPROVE)
+  if (approveProblem) return { status: 'blocked', error: approveProblem }
+  const saved = await wfx('state:get', 'Recon', `wfx run-state get --landing ${LANDING_ID} --key ${planKey(APPROVE)}`)
+  if (!saved.ok) return { status: 'blocked', error: `the saved plan for landing ${LANDING_ID} is unavailable: ${saved.error.message}` }
+  if (!isObject(saved.data.value)) return { status: 'blocked', error: `the saved plan for landing ${LANDING_ID} is not an object` }
+  APPROVED = saved.data.value
+}
+const PLAN_NAME = LANDING_ID ? 'the saved plan' : 'args.plan'
 if (APPROVED !== null) {
   if (DESCRIPTION) return { status: 'blocked', error: 'args.plan takes PR numbers, not a description; pass prs: landing.inputs' }
   const shapeErrors = checkLanding(APPROVED)
-  if (shapeErrors.length) return { status: 'blocked', error: `args.plan is not a landing object from a needs-approval or needs-input result: ${shapeErrors.slice(0, 5).join('; ')}` }
-  if (!APPROVE) return { status: 'blocked', error: 'args.plan needs args.approve set to the digest that the same result returned' }
-  if (digestOf(APPROVED) !== APPROVE) return { status: 'blocked', error: 'approve does not match the digest of args.plan; the plan changed after approval' }
+  if (shapeErrors.length) return { status: 'blocked', error: `${PLAN_NAME} is not a landing object from a needs-approval or needs-input result: ${shapeErrors.slice(0, 5).join('; ')}` }
+  const approveProblem = approveError(APPROVE) || digestError(APPROVED, APPROVE, PLAN_NAME)
+  if (approveProblem) return { status: 'blocked', error: approveProblem }
+  if (LANDING_ID && landingIdOf(APPROVED) !== LANDING_ID) return { status: 'blocked', error: 'the saved plan does not match args.landing' }
   if (requested.length && stable(requested) !== stable([...APPROVED.inputs].sort(ascending))) return { status: 'blocked', error: 'args.prs differs from the inputs of the approved plan' }
 }
 const ANSWERS = input.answers === undefined ? null : input.answers
@@ -1869,7 +2585,6 @@ let planSource = 'approved'
 const adviceLog = []
 // Every Ground gap goes to log() and to each later result.
 const gaps = []
-const gapField = () => (gaps.length ? { gaps } : {})
 // Agents that this run spent on brie-ground children; the runtime cap counts them.
 let researchAgents = 0
 // Ground output enters a planner context only when it holds something, so a run without it keeps the old context.
@@ -1882,14 +2597,15 @@ const groundingContext = (g) => (g ? {
 const STOP_USAGE = 'The advisor stopped the run; advice lists its concerns. Fix the cause, then re-run with { prs } for a new plan, or add revise: "<change>" to a re-run with { prs: landing.inputs, plan: landing, approve: digest }.'
 // A stop on the first plan has no landing yet, so the only resume is a new plan.
 const PLAN_STOP_USAGE = 'The advisor stopped the run; advice lists its concerns and candidates holds the drafted plans. Fix the cause, then re-run with { prs } for a new plan.'
-const APPROVE_USAGE = 'To execute, re-run with { prs: landing.inputs, plan: landing, approve: digest }. Add land:true to merge. To change the plan first, re-run with the same fields and revise: "<change>".'
-const needsInput = (questions) => ({
-  status: 'needs-input', questions, plan_source: planSource, digest, landing, advice: adviceLog, skipped, ...gapField(),
-  usage: 'Answer with { prs: landing.inputs, plan: landing, approve: digest, answers: { "<question text or 1-based number>": "<answer>" } }. Add revise: "<change>" to change the plan in the same run. One planner folds the input in, and the run returns needs-approval.',
-})
+const APPROVE_USAGE = `${approveUsage({ fields: 'prs: landing.inputs, landing: landing_id, approve: digest' })} The long form { prs: landing.inputs, plan: landing, approve: digest } still works.`
+const needsInput = (questions) => needsInputResult(
+  questions,
+  { plan_source: planSource, digest, landing, advice: adviceLog, skipped, ...gapField(gaps) },
+  'Answer with { prs: landing.inputs, plan: landing, approve: digest, answers: { "<question text or 1-based number>": "<answer>" } }. Add revise: "<change>" to change the plan in the same run. One planner folds the input in, and the run returns needs-approval.',
+)
 // When the advisor cannot settle, the user picks: each candidate carries its own landing and digest.
 const choose = (reason, pool, landingOf) => ({
-  status: 'needs-input', reason, advice: adviceLog, skipped, ...gapField(),
+  status: 'needs-input', reason, advice: adviceLog, skipped, ...gapField(gaps),
   candidates: pool.map((c) => { const l = landingOf(c.plan); return { id: c.id, angle: c.angle, digest: digestOf(l), landing: l } }),
   usage: 'Pick one candidate. To execute it, re-run with { prs: landing.inputs, plan: <candidate>.landing, approve: <candidate>.digest }. To change it first, add revise: "<change>". A candidate with open questions takes args.answers first.',
 })
@@ -1922,16 +2638,69 @@ async function advisePlans(pool, context, ctx, labelPrefix, user) {
   }
 }
 
+// Checks the approved plan against the live repo. Returns the reasons that need a new plan; an empty list means go on.
+// A moved head or PR set needs a new plan. A moved default branch needs one only when it touches a plan file.
+// A moved branch that touches no plan file is restacked, and the PR heads update in place; APPROVED stays unchanged.
+// A keep-only plan, and a plan that this approval already started, ignore a moved default branch.
+async function checkFresh(started, keepOnly) {
+  const repo = '"$(git rev-parse --show-toplevel)"'
+  const snapshot = { base: APPROVED.recon.base_sha, heads: APPROVED.recon.heads, files: [...new Set(active.flatMap((p) => p.files))] }
+  const liveHeads = new Map(active.map((p) => [String(p.number), p.head_sha]))
+  let liveBase = idx.base_sha.trim()
+  const direct = active.filter((p) => p.base === idx.default_branch)
+  if (direct.length) {
+    const env = await wfx('stale:recon', 'Recon', `wfx recon --prs ${direct.map((p) => p.number).join(',')}`)
+    if (!env.ok) return [`the live recon failed: ${env.error.message}`]
+    liveBase = env.data.base.sha
+    for (const p of env.data.prs) liveHeads.set(String(p.number), p.head.sha)
+  }
+  // The stamp of this approval records a head that the approval itself published.
+  for (const p of active) if (stampedBy(p, APPROVE)) liveHeads.set(String(p.number), snapshot.heads[String(p.number)] ?? p.head_sha)
+  const heads = Object.fromEntries(liveHeads)
+  const first = staleVerdict(snapshot, { base: snapshot.base, heads }, null)
+  if (first.verdict === 'replan') return first.reasons
+  if (keepOnly || started || liveBase === snapshot.base) return []
+  if (!FULL_SHA_RE.test(liveBase) || !FULL_SHA_RE.test(snapshot.base)) return [`the base moved from ${snapshot.base} to ${liveBase}; a SHA is malformed`]
+  const probed = await wfx('stale:probe', 'Recon', `git fetch --quiet origin && wfx probe --repo ${repo} --range ${snapshot.base}..${liveBase}`)
+  const verdict = staleVerdict(snapshot, { base: liveBase, heads }, probed.ok && Array.isArray(probed.data.files) ? probed.data.files : null)
+  if (verdict.verdict === 'replan') return verdict.reasons
+  const targets = APPROVED.plan.targets.filter((t) => t.kind === 'existing')
+  if (targets.some((t) => t.base !== idx.default_branch)) return [`the base moved from ${snapshot.base} to ${liveBase}; a stacked PR needs a restack, so plan again`]
+  // Restack everything and probe the new heads first. Nothing is pushed until the whole set passes.
+  const moved = []
+  for (const t of targets) {
+    const pr = byNumber.get(t.pr)
+    const ref = runRefOf(t.branch)
+    const res = await wfx(`stale:restack:${t.branch}`, 'Recon', `git fetch --quiet origin && git fetch --quiet origin ${shq(`+refs/heads/${t.branch}:${ref}`)} && wfx restack --repo ${repo} --branch ${shq(t.branch)} --onto ${liveBase} --source ${shq(ref)} --expect ${pr.head_sha}`)
+    if (!res.ok) return [`restack of ${t.branch} failed (${res.error.code}): ${res.error.message}`]
+    if (!FULL_SHA_RE.test(res.data.new)) return [`restack of ${t.branch} returned no full head SHA`]
+    moved.push({ pr, branch: t.branch, old: pr.head_sha, sha: res.data.new })
+  }
+  if (moved.length) {
+    const conflict = await wfx('stale:probe:conflict', 'Recon', `wfx probe --repo ${repo} --base ${liveBase} ${moved.map((m) => `--head ${m.sha}`).join(' ')}`)
+    if (!conflict.ok) return [`the conflict probe failed: ${conflict.error.message}`]
+    if (conflict.data.conflicts.length) return [`the restacked heads conflict: ${conflict.data.conflicts.map((c) => `${c.a} with ${c.b}`).join('; ')}`]
+    for (const m of moved) {
+      const pushed = await wfx(`stale:publish:${m.branch}`, 'Recon', `wfx publish --repo ${repo} --branch ${shq(m.branch)} --sha ${m.sha} --expect ${m.old}`, { effect: true })
+      if (!pushed.ok) return [`publish of ${m.branch} failed (${pushed.error.code}): ${pushed.error.message}`]
+      // The restacked head is current and clean, so needsBuild keeps the PR.
+      m.pr.head_sha = m.sha
+      m.pr.merge_state = 'CLEAN'
+    }
+  }
+  return []
+}
+
 if (APPROVED) {
   digest = APPROVE
-  // An adopted PR means this approval already started, so a moved default branch is expected.
-  const stale = staleReasons(APPROVED, active, adopted.size ? APPROVED.recon.base_sha : idx.base_sha.trim(), APPROVE)
+  const started = adopted.size > 0 || active.some((p) => p.landing_digest === APPROVE)
+  const keepOnly = !APPROVED.plan.dispositions.some((d) => d.action !== 'keep') && !APPROVED.plan.targets.some((t) => t.kind === 'new')
+  const stale = await checkFresh(started, keepOnly)
   if (stale.length) return { status: 'needs-replan', reasons: stale, skipped, usage: 'Re-run with { prs } to plan against the current state.' }
   const ctx = planCtx(APPROVED.tensions.map((t) => t.id))
   const flaws = checkPlan(APPROVED.plan, ctx)
   const folding = answered.length > 0 || Boolean(REVISION)
   // A fold mints a new digest, but the stamps and adoption of a started approval name this one.
-  const started = adopted.size > 0 || active.some((p) => p.landing_digest === APPROVE)
   if (folding && started) return { status: 'blocked', error: 'this approval already started; resume without revise or answers, or plan again with { prs }', skipped }
   // A fold never executes and its result passes checkPlan, so it may repair a plan that a newer check rejects.
   if (flaws.length && !folding) return { status: 'blocked', error: `the approved plan no longer validates: ${errorText(flaws)}. Re-run with revise: "<change>" to repair it, or with { prs } to plan again.`, skipped }
@@ -1967,7 +2736,7 @@ if (APPROVED) {
     if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
     if (plan.open_questions.length) return needsInput(plan.open_questions)
     const reason = 'review the revised plan; the advisor approved it'
-    return { status: 'needs-approval', reason, plan_source: planSource, digest, landing, answers: answered, revision: REVISION, estimate: estimateOf(plan), advice: adviceLog, skipped, usage: APPROVE_USAGE }
+    return { status: 'needs-approval', reason, plan_source: planSource, digest, landing, landing_id: await saveLanding(landing), answers: answered, revision: REVISION, estimate: estimateOf(plan), advice: adviceLog, skipped, usage: APPROVE_USAGE }
   }
 } else {
   phase('Survey')
@@ -2010,11 +2779,11 @@ if (APPROVED) {
   if (researchNow && questions.length) {
     phase('Research')
     for (const question of questions.slice(0, LIMITS.maxResearch)) {
-      if (floorReached()) return { status: 'blocked', error: 'budget floor reached before research', skipped, ...gapField() }
+      if (floorReached()) return { status: 'blocked', error: 'budget floor reached before research', skipped, ...gapField(gaps) }
       researchAgents += BRIE_GROUND_MAX_AGENTS
       const r = await brieGround(question)
       // Fail closed: a landing never plans on research that failed.
-      if (r.failed) return { status: 'blocked', error: r.failed, skipped, ...gapField() }
+      if (r.failed) return { status: 'blocked', error: r.failed, skipped, ...gapField(gaps) }
       if (r.unsettled) unsettled.push(...r.unsettled.filter((q) => !unsettled.includes(q)))
       else research.push(r.found)
     }
@@ -2057,11 +2826,11 @@ if (APPROVED) {
       if (drafted[i] && drafted[i].value) pool.push({ id: `P-${pool.length + 1}`, angle: angle.id, plan: drafted[i].value })
       else log(`plan:${angle.id} dropped: ${drafted[i] ? errorText(drafted[i].errors) : 'no output'}`)
     })
-    if (!pool.length) return { status: 'blocked', error: 'no planner produced a valid plan', tensions, skipped, ...gapField() }
+    if (!pool.length) return { status: 'blocked', error: 'no planner produced a valid plan', tensions, skipped, ...gapField(gaps) }
 
     phase('Advise')
     const settled = await advisePlans(pool, context, ctx, 'advise:plan', null)
-    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped, ...gapField(), usage: PLAN_STOP_USAGE }
+    if (settled.verdict === 'stop') return { status: 'stopped', candidates: settled.pool, advice: adviceLog, skipped, ...gapField(gaps), usage: PLAN_STOP_USAGE }
     if (settled.verdict === 'unsettled') return choose(settled.reason, settled.pool, landingOf)
     chosenPlan = settled.pool[0].plan
     planSource = settled.pool[0].angle
@@ -2077,7 +2846,7 @@ if (APPROVED) {
     return {
       status: 'needs-approval',
       reason: AUTO ? `auto does not push to or merge PRs by other authors without approval: #${othersTouched.join(', #')}` : 'review the landing plan',
-      plan_source: planSource, digest, landing, estimate: estimateOf(chosenPlan), advice: adviceLog, skipped, ...gapField(),
+      plan_source: planSource, digest, landing, landing_id: await saveLanding(landing), estimate: estimateOf(chosenPlan), advice: adviceLog, skipped, ...gapField(gaps),
       usage: APPROVE_USAGE,
     }
   }
@@ -2096,6 +2865,8 @@ const baseBranchOf = (t) => (t.base === idx.default_branch ? t.base : targetsByI
 const outcomes = new Map()
 // Cleanup hints only: no stage works in a directory that another agent returned.
 const scratchWorktrees = new Set()
+// Worktrees the final cleanup scan could not remove; the landing report lists them.
+let leftoverWorktrees = []
 function noteWorktree(path) {
   const p = typeof path === 'string' ? path.trim() : ''
   if (SCRATCH_WORKTREE_RE.test(p) && !p.split('/').includes('..')) scratchWorktrees.add(p)
@@ -2147,6 +2918,12 @@ const jobOf = (t) => (appliedBefore(t)
       tensions: landing.tensions.filter((x) => t.resolves.includes(x.id)),
       criteria: plan.criteria.filter((c) => t.satisfies.includes(c.id)),
     })
+// Verify when targets change, sit side by side, carry tensions, or have non-CI criteria.
+const needVerify = plan.dispositions.some((d) => d.action !== 'keep')
+  || plan.targets.some((t) => t.kind === 'new')
+  || waveOrder.some((wave) => wave.length > 1)
+  || plan.criteria.some((c) => c.check_kind !== 'ci')
+  || landing.tensions.length > 0
 for (const wave of waveOrder) {
   const runnable = []
   for (const id of wave) {
@@ -2160,24 +2937,31 @@ for (const wave of waveOrder) {
     else if (floorReached()) outcomes.set(id, { id, status: 'skipped', reason: 'budget floor reached' })
     else runnable.push(t)
   }
-  const results = await parallel(runnable.map((t) => () => buildTarget(jobOf(t))))
-  results.forEach((r, i) => outcomes.set(runnable[i].id, r || { id: runnable[i].id, status: 'lost', reason: 'builder threw' }))
+  // A target that built or needs no build joins the integration branch at once, so a conflict stops it before its dependents start.
+  const unbuilt = wave.filter((id) => outcomes.get(id)?.status === 'done')
+  const integrating = (outcome) => (needVerify && outcome.status === 'done' ? integrateTarget(outcome) : outcome)
+  const tasks = [
+    ...unbuilt.map((id) => async () => integrating(outcomes.get(id))),
+    ...runnable.map((t) => async () => integrating(await buildTarget(jobOf(t)))),
+  ]
+  const ids = [...unbuilt, ...runnable.map((t) => t.id)]
+  const results = await parallel(tasks)
+  results.forEach((r, i) => outcomes.set(ids[i], r || { id: ids[i], status: 'lost', reason: 'builder threw' }))
 }
 const notBuilt = order.filter((id) => outcomes.get(id).status !== 'done')
-if (notBuilt.length) return report('fail', `targets not built: ${notBuilt.map((id) => `${id} (${outcomes.get(id).status})`).join(', ')}; nothing was pushed`)
+const notBuiltText = (id) => {
+  const o = outcomes.get(id)
+  return `${id} (${o.status}${o.status === 'failed' ? `: ${o.reason}` : ''})`
+}
+if (notBuilt.length) return landingReport('fail', `targets not built: ${notBuilt.map(notBuiltText).join(', ')}; nothing was pushed`)
 
-// ---- Verify: when targets change, sit side by side, carry tensions, or have non-CI criteria ----
-const needVerify = plan.dispositions.some((d) => d.action !== 'keep')
-  || plan.targets.some((t) => t.kind === 'new')
-  || waveOrder.some((wave) => wave.length > 1)
-  || plan.criteria.some((c) => c.check_kind !== 'ci')
-  || landing.tensions.length > 0
+// ---- Verify: criteria run in the integration worktree; the targets merged during Assemble ----
 const refsOf = (afterPublish) => order.map((id) => ({ id, ref: afterPublish || !rebuilt(id) ? `origin/${targetsById.get(id).branch}` : localOf(targetsById.get(id).branch) }))
-if (floorReached()) return report('partial', 'budget floor reached before verification; nothing was pushed')
+if (floorReached()) return landingReport('partial', 'budget floor reached before verification; nothing was pushed')
 if (needVerify) {
   phase('Verify')
   verification = await integrateAndVerify('pre', refsOf(false))
-  if (!verification.ok) return report('fail', `verification failed before publish: ${verification.reason}; nothing was pushed`)
+  if (!verification.ok) return landingReport('fail', `verification failed before publish: ${verification.reason}; nothing was pushed`)
 } else {
   verification = { ok: true, reason: 'skipped: one stack of kept PRs is its own integration', verdicts: [] }
 }
@@ -2196,19 +2980,89 @@ const pushJobs = order.filter(rebuilt).map((id) => {
     supersedes: plan.dispositions.filter((d) => d.action === 'supersede' && d.target === id).map((d) => d.pr),
   }
 })
-if (pushJobs.length && floorReached()) return report('partial', 'budget floor reached before publish; nothing was pushed')
+if (pushJobs.length && floorReached()) return landingReport('partial', 'budget floor reached before publish; nothing was pushed')
 if (pushJobs.length) {
   phase('Publish')
-  // Publish pushes and opens PRs, so it never reruns; a malformed report gets one form-only repair.
-  const check = (r) => checkPublish(r, pushJobs, prNumbers)
-  let pub = await agent(publishPrompt(pushJobs), { label: 'publish', phase: 'Publish', agentType: 'runner', model: 'sonnet', schema: PUBLISH_SCHEMA })
-  let errors = pub ? check(pub) : [substance('agent returned no output')]
-  if (pub && errors.length && errors.every((e) => e.kind === 'form')) {
-    pub = await agent(repairPrompt(pub, errors), { label: 'publish:repair1', phase: 'Publish', agentType: 'formatter', schema: PUBLISH_SCHEMA, model: 'haiku', effort: 'low' })
-    errors = pub ? check(pub) : [substance('repair returned no output')]
+  // Publish pushes and opens PRs, so no step reruns. A failed step stops the run and names the remote state to check.
+  const pubStep = (job, name, command, effect = true) => wfx(`publish:${job.target}:${name}`, 'Publish', command, { effect })
+  const pubFail = (job, name, text) => ({ ok: false, note: `publish ${job.target} failed at ${name}: ${text}; check the remote branches and PRs before a rerun` })
+  const envText = (env) => `${env.error.code}: ${env.error.message}`
+  // Expands a short SHA through wfx rev-parse. Returns '' when no full SHA results.
+  const fullSha = async (job, sha) => {
+    if (FULL_SHA_RE.test(sha)) return sha
+    const env = await pubStep(job, 'rev-parse', `wfx rev-parse --repo ${REPO_ARG} ${shq(sha)}`, false)
+    const full = env.ok && isObject(env.data.shas) ? String(env.data.shas[sha] || '').trim() : ''
+    return FULL_SHA_RE.test(full) ? full : ''
   }
-  if (errors.length) return report('fail', `publish reported invalid results; check the remote branches and PRs before a rerun: ${errorText(errors)}`)
-  for (const r of pub.results) published.set(r.target, { ...r, head_sha: r.head_sha.trim() })
+  const statsOf = async (job, number) => {
+    const cmd = `gh pr view ${number} --json changedFiles,additions,deletions --jq '{changed_files: .changedFiles, lines_changed: (.additions + .deletions)}'`
+    const { value } = await typed(prompt('Run exactly this one command and nothing else, in the repository checkout. Return the JSON object it prints, unchanged.', 'Command: ' + cmd),
+      { label: `publish:${job.target}:stats`, phase: 'Publish', agentType: 'runner', model: 'haiku', effort: 'low', schema: STAT_SCHEMA }, () => [])
+    if (value) return value
+    log(`publish:${job.target}:stats failed; the report shows 0 changed files and 0 changed lines`)
+    return { changed_files: 0, lines_changed: 0 }
+  }
+  async function publishOne(job) {
+    const head = await fullSha(job, String(outcomes.get(job.target).head_sha || '').trim())
+    if (!head) return pubFail(job, 'rev-parse', 'the built head has no full SHA')
+    const remote = job.expected_remote_sha.trim()
+    const expect = remote ? await fullSha(job, remote) : 'none'
+    if (!expect) return pubFail(job, 'rev-parse', 'the remote head has no full SHA')
+    const pushCmd = (lease) => `wfx publish --repo ${REPO_ARG} --branch ${shq(job.branch)} --sha ${head} --expect ${lease}`
+    const pushed = await pubStep(job, 'push', pushCmd(expect))
+    let taken = null
+    if (!pushed.ok) {
+      // A new target whose branch already exists on the remote adopts the one open PR of that head. Anything else fails.
+      if (job.kind !== 'new' || pushed.error.code !== 'lease-rejected') return pubFail(job, 'push', envText(pushed))
+      // The jq filter wraps the list in an object, because a structured answer must be an object.
+      const { value: listed } = await typed(prompt('Run exactly this one command and nothing else, in the repository checkout. Return the JSON object it prints, unchanged.',
+        `Command: gh pr list --head ${shq(job.branch)} --state open --json number,url,headRefOid --jq '{prs: .}'`),
+      { label: `publish:${job.target}:adopt`, phase: 'Publish', agentType: 'runner', model: 'haiku', effort: 'low', schema: obj({ prs: list(obj({ number: int, url: str, headRefOid: str })) }) }, () => [])
+      const open = listed && Array.isArray(listed.prs) ? listed.prs : null
+      if (!open || open.length !== 1) return pubFail(job, 'push', `${envText(pushed)}, and the branch has ${open ? open.length : 'an unknown number of'} open PRs, not one`)
+      taken = open[0]
+      // Only the PR that the earlier adopt step accepted may be overwritten: opened by the viewer in this repository and stamped by this approval.
+      // A PR that appeared after recon fails the run, and nothing is pushed over it.
+      const known = adopted.get(job.target)
+      if (!known || known.number !== taken.number || String(taken.headRefOid).trim() !== known.head_sha) {
+        return pubFail(job, 'adopt', `branch ${job.branch} has open PR #${taken.number}, which this approval did not open or which moved after its last run; nothing was pushed over it`)
+      }
+      const lease = await fullSha(job, String(taken.headRefOid).trim())
+      if (!lease) return pubFail(job, 'adopt', 'the open PR has no full head SHA')
+      const again = await pubStep(job, 'adopt:push', pushCmd(lease))
+      if (!again.ok) return pubFail(job, 'adopt:push', envText(again))
+    }
+    let number = 0
+    let url = ''
+    if (taken) ({ number, url } = taken)
+    else if (job.kind === 'existing') {
+      const pr = byNumber.get(job.pr)
+      if (pr.base !== job.base_branch) {
+        const retarget = await pubStep(job, 'retarget', `wfx pr retarget --pr ${job.pr} --base ${shq(job.base_branch)}`)
+        if (!retarget.ok) return pubFail(job, 'retarget', envText(retarget))
+      }
+      number = job.pr
+      url = pr.url
+    } else {
+      const body = [targetsById.get(job.target).brief, ...job.supersedes.map((n) => `Supersedes #${n}`)].join('\n\n')
+      // The body goes through a pipe to stdin, because the runner and the session guards forbid a file write.
+      const created = await pubStep(job, 'create', `printf '%s' ${shq(body)} | wfx pr create --base ${shq(job.base_branch)} --head ${shq(job.branch)} --title ${shq(job.title)} --body-file -`)
+      if (!created.ok) return pubFail(job, 'create', envText(created))
+      if (!Number.isInteger(created.data.number) || created.data.number <= 0 || blank(created.data.url)) return pubFail(job, 'create', 'wfx pr create returned no PR number or url')
+      number = created.data.number
+      url = created.data.url
+    }
+    // The reader takes the last landing marker comment, so a new comment replaces the old one.
+    const noted = await pubStep(job, 'comment', `printf '%s' ${shq(landingMarker(digest))} | wfx pr comment --pr ${number} --body-file -`)
+    if (!noted.ok) return pubFail(job, 'comment', envText(noted))
+    const stats = await statsOf(job, number)
+    return { ok: true, result: { target: job.target, pr_number: number, url, head_sha: head, changed_files: stats.changed_files, lines_changed: stats.lines_changed } }
+  }
+  for (const job of pushJobs) {
+    const done = await publishOne(job)
+    if (!done.ok) return landingReport('fail', done.note)
+    published.set(job.target, done.result)
+  }
 }
 // A stop before the first poll still stamps the head that publish left.
 for (const [id, p] of published) lastHead.set(id, p.head_sha)
@@ -2216,7 +3070,7 @@ for (const [id, p] of published) lastHead.set(id, p.head_sha)
 // ---- Review: pipelined per PR ----
 if (floorReached()) {
   await stampOpen(order)
-  return report('partial', 'budget floor reached before review')
+  return landingReport('partial', 'budget floor reached before review')
 }
 phase('Review')
 const reviewed = await pipeline(order.map((id) => targetsById.get(id)), ageStage, cureStage, finalizeStage, pollStage)
@@ -2224,13 +3078,13 @@ order.forEach((id, i) => reviewById.set(id, reviewed[i] || { verdict: 'failed', 
 const verdictOf = (id) => reviewById.get(id).verdict
 const allReady = order.every((id) => ['ready', 'merged'].includes(verdictOf(id)))
 
-const donePayload = () => ({
+// The advisor payload of the done stage. donePayload() drops the grounding key when the landing has none.
+const doneFields = () => donePayload({
   summary: plan.summary,
   targets: order.map((id) => ({ id, pr: published.get(id).pr_number, review: verdictOf(id) })),
   verdicts: verification.verdicts,
   dispositions: plan.dispositions,
-  ...(landing.grounding ? { grounding: landing.grounding } : {}),
-})
+}, { grounding: landing.grounding || undefined })
 let doneApproved = false
 let doneNote = ''
 
@@ -2251,7 +3105,7 @@ if (!LAND) {
   if (items.length || allReady) {
     let advice = null
     try {
-      advice = floorReached() ? null : await advise('done', 'advise:done', donePayload())
+      advice = floorReached() ? null : await advise('done', 'advise:done', doneFields())
     } catch (e) {
       log(`advise:done failed: ${e.message}`)
     }
@@ -2277,7 +3131,7 @@ if (LAND) {
       if (needVerify) verification = await integrateAndVerify('final', refsOf(true))
       if (!verification.ok) landNote = `land skipped: final verification failed: ${verification.reason}`
       else {
-        const advice = await advise('done', 'advise:done', donePayload())
+        const advice = await advise('done', 'advise:done', doneFields())
         if (advice) adviceLog.push(advice)
         if (!advice || advice.verdict !== 'approve') landNote = `land skipped: the advisor did not approve${advice ? `: ${advice.concerns.join('; ')}` : ''}`
         else landNote = await landAll()
@@ -2297,8 +3151,18 @@ await stampOpen(order.filter((id) => landed.get(id)?.status !== 'merged' && verd
 // The runtime removes only unchanged isolated worktrees. A successful run removes the rest and its run refs;
 // a failed run keeps them for inspection and salvage.
 if (['landed', 'ready'].includes(finalStatus) && (scratchWorktrees.size || order.some(rebuilt))) {
-  const swept = (await typed(cleanupPrompt([...scratchWorktrees]), { label: 'cleanup', phase: 'Report', agentType: 'runner', model: 'haiku', effort: 'low', schema: CLEANUP_SCHEMA }, noCheck)).value
-  if (!swept) log(`cleanup returned no output; remove the mmc/${runTag}/ refs and these worktrees by hand: ${[...scratchWorktrees].join(', ') || 'none recorded'}`)
-  else if (swept.note) log(`cleanup: ${swept.note}`)
+  await Promise.all([...scratchWorktrees].map(async (path, i) => {
+    const removed = await wfx(`cleanup:${i}`, 'Report', `wfx worktree remove --repo ${REPO_ARG} --path ${shq(path)}`)
+    if (!removed.ok) log(`cleanup: ${path} stays: ${removed.error.message}`)
+  }))
+  // One scan removes the worktrees on this run's branches and this landing's verify worktrees, deletes the run refs, and lists what remains.
+  // It touches only worktrees below the scratch root, and only the run's own branches, refs, and <landing>@verify-* names.
+  const id = landingIdOf(landing)
+  const scratch = '/.claude/worktrees/'
+  const find = `awk '/^worktree /{p=substr($0,10); if (index(p,"${scratch}${id}@verify-")) print p} index($0,"branch refs/heads/mmc/${runTag}/")==1 && index(p,"${scratch}") {print p}'`
+  const prune = `git worktree list --porcelain | ${find} | while IFS= read -r p; do wfx worktree remove --repo ${REPO_ARG} --path "$p" >/dev/null || true; done; git for-each-ref --format='%(refname)' refs/mmc/${runTag}/ refs/heads/mmc/${runTag}/ 'refs/heads/mmc/integrate-${id}*' | while read -r ref; do git update-ref -d "$ref"; done; `
+  const swept = await wfx('cleanup:sweep', 'Report', `${prune}wfx worktree list --repo ${REPO_ARG} --landing ${id}`)
+  if (!swept.ok) log(`cleanup returned no list; remove the mmc/${runTag}/ refs and these worktrees by hand: ${[...scratchWorktrees].join(', ') || 'none recorded'}`)
+  else leftoverWorktrees = Array.isArray(swept.data.worktrees) ? swept.data.worktrees : []
 }
-return report(finalStatus, landNote || doneNote)
+return landingReport(finalStatus, landNote || doneNote)

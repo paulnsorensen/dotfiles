@@ -89,7 +89,7 @@ export function keepPlan() {
     dispositions: [{ pr: 1, action: 'keep', target: 'T-1', reason: 'fine' }, { pr: 2, action: 'keep', target: 'T-2', reason: 'fine after #1' }],
     targets: [
       { id: 'T-1', kind: 'existing', pr: 1, branch: 'feat/pr-1', base: 'main', title: 'pr 1', sources: [], brief: 'keep', resolves: [], satisfies: ['AC-1'], depends_on: [] },
-      { id: 'T-2', kind: 'existing', pr: 2, branch: 'feat/pr-2', base: 'main', title: 'pr 2', sources: [], brief: 'keep', resolves: ['TN-1'], satisfies: ['AC-1'], depends_on: ['T-1'] },
+      { id: 'T-2', kind: 'existing', pr: 2, branch: 'feat/pr-2', base: 'main', title: 'pr 2', sources: [], brief: 'keep', resolves: ['TN-1'], satisfies: ['AC-1'], depends_on: [] },
     ],
     criteria: [{ id: 'AC-1', statement: 'both helpers load', check_kind: 'command', check: 'node --test --test-name-pattern helpers tests/helper.test.mjs' }],
     open_questions: [],
@@ -148,8 +148,6 @@ export const keepPlanRoutes = (overrides = []) => [
 export const builtConsolidation = (overrides = []) => planRoutes([
   ...overrides,
   ['target:T-1', built(sha(50), '/tmp/wt-t1')],
-  ['integrate:pre', integrated(['T-1'])],
-  ['verify:pre:AC-1', { verdicts: [verified] }],
   ['publish', published('T-1', 10, sha(50))],
   ['age:10', ageFull(10, { worktree_path: '/tmp/wt-t1' })],
   ['finalize:10', finalized],
@@ -177,17 +175,143 @@ export const grounded = (overrides = {}) => ({ decisions: [], prior_research: []
 
 // Fallbacks after each test's own routes: every planning run grounds in the wiki, every executing run ends
 // with stamp and cleanup agents, and the done advisor approves unless a test routes it first.
-const DEFAULT_ROUTES = [['ground', grounded()], ['stamp', { results: [] }], ['cleanup', { removed: [], note: '' }], ['advise:done', approveDone]]
+// The wfx runner routes answer with ok envelopes: preflight passes, a save works, and a live recon repeats the detail() heads and BASE_SHA.
+export const envelope = (cmd, data) => ({ ok: true, cmd, data })
+export const failure = (cmd, code, message, details) => ({ ok: false, cmd, error: { code, message, ...(details ? { details } : {}) } })
+// A live recon route. heads maps a PR number to a moved head SHA; base is the live default-branch SHA.
+export const liveRecon = ({ heads = {}, base = BASE_SHA } = {}) => ({ prompt }) => {
+  const csv = /--prs ([0-9,]+)/.exec(prompt)[1]
+  const prs = csv.split(',').map(Number).map((n) => ({ number: n, head: { ref: `feat/pr-${n}`, sha: heads[n] ?? sha(n) }, base: 'main', state: 'OPEN', mergeable: 'MERGEABLE' }))
+  return envelope('recon', { prs, base: { ref: 'main', sha: base } })
+}
+const WFX_LABEL_RE = /^(preflight|state:|stale:|integrate|worktree:)/
+// ---- Integrate and verify defaults (AC-20, AC-25) ----
+// wfx integrate and wfx worktree answer ok. The default verify-criteria stub passes every criterion it receives.
+export const integrateOk = ({ prompt }) => envelope('integrate', { branch: /--branch '?([^' ]+)/.exec(prompt)[1], sha: sha(98), integrated: [/--target '?([^' ]+)/.exec(prompt)[1]] })
+export const passingVerdict = (ac) => ({ criterion: ac.id, passes: true, evidence: `ran ${ac.id}`, tree_clean: true, missing_paths: [] })
+export const defaultVerify = (input) => ({ status: 'ok', verdicts: input.criteria.map(passingVerdict), missing: [] })
+export const INT_WORKTREE = '/repo/.claude/worktrees/lnd@verify'
+// state:put keeps the JSON that the prompt carries, and state:verify reads it back, as a real run-state would.
+const savedPlans = new Map()
+const planOf = (prompt) => JSON.parse(/printf '%s' '(.*)' \| wfx run-state put/s.exec(prompt)[1].replaceAll("'\\''", "'"))
+const savePlan = ({ prompt }) => {
+  const id = /--landing (\w+) --key (\S+)/.exec(prompt)
+  savedPlans.set(`${id[1]}/${id[2]}`, planOf(prompt))
+  return envelope('run-state', {})
+}
+const savedPlan = (prompt) => {
+  const id = /--landing (\w+) --key (\S+)/.exec(prompt)
+  return savedPlans.get(`${id[1]}/${id[2]}`)
+}
+// A stamp check answers with the head the fake gh last served for that PR (see legacyAdapter), else sha(n).
+const DEFAULT_ROUTES = [
+  ['ground', grounded()], ['advise:done', approveDone],
+  ['stampcheck', ({ opts }) => envelope('poll', pollData({ headRefOid: servedHeads.get(Number(opts.label.split(':')[1])) ?? sha(Number(opts.label.split(':')[1])) }))],
+  ['stamp', envelope('stamp', { stamped: true })],
+  ['cleanup:sweep', envelope('worktree', { root: '/repo', worktrees: [] })],
+  ['cleanup', ({ prompt }) => envelope('worktree', { path: /--path '?([^' ]+)/.exec(prompt)[1], removed: true })],
+  ['preflight', envelope('preflight', { checks: [] })], ['state:put', savePlan], ['state:verify', ({ prompt }) => envelope('run-state', { value: savedPlan(prompt) })], ['stale:recon', liveRecon()],
+  ['integrate', integrateOk],
+  ['worktree:add', envelope('worktree', { path: INT_WORKTREE, landing: 'lnd', name: 'verify', head: sha(98) })],
+  ['worktree:remove', envelope('worktree', { path: INT_WORKTREE, removed: true })],
+]
+
+// ---- Legacy to envelope adapter ----
+// The status, merge, and merged stages now run through wfx and answer with envelopes. Many tests still route
+// them with the shapes the removed agent prompts returned: ready(n) for a status, merged for a merge,
+// stateMerged for a merged wait. This adapter turns those legacy values into the matching wfx envelopes.
+// A value that already is an envelope (it has ok and cmd) passes through unchanged.
+const servedHeads = new Map()
+export const pollData = (over = {}) => ({
+  pr: 0, state: 'OPEN', isDraft: false, mergeStateStatus: 'CLEAN', reviewDecision: 'NONE', headRefOid: sha(0), baseRefName: 'main',
+  checks: { passing: 1, failing: 0, pending: 0, items: [{}] }, unresolvedThreads: 0, ...over,
+})
+const CHECKS_OF = {
+  fail: { passing: 0, failing: 1, pending: 0, items: [{}] },
+  pending: { passing: 0, failing: 0, pending: 1, items: [{}] },
+  none: { passing: 0, failing: 0, pending: 0, items: [] },
+  pass: { passing: 1, failing: 0, pending: 0, items: [{}] },
+}
+const isEnvelope = (v) => Boolean(v) && typeof v === 'object' && 'ok' in v && 'cmd' in v
+// ---- Publish adapter ----
+// Publish now runs one wfx step per call, with the label publish:<id>:<step>. The step shows in the command text.
+// A route value of the removed agent shape, published(id, n, head), supplies the PR number, url, and stats.
+// A null route value gives a null answer, which a stat call reads as a failed call.
+function publishAnswer(prompt, label, value) {
+  const id = label.split(':')[1]
+  const result = value && Array.isArray(value.results) ? value.results.find((r) => r.target === id) : null
+  if (prompt.includes('wfx pr create')) {
+    return result ? envelope('pr', { number: result.pr_number, url: result.url }) : failure('pr', 'pr-create-failed', 'no published result for ' + id)
+  }
+  if (prompt.includes('wfx pr comment') || prompt.includes('wfx pr retarget')) return envelope('pr', {})
+  if (prompt.includes('wfx publish')) {
+    const flag = (name) => new RegExp(`--${name} '?([^' ]+)`).exec(prompt)[1]
+    return envelope('publish', { branch: flag('branch'), sha: flag('sha'), expect: flag('expect'), pushed: true })
+  }
+  if (prompt.includes('wfx rev-parse')) {
+    const prefix = /wfx rev-parse --repo "[^"]*" '?([^' ]+)/.exec(prompt)[1]
+    return envelope('rev-parse', { shas: { [prefix]: prefix.padEnd(40, '0') } })
+  }
+  if (prompt.includes('gh pr view')) {
+    if (value && 'changed_files' in value) return value
+    return result ? { changed_files: result.changed_files, lines_changed: result.lines_changed } : null
+  }
+  if (prompt.includes('gh pr list --head')) return { prs: Array.isArray(value) ? value : value && Array.isArray(value.prs) ? value.prs : [] }
+  return value
+}
+function legacyToEnvelope({ opts, prompt }, value) {
+  const label = opts.label
+  if (label.startsWith('publish:')) return publishAnswer(prompt, label, value)
+  const pr = Number(/--pr (\d+)/.exec(prompt)?.[1] ?? 0)
+  if (/:status:\d+/.test(label) && value && 'merge_state' in value) {
+    const draft = value.merge_state === 'DRAFT'
+    servedHeads.set(pr, value.head_sha)
+    return envelope('poll', pollData({
+      pr, state: value.state, isDraft: draft, mergeStateStatus: draft ? 'CLEAN' : value.merge_state, headRefOid: value.head_sha,
+      reviewDecision: value.review_decision, checks: CHECKS_OF[value.ci], unresolvedThreads: value.unresolved_threads,
+    }))
+  }
+  if (/^merge:/.test(label) && value && 'result' in value) {
+    return value.result === 'refused'
+      ? failure('merge', 'merge-failed', value.note)
+      : envelope('merge', { pr, method: 'squash', head: /--head (\S+)/.exec(prompt)?.[1] ?? '', queued: value.result === 'queued' })
+  }
+  if (/^merged:/.test(label) && value && 'state' in value) return envelope('poll', pollData({ pr, state: value.state }))
+  return value
+}
+export const legacyAdapter = (respond) => (call) => {
+  const value = respond(call)
+  if (isEnvelope(value)) {
+    if (value.ok && value.cmd === 'poll' && /--pr (\d+)/.test(call.prompt) && value.data.headRefOid) servedHeads.set(Number(/--pr (\d+)/.exec(call.prompt)[1]), value.data.headRefOid)
+    return value
+  }
+  return legacyToEnvelope(call, value)
+}
 
 // A test may pass its own budget object; the harness default has no total, so the floor never applies.
 // child stands in for workflow(): brie-ground research and the age-fanout child.
-export async function run(args, routes, budget = null, child = null) {
+// verify replaces the default verify-criteria stub: it receives the child input and returns the result or throws.
+export async function run(args, routes, budget = null, child = null, verify = defaultVerify) {
   const workflow = await loadWorkflow(path)
-  const { globals, trace } = createRuntime({ respond: router([...routes, ...DEFAULT_ROUTES]) })
-  const result = await workflow.run({ ...globals, ...(budget ? { budget } : {}), ...(child ? { workflow: child } : {}), args })
-  const labels = trace.agents.map(({ opts }) => opts.label)
+  servedHeads.clear()
+  const { globals, trace } = createRuntime({ respond: legacyAdapter(router([...routes, ...DEFAULT_ROUTES])) })
+  const workflowCalls = []
+  const stub = async (name, input) => {
+    workflowCalls.push({ name, input: plain(input) })
+    if (name === 'verify-criteria') return verify(input)
+    if (!child) throw new Error('workflow() is not supported in the offline harness')
+    return child(name, input)
+  }
+  const result = await workflow.run({ ...globals, ...(budget ? { budget } : {}), workflow: stub, args })
+  // trace, labels, and call show the planning and build agents. The wfx runner calls sit in raw and wfxLabels.
+  const isWfx = ({ opts }) => WFX_LABEL_RE.test(opts.label)
+  const shown = { ...trace, agents: trace.agents.filter((a) => !isWfx(a)) }
+  const labels = shown.agents.map(({ opts }) => opts.label)
+  const wfxLabels = trace.agents.filter(isWfx).map(({ opts }) => opts.label)
   const call = (label) => trace.agents.find(({ opts }) => opts.label === label)
-  return { result, trace, labels, call }
+  // allLabels lists every agent call in call order, wfx runner calls included. An absence assertion (no merge, no push) reads it.
+  const allLabels = trace.agents.map(({ opts }) => opts.label)
+  return { result, trace: shown, raw: trace, labels, wfxLabels, allLabels, call, workflowCalls }
 }
 
 // Plan once, then return the args that approve that plan.

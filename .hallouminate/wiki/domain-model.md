@@ -25,6 +25,18 @@ _Code_: NEW ENTITY (claude/workflows/cheese-factory.js phase)
 **No-chain-forward** — directive carried by every phase spawn overriding a skill's `--auto` chaining: write your handoff slug and stop.
 _Code_: ~/.claude/skills/ultracook/SKILL.md:87-91
 
+**Landing** — one move-my-cheese job across all its gate hops, keyed by `digestOf({prs, base})`; a landing spans several runs.
+_Avoid_: run (a run is one Workflow invocation)
+_Code_: NEW ENTITY (`wfx run-state` key; spec workflow-decomposition)
+
+**Module block** — a `// BEGIN module <name>` / `// END module <name>` region that `sync.mjs` fills from `claude/workflow-prelude/modules/<name>.js`.
+_Avoid_: prelude block, shared prelude
+_Code_: NEW ENTITY (replaces the single block at claude/workflow-prelude/sync.mjs:12-13)
+
+**Effects tool** — `bin/wfx`, the Node command that runs every workflow git, `gh`, and environment step and prints one JSON envelope.
+_Avoid_: git helper, bin script
+_Code_: NEW ENTITY (claude/workflow-fx/cli.mjs)
+
 **Pinned surface** — any package whose installed version is exactly recorded in a manifest and moves only via merged bump PRs (never machine-side upgrade).
 _Avoid_: managed package, locked dep
 _Code_: NEW ENTITY (chezmoi/dot_config/mise/config.toml + packages.yaml `version:` fields + claude.yaml MCP args)
