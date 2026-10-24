@@ -51,8 +51,8 @@ Never mock the system under test or weaken the acceptance check to fit the imple
 Run focused checks while editing.
 When `eatmydata` is on PATH, run throwaway test suites, gates, and builds as `eatmydata <cmd>`.
 Do not use it for commands that write data you keep: persistent installs, databases, real-repo git operations, backups, or deploys.
-Do not use it for tests that check durability or crash behavior.
-When a guide or skill gives the exact command, add only the `eatmydata` prefix.
+Do not use it for tests that check durability or crash recovery.
+When a guide or skill gives the exact command, put `eatmydata` after any leading `VAR=value` assignments.
 Stay within the authorized live-call budget; ask before you exceed it.
 
 ## Evidence
