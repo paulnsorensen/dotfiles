@@ -51,4 +51,27 @@ These resources do not depend on OMP runtime state.
 
 `.sync` checks the installed Pi version before and after the final chezmoi apply. `tests/pi-config.bats` covers settings ownership, package pins, MCP configuration, path protection, and shared-skill discovery. Session analytics reads Pi's native JSONL alongside OMP through one Pi-family normalizer.
 
+## Package bump gotchas
+
+Renovate bumps Pi packages often. Two traps recur in `green-harvest` issues. Read them before you merge a bump.
+
+### The pin test duplicates the pins
+
+`tests/pi-config.bats` ("pi registry pins the selected mainstream packages") compares the whole `packages` array to a literal. A Renovate PR edits only `chezmoi/.chezmoidata/pi.yaml`. The test then fails in CI. Update the literal and the registry pin in the same change. Do not weaken the test.
+
+### Children may lose the Pi addendum
+
+Per the `pi-subagents` 0.79.2 changelog, as reported in the `green-harvest` issues, children started with `systemPromptMode: replace` no longer receive `APPEND_SYSTEM.md`. This covers every builtin agent except `delegate`. The repo pins 0.77.0, so the change is pending until a bump merges.
+
+The file holds two kinds of rules:
+
+- Tool routing (native file tools, Tilth direct tools, `codemode`, `web_search`): children need these.
+- Delegation rules: only the parent needs these.
+
+Children also skip the global `~/.pi/agent/AGENTS.md`. If children need the routing, put it in the agent prompts or in an `agentOverrides` system prompt. Otherwise accept that the addendum applies only to the parent. <speculative> The repo has not yet chosen between these options. </speculative>
+
+### Compaction trigger headroom
+
+Since Pi 1.4.0, `compaction.reserveTokens` (16384 in `pi.yaml`) only sets when compaction starts. It no longer caps summary size. The key stays valid, so the drift gate in `modify_settings.json` sees no change.
+
 Related: [[index]], [[../architecture/agents-dir]], [[../operations/sync-and-chezmoi]].
