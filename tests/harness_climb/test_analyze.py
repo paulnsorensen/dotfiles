@@ -152,7 +152,7 @@ class AnalyzeCommandTests(unittest.TestCase):
     def test_db_path_is_never_hardcoded_in_the_cli(self) -> None:
         source = (CLI_PATH.parent / "hc_db.py").read_text()
         self.assertNotIn("sessions.duckdb", source)
-        self.assertIn("agent-session-analytics==0.2.0", source)
+        self.assertIn("agent-session-analytics==0.2.1", source)
         self.assertIn('"db-path"', source)
 
     def test_invalid_findings_exit_2_with_errors_and_no_db_read(self) -> None:

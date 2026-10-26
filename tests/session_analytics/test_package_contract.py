@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import cast, final, override
 
 # -q keeps uv install progress out of stderr; the sandbox starts with a cold uv cache.
-CLI = ["uvx", "-q", "agent-session-analytics==0.2.0"]
+CLI = ["uvx", "-q", "agent-session-analytics==0.2.1"]
 
 
 @final
@@ -65,7 +65,7 @@ class PackageContract(unittest.TestCase):
     def test_path_and_schema_json(self) -> None:
         path = cast(dict[str, str], json.loads(self.call("db-path").stdout))["path"]
         self.assertEqual(
-            path, str(self.root / "cache/dotfiles/session-analytics/sessions.duckdb")
+            path, str(self.root / "cache/agent-session-analytics/sessions.duckdb")
         )
         schema = cast(dict[str, str], json.loads(self.call("schema").stdout))
         self.assertEqual(schema["reference"], "canonical-schema.md")

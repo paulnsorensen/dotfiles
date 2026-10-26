@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Isolated session logs for package-backed Bats tests.
 # -q keeps uv install progress out of asserted output; the sandbox starts with a cold uv cache.
-PACKAGE_CLI=(uvx -q agent-session-analytics==0.2.0)
+PACKAGE_CLI=(uvx -q agent-session-analytics==0.2.1)
 
 package_real_binary() {
     local candidate
