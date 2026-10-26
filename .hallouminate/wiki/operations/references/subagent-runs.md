@@ -3,7 +3,7 @@
 Backing queries for [[operations/subagent-dispatch-analytics]]. Run against
 the path from `uvx agent-session-analytics==0.2.1 db-path`. The default is
 `${XDG_CACHE_HOME:-$HOME/.cache}/agent-session-analytics/sessions.duckdb`.
-First run `<session-analytics-dir>/scripts/ingest.py`.
+Run `uvx agent-session-analytics==0.2.1 ingest` first when the database is missing or stale.
 
 ## 1. Rebuild run trees from sidechain entries
 

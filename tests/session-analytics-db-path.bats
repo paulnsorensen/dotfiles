@@ -37,6 +37,15 @@ teardown() { teardown_test_env; }
     [ "$output" = "$current" ]
 }
 
+@test "db-path: SESSIONS_DB wins over an existing legacy database" {
+    local legacy="$XDG_CACHE_HOME/dotfiles/session-analytics/sessions.duckdb"
+    mkdir -p "${legacy%/*}"
+    : > "$legacy"
+    SESSIONS_DB="/opt/custom/sessions.duckdb" run package_fixture_db
+    assert_success
+    [ "$output" = "/opt/custom/sessions.duckdb" ]
+}
+
 @test "db-path: absolute SESSIONS_DB is used as-is" {
     SESSIONS_DB="/opt/custom/sessions.duckdb" run package_fixture_db
     assert_success
