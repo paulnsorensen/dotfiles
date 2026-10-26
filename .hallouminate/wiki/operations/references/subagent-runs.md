@@ -1,7 +1,8 @@
 # Query pack — reconstructing sub-agent runs
 
 Backing queries for [[operations/subagent-dispatch-analytics]]. Run against
-`${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles/session-analytics/sessions.duckdb`.
+the path from `uvx agent-session-analytics==0.2.1 db-path`. The default is
+`${XDG_CACHE_HOME:-$HOME/.cache}/agent-session-analytics/sessions.duckdb`.
 First run `<session-analytics-dir>/scripts/ingest.py`.
 
 ## 1. Rebuild run trees from sidechain entries

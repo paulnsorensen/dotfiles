@@ -6,7 +6,7 @@
 load test_helper
 load lib/session-analytics-package
 
-DB="$TEST_HOME/.cache/dotfiles/session-analytics/sessions.duckdb"
+DB="$TEST_HOME/.cache/agent-session-analytics/sessions.duckdb"
 
 setup() {
     setup_test_env
@@ -361,7 +361,7 @@ for call_id, (output, _) in cases.items():
     })
 fixture.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
 result = subprocess.run(
-    ["uvx", "agent-session-analytics==0.2.0", "ingest", "--force"],
+    ["uvx", "agent-session-analytics==0.2.1", "ingest", "--force"],
     env={**os.environ, "PYTHONINTMAXSTRDIGITS": "4300"},
     capture_output=True, text=True,
 )
@@ -587,5 +587,5 @@ JSONL
 @test "ingest: relative XDG_CACHE_HOME resolves under isolated HOME" {
     run env XDG_CACHE_HOME=relative/cache "${PACKAGE_CLI[@]}" db-path
     assert_success
-    assert_output_contains "$TEST_HOME/.cache/dotfiles/session-analytics/sessions.duckdb"
+    assert_output_contains "$TEST_HOME/.cache/agent-session-analytics/sessions.duckdb"
 }

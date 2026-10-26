@@ -77,7 +77,7 @@ class PackageBuiltConsumerTests(RepoCase):
         )
         if proc.returncode:
             raise AssertionError(f"package ingest failed: exit {proc.returncode}")
-        cls.db = cls.home / "cache/dotfiles/session-analytics/sessions.duckdb"
+        cls.db = cls.home / "cache/agent-session-analytics/sessions.duckdb"
         if not cls.db.is_file():
             raise AssertionError("package ingest did not build a database")
 

@@ -14,7 +14,27 @@ teardown() { teardown_test_env; }
     unset XDG_CACHE_HOME
     run package_fixture_db
     assert_success
-    [ "$output" = "$TEST_HOME/.cache/dotfiles/session-analytics/sessions.duckdb" ]
+    [ "$output" = "$TEST_HOME/.cache/agent-session-analytics/sessions.duckdb" ]
+}
+
+@test "db-path: legacy dotfiles database is used when only it exists" {
+    local legacy="$XDG_CACHE_HOME/dotfiles/session-analytics/sessions.duckdb"
+    mkdir -p "${legacy%/*}"
+    : > "$legacy"
+    run package_fixture_db
+    assert_success
+    [ "$output" = "$legacy" ]
+}
+
+@test "db-path: new database wins when the legacy database also exists" {
+    local legacy="$XDG_CACHE_HOME/dotfiles/session-analytics/sessions.duckdb"
+    local current="$XDG_CACHE_HOME/agent-session-analytics/sessions.duckdb"
+    mkdir -p "${legacy%/*}" "${current%/*}"
+    : > "$legacy"
+    : > "$current"
+    run package_fixture_db
+    assert_success
+    [ "$output" = "$current" ]
 }
 
 @test "db-path: absolute SESSIONS_DB is used as-is" {
@@ -34,11 +54,11 @@ teardown() { teardown_test_env; }
 @test "db-path: absolute XDG_CACHE_HOME is honored" {
     XDG_CACHE_HOME="$TEST_HOME/custom-cache" run package_fixture_db
     assert_success
-    [ "$output" = "$TEST_HOME/custom-cache/dotfiles/session-analytics/sessions.duckdb" ]
+    [ "$output" = "$TEST_HOME/custom-cache/agent-session-analytics/sessions.duckdb" ]
 }
 
 @test "db-path: relative XDG_CACHE_HOME is ignored" {
     XDG_CACHE_HOME="relative/cache" run package_fixture_db
     assert_success
-    [ "$output" = "$TEST_HOME/.cache/dotfiles/session-analytics/sessions.duckdb" ]
+    [ "$output" = "$TEST_HOME/.cache/agent-session-analytics/sessions.duckdb" ]
 }
