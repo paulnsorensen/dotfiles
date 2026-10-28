@@ -114,3 +114,5 @@
 2026-10-13 · build-ci-parallelization-20261013 · merged · operations/test-suite-performance.md · Record read-only lint fan-out and Ubuntu shard hints. Supersede the stale mutating-gate description. Preserve worker defaults and failed-baseline comparison limits.
 
 2026-10-14 · 8d50142076b0af8d · merged · harnesses/codex.md · Record the dedicated Codex uv cache inside the existing writable root.
+
+2026-10-25 · wiki-harvest-auto/dotfiles-20261025 · curated · harnesses/pi.md · Record Pi package bump traps: pin-test literal, pi-subagents child prompt inheritance, compaction reserveTokens.
