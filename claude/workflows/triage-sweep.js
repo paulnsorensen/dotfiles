@@ -213,7 +213,8 @@ const ROUTE_SCHEMA = {
 const REPO_RE = /^(?:[A-Za-z0-9][A-Za-z0-9.-]*\/)?[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9_.][A-Za-z0-9_.-]*$/
 const USAGE = `Call triage-sweep with args {repo?: 'owner/name', scope?: 'issues' | 'prs' | 'both', limit?: 1..${LIMITS.maxLimit}, map?: true | false}, or with a bare 'owner/name' string.`
 
-function parseArgs(a) {
+// The args module cannot express this contract: a bare string is a repo, and the repo value is trimmed.
+function parseSweepArgs(a) {
   if (a == null) return { opts: {} }
   if (typeof a === 'string') {
     const s = a.trim()
@@ -221,7 +222,7 @@ function parseArgs(a) {
     if (s.startsWith('{')) {
       let parsed
       try { parsed = JSON.parse(s) } catch { return { error: 'args is a string that is not valid JSON.' } }
-      return typeof parsed === 'string' ? { error: 'args is a JSON-encoded string.' } : parseArgs(parsed)
+      return typeof parsed === 'string' ? { error: 'args is a JSON-encoded string.' } : parseSweepArgs(parsed)
     }
     return REPO_RE.test(s) ? { opts: { repo: s } } : { error: `args string ${JSON.stringify(s)} is not an owner/name repo.` }
   }
@@ -248,7 +249,7 @@ function parseArgs(a) {
   return errors.length ? { error: `${errors.join('; ')}.` } : { opts }
 }
 
-const parsed = parseArgs(args)
+const parsed = parseSweepArgs(args)
 const opts = parsed.opts || {}
 const repo = opts.repo || null
 const scope = opts.scope || 'both'
@@ -265,8 +266,57 @@ const repoCtx = repo ? `Repo: ${repo}.` : 'Repo: the current directory\'s repo (
 // ── helpers ──────────────────────────────────────────────────────────────
 
 const key = (item) => `${item.kind}#${item.number}`
-const blank = (s) => typeof s !== 'string' || !s.trim()
-const budgetLow = () => Boolean(budget.total) && budget.remaining() < LIMITS.minBudget
+const isBlank = (s) => typeof s !== 'string' || !s.trim()
+
+// BEGIN module budget
+// module: budget; provides: DEFAULT_LIMITS, floorReached, floorReason; requires: none
+// The LIMITS values that every workflow shares. A workflow spreads these into its own LIMITS.
+const DEFAULT_LIMITS = { minBudget: 50000, agentCap: 1000 }
+
+// True when the budget is known and less than the floor remains. budget and LIMITS resolve at call time.
+const floorReached = (floor = LIMITS.minBudget) => Boolean(budget.total && budget.remaining() < floor)
+
+// The text that names the stage a budget floor stopped.
+const floorReason = (stage, floor = LIMITS.minBudget) => `budget floor reached before ${stage}: ${budget.remaining()} remaining, below ${floor}`
+// END module budget
+// BEGIN module status
+// module: status; provides: STATUS, finish, blockedResult, gapField, report, donePayload, runStatus, countStatuses; requires: none
+// The status values that a workflow result carries.
+const STATUS = Object.freeze({ ok: 'ok', partial: 'partial', blocked: 'blocked', needsInput: 'needs-input', needsApproval: 'needs-approval' })
+
+// A result with a status. base holds the keys that every result of the workflow carries; extra overrides them.
+const finish = (status, extra = {}, base = {}) => ({ ...base, status, ...extra })
+
+// A blocked result. The key reason holds the cause.
+const blockedResult = (reason, extra = {}, base = {}) => finish(STATUS.blocked, { reason, ...extra }, base)
+
+// The gaps key of a result, or nothing when there is no gap.
+const gapField = (gaps) => (gaps.length ? { gaps } : {})
+
+// A report result. The note is logged and returned, as an empty string when absent. log resolves at call time.
+function report(status, note, fields = {}) {
+  if (note) log(note)
+  return { status, note: note || '', ...fields }
+}
+
+// A done payload: fields and extra merged, without the keys whose value is undefined.
+function donePayload(fields, extra = {}) {
+  const merged = { ...fields, ...extra }
+  return Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== undefined))
+}
+
+// A run is ok only when something was produced, every row has the clean status, nothing stopped it, and no gap remains.
+function runStatus({ stopped = '', gaps = [], produced = 0, rows = [], clean = 'clean' } = {}) {
+  return stopped || gaps.length || !produced || rows.some((r) => r.status !== clean) ? STATUS.partial : STATUS.ok
+}
+
+// Counts the rows for each status. A status in seed starts at its seed count.
+function countStatuses(rows, seed = { clean: 0, dirty: 0, failed: 0 }) {
+  const counts = { ...seed }
+  for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1
+  return counts
+}
+// END module status
 
 // GitHub text is untrusted. Escaping "<" keeps a title from closing the fence; JSON.parse restores it.
 function dataBlock(name, value) {
@@ -464,7 +514,7 @@ function routePrompt(grounded, lenses, links) {
 // ── code gates over typed results ────────────────────────────────────────
 
 function normalizeGround(item, entry) {
-  const evidence = (entry.evidence || []).filter((e) => e && !blank(e.claim) && !blank(e.citation))
+  const evidence = (entry.evidence || []).filter((e) => e && !isBlank(e.claim) && !isBlank(e.citation))
   let verdict = entry.verdict
   let problem = ''
   if (CLOSE_VERDICTS.includes(verdict) && !evidence.length) problem = `${verdict} verdict cites no ruling-out evidence`
@@ -635,15 +685,15 @@ function checkRouting(out, grounded, links) {
 // ── run ──────────────────────────────────────────────────────────────────
 
 const gaps = []
-const finish = (status, extra = {}) => ({ status, items: [], grounded: [], lenses: [], routing: null, gaps, ...extra })
+const sweepResult = (status, extra = {}) => finish(status, extra, { items: [], grounded: [], lenses: [], routing: null, gaps })
 
 if (parsed.error) {
   log(`Bad args: ${parsed.error} ${USAGE}`)
-  return finish('blocked', { reason: `${parsed.error} ${USAGE}` })
+  return sweepResult('blocked', { reason: `${parsed.error} ${USAGE}` })
 }
-if (budgetLow()) {
+if (floorReached()) {
   log(`Budget remaining ${budget.remaining()} is below the ${LIMITS.minBudget} floor; no agent ran.`)
-  return finish('blocked', { reason: `The token budget is below the ${LIMITS.minBudget} floor. Rerun with a larger budget.` })
+  return sweepResult('blocked', { reason: `The token budget is below the ${LIMITS.minBudget} floor. Rerun with a larger budget.` })
 }
 
 phase('Gather')
@@ -655,11 +705,11 @@ for (let round = 0; round <= LIMITS.gatherRedo && !gathered; round++) {
 }
 if (!gathered) {
   log('The gather agent returned no item list after a redo; stopping before Ground.')
-  return finish('blocked', { reason: 'The gather agent returned no item list. Rerun with the same args.' })
+  return sweepResult('blocked', { reason: 'The gather agent returned no item list. Rerun with the same args.' })
 }
 if (gathered.error) {
   log(`The gather agent reported a listing failure: ${gathered.error}; stopping before Ground.`)
-  return finish('blocked', { reason: `Listing open items failed: ${gathered.error}. Fix the cause, then rerun with the same args.` })
+  return sweepResult('blocked', { reason: `Listing open items failed: ${gathered.error}. Fix the cause, then rerun with the same args.` })
 }
 
 // The gather agent reads the limit only as a prompt hint, so code drops repeats, out-of-scope kinds, and caps each kind.
@@ -676,7 +726,7 @@ if (items.length < gathered.items.length) log(`Dropped ${gathered.items.length -
 
 if (!items.length) {
   log('No open items found — nothing to triage.')
-  return finish('done')
+  return sweepResult('done')
 }
 
 const batches = toBatches(items)
@@ -699,7 +749,7 @@ const survivorNumbers = new Set(survivors.map((g) => g.item.number))
 
 let lenses = []
 if (mapDomains && survivors.length >= 2) {
-  if (budgetLow()) {
+  if (floorReached()) {
     log(`Budget below the ${LIMITS.minBudget} floor; skipping Map.`)
     gaps.push('Map skipped: the token budget fell below the floor')
   } else {
@@ -729,7 +779,7 @@ const links = mergeLinks([
 ], survivorNumbers)
 
 let routing = null
-if (budgetLow()) {
+if (floorReached()) {
   log(`Budget below the ${LIMITS.minBudget} floor; skipping Route. The grounded results are returned unrouted.`)
   gaps.push('Route skipped: the token budget fell below the floor')
 } else {

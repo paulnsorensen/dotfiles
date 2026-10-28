@@ -16,7 +16,7 @@ A deep sub-question can extract 12 sources × 4 claims, so 46 agents was a norma
 - An `agent()` call with no `model` and no model-pinned `agentType` uses the parent model. Set `model` on each fan-out worker.
 - Cap each fan-out whose item count comes from agent output. Use a `slice`, a `LIMITS` value, or a check that blocks the run.
 - Remove repeats before the fan-out, not after it. A repeat shares the verdict of the first copy only when the verifier read the same thing: brie-ground keys on claim and citation, sliced-bread-audit on fingerprint and claim.
-- Keep a child workflow's worst case under the budget its callers reserve. brie-ground's worst case is 35 agents, and `BRIE_GROUND_MAX_AGENTS = 35` reserves exactly that; a prelude test computes the worst case from the brie-ground caps and pins the reservation to it.
+- Keep a child workflow's worst case under the budget its callers reserve. brie-ground's worst case is 35 agents, and `BRIE_GROUND_MAX_AGENTS = 35` reserves exactly that; a `ground` module test computes the worst case from the brie-ground caps and pins the reservation to it.
 - Log the number of items that the cap drops. Report capped items as unverified, not as checked.
 - Batch items into one agent when each item needs only a short check. Each agent start costs its startup context, so one agent per item multiplies that cost.
 
@@ -42,6 +42,7 @@ A row marked with an open PR describes the code on that PR branch. A stacked PR 
 | hill-climb-threads | adopt, climb, verify, publish | 8 threads × 12 rounds | sonnet |
 | move-my-cheese | criterion judges | 24 criteria per plan, else rejected; one judge runs a batch of checks | sonnet |
 | cheese-factory | criterion judges | 24 criteria (`LIMITS.maxCriteria`); one judge per criterion, run serially | judge, sonnet |
+| verify-criteria | batch judges | `LIMITS.maxBatches` = 8 batches of 1 to 12 checks (default 6); a criterion past the cap is `missing` | judge |
 
 ### brie-ground (PR #1340, merged)
 
@@ -57,13 +58,20 @@ A dropped sub-question goes to `open_questions`.
 Code lowers `certain` to `speculating` when a sub-question is ungrounded or a decision-critical claim is not verified.
 The result reports `dropped_sub_questions` and `unchecked_claims`.
 
-### Prelude reservation (PR #1356, open)
+### Ground module reservation (PR #1356, open)
 
-`claude/workflow-prelude/prelude.js` reserves `BRIE_GROUND_MAX_AGENTS` for each brie-ground child.
+`claude/workflow-prelude/modules/ground.js` reserves `BRIE_GROUND_MAX_AGENTS` for each brie-ground child.
 Main still reserves 100, which over-reserves by 65.
-PR #1356 lowers the value to 35 in the prelude and in its copies in `cheese-board.js`, `cheese-factory.js`, and `move-my-cheese.js`.
-A prelude test computes the worst case from the brie-ground caps and pins the reservation to it.
+PR #1356 lowers the value to 35 in the module and in its vendored blocks in `cheese-board.js`, `cheese-factory.js`, and `move-my-cheese.js`.
+A `ground` module test computes the worst case from the brie-ground caps and pins the reservation to it.
 The PR also logs and returns the count of follow-up questions and citation rows that a capped child drops.
+
+### verify-criteria child
+
+`claude/workflows/verify-criteria.js` caps its batches at `LIMITS.maxBatches` = 8, so a run starts at most 8 judges plus one preflight runner.
+cheese-factory reserves `VERIFY_CRITERIA_MAX_AGENTS` = 12 for each child call, which covers that worst case with margin.
+A criterion past the batch cap has no verdict and shows in `missing`.
+cheese-factory calls the child with `preflight: false`.
 
 ### triage-sweep (PR #1337, merged)
 

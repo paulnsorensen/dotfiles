@@ -13,7 +13,7 @@ Each token a model spends on a mechanical step costs money and adds variance.
 |---|---|
 | Argument parsing and validation | Parse `args`; return `{ status: 'blocked' }` before the first agent |
 | Argument shape | Accept a bare string and map it to the main field. Return the exact call shape in each error |
-| Git and GitHub plumbing | One script, for example in `bin/`, that one agent calls. It returns JSON and has tests against real temporary git repositories. Not one small agent for each command, and not git steps written in English in a prompt |
+| Git and GitHub plumbing | One script that one agent calls. In the dotfiles repository, use `wfx` (`bin/wfx`, subcommands in `claude/workflow-fx/commands/`). It returns JSON and has tests against real temporary git repositories. Not one small agent for each command, and not git steps written in English in a prompt |
 | ID, coverage, and graph checks | Validators and a topological sort |
 | Dedup, sort, filter, and caps | Plain JavaScript over typed results |
 | Status normalization | A table or a function, not a prompt rule |
@@ -23,9 +23,9 @@ Each token a model spends on a mechanical step costs money and adds variance.
 | Verdict aggregation and final status | Code over verdict objects |
 
 Smell test: a prompt that says "count", "sort", "deduplicate", "make sure every", or "check that X is in the list" holds work for code.
-A prompt that lists `git` or `gh` steps, such as fetch, rebase, merge, push, or `gh pr merge`, holds work for the plumbing script.
+A prompt that lists `git` or `gh` steps, such as fetch, rebase, merge, push, or `gh pr merge`, holds work for the plumbing script (`wfx` in the dotfiles repository).
 
-Evidence: the Workflow runtime has no shell and no file access. So move-my-cheese writes all git and GitHub work as English steps in agent prompts, for example `restackPrompt` in `claude/workflows/move-my-cheese.js`. Agents that followed these steps re-applied diffs instead of rebasing.
+Evidence: the Workflow runtime has no shell and no file access. So move-my-cheese once wrote all git and GitHub work as English steps in agent prompts, for example `restackPrompt`. Agents that followed these steps re-applied diffs instead of rebasing. `wfx restack`, `wfx integrate`, and `wfx publish` now hold that work as tested code. move-my-cheese adopts them step by step.
 
 ## Precompute context
 

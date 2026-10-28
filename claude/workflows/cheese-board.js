@@ -46,16 +46,8 @@ export const meta = {
 // ---- Limits: every loop has a bound in code ----
 const LIMITS = { fixRounds: 2, advisorRevisions: 1, specRounds: 1, maxSpecs: 8, maxSpecsCap: 12, maxCriteria: 24, maxCurds: 12, maxIdeas: 40, maxResearch: 4, maxQuestionsPerInitiative: 2, minBudget: 50000, triageLimit: 30, maxTriageLimit: 200 }
 
-// BEGIN shared prelude: sync.mjs copies this block from claude/workflow-prelude/prelude.js. Edit that file. Then run node claude/workflow-prelude/sync.mjs.
-// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
-const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
-// The anchored form of SCRATCH_PATH_SRC matches a whole path.
-const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
-// A full commit SHA has 40 hex digits in either case.
-const FULL_SHA_RE = /^[0-9a-f]{40}$/i
-// True when the budget is known and less than LIMITS.minBudget remains. Both names resolve at call time.
-const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
-// A form error is mechanical, so a cheap model repairs it.
+// BEGIN module call
+// module: call; provides: form, substance, errorText, schemaErrors, data, prompt, redoPrompt, repairPrompt, isWriter, attempt, typed, unwrapEnvelope, wfxCommandOf; requires: none
 const form = (msg) => ({ kind: 'form', msg })
 // A substance error needs new facts, so the producer redoes the answer.
 const substance = (msg) => ({ kind: 'substance', msg })
@@ -93,13 +85,162 @@ const repairPrompt = (value, errors) => prompt(
   data('errors', errors.map((e) => e.msg)),
   data('object', value),
 )
+// A writer call may change the tree, so a throw from it never retries. A reviewer worktree only holds reports.
+const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'worktree' && opts.agentType !== 'reviewer')
+// An agent call can throw, for example at the budget ceiling. The throw becomes a value, so the caller decides what to do.
+const attempt = async (text, opts) => {
+  try {
+    return { value: await agent(text, opts), threw: null }
+  } catch (e) {
+    const message = e && e.message ? e.message : String(e)
+    log(`${opts.label}: agent threw: ${message}`)
+    return { value: null, threw: message }
+  }
+}
+// One validated agent call: check the answer, then repair form errors or redo substance errors, each up to LIMITS.fixRounds.
+// A throw from a read-only call retries once. A throw from a writer call never retries.
+// hooks: normalize(value) cleans an answer before the check.
+//   expandShas(value, opts) returns a fixed copy of the value, or null, when the check fails once.
+//   onWorktree(value, opts) runs for each answer of a call with isolation 'worktree'.
+//   nullIsFinal makes a null answer final at once, with no redo.
+//   noRedo makes an answer that fails with substance errors final at once. A formatter repair of form errors still runs.
+//   retryOnThrow is a flag, or a predicate on the call options, that replaces the default read-only rule.
+//   driftOf(before, after, schema) names a decision field that a formatter repair changed, or returns null.
+// Returns { value, errors, lost, threw }. lost is 'threw' or 'missing' when the value is null for that reason.
+const typed = async (text, opts, check, hooks = {}) => {
+  const { normalize = (v) => v, expandShas, onWorktree, nullIsFinal = false, noRedo = false, retryOnThrow, driftOf } = hooks
+  const mayRetry = (o) => (typeof retryOnThrow === 'function' ? retryOnThrow(o) : (retryOnThrow ?? !isWriter(o)))
+  let sent = { text, opts }
+  let { value, threw } = await attempt(sent.text, sent.opts)
+  let retried = false
+  let expanded = false
+  let repairedFrom = null
+  let repairErrors = []
+  for (let round = 1; ; round++) {
+    if (threw != null) {
+      if (retried || !mayRetry(sent.opts)) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw', threw: true }
+      retried = true
+      sent = { text: sent.text, opts: { ...sent.opts, label: `${opts.label}:retry${round}` } }
+      ;({ value, threw } = await attempt(sent.text, sent.opts))
+      continue
+    }
+    if (value != null) {
+      value = normalize(value)
+      if (opts.isolation === 'worktree' && onWorktree) onWorktree(value, opts)
+    }
+    let errors = value == null ? [substance('agent returned no output')] : check(value)
+    if (errors.length && expandShas && !expanded && !nullIsFinal && value != null) {
+      expanded = true
+      const full = await expandShas(value, opts)
+      // A repair or redo then starts from the expanded value, so only the remaining errors drive it.
+      if (full) {
+        value = full
+        errors = check(value)
+      }
+    }
+    // A formatter repairs form only. A repair that rewrites a decision field changes the answer, so the producer redoes the call.
+    if (driftOf && repairedFrom && value != null) {
+      const changed = driftOf(repairedFrom, value, opts.schema)
+      if (changed) errors = [substance(`a formatter repair changed ${changed}; fix the original errors yourself`), ...repairErrors.map((e) => substance(e.msg)), ...errors]
+    }
+    repairedFrom = null
+    if (!errors.length) return { value, errors, lost: null, threw: false }
+    if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
+    const formOnly = errors.every((e) => e.kind === 'form')
+    if (noRedo && !formOnly) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
+    repairedFrom = formOnly ? value : null
+    repairErrors = formOnly ? errors : []
+    sent = formOnly
+      ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low', agentType: 'formatter' } }
+      : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
+    ;({ value, threw } = await attempt(sent.text, sent.opts))
+  }
+}
+// A runner can wrap the envelope that wfx printed in a second envelope of its own.
+// Returns the innermost envelope: an object whose data is itself an envelope gives that data.
+function unwrapEnvelope(value) {
+  let env = value
+  while (env && typeof env === 'object' && env.data && typeof env.data === 'object' && typeof env.data.ok === 'boolean' && typeof env.data.cmd === 'string') env = env.data
+  return env
+}
+// The wfx command name in a command line: the word after the last 'wfx '. A wfx envelope carries it as cmd.
+function wfxCommandOf(command) {
+  const names = [...String(command).matchAll(/(?:^|[\s|&;(])wfx\s+([a-z][a-z-]*)/g)].map((m) => m[1])
+  return names.length ? names[names.length - 1] : ''
+}
+// END module call
+// BEGIN module budget
+// module: budget; provides: DEFAULT_LIMITS, floorReached, floorReason; requires: none
+// The LIMITS values that every workflow shares. A workflow spreads these into its own LIMITS.
+const DEFAULT_LIMITS = { minBudget: 50000, agentCap: 1000 }
 
+// True when the budget is known and less than the floor remains. budget and LIMITS resolve at call time.
+const floorReached = (floor = LIMITS.minBudget) => Boolean(budget.total && budget.remaining() < floor)
+
+// The text that names the stage a budget floor stopped.
+const floorReason = (stage, floor = LIMITS.minBudget) => `budget floor reached before ${stage}: ${budget.remaining()} remaining, below ${floor}`
+// END module budget
+// BEGIN module stale
+// module: stale; provides: SCRATCH_PATH_SRC, SCRATCH_WORKTREE_RE, FULL_SHA_RE, SHA_RE, SHORT_SHA_RE, DIGEST_RE, stampedBy, markersOf, shaErrors, staleVerdict; requires: call
+// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
+const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
+// The anchored form of SCRATCH_PATH_SRC matches a whole path.
+const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
+// A full commit SHA has 40 hex digits in either case.
+const FULL_SHA_RE = /^[0-9a-f]{40}$/i
+// A move-my-cheese SHA has 7 to 40 hex digits.
+const SHA_RE = /^[0-9a-f]{7,40}$/i
+// A writer may return a short SHA. A read-only call expands it.
+const SHORT_SHA_RE = /^[0-9a-f]{7,16}$/i
+// A landing digest has 16 lowercase hex digits.
+const DIGEST_RE = /^[0-9a-f]{16}$/
+// This approval recorded the PR's current head at the end of an earlier run.
+const stampedBy = (p, d) => p.landing_digest === d && p.landing_head === p.head_sha
+// Only well-formed markers count; anything else reads as no marker.
+function markersOf(pr) {
+  const aged = FULL_SHA_RE.test(pr.aged_sha.trim()) && FULL_SHA_RE.test(pr.aged_patch.trim())
+  const landing = DIGEST_RE.test(pr.landing_digest.trim())
+  return {
+    aged_sha: aged ? pr.aged_sha.trim() : '', aged_patch: aged ? pr.aged_patch.trim() : '', aged_dirty: aged && pr.aged_dirty,
+    landing_digest: landing ? pr.landing_digest.trim() : '',
+    landing_head: landing && FULL_SHA_RE.test(pr.landing_head.trim()) ? pr.landing_head.trim() : '',
+  }
+}
+// Code checks a SHA, not a schema pattern. A bad SHA is always substance: a formatter has no repo access and could only invent one.
+// typed() trims the SHA fields in TRIM_FIELDS before a check runs, so a padded SHA in those fields never reaches this test.
+const shaErrors = (path, value) =>
+  (typeof value === 'string' && FULL_SHA_RE.test(value) ? [] : [substance(`${path} must be a 40-hex commit SHA`)])
+// Compares a plan snapshot with the live repo. snapshot is { base, heads: { pr: sha }, files: [plan files] }.
+// live is { base, heads }. changedFiles lists the files that changed between the two bases, or null when unknown.
+// A moved head or a changed PR set needs a new plan. A moved base needs a new plan only when it touches a plan file.
+function staleVerdict(snapshot, live, changedFiles) {
+  const reasons = []
+  const planned = Object.keys(snapshot.heads).sort()
+  const current = Object.keys(live.heads).sort()
+  if (planned.join(',') !== current.join(',')) reasons.push(`the PR set is now ${current.join(', ') || 'empty'}, not ${planned.join(', ') || 'empty'}`)
+  for (const pr of planned) {
+    if (Object.hasOwn(live.heads, pr) && live.heads[pr] !== snapshot.heads[pr]) reasons.push(`#${pr} head moved from ${snapshot.heads[pr]} to ${live.heads[pr]}`)
+  }
+  if (reasons.length) return { verdict: 'replan', reasons }
+  if (snapshot.base === live.base) return { verdict: 'fresh', reasons: [] }
+  const moved = `the base moved from ${snapshot.base} to ${live.base}`
+  if (!Array.isArray(changedFiles)) return { verdict: 'replan', reasons: [`${moved}; the changed files are unknown`] }
+  const hit = changedFiles.filter((f) => snapshot.files.includes(f)).sort()
+  if (hit.length) return { verdict: 'replan', reasons: [`${moved}; it changed plan files: ${hit.join(', ')}`] }
+  return { verdict: 'rebase', reasons: [`${moved}; it touched no plan file`] }
+}
+// END module stale
+// BEGIN module mold
+// module: mold; provides: MOLD, DECISION_KINDS, RESEARCH_CONFIDENCE; requires: none
 // mold resolves the spec, research, and notes artifact paths.
 const MOLD = 'python3 ~/.claude/skills/mold/scripts/mold.pyz'
 // A Ground explorer sorts each recorded wiki decision into one of these kinds.
 const DECISION_KINDS = ['adr', 'locked', 'roadmap', 'gotcha', 'strategy']
 // brie-ground returns one of these confidence values.
 const RESEARCH_CONFIDENCE = ['certain', 'speculating', 'dont_know']
+// END module mold
+// BEGIN module ground
+// module: ground; provides: GROUNDING_SCHEMA, GROUND_RESEARCH_SCHEMA, GROUND_RULES, researchRule, BRIE_GROUND_MAX_AGENTS, brieGround; requires: mold
 // The Ground contract: wiki decisions and prior research, each tied to the item refs it constrains.
 const GROUNDING_SCHEMA = {
   type: 'object',
@@ -169,7 +310,9 @@ const brieGround = async (question) => {
   const citations = evidence.slice(0, 5).map((e) => e && e.citation).filter(Boolean)
   return capped({ found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }, evidence, 5, 'citation row(s)')
 }
-
+// END module ground
+// BEGIN module checkpoint
+// module: checkpoint; provides: stable, fnv1a, digestOf, matchAnswers, isObject, plain, stateShapeErrors, askCheckpoint, needsInputResult, approveError, digestError, approveUsage; requires: none
 // Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
@@ -210,7 +353,318 @@ function matchAnswers(questions, raw) {
   const answers = [...byIndex.keys()].sort((a, b) => a - b).map((i) => ({ id: questions[i].id, question: questions[i].question, answer: byIndex.get(i) }))
   return { errors, answers }
 }
-// END shared prelude
+
+// True for a plain object: not null and not an array.
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+// A deep copy through JSON, so a checkpoint state holds plain data only.
+const plain = (v) => JSON.parse(JSON.stringify(v))
+
+// Checks the shape of a resumed state. shape maps a key to 'array', 'object', 'string', 'boolean', 'integer', a '?' variant of one (null or undefined passes), or {type: 'integer', min, max}. Returns the error texts; none means the shape holds.
+function stateShapeErrors(state, shape, prefix = 'args.state') {
+  if (!isObject(state)) return [`${prefix} must be an object`]
+  const errors = []
+  for (const [key, spec] of Object.entries(shape)) {
+    const raw = typeof spec === 'string' ? spec : spec.type
+    const optional = raw.endsWith('?')
+    const type = optional ? raw.slice(0, -1) : raw
+    const value = state[key]
+    if (optional && value == null) continue
+    const where = `${prefix}.${key}`
+    if (type === 'array') {
+      if (!Array.isArray(value)) errors.push(`${where} must be an array`)
+    } else if (type === 'object') {
+      if (!isObject(value)) errors.push(`${where} must be an object`)
+    } else if (type === 'string') {
+      if (typeof value !== 'string') errors.push(optional ? `${where} must be a string or null` : `${where} must be a string`)
+    } else if (type === 'boolean') {
+      if (typeof value !== 'boolean') errors.push(`${where} must be a boolean`)
+    } else if (type === 'integer') {
+      const min = typeof spec === 'object' ? spec.min : undefined
+      const max = typeof spec === 'object' ? spec.max : undefined
+      if (!Number.isInteger(value) || (min !== undefined && value < min) || (max !== undefined && value > max)) {
+        const range = min !== undefined && max !== undefined ? ` from ${min} to ${max}` : min !== undefined ? ` of at least ${min}` : max !== undefined ? ` of at most ${max}` : ''
+        errors.push(`${where} must be an integer${range}`)
+      }
+    } else {
+      errors.push(`${where} has the unknown shape type ${type}`)
+    }
+  }
+  return errors
+}
+
+// Builds a needs-input checkpoint result. A checkpoint with no question cannot resume, so it carries no state or digest. stamp binds the digest to the run.
+function askCheckpoint(checkpoint, questions, state, { stamp, usage, extra = {} } = {}) {
+  const full = plain({ ...state, checkpoint, questions })
+  const resumable = full.questions.length ? { state: full, digest: digestOf({ stamp, checkpoint, state: full }) } : {}
+  return { status: 'needs-input', checkpoint, questions: full.questions, ...resumable, usage, ...extra }
+}
+
+// Builds a needs-input result for a run that resumes from a plan and its digest. fields come before usage in the result.
+function needsInputResult(questions, fields = {}, usage = '') {
+  return { status: 'needs-input', questions, ...fields, usage }
+}
+
+// The error text when a resumed plan has no approve digest, or an empty string.
+function approveError(approve, plan = 'args.plan') {
+  return approve ? '' : `${plan} needs args.approve set to the digest that the same result returned`
+}
+
+// The error text when approve is not the digest of the value, or an empty string.
+function digestError(value, approve, plan = 'args.plan') {
+  return digestOf(value) === approve ? '' : `approve does not match the digest of ${plan}; the plan changed after approval`
+}
+
+// The usage text for an approval re-run. fields names the argument fields to pass back.
+function approveUsage({ fields = 'prs: landing.inputs, plan: landing, approve: digest', land = true, revise = true } = {}) {
+  return `To execute, re-run with { ${fields} }.${land ? ' Add land:true to merge.' : ''}${revise ? ` To change the plan first, re-run with the same fields and revise: "<change>".` : ''}`
+}
+// END module checkpoint
+// BEGIN module schema
+// module: schema; provides: str, int, bool, strs, ints, text, oneOf, list, obj, CHECK_KINDS, ADVICE_VERDICTS, FIX_STATUSES, PHASE_STATUSES, FINDING_SEVERITIES, FIX_COSTS; requires: none
+// Schema builders: one constant per shape, so a contract reads as data.
+const str = { type: 'string' }
+const int = { type: 'integer' }
+const bool = { type: 'boolean' }
+const strs = { type: 'array', items: { type: 'string' } }
+const ints = { type: 'array', items: { type: 'integer' } }
+const text = (description) => ({ type: 'string', description })
+const oneOf = (values) => ({ type: 'string', enum: values })
+const list = (items) => ({ type: 'array', items })
+const obj = (properties) => ({ type: 'object', required: Object.keys(properties), properties })
+// Closed sets that more than one workflow shares.
+const CHECK_KINDS = ['command', 'test', 'inspection', 'ci']
+const ADVICE_VERDICTS = ['approve', 'revise', 'stop']
+const FIX_STATUSES = ['fixed', 'partial', 'blocked']
+const PHASE_STATUSES = ['ok', 'partial', 'blocked']
+const FINDING_SEVERITIES = ['blocker', 'high', 'medium', 'low']
+const FIX_COSTS = ['contained', 'moderate', 'sprawling', 'n/a']
+// END module schema
+// BEGIN module graph
+// module: graph; provides: waves, duplicates, baseChain, mergeWaitErrors; requires: call
+// Returns the sorted ids that appear more than once.
+function duplicates(ids) {
+  return [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))].sort()
+}
+// Groups items by dependency. Each wave holds the ids whose depends_on all finished earlier. cycle lists the ids that never become ready.
+function waves(items) {
+  const pending = new Map(items.map((t) => [t.id, new Set(t.depends_on)]))
+  const out = []
+  while (pending.size) {
+    const ready = [...pending].filter(([, deps]) => deps.size === 0).map(([id]) => id).sort()
+    if (!ready.length) return { order: out, cycle: [...pending.keys()].sort() }
+    out.push(ready)
+    for (const id of ready) pending.delete(id)
+    for (const deps of pending.values()) for (const id of ready) deps.delete(id)
+  }
+  return { order: out, cycle: [] }
+}
+// The target ids under a target, nearest first: its base, that target's base, and so on.
+// The chain stops at the default branch, which is not a target id, and at a repeated id.
+function baseChain(targets, id) {
+  const byId = new Map(targets.map((t) => [t.id, t]))
+  const chain = []
+  let next = byId.get(id)?.base
+  while (byId.has(next) && !chain.includes(next) && next !== id) {
+    chain.push(next)
+    next = byId.get(next).base
+  }
+  return chain
+}
+// The plan has no merge-wait field. A target waits for a merge when it depends on a target that is not on its base chain.
+// A stacked base needs no merge, because the target builds on that branch.
+function mergeWaitErrors(plan) {
+  const errors = []
+  for (const t of plan.targets) {
+    const chain = baseChain(plan.targets, t.id)
+    for (const d of t.depends_on) {
+      if (!chain.includes(d)) errors.push(substance(`${t.id} waits for ${d}'s merge before publish`))
+    }
+  }
+  return errors
+}
+// END module graph
+// BEGIN module criteria
+// module: criteria; provides: norm, blank, refError, checkVerdicts, checkCriteria, CRITERIA_SCHEMA, VERDICT_SCHEMA, VERIFY_BATCH_SCHEMA; requires: call, schema, graph
+const norm = (id) => String(id).trim().toUpperCase()
+const blank = (value) => typeof value !== 'string' || !value.trim()
+// A wrong-case id is a form slip. An unknown id is substance. fixOf maps a ref to its canonical form.
+function refError(ref, known, where, fixOf = norm) {
+  if (known.includes(ref)) return null
+  const fix = fixOf(ref)
+  return known.includes(fix) ? form(`${where}: '${ref}' should be '${fix}'`) : substance(`${where}: unknown id '${ref}'`)
+}
+const VERDICT_SCHEMA = {
+  type: 'object',
+  required: ['criterion', 'passes', 'evidence', 'tree_clean', 'missing_paths'],
+  properties: {
+    criterion: { type: 'string' },
+    passes: { type: 'boolean' },
+    evidence: { type: 'string', description: 'Command run and its observed result' },
+    tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' },
+    missing_paths: { type: 'array', items: { type: 'string' }, description: 'Paths that the check reads and that do not exist in the worktree' },
+    guard_blocked: { type: 'boolean', description: 'true when a hook or guard denied the check command, so the check never ran' },
+  },
+}
+const VERIFY_BATCH_SCHEMA = { type: 'object', required: ['verdicts'], properties: { verdicts: { type: 'array', items: VERDICT_SCHEMA } } }
+const CRITERIA_SCHEMA = {
+  type: 'object',
+  required: ['criteria'],
+  properties: {
+    criteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'statement', 'check_kind', 'check'],
+        properties: {
+          id: { type: 'string', pattern: '^AC-[0-9]+$' },
+          statement: { type: 'string' },
+          check_kind: { type: 'string', enum: CHECK_KINDS },
+          check: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+// One verdict for each criterion in the batch, and no other. With requireAll false, a missing id is no error: the Verify phase fails it as unchecked.
+function checkVerdicts(result, batch, { requireAll = true } = {}) {
+  const ids = batch.map((ac) => ac.id)
+  const errors = []
+  result.verdicts.forEach((v, n) => {
+    errors.push(refError(v.criterion, ids, `verdicts[${n}].criterion`))
+    if (blank(v.evidence)) errors.push(substance(`verdicts[${n}].evidence must name the check run and its result`))
+  })
+  const seen = result.verdicts.map((v) => norm(v.criterion))
+  for (const id of duplicates(seen)) errors.push(substance(`verdicts lists ${id} twice`))
+  if (requireAll) for (const id of ids) if (!seen.includes(id)) errors.push(substance(`no verdict for ${id}; run its check`))
+  return errors.filter(Boolean)
+}
+// Exact coverage: one criterion per spec AC id. gate(criterion, where) returns the errors for one check.
+// The caller passes its own gate for command safety, so this module stays pure. CI-owned checks skip the gate.
+const checkCriteria = (acIds, gate = () => []) => (value) => {
+  const errors = []
+  const seen = new Set()
+  value.criteria.forEach((c, i) => {
+    const where = `$.criteria[${i}]`
+    const idError = refError(c.id, acIds, `${where}.id`)
+    if (idError) errors.push(idError)
+    else if (seen.has(c.id)) errors.push(substance(`${where}.id: duplicate id '${c.id}'`))
+    seen.add(c.id)
+    if (blank(c.statement)) errors.push(substance(`${where}.statement must not be blank`))
+    if (blank(c.check)) errors.push(substance(`${where}.check must not be blank`))
+    else if (c.check_kind !== 'ci') errors.push(...gate(c, where))
+  })
+  for (const id of acIds) if (!seen.has(id)) errors.push(substance(`${id} has no criterion`))
+  return errors
+}
+// END module criteria
+// BEGIN module advise
+// module: advise; provides: adviceSchema, ADVICE_SCHEMA, ROUND_TWO_RULE, checkAdvice, checkPlanAdvice, checkRoundTwo, adviceStep, adviseLoop, adviceResult, blockingOf; requires: call, schema, criteria
+// blocking true adds blocking_questions: questions only the user can settle.
+const adviceSchema = ({ blocking = false } = {}) => ({
+  type: 'object',
+  required: ['verdict', 'concerns', 'guidance', ...(blocking ? ['blocking_questions'] : [])],
+  properties: {
+    verdict: { type: 'string', enum: ADVICE_VERDICTS },
+    concerns: { type: 'array', items: { type: 'string' } },
+    guidance: { type: 'string', description: 'Under 80 words' },
+    ...(blocking ? {
+      blocking_questions: { type: 'array', description: 'Questions only the user can settle; leave empty when none', items: {
+        type: 'object',
+        required: ['question', 'options', 'recommended', 'evidence'],
+        properties: {
+          question: { type: 'string' },
+          options: { type: 'array', items: { type: 'string' } },
+          recommended: { type: 'string', description: 'one of options, or empty' },
+          evidence: { type: 'string' },
+        },
+      } },
+    } : {}),
+  },
+})
+const ADVICE_SCHEMA = adviceSchema()
+// A second review judges the first review's concerns. It does not reopen the plan.
+const ROUND_TWO_RULE = 'payload.prior_concerns holds your concerns from the last round. Judge only whether each prior concern is resolved. Raise a new concern only when it makes the work wrong or unsafe, and start it with "NEW:". Never reverse a prior concern.'
+function checkAdvice(advice) {
+  return advice.verdict !== 'approve' && !advice.concerns.length
+    ? [substance(`verdict ${advice.verdict} needs at least one concern`)]
+    : []
+}
+function checkPlanAdvice(advice, ids) {
+  const errors = []
+  const idError = refError(advice.chosen, ids, 'chosen')
+  if (idError) errors.push(idError)
+  if (advice.verdict !== 'approve' && !advice.concerns.length) errors.push(substance(`verdict ${advice.verdict} needs at least one concern`))
+  return errors
+}
+// ROUND_TWO_RULE as code: a round-two concern repeats a prior concern or starts with "NEW:".
+function checkRoundTwo(advice, priorConcerns) {
+  return advice.concerns
+    .filter((c) => !priorConcerns.includes(c) && !(typeof c === 'string' && c.startsWith('NEW:')))
+    .map((c) => substance(`concern '${c}' is neither a prior concern nor marked NEW:`))
+}
+// round counts the revisions done so far. A revise verdict ends unsettled once the revisions are spent.
+function adviceStep(advice, round, maxRevisions) {
+  if (!advice) return 'unsettled'
+  if (advice.verdict === 'approve') return 'approve'
+  if (advice.verdict === 'stop') return 'stop'
+  return round < maxRevisions ? 'revise' : 'unsettled'
+}
+// ask(round, priorConcerns) returns advice. revise(advice, round) changes the work. Returns { outcome, advice, rounds }.
+const adviseLoop = async ({ ask, revise, maxRevisions }) => {
+  let prior = []
+  for (let round = 0; ; round++) {
+    const advice = await ask(round, prior)
+    const outcome = adviceStep(advice, round, maxRevisions)
+    if (outcome !== 'revise') return { outcome, advice, rounds: round }
+    await revise(advice, round)
+    prior = advice.concerns
+  }
+}
+// The record of one advice stage: ok is true when no error remains.
+const adviceResult = (stage, value, errors) => ({ stage, value, errors, ok: errors.length === 0 })
+function blockingOf(advice) {
+  return (Array.isArray(advice.blocking_questions) ? advice.blocking_questions : []).filter((b) => b && typeof b.question === 'string' && b.question.trim())
+}
+// END module advise
+// BEGIN module status
+// module: status; provides: STATUS, finish, blockedResult, gapField, report, donePayload, runStatus, countStatuses; requires: none
+// The status values that a workflow result carries.
+const STATUS = Object.freeze({ ok: 'ok', partial: 'partial', blocked: 'blocked', needsInput: 'needs-input', needsApproval: 'needs-approval' })
+
+// A result with a status. base holds the keys that every result of the workflow carries; extra overrides them.
+const finish = (status, extra = {}, base = {}) => ({ ...base, status, ...extra })
+
+// A blocked result. The key reason holds the cause.
+const blockedResult = (reason, extra = {}, base = {}) => finish(STATUS.blocked, { reason, ...extra }, base)
+
+// The gaps key of a result, or nothing when there is no gap.
+const gapField = (gaps) => (gaps.length ? { gaps } : {})
+
+// A report result. The note is logged and returned, as an empty string when absent. log resolves at call time.
+function report(status, note, fields = {}) {
+  if (note) log(note)
+  return { status, note: note || '', ...fields }
+}
+
+// A done payload: fields and extra merged, without the keys whose value is undefined.
+function donePayload(fields, extra = {}) {
+  const merged = { ...fields, ...extra }
+  return Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== undefined))
+}
+
+// A run is ok only when something was produced, every row has the clean status, nothing stopped it, and no gap remains.
+function runStatus({ stopped = '', gaps = [], produced = 0, rows = [], clean = 'clean' } = {}) {
+  return stopped || gaps.length || !produced || rows.some((r) => r.status !== clean) ? STATUS.partial : STATUS.ok
+}
+
+// Counts the rows for each status. A status in seed starts at its seed count.
+function countStatuses(rows, seed = { clean: 0, dirty: 0, failed: 0 }) {
+  const counts = { ...seed }
+  for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1
+  return counts
+}
+// END module status
 
 const PREAMBLE = [
   'You are one stage of a deterministic workflow. Your final message is data for code, not prose for a human.',
@@ -277,7 +731,6 @@ const CLOSE_VERDICTS = ['stale', 'superseded', 'duplicate', 'misfiled']
 const ROUTE_LANE = { 'fix-now': 'spec', rescope: 'spec', 'needs-design': 'mold', deferred: 'defer', close: 'close', 'needs-human': 'human' }
 const LANES = ['spec', 'mold', 'defer']
 const LEVELS = ['low', 'medium', 'high']
-const ADVICE_VERDICTS = ['approve', 'revise', 'stop']
 
 const IDEAS_SCHEMA = {
   type: 'object',
@@ -339,25 +792,7 @@ const STRATEGY_SCHEMA = {
   },
 }
 
-const ADVICE_SCHEMA = {
-  type: 'object',
-  required: ['verdict', 'concerns', 'guidance', 'blocking_questions'],
-  properties: {
-    verdict: { type: 'string', enum: ADVICE_VERDICTS },
-    concerns: { type: 'array', items: { type: 'string' } },
-    guidance: { type: 'string', description: 'Under 80 words' },
-    blocking_questions: { type: 'array', description: 'Questions only the user can settle; leave empty when none', items: {
-      type: 'object',
-      required: ['question', 'options', 'recommended', 'evidence'],
-      properties: {
-        question: { type: 'string' },
-        options: { type: 'array', items: { type: 'string' } },
-        recommended: { type: 'string', description: 'one of options, or empty' },
-        evidence: { type: 'string' },
-      },
-    } },
-  },
-}
+const BOARD_ADVICE_SCHEMA = adviceSchema({ blocking: true })
 
 const RESOLVE_SCHEMA = {
   type: 'object',
@@ -453,7 +888,6 @@ const RECORD_SCHEMA = {
 }
 
 // ---- Helpers ----
-const blank = (text) => typeof text !== 'string' || !text.trim()
 const oneLine = (text) => String(text).replace(/\s+/g, ' ').trim()
 // mold's grounding-table parser splits on every '|', even an escaped one, so a cell swaps it for '/'.
 const cell = (text) => oneLine(text).replaceAll('|', '/')
@@ -465,62 +899,12 @@ const yamlValue = (text) => {
   return /^[A-Za-z0-9(][^:#"'{}\[\]]*$/.test(t) ? t : JSON.stringify(t)
 }
 
-function duplicates(ids) {
-  return [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))].sort()
-}
-
 // Item refs: issues are #N and ideas are IDEA-N. A bare number or lowercase id is a form slip.
 const normRef = (ref) => {
   const t = String(ref).trim().toUpperCase()
   return /^\d+$/.test(t) ? `#${t}` : t
 }
-function refError(ref, known, where) {
-  if (known.includes(ref)) return null
-  const fix = normRef(ref)
-  return known.includes(fix) ? form(`${where}: '${ref}' should be '${fix}'`) : substance(`${where}: unknown id '${ref}'`)
-}
-
-function waves(nodes) {
-  const pending = new Map(nodes.map((n) => [n.id, new Set(n.depends_on)]))
-  const out = []
-  while (pending.size) {
-    const ready = [...pending].filter(([, deps]) => deps.size === 0).map(([id]) => id).sort()
-    if (!ready.length) return { order: out, cycle: [...pending.keys()].sort() }
-    out.push(ready)
-    for (const id of ready) pending.delete(id)
-    for (const deps of pending.values()) for (const id of ready) deps.delete(id)
-  }
-  return { order: out, cycle: [] }
-}
-
-// ---- Typed call: validate, then repair (form) or redo (substance), bounded ----
-// An agent call can throw, for example at the budget ceiling. A throw counts as no output.
-async function attempt(text, opts) {
-  try {
-    return await agent(text, opts)
-  } catch (e) {
-    log(`${opts.label}: agent threw: ${e && e.message}`)
-    return null
-  }
-}
-
-async function typed(text, opts, check) {
-  let value = await attempt(text, opts)
-  for (let round = 1; ; round++) {
-    const errors = value == null ? [substance('agent returned no output')] : check(value)
-    if (!errors.length) return { value, errors }
-    if (round > LIMITS.fixRounds) return { value: null, errors }
-    value = errors.every((e) => e.kind === 'form')
-      ? await attempt(repairPrompt(value, errors), { label: `${opts.label}:repair${round}`, phase: opts.phase, agentType: 'formatter', schema: opts.schema, model: 'haiku', effort: 'low' })
-      : await attempt(redoPrompt(text, errors), { ...opts, label: `${opts.label}:redo${round}` })
-  }
-}
-
-function checkAdvice(advice) {
-  return advice.verdict !== 'approve' && !advice.concerns.length
-    ? [substance(`verdict ${advice.verdict} needs at least one concern`)]
-    : []
-}
+// ---- Typed call: the shared typed() in the call module validates, then repairs (form) or redoes (substance), bounded ----
 
 // Returns null and logs when no valid advice arrives; the caller picks the safe stop.
 async function advise(stage, label, payload) {
@@ -533,7 +917,7 @@ async function advise(stage, label, payload) {
     'Keep guidance under 80 words.',
     INTERACTIVE ? 'blocking_questions: list a question only when the user must decide something that the data cannot settle. Each has a question, optional options, a recommended option, and the evidence. Put design feedback for the writers in concerns instead.' : '',
     data('payload', payload),
-  ), { label, phase: stage === 'strategy' ? 'Advise' : 'Report', agentType: 'judge', schema: ADVICE_SCHEMA }, checkAdvice)
+  ), { label, phase: stage === 'strategy' ? 'Advise' : 'Report', agentType: 'judge', schema: BOARD_ADVICE_SCHEMA }, checkAdvice)
   if (!value) log(`${label}: no valid advice (${errorText(errors)})`)
   return value
 }
@@ -592,11 +976,11 @@ function checkStrategy(s, itemIds, decisionIds) {
   const placed = new Map(itemIds.map((id) => [id, []]))
   const place = (ref, where) => { const key = placed.has(ref) ? ref : normRef(ref); if (placed.has(key)) placed.get(key).push(where) }
   for (const i of s.initiatives) {
-    errors.push(refError(i.theme, themeIds, `${i.id}.theme`))
+    errors.push(refError(i.theme, themeIds, `${i.id}.theme`, normRef))
     if (blank(i.title) || blank(i.outcome) || blank(i.rationale)) errors.push(substance(`${i.id} needs a title, an outcome, and a rationale`))
-    for (const ref of i.items) { errors.push(refError(ref, itemIds, `${i.id}.items`)); place(ref, i.id) }
-    for (const ref of i.depends_on) errors.push(refError(ref, initIds, `${i.id}.depends_on`))
-    for (const ref of i.overrides) errors.push(refError(ref, decisionIds, `${i.id}.overrides`))
+    for (const ref of i.items) { errors.push(refError(ref, itemIds, `${i.id}.items`, normRef)); place(ref, i.id) }
+    for (const ref of i.depends_on) errors.push(refError(ref, initIds, `${i.id}.depends_on`, normRef))
+    for (const ref of i.overrides) errors.push(refError(ref, decisionIds, `${i.id}.overrides`, normRef))
     if (i.depends_on.includes(i.id)) errors.push(substance(`${i.id} depends on itself`))
     if (i.lane === 'spec' && !validSlug(i.slug)) {
       const fix = slugFrom(i.slug)
@@ -605,7 +989,7 @@ function checkStrategy(s, itemIds, decisionIds) {
     if (!Number.isInteger(i.priority) || i.priority < 1) errors.push(form(`${i.id}.priority must be an integer of 1 or more`))
   }
   for (const p of s.parked) {
-    errors.push(refError(p.item, itemIds, 'parked.item'))
+    errors.push(refError(p.item, itemIds, 'parked.item', normRef))
     if (blank(p.reason)) errors.push(substance(`parked ${p.item} needs a reason`))
     place(p.item, 'parked')
   }
@@ -671,11 +1055,11 @@ function checkGrounding(g, itemIds) {
   const errors = []
   g.decisions.forEach((d, n) => {
     if (blank(d.statement) || blank(d.citation)) errors.push(substance(`decisions[${n}] needs a statement and a wiki path:line citation`))
-    for (const ref of d.items) errors.push(refError(ref, itemIds, `decisions[${n}].items`))
+    for (const ref of d.items) errors.push(refError(ref, itemIds, `decisions[${n}].items`, normRef))
   })
   g.prior_research.forEach((r, n) => {
     if (!r.path.trim().startsWith('/')) errors.push(substance(`prior_research[${n}].path must be absolute`))
-    for (const ref of r.items) errors.push(refError(ref, itemIds, `prior_research[${n}].items`))
+    for (const ref of r.items) errors.push(refError(ref, itemIds, `prior_research[${n}].items`, normRef))
   })
   return errors.filter(Boolean)
 }
@@ -911,7 +1295,6 @@ function checkInstall(w, path, text) {
 }
 
 // ---- Resume: code checks the state, the digest, and the answers before the first agent ----
-const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const CHECKPOINTS = ['strategy', 'spec', 'done']
 function stateErrors(s) {
   if (!CHECKPOINTS.includes(s.checkpoint)) return [`args.state.checkpoint must be one of ${CHECKPOINTS.join(', ')}`]
@@ -941,7 +1324,6 @@ function stateErrors(s) {
   }
   return errors
 }
-const plain = (v) => JSON.parse(JSON.stringify(v))
 const slugFrom = (title) => oneLine(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 64).replace(/^-+|-+$/g, '')
 const resumeArgs = ['state', 'digest', 'answers', 'lanes'].filter((k) => input[k] != null)
 let resume = null
@@ -1004,13 +1386,7 @@ const CHECKPOINT_USAGE = AUTO
   ? 'An auto run cannot resume. Run cheese-board again without auto to answer these questions.'
   : 'Ask the user each question. Re-run cheese-board with { stamp, state, digest, answers: { "<question id, exact text, or 1-based number>": "<answer>" } }, and pass state and digest back unchanged. At the strategy checkpoint, add lanes: { "IN-n": "spec|mold|defer" } to move an initiative. Each strategy question needs an answer, so a resume with lanes and no answers stays blocked.'
 function ask(checkpoint, questions, state, extra = {}) {
-  const full = plain({ ...state, checkpoint, questions })
-  // A checkpoint with no question cannot resume, so it carries no state or digest.
-  const resumable = full.questions.length ? { state: full, digest: digestOf({ stamp, checkpoint, state: full }) } : {}
-  return { status: 'needs-input', checkpoint, questions: full.questions, ...resumable, usage: CHECKPOINT_USAGE, ...extra }
-}
-function blockingOf(advice) {
-  return (Array.isArray(advice.blocking_questions) ? advice.blocking_questions : []).filter((b) => b && typeof b.question === 'string' && b.question.trim())
+  return askCheckpoint(checkpoint, questions, state, { stamp, usage: CHECKPOINT_USAGE, extra })
 }
 
 // The question rows of an advisor that is not satisfied: its blocking questions, or else one row for each concern.
@@ -1339,7 +1715,7 @@ const pathBySlug = new Map(resolvedValue.specs.map((s) => [s.slug, s]))
 const reportPath = resolvedValue.report_path
 
 
-// brieGround (shared prelude) runs one brie-ground child per distinct question. Initiatives that ask the same question share its child.
+// brieGround (ground module) runs one brie-ground child per distinct question. Initiatives that ask the same question share its child.
 const researchRuns = new Map()
 async function research(base, questions) {
   const found = []
@@ -1682,7 +2058,7 @@ if (resumedDone) {
 }
 
 const REPORT_FIX_GAP = 'the report fix failed; the report does not hold the latest user fixes'
-const donePayload = (extra = {}) => ({ strategy_summary: strategy.summary, coverage, decisions: decisions.length, factory_queue: factoryQueue, blocked, mold: moldList, deferred, spec_failures: specFailures, gaps, ...extra })
+const doneFields = (extra = {}) => donePayload({ strategy_summary: strategy.summary, coverage, decisions: decisions.length, factory_queue: factoryQueue, blocked, mold: moldList, deferred, spec_failures: specFailures, gaps }, extra)
 let final = null
 let approved = false
 // The report is rebuilt from state on every resume, so the state keeps the fixes already applied.
@@ -1711,7 +2087,7 @@ if (!approved) {
       if (!gaps.includes(REPORT_FIX_GAP)) gaps.push(REPORT_FIX_GAP)
     }
   }
-  final = await advise('done', newFixes.length ? 'advise:done:r1' : 'advise:done', donePayload(appliedFixes.length ? { fixes_applied: appliedFixes } : {}))
+  final = await advise('done', newFixes.length ? 'advise:done:r1' : 'advise:done', doneFields(appliedFixes.length ? { fixes_applied: appliedFixes } : {}))
   if (final) adviceLog.push(final)
   approved = Boolean(final && final.verdict === 'approve')
 }

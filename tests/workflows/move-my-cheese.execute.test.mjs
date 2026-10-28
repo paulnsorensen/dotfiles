@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  ageFull, aged, approve, built, builtConsolidation, detail, finalized, integrated, keepPlanRoutes, minimalPlan,
-  noTensions, openPr, plain, planRoutes, published, ready, reconRoutes, run, sha, survey, verified,
+  BASE_SHA, INT_WORKTREE, ageFull, aged, approve, built, builtConsolidation, detail, envelope, failure, finalized, keepPlanRoutes, minimalPlan,
+  noTensions, openPr, passingVerdict, plain, planRoutes, published, ready, reconRoutes, run, sha, survey,
 } from './move-my-cheese.fixtures.mjs'
 
 test('auto with clean, already-aged PRs reaches ready without building, publishing, or reviewing', async () => {
@@ -12,7 +12,6 @@ test('auto with clean, already-aged PRs reaches ready without building, publishi
     ...reconRoutes([openPr(1), openPr(2)], [aged(1), aged(2)]),
     ['survey', survey],
     ['tensions', noTensions],
-    ['integrate:pre', integrated(['T-1', 'T-2'])],
     ['review:1:status', ready(1)],
     ['review:2:status', ready(2)],
   ])
@@ -73,28 +72,29 @@ test('cure commits that cure could not push fail the review before re-age, final
 })
 
 test('a keep-only plan with a command criterion verifies in the pinned integration worktree without a checkout', async () => {
-  const { result, labels, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
-    ['integrate:pre', { ...integrated(['T-1', 'T-2']), head: sha(97) }],
-    ['verify:pre:AC-1', { verdicts: [{ ...verified, evidence: 'grep printed 1 and 1' }] }],
-  ]))
+  const { result, labels, call, workflowCalls, allLabels } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
+    ['worktree:add', envelope('worktree', { path: INT_WORKTREE, landing: 'lnd', name: 'verify-pre', head: sha(97) })],
+  ]), null, null, (input) => ({ status: 'ok', verdicts: [{ ...passingVerdict(input.criteria[0]), evidence: 'grep printed 1 and 1' }], missing: [] }))
   assert.equal(result.status, 'ready')
-  const verify = call('verify:pre:AC-1')
-  assert.equal(verify.opts.isolation, undefined)
-  assert.match(verify.prompt, /^Judge mode: verify\n/)
-  assert.ok(verify.prompt.includes(`worktree_path: /tmp/int. head: ${sha(97)}`))
-  assert.ok(verify.prompt.includes(`git -C /tmp/int rev-parse HEAD and confirm that it equals ${sha(97)}`))
-  assert.ok(verify.prompt.includes("cd /tmp/int && bash -c 'node --test --test-name-pattern helpers tests/helper.test.mjs'"))
-  assert.ok(verify.prompt.includes('git -C /tmp/int status --porcelain'))
-  assert.doesNotMatch(verify.prompt, /git checkout --detach/)
-  assert.deepEqual(plain(result.verification.verdicts).map((v) => v.result), ['pass'])
-  assert.equal(labels.some((l) => l.startsWith('target:') || l === 'publish'), false)
+  assert.deepEqual(workflowCalls.map((c) => c.name), ['verify-criteria'])
+  const input = workflowCalls[0].input
+  assert.equal(input.worktree_path, INT_WORKTREE)
+  assert.equal(input.head, sha(97))
+  assert.equal(input.criteria[0].check, 'node --test --test-name-pattern helpers tests/helper.test.mjs')
+  assert.equal(call('worktree:add:pre').opts.isolation, undefined)
+  assert.deepEqual(plain(result.verification.verdicts).map((v) => [v.result, v.evidence]), [['pass', 'grep printed 1 and 1']])
+  assert.equal(allLabels.some((l) => l.startsWith('target:') || l.startsWith('publish')), false)
 })
 
-test('an integration that drops a target fails before publish', async () => {
-  const { result, labels } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([['integrate:pre', integrated(['T-1'])]]))
+test('a target that conflicts during integration fails before verification, publish, or review', async () => {
+  const { result, labels, wfxLabels, workflowCalls, allLabels } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
+    ['integrate:T-2', failure('integrate', 'conflict', 'x', { conflict: { target: 'T-2', files: ['a.js'] } })],
+  ]))
   assert.equal(result.status, 'fail')
-  assert.match(result.note, /T-2 is in neither merged nor conflicted/)
-  assert.equal(labels.some((l) => l.startsWith('verify:') || l.startsWith('review:')), false)
+  assert.match(result.note, /T-2 conflicts with the targets merged before it in a\.js/)
+  assert.equal(workflowCalls.length, 0)
+  assert.equal(wfxLabels.some((l) => l.startsWith('worktree:')), false)
+  assert.equal(allLabels.some((l) => l.startsWith('review:') || l.startsWith('publish')), false)
 })
 
 test('an approved consolidation builds, verifies, publishes, and drafts the superseded PRs', async () => {
@@ -102,14 +102,15 @@ test('an approved consolidation builds, verifies, publishes, and drafts the supe
   const { result, labels, call } = await run(args, builtConsolidation())
   assert.equal(result.status, 'ready')
   assert.equal(labels.some((l) => l.startsWith('survey') || l.startsWith('plan:')), false)
-  assert.equal(call('publish').opts.model, 'sonnet')
+  assert.equal(call('publish:T-1:push').opts.model, 'haiku')
+  assert.equal(call('publish:T-1:push').opts.agentType, 'runner')
   assert.match(call('mark').prompt, /gh pr ready <pr> --undo/)
   assert.match(call('mark').prompt, /move-my-cheese:landing digest=/)
   assert.doesNotMatch(call('mark').prompt, /gh pr close/)
   assert.deepEqual(plain(result.inputs).map((i) => [i.number, i.action, i.mark]), [[1, 'supersede', 'drafted'], [2, 'supersede', 'drafted']])
 })
 
-test('builders, integration, and publish use a run-scoped local branch, never the PR branch itself', async () => {
+test('builders and integration use a run-scoped local branch, and publish pushes the built head by SHA', async () => {
   const { first, args } = await approve(planRoutes())
   const local = `mmc/${first.result.digest.slice(0, 8)}/land/combined`
   const { result, call } = await run(args, builtConsolidation())
@@ -118,11 +119,15 @@ test('builders, integration, and publish use a run-scoped local branch, never th
   assert.ok(target.includes('git checkout --detach origin/main'))
   assert.ok(target.includes(`git update-ref refs/heads/${local} HEAD`))
   assert.ok(!target.includes('git checkout -B'))
-  assert.ok(call('integrate:pre').prompt.includes(`T-1=${local}`))
-  assert.ok(call('publish').prompt.includes(`"local_branch": "${local}"`))
-  assert.ok(call('publish').prompt.includes('<local_branch>:refs/heads/<branch>'))
-  assert.ok(call('publish').prompt.includes(`move-my-cheese:landing digest=${first.result.digest}`))
-  assert.doesNotMatch(call('publish').prompt, /worktree_path|\bcd /)
+  const merge = call('integrate:T-1').prompt
+  assert.ok(merge.includes(`--target '${sha(50)}'`))
+  assert.ok(merge.includes(`--base '${BASE_SHA}'`))
+  assert.match(merge, /--branch 'mmc\/integrate-/)
+  assert.ok(!merge.includes(local))
+  const push = call('publish:T-1:push').prompt
+  assert.ok(push.includes(`--branch 'land/combined' --sha ${sha(50)} --expect none`))
+  assert.ok(call('publish:T-1:comment').prompt.includes(`move-my-cheese:landing digest=${first.result.digest}`))
+  assert.ok(!push.includes(local))
 })
 
 test('a failed target build stops the run before anything is pushed', async () => {
@@ -131,15 +136,15 @@ test('a failed target build stops the run before anything is pushed', async () =
   const { result, labels } = await run(args, planRoutes([['target:T-1', blocked]]))
   assert.equal(result.status, 'fail')
   assert.match(result.note, /T-1 \(blocked\).*nothing was pushed/)
-  assert.equal(labels.some((l) => l === 'publish' || l.startsWith('integrate:')), false)
+  assert.equal(labels.some((l) => l.startsWith('publish') || l.startsWith('integrate:')), false)
 })
 
-test('publish never reruns after an invalid report', async () => {
+test('publish never reruns after a failed step', async () => {
   const { args } = await approve(planRoutes())
-  const { result, labels } = await run(args, builtConsolidation([['publish', published('T-1', 1, sha(50))]]))
+  const { result, labels } = await run(args, builtConsolidation([['publish:T-1:push', failure('publish', 'push-failed', 'network down')]]))
   assert.equal(result.status, 'fail')
-  assert.match(result.note, /check the remote branches/)
-  assert.deepEqual(labels.filter((l) => l.startsWith('publish')), ['publish'])
+  assert.match(result.note, /publish T-1 failed at push: push-failed: network down; check the remote branches and PRs before a rerun/)
+  assert.deepEqual(labels.filter((l) => l.startsWith('publish')), ['publish:T-1:push'])
 })
 
 test('a branch this run rebuilt gets a full review, never an incremental one', async () => {
@@ -148,8 +153,6 @@ test('a branch this run rebuilt gets a full review, never an incremental one', a
     ['recon:detail', { prs: [aged(1), aged(2)] }],
     ['plan:minimal', minimalPlan()],
     ['target:T-2', built(sha(60), '/tmp/wt-t2')],
-    ['integrate:pre', integrated(['T-1', 'T-2'])],
-    ['verify:pre:AC-1', { verdicts: [verified] }],
     ['publish', published('T-2', 2, sha(60))],
     ['age:2', ageFull(2, { worktree_path: '/tmp/wt-t2' })],
     ['finalize:2', finalized],

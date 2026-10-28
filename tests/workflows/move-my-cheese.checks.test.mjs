@@ -3,14 +3,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  approveP1, consolidatePlan, detail, integrated, keepPlan, keepPlanRoutes, plain, planRoutes, reconOnly, run, sha, verified, wt,
+  approveP1, consolidatePlan, detail, INT_WORKTREE, keepPlan, keepPlanRoutes, passingVerdict, plain, planRoutes, reconOnly, run, verified,
 } from './move-my-cheese.fixtures.mjs'
 import { digestOf } from './prelude-digest.mjs'
 
 const vacuousCheck = 'cd src && ! grep -q helper gone.js'
 const vacuousPlan = () => consolidatePlan({ criteria: [{ id: 'AC-1', statement: 'the old helper is gone', check_kind: 'command', check: vacuousCheck }] })
 const checkPlanWith = (check) => run({ prs: [1, 2] }, planRoutes([['plan:minimal', consolidatePlan({ criteria: [{ id: 'AC-1', statement: 's', check_kind: 'command', check }] })]]))
-const pinned = { ...integrated(['T-1', 'T-2']), head: sha(97) }
 
 test('a plan with more than 24 acceptance criteria is rejected at plan time', async () => {
   const criteria = Array.from({ length: 25 }, (_, i) => ({ id: `AC-${i + 1}`, statement: 's', check_kind: 'command', check: 'test -e src/1.js' }))
@@ -66,8 +65,36 @@ test('the plan check accepts checks that run under the PreToolUse guards', async
     'node --test tests/x.test.mjs | grep -q ok',
     'git show HEAD:src/1.js | grep -c helper',
     'rg --files | grep -q x',
-    'grep -q x <<< "$(git log)"',
   ]) assert.equal((await checkPlanWith(check)).result.status, 'needs-approval', check)
+})
+
+// The stricter cheese-factory guard rejects a here-string (an unsafe shape) and a pipeline that ends in head (vacuous).
+test('the plan check rejects a here-string and a pipeline that ends in head', async () => {
+  for (const [check, reason] of [
+    ['grep -q x <<< "$(git log)"', /unsafe: here document/],
+    ['git log --oneline | head -n 1', /pipeline ends in head/],
+  ]) {
+    const { result, trace } = await checkPlanWith(check)
+    assert.equal(result.status, 'blocked', check)
+    assert.ok(trace.logs.some((l) => reason.test(l)), check)
+  }
+})
+
+test('the plan check rejects a target that waits for a merge before publish', async () => {
+  const plan = keepPlan()
+  plan.targets[1].depends_on = ['T-1']
+  const { result, trace } = await run({ prs: [1, 2] }, planRoutes([['plan:minimal', plan]]))
+  assert.equal(result.status, 'blocked')
+  assert.ok(trace.logs.some((l) => /T-2 waits for T-1's merge before publish/.test(l)))
+})
+
+test('the plan check accepts a stacked target that depends on its base', async () => {
+  const plan = keepPlan()
+  plan.targets[1] = { ...plan.targets[1], kind: 'new', pr: 0, branch: 'land/two', base: 'T-1', depends_on: ['T-1'], title: 'feat: two' }
+  plan.dispositions[1] = { pr: 2, action: 'supersede', target: 'T-2', reason: 'rebuilt on T-1' }
+  plan.targets[1].sources = [2]
+  const { result } = await run({ prs: [1, 2] }, planRoutes([['plan:minimal', plan]]))
+  assert.equal(result.status, 'needs-approval')
 })
 
 test('the plan check rejects a shell reader or searcher on a file and names the guard', async () => {
@@ -114,39 +141,29 @@ test('the plan check rejects each negated search that can pass on missing input'
   }
 })
 
-test('code shell-quotes a criterion check, and a dirty tree before a check shows in the verdict', async () => {
+const childVerdict = (overrides) => () => ({ status: 'ok', verdicts: [{ ...verified, evidence: 'grep printed 1', ...overrides }], missing: [] })
+
+test('the child gets the check unchanged, and a dirty tree before a check shows in the verdict', async () => {
   const quoted = { ...keepPlan(), criteria: [{ id: 'AC-1', statement: 'the helper exists', check_kind: 'command', check: "git log --oneline | grep -c 'helper'" }] }
-  const { result, trace, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
-    ['plan:minimal', quoted],
-    ['integrate:pre', pinned],
-    ['verify:pre:AC-1', { verdicts: [{ ...verified, tree_clean: false, evidence: 'grep printed 1' }] }],
-  ]))
-  assert.ok(call('verify:pre:AC-1').prompt.includes("cd /tmp/int && bash -c 'git log --oneline | grep -c '\\''helper'\\'''"))
+  const { result, trace, workflowCalls } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([['plan:minimal', quoted]]), null, null, childVerdict({ tree_clean: false }))
+  assert.equal(workflowCalls[0].input.criteria[0].check, "git log --oneline | grep -c 'helper'")
   assert.match(plain(result.verification.verdicts)[0].evidence, /the worktree had changes from an earlier check/)
   assert.ok(trace.logs.some((l) => /integration worktree had changes before the check/.test(l)))
 })
 
-test('a judge that finds a missing path fails the criterion before publish', async () => {
-  const { result, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
-    ['integrate:pre', pinned],
-    ['verify:pre:AC-1', { verdicts: [{ ...verified, missing_paths: ['src/2.js'], evidence: 'grep printed 1' }] }],
-  ]))
+test('a verdict that finds a missing path fails the criterion before publish', async () => {
+  const { result } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes(), null, null, childVerdict({ missing_paths: ['src/2.js'] }))
   assert.equal(result.status, 'fail')
   assert.match(result.note, /criteria failed: AC-1/)
   assert.match(plain(result.verification.verdicts)[0].evidence, /the check reads missing paths: src\/2\.js/)
-  assert.ok(call('verify:pre:AC-1').prompt.includes('Put each missing path in missing_paths'))
 })
 
-test('a judge that reports a guard denial gives an unrun verdict that still blocks before publish', async () => {
-  const { result, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
-    ['integrate:pre', pinned],
-    ['verify:pre:AC-1', { verdicts: [{ ...verified, passes: false, guard_blocked: true, evidence: 'A PreToolUse hook blocked it' }] }],
-  ]))
+test('a verdict that reports a guard denial gives an unrun verdict that still blocks before publish', async () => {
+  const { result } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes(), null, null, childVerdict({ passes: false, guard_blocked: true, evidence: 'A PreToolUse hook blocked it' }))
   assert.equal(result.status, 'fail')
   assert.match(result.note, /criteria verification unrun \(guard\): AC-1/)
   assert.doesNotMatch(result.note, /criteria failed/)
   assert.deepEqual(plain(result.verification.verdicts).map((v) => [v.result, v.evidence]), [['unrun', 'check blocked by a PreToolUse guard']])
-  assert.ok(call('verify:pre:AC-1').prompt.includes('Set guard_blocked to true'))
 })
 
 test('an approval that a newer check rejects blocks with a revise hint, and revise repairs it', async () => {
@@ -180,35 +197,29 @@ test('recon reads counts and checks with exact commands, code caps the body, and
   assert.ok(result.estimate.agents_max > 0)
 })
 
-test('a redone integration records every attempt worktree for cleanup', async () => {
-  let calls = 0
-  const { result, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
-    ['integrate:pre', () => (++calls === 1
-      ? { ...integrated(['T-1']), worktree_path: wt('int1'), head: sha(97) }
-      : { ...integrated(['T-1', 'T-2']), worktree_path: wt('int2'), head: sha(97) })],
-    ['verify:pre:AC-1', { verdicts: [{ ...verified, evidence: 'grep printed 1 and 1' }] }],
-  ]))
+test('the integration worktree is removed after verification, so no attempt worktree needs cleanup', async () => {
+  const { result, wfxLabels, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes())
   assert.equal(result.status, 'ready')
-  const sweep = call('cleanup').prompt
-  assert.ok(sweep.includes(wt('int1')) && sweep.includes(wt('int2')))
+  assert.deepEqual(wfxLabels.filter((l) => l.startsWith('worktree:')), ['worktree:add:pre', 'worktree:remove:pre'])
+  assert.ok(call('worktree:remove:pre').prompt.includes(INT_WORKTREE))
+  const sweep = call('cleanup')
+  assert.ok(!sweep || !sweep.prompt.includes(INT_WORKTREE))
 })
 
-test('a judge checks at most 8 criteria, and a missing verdict gets a typed redo', async () => {
+test('the child gets at most 8 checks per batch, and a criterion it leaves unjudged fails as not verified', async () => {
   const ids = Array.from({ length: 9 }, (_, i) => `AC-${i + 1}`)
   const criteria = ids.map((id) => ({ id, statement: 's', check_kind: 'command', check: 'test -e src/1.js' }))
   const targets = keepPlan().targets.map((t) => ({ ...t, satisfies: ids }))
-  const pass = (id) => ({ ...verified, criterion: id })
-  let calls = 0
-  const { result, labels, call } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
+  const { result, workflowCalls } = await run({ prs: [1, 2], auto: true }, keepPlanRoutes([
     ['plan:minimal', { ...keepPlan(), targets, criteria }],
-    ['integrate:pre', pinned],
-    ['verify:pre:AC-1..AC-8', () => ({ verdicts: ids.slice(0, ++calls === 1 ? 7 : 8).map(pass) })],
-    ['verify:pre:AC-9', { verdicts: [pass('AC-9')] }],
-  ]))
-  assert.equal(result.status, 'ready')
-  assert.deepEqual(labels.filter((l) => l.startsWith('verify:')), ['verify:pre:AC-1..AC-8', 'verify:pre:AC-1..AC-8:redo1', 'verify:pre:AC-9'])
-  assert.ok(call('verify:pre:AC-1..AC-8:redo1').prompt.includes('no verdict for AC-8'))
-  assert.deepEqual(plain(result.verification.verdicts).map((v) => v.result), Array(9).fill('pass'))
+  ]), null, null, (input) => ({ status: 'partial', verdicts: input.criteria.slice(0, 8).map(passingVerdict), missing: ['AC-9'] }))
+  assert.equal(workflowCalls.filter((c) => c.name === 'verify-criteria').length, 1)
+  assert.equal(workflowCalls[0].input.batch_size, 8)
+  assert.equal(workflowCalls[0].input.criteria.length, 9)
+  assert.equal(result.status, 'fail')
+  assert.match(result.note, /criteria failed: AC-9/)
+  assert.match(plain(result.verification.verdicts)[8].evidence, /not verified: verify-criteria returned no verdict/)
+  assert.deepEqual(plain(result.verification.verdicts).slice(0, 8).map((v) => v.result), Array(8).fill('pass'))
 })
 
 test('an advisor stop on the plan returns a usage line that says how to resume', async () => {

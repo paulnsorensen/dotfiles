@@ -23,16 +23,8 @@ export const meta = {
   ],
 }
 
-// BEGIN shared prelude: sync.mjs copies this block from claude/workflow-prelude/prelude.js. Edit that file. Then run node claude/workflow-prelude/sync.mjs.
-// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
-const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
-// The anchored form of SCRATCH_PATH_SRC matches a whole path.
-const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
-// A full commit SHA has 40 hex digits in either case.
-const FULL_SHA_RE = /^[0-9a-f]{40}$/i
-// True when the budget is known and less than LIMITS.minBudget remains. Both names resolve at call time.
-const floorReached = () => Boolean(budget.total && budget.remaining() < LIMITS.minBudget)
-// A form error is mechanical, so a cheap model repairs it.
+// BEGIN module call
+// module: call; provides: form, substance, errorText, schemaErrors, data, prompt, redoPrompt, repairPrompt, isWriter, attempt, typed, unwrapEnvelope, wfxCommandOf; requires: none
 const form = (msg) => ({ kind: 'form', msg })
 // A substance error needs new facts, so the producer redoes the answer.
 const substance = (msg) => ({ kind: 'substance', msg })
@@ -70,13 +62,162 @@ const repairPrompt = (value, errors) => prompt(
   data('errors', errors.map((e) => e.msg)),
   data('object', value),
 )
+// A writer call may change the tree, so a throw from it never retries. A reviewer worktree only holds reports.
+const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'worktree' && opts.agentType !== 'reviewer')
+// An agent call can throw, for example at the budget ceiling. The throw becomes a value, so the caller decides what to do.
+const attempt = async (text, opts) => {
+  try {
+    return { value: await agent(text, opts), threw: null }
+  } catch (e) {
+    const message = e && e.message ? e.message : String(e)
+    log(`${opts.label}: agent threw: ${message}`)
+    return { value: null, threw: message }
+  }
+}
+// One validated agent call: check the answer, then repair form errors or redo substance errors, each up to LIMITS.fixRounds.
+// A throw from a read-only call retries once. A throw from a writer call never retries.
+// hooks: normalize(value) cleans an answer before the check.
+//   expandShas(value, opts) returns a fixed copy of the value, or null, when the check fails once.
+//   onWorktree(value, opts) runs for each answer of a call with isolation 'worktree'.
+//   nullIsFinal makes a null answer final at once, with no redo.
+//   noRedo makes an answer that fails with substance errors final at once. A formatter repair of form errors still runs.
+//   retryOnThrow is a flag, or a predicate on the call options, that replaces the default read-only rule.
+//   driftOf(before, after, schema) names a decision field that a formatter repair changed, or returns null.
+// Returns { value, errors, lost, threw }. lost is 'threw' or 'missing' when the value is null for that reason.
+const typed = async (text, opts, check, hooks = {}) => {
+  const { normalize = (v) => v, expandShas, onWorktree, nullIsFinal = false, noRedo = false, retryOnThrow, driftOf } = hooks
+  const mayRetry = (o) => (typeof retryOnThrow === 'function' ? retryOnThrow(o) : (retryOnThrow ?? !isWriter(o)))
+  let sent = { text, opts }
+  let { value, threw } = await attempt(sent.text, sent.opts)
+  let retried = false
+  let expanded = false
+  let repairedFrom = null
+  let repairErrors = []
+  for (let round = 1; ; round++) {
+    if (threw != null) {
+      if (retried || !mayRetry(sent.opts)) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw', threw: true }
+      retried = true
+      sent = { text: sent.text, opts: { ...sent.opts, label: `${opts.label}:retry${round}` } }
+      ;({ value, threw } = await attempt(sent.text, sent.opts))
+      continue
+    }
+    if (value != null) {
+      value = normalize(value)
+      if (opts.isolation === 'worktree' && onWorktree) onWorktree(value, opts)
+    }
+    let errors = value == null ? [substance('agent returned no output')] : check(value)
+    if (errors.length && expandShas && !expanded && !nullIsFinal && value != null) {
+      expanded = true
+      const full = await expandShas(value, opts)
+      // A repair or redo then starts from the expanded value, so only the remaining errors drive it.
+      if (full) {
+        value = full
+        errors = check(value)
+      }
+    }
+    // A formatter repairs form only. A repair that rewrites a decision field changes the answer, so the producer redoes the call.
+    if (driftOf && repairedFrom && value != null) {
+      const changed = driftOf(repairedFrom, value, opts.schema)
+      if (changed) errors = [substance(`a formatter repair changed ${changed}; fix the original errors yourself`), ...repairErrors.map((e) => substance(e.msg)), ...errors]
+    }
+    repairedFrom = null
+    if (!errors.length) return { value, errors, lost: null, threw: false }
+    if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
+    const formOnly = errors.every((e) => e.kind === 'form')
+    if (noRedo && !formOnly) return { value: null, errors, lost: value == null ? 'missing' : null, threw: false }
+    repairedFrom = formOnly ? value : null
+    repairErrors = formOnly ? errors : []
+    sent = formOnly
+      ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low', agentType: 'formatter' } }
+      : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
+    ;({ value, threw } = await attempt(sent.text, sent.opts))
+  }
+}
+// A runner can wrap the envelope that wfx printed in a second envelope of its own.
+// Returns the innermost envelope: an object whose data is itself an envelope gives that data.
+function unwrapEnvelope(value) {
+  let env = value
+  while (env && typeof env === 'object' && env.data && typeof env.data === 'object' && typeof env.data.ok === 'boolean' && typeof env.data.cmd === 'string') env = env.data
+  return env
+}
+// The wfx command name in a command line: the word after the last 'wfx '. A wfx envelope carries it as cmd.
+function wfxCommandOf(command) {
+  const names = [...String(command).matchAll(/(?:^|[\s|&;(])wfx\s+([a-z][a-z-]*)/g)].map((m) => m[1])
+  return names.length ? names[names.length - 1] : ''
+}
+// END module call
+// BEGIN module budget
+// module: budget; provides: DEFAULT_LIMITS, floorReached, floorReason; requires: none
+// The LIMITS values that every workflow shares. A workflow spreads these into its own LIMITS.
+const DEFAULT_LIMITS = { minBudget: 50000, agentCap: 1000 }
 
+// True when the budget is known and less than the floor remains. budget and LIMITS resolve at call time.
+const floorReached = (floor = LIMITS.minBudget) => Boolean(budget.total && budget.remaining() < floor)
+
+// The text that names the stage a budget floor stopped.
+const floorReason = (stage, floor = LIMITS.minBudget) => `budget floor reached before ${stage}: ${budget.remaining()} remaining, below ${floor}`
+// END module budget
+// BEGIN module stale
+// module: stale; provides: SCRATCH_PATH_SRC, SCRATCH_WORKTREE_RE, FULL_SHA_RE, SHA_RE, SHORT_SHA_RE, DIGEST_RE, stampedBy, markersOf, shaErrors, staleVerdict; requires: call
+// The runtime creates isolated worktrees under <main checkout>/.claude/worktrees/<id>. cheese-factory also builds SCRATCH_PREFIX_RE from this source.
+const SCRATCH_PATH_SRC = String.raw`\/[A-Za-z0-9._/@+-]+\/\.claude\/worktrees\/[A-Za-z0-9._@+-]+`
+// The anchored form of SCRATCH_PATH_SRC matches a whole path.
+const SCRATCH_WORKTREE_RE = new RegExp(`^${SCRATCH_PATH_SRC}$`)
+// A full commit SHA has 40 hex digits in either case.
+const FULL_SHA_RE = /^[0-9a-f]{40}$/i
+// A move-my-cheese SHA has 7 to 40 hex digits.
+const SHA_RE = /^[0-9a-f]{7,40}$/i
+// A writer may return a short SHA. A read-only call expands it.
+const SHORT_SHA_RE = /^[0-9a-f]{7,16}$/i
+// A landing digest has 16 lowercase hex digits.
+const DIGEST_RE = /^[0-9a-f]{16}$/
+// This approval recorded the PR's current head at the end of an earlier run.
+const stampedBy = (p, d) => p.landing_digest === d && p.landing_head === p.head_sha
+// Only well-formed markers count; anything else reads as no marker.
+function markersOf(pr) {
+  const aged = FULL_SHA_RE.test(pr.aged_sha.trim()) && FULL_SHA_RE.test(pr.aged_patch.trim())
+  const landing = DIGEST_RE.test(pr.landing_digest.trim())
+  return {
+    aged_sha: aged ? pr.aged_sha.trim() : '', aged_patch: aged ? pr.aged_patch.trim() : '', aged_dirty: aged && pr.aged_dirty,
+    landing_digest: landing ? pr.landing_digest.trim() : '',
+    landing_head: landing && FULL_SHA_RE.test(pr.landing_head.trim()) ? pr.landing_head.trim() : '',
+  }
+}
+// Code checks a SHA, not a schema pattern. A bad SHA is always substance: a formatter has no repo access and could only invent one.
+// typed() trims the SHA fields in TRIM_FIELDS before a check runs, so a padded SHA in those fields never reaches this test.
+const shaErrors = (path, value) =>
+  (typeof value === 'string' && FULL_SHA_RE.test(value) ? [] : [substance(`${path} must be a 40-hex commit SHA`)])
+// Compares a plan snapshot with the live repo. snapshot is { base, heads: { pr: sha }, files: [plan files] }.
+// live is { base, heads }. changedFiles lists the files that changed between the two bases, or null when unknown.
+// A moved head or a changed PR set needs a new plan. A moved base needs a new plan only when it touches a plan file.
+function staleVerdict(snapshot, live, changedFiles) {
+  const reasons = []
+  const planned = Object.keys(snapshot.heads).sort()
+  const current = Object.keys(live.heads).sort()
+  if (planned.join(',') !== current.join(',')) reasons.push(`the PR set is now ${current.join(', ') || 'empty'}, not ${planned.join(', ') || 'empty'}`)
+  for (const pr of planned) {
+    if (Object.hasOwn(live.heads, pr) && live.heads[pr] !== snapshot.heads[pr]) reasons.push(`#${pr} head moved from ${snapshot.heads[pr]} to ${live.heads[pr]}`)
+  }
+  if (reasons.length) return { verdict: 'replan', reasons }
+  if (snapshot.base === live.base) return { verdict: 'fresh', reasons: [] }
+  const moved = `the base moved from ${snapshot.base} to ${live.base}`
+  if (!Array.isArray(changedFiles)) return { verdict: 'replan', reasons: [`${moved}; the changed files are unknown`] }
+  const hit = changedFiles.filter((f) => snapshot.files.includes(f)).sort()
+  if (hit.length) return { verdict: 'replan', reasons: [`${moved}; it changed plan files: ${hit.join(', ')}`] }
+  return { verdict: 'rebase', reasons: [`${moved}; it touched no plan file`] }
+}
+// END module stale
+// BEGIN module mold
+// module: mold; provides: MOLD, DECISION_KINDS, RESEARCH_CONFIDENCE; requires: none
 // mold resolves the spec, research, and notes artifact paths.
 const MOLD = 'python3 ~/.claude/skills/mold/scripts/mold.pyz'
 // A Ground explorer sorts each recorded wiki decision into one of these kinds.
 const DECISION_KINDS = ['adr', 'locked', 'roadmap', 'gotcha', 'strategy']
 // brie-ground returns one of these confidence values.
 const RESEARCH_CONFIDENCE = ['certain', 'speculating', 'dont_know']
+// END module mold
+// BEGIN module ground
+// module: ground; provides: GROUNDING_SCHEMA, GROUND_RESEARCH_SCHEMA, GROUND_RULES, researchRule, BRIE_GROUND_MAX_AGENTS, brieGround; requires: mold
 // The Ground contract: wiki decisions and prior research, each tied to the item refs it constrains.
 const GROUNDING_SCHEMA = {
   type: 'object',
@@ -146,7 +287,9 @@ const brieGround = async (question) => {
   const citations = evidence.slice(0, 5).map((e) => e && e.citation).filter(Boolean)
   return capped({ found: { question, answer: r.answer, confidence: r.confidence, report_path: typeof r.report_path === 'string' ? r.report_path : '', citations } }, evidence, 5, 'citation row(s)')
 }
-
+// END module ground
+// BEGIN module checkpoint
+// module: checkpoint; provides: stable, fnv1a, digestOf, matchAnswers, isObject, plain, stateShapeErrors, askCheckpoint, needsInputResult, approveError, digestError, approveUsage; requires: none
 // Serializes a value with sorted object keys, so equal values give equal text. A checkpoint question is {id, question, options[], recommended, evidence, initiative?, closed?, kind?}; the next run passes answers back.
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
@@ -187,7 +330,830 @@ function matchAnswers(questions, raw) {
   const answers = [...byIndex.keys()].sort((a, b) => a - b).map((i) => ({ id: questions[i].id, question: questions[i].question, answer: byIndex.get(i) }))
   return { errors, answers }
 }
-// END shared prelude
+
+// True for a plain object: not null and not an array.
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+// A deep copy through JSON, so a checkpoint state holds plain data only.
+const plain = (v) => JSON.parse(JSON.stringify(v))
+
+// Checks the shape of a resumed state. shape maps a key to 'array', 'object', 'string', 'boolean', 'integer', a '?' variant of one (null or undefined passes), or {type: 'integer', min, max}. Returns the error texts; none means the shape holds.
+function stateShapeErrors(state, shape, prefix = 'args.state') {
+  if (!isObject(state)) return [`${prefix} must be an object`]
+  const errors = []
+  for (const [key, spec] of Object.entries(shape)) {
+    const raw = typeof spec === 'string' ? spec : spec.type
+    const optional = raw.endsWith('?')
+    const type = optional ? raw.slice(0, -1) : raw
+    const value = state[key]
+    if (optional && value == null) continue
+    const where = `${prefix}.${key}`
+    if (type === 'array') {
+      if (!Array.isArray(value)) errors.push(`${where} must be an array`)
+    } else if (type === 'object') {
+      if (!isObject(value)) errors.push(`${where} must be an object`)
+    } else if (type === 'string') {
+      if (typeof value !== 'string') errors.push(optional ? `${where} must be a string or null` : `${where} must be a string`)
+    } else if (type === 'boolean') {
+      if (typeof value !== 'boolean') errors.push(`${where} must be a boolean`)
+    } else if (type === 'integer') {
+      const min = typeof spec === 'object' ? spec.min : undefined
+      const max = typeof spec === 'object' ? spec.max : undefined
+      if (!Number.isInteger(value) || (min !== undefined && value < min) || (max !== undefined && value > max)) {
+        const range = min !== undefined && max !== undefined ? ` from ${min} to ${max}` : min !== undefined ? ` of at least ${min}` : max !== undefined ? ` of at most ${max}` : ''
+        errors.push(`${where} must be an integer${range}`)
+      }
+    } else {
+      errors.push(`${where} has the unknown shape type ${type}`)
+    }
+  }
+  return errors
+}
+
+// Builds a needs-input checkpoint result. A checkpoint with no question cannot resume, so it carries no state or digest. stamp binds the digest to the run.
+function askCheckpoint(checkpoint, questions, state, { stamp, usage, extra = {} } = {}) {
+  const full = plain({ ...state, checkpoint, questions })
+  const resumable = full.questions.length ? { state: full, digest: digestOf({ stamp, checkpoint, state: full }) } : {}
+  return { status: 'needs-input', checkpoint, questions: full.questions, ...resumable, usage, ...extra }
+}
+
+// Builds a needs-input result for a run that resumes from a plan and its digest. fields come before usage in the result.
+function needsInputResult(questions, fields = {}, usage = '') {
+  return { status: 'needs-input', questions, ...fields, usage }
+}
+
+// The error text when a resumed plan has no approve digest, or an empty string.
+function approveError(approve, plan = 'args.plan') {
+  return approve ? '' : `${plan} needs args.approve set to the digest that the same result returned`
+}
+
+// The error text when approve is not the digest of the value, or an empty string.
+function digestError(value, approve, plan = 'args.plan') {
+  return digestOf(value) === approve ? '' : `approve does not match the digest of ${plan}; the plan changed after approval`
+}
+
+// The usage text for an approval re-run. fields names the argument fields to pass back.
+function approveUsage({ fields = 'prs: landing.inputs, plan: landing, approve: digest', land = true, revise = true } = {}) {
+  return `To execute, re-run with { ${fields} }.${land ? ' Add land:true to merge.' : ''}${revise ? ` To change the plan first, re-run with the same fields and revise: "<change>".` : ''}`
+}
+// END module checkpoint
+
+// BEGIN module guard
+// module: guard; provides: UNSAFE_CHECKS, GUARD_PREFERRED, unsafeCheck, guardedReaderReason, vacuousReason, shellWords; requires: none
+// The check-safety guard for criterion checks. It holds the stricter cheese-factory rules.
+// Public: unsafeCheck, vacuousReason, guardedReaderReason. Tests also use shellWords, UNSAFE_CHECKS, and GUARD_PREFERRED.
+// Every other top-level name is a private helper of this module.
+
+// A judge runs each criterion check, so a check must not fetch, write, or mutate.
+// Three layers run in order: a structural pre-filter on the raw text, this denylist, and per-command rules.
+// The layers are defense in depth; the judge agent definition is the other guard.
+// The third field marks a rule that reads the text with quoted spans masked.
+const UNSAFE_CHECKS = [
+  ['network access', /\b(?:curl|wget|nc|ssh|scp)\b/i],
+  ['pipe into a shell', /\|\s*(?:sh|bash|zsh)\b/i],
+  // Only fd duplication (>&1, 2>&1, >&-) and a redirect to the whole token /dev/null stay allowed.
+  ['output redirection to a file', />(?!>?\s*\/dev\/null(?![^\s;|&)])|&(?:\d+|-)(?![^\s;|&)]))/, true],
+  ['tree mutation', /(?:^|[;&|(]\s*|\b(?:sudo|xargs|env|command|time)\s+)(?:touch|mkdir|rmdir|cp|mv|chmod|chown|chgrp|ln|install|truncate|dd|patch)\s/i],
+  ['tee to a file', /\btee\b/i],
+  ['inline interpreter code', /\b(?:python3?|node|perl|ruby)\s+-[ce]\b/i],
+  ['in-place edit', /\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i/i],
+  ['file removal', /\brm\s|\s-delete\b|\bunlink\b|\btruncate\b/i],
+  ['package publish or install', /\b(?:npm|pnpm|yarn|cargo|pip3?|uv)\s+(?:publish|install|add|ci)\b/i],
+  ['GitHub mutation', /\bgh\s+(?:pr\s+(?:merge|close|comment|edit|ready|review|create|reopen)|issue|release|workflow\s+run|run\s+(?:rerun|cancel)|repo\s+(?:edit|delete|rename)|secret|variable|label)\b/i],
+  ['GitHub API write', /\bgh\s+api\b.*(?:-X|--method)[\s=]*(?:POST|PATCH|PUT|DELETE)\b/i],
+  ['GitHub API field write', /\bgh\s+api\b.*\s(?:-f|-F|--field|--raw-field|--input)[\s=]/i],
+]
+
+const hit = (name, text = '') => ({ name, text })
+
+// Replaces each quoted span and each backslash escape with Q, so an operator inside a quote is data.
+// Double quotes stay readable unless maskDouble is true, because $ and backticks expand inside them.
+function maskQuotes(check, maskDouble) {
+  let out = ''
+  for (let i = 0; i < check.length; i++) {
+    const c = check[i]
+    if (c === '\\') { out += 'Q'; i++ } else if (c === "'") {
+      const close = check.indexOf("'", i + 1)
+      if (close < 0) return out + check.slice(i)
+      out += 'Q'
+      i = close
+    } else if (c === '"') {
+      let j = i + 1
+      let inner = ''
+      for (; j < check.length && check[j] !== '"'; j++) inner += check[j] === '\\' ? (j++, 'Q') : check[j]
+      if (j >= check.length) return out + check.slice(i)
+      out += maskDouble ? 'Q' : `"${inner}"`
+      i = j
+    } else out += c
+  }
+  return out
+}
+
+// Shapes that hide a command from the lexical rules: raw newlines, here documents, and shell expansion.
+function structuralHit(check) {
+  if (/[\r\n]/.test(check)) return hit('raw newline or carriage return')
+  const heredoc = /<<-?/.exec(maskQuotes(check, true))
+  if (heredoc) return hit('here document', heredoc[0])
+  const readable = maskQuotes(check, false)
+  const expansion = /\$(?:[({A-Za-z_]|\d|[?!@*#$-])|`/.exec(readable)
+  if (expansion) return hit('shell expansion or substitution', readable.slice(expansion.index, expansion.index + 24).trim())
+  return null
+}
+
+const ASSIGN_RE = /^[A-Za-z_]\w*=/
+const WRAPPERS = new Set(['env', 'command', 'time', 'sudo', 'doas', 'xargs', 'nohup', 'nice', 'timeout', 'builtin', 'stdbuf', 'setsid', 'ionice'])
+const WRAPPER_VALUE_OPTS = { xargs: ['-I', '-L', '-n', '-P', '-s', '-E', '-d', '-a'], env: ['-u', '-C', '-S'], sudo: ['-u', '-g', '-C', '-h', '-p', '-r', '-t', '-U'], timeout: ['-s', '-k'], nice: ['-n'] }
+const SHELL_KEYWORDS = new Set(['{', '}', 'if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until', 'for', 'case', 'esac', 'function', 'select', 'coproc'])
+const MUTATION_COMMANDS = new Set(['touch', 'mkdir', 'rmdir', 'cp', 'mv', 'chmod', 'chown', 'chgrp', 'ln', 'install', 'truncate', 'dd', 'patch', 'rm', 'unlink', 'shred', 'mkfifo', 'mknod'])
+const NETWORK_COMMANDS = new Set(['curl', 'wget', 'nc', 'ncat', 'netcat', 'telnet', 'ftp', 'sftp', 'ssh', 'scp', 'rsync', 'socat'])
+const FETCH_RUNNERS = new Set(['npx', 'pnpx', 'bunx', 'uvx', 'pipx'])
+const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun', 'pip', 'pip3', 'cargo', 'uv', 'gem'])
+const INSTALL_SUBCOMMANDS = new Set(['install', 'i', 'ci', 'add', 'exec', 'x', 'dlx', 'create', 'init', 'update', 'upgrade', 'publish', 'remove', 'uninstall', 'link'])
+const SHELL_HEAD_RE = /^(?:sh|bash|zsh|dash|ksh|fish|csh|tcsh)$/
+const CODE_HEAD_RE = /^(?:python|ruby|perl|php|lua|node|nodejs|deno|bun|osascript)[\d.]*$/
+const AWK_HEAD_RE = /^[gmn]?awk$/
+const AWK_DANGER_RE = /\bsystem\s*\(|\bgetline\b|\bprintf?\b[^}]*[>|]|-i\s*inplace|@(?:include|load)|\|&/
+const SED_WRITE_RE = /(?:^|[;{}])\s*(?:\d+|\$|\/[^/]*\/)?\s*(?:w\s*\S|e\b)|s\/[^/]*\/[^/]*\/[a-zA-Z0-9]*[we]\b/
+const GIT_VALUE_OPTS = new Set(['-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--exec-path'])
+const GIT_MUTATIONS = new Set(['push', 'add', 'commit', 'reset', 'checkout', 'switch', 'merge', 'rebase', 'stash', 'clean', 'tag', 'am', 'apply', 'restore', 'rm', 'mv', 'init', 'cherry-pick', 'revert', 'pull', 'worktree', 'update-ref', 'config', 'fetch', 'clone', 'ls-remote', 'submodule', 'gc', 'prune', 'maintenance', 'notes', 'replace', 'filter-branch', 'bisect', 'sparse-checkout', 'format-patch', 'checkout-index', 'read-tree', 'write-tree', 'commit-tree', 'fast-import', 'unpack-objects', 'bundle', 'archive', 'send-email', 'difftool', 'mergetool'])
+
+// Skips wrapper commands and their options so the real command head shows.
+function unwrap(words) {
+  let i = 0
+  while (WRAPPERS.has(words[i])) {
+    const valued = WRAPPER_VALUE_OPTS[words[i++]] ?? []
+    while (i < words.length && (words[i].startsWith('-') || ASSIGN_RE.test(words[i]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[i]))) i += valued.includes(words[i]) ? 2 : 1
+  }
+  return words.slice(i)
+}
+
+// Reads the git subcommand from tokens, so the cost stays linear in the option count.
+function gitHit(args) {
+  let i = 0
+  for (; i < args.length && args[i].startsWith('-'); i++) {
+    const arg = args[i]
+    if ((arg.startsWith('-c') && !arg.startsWith('--')) || arg.startsWith('--config-env')) return hit('git config override', arg)
+    if (GIT_VALUE_OPTS.has(arg)) i++
+  }
+  const sub = (args[i] ?? '').toLowerCase()
+  const rest = args.slice(i + 1)
+  if (GIT_MUTATIONS.has(sub)) return hit('git mutation', `git ${sub}`)
+  if (sub === 'branch' && rest.some((a) => /^-[a-zA-Z]*[dDmMfcC]|^--(?:delete|move|copy|force|set-upstream|unset-upstream|edit-description)/.test(a))) return hit('git mutation', 'git branch')
+  const output = rest.find((a) => /^--output(?:=|$)/.test(a) || (sub === 'grep' && /^(?:-O|--open-files-in-pager)/.test(a)))
+  return output ? hit('git option that writes a file or runs a program', output) : null
+}
+
+function sedHit(args) {
+  const programs = []
+  let bare = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (/^-[a-zA-Z]*[if]|^--(?:in-place|file)/.test(arg)) return hit('in-place edit or script file', arg)
+    if (arg === '-e' || arg === '--expression') { programs.push(args[++i] ?? ''); bare = false } else if (arg.startsWith('--expression=')) { programs.push(arg.slice(13)); bare = false } else if (bare && !arg.startsWith('-')) { programs.push(arg); bare = false }
+  }
+  const bad = programs.find((p) => SED_WRITE_RE.test(p))
+  return bad === undefined ? null : hit('sed command that writes or runs', bad)
+}
+
+// These commands take a pattern or text as data, so a quoted "git push" operand is not a command.
+const DATA_HEADS = new Set(['echo', 'printf', 'test', '[', '[[', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'awk', 'gawk', 'mawk', 'sed', 'gsed', 'find'])
+
+// Finds git at any word position after an unlisted wrapper (watch, gtimeout, su -c, strace).
+// A word that holds spaces, such as "git push" after su -c, splits into its own tokens.
+function embeddedGit(args) {
+  for (let i = 0; i < args.length; i++) {
+    const tokens = args[i].split(/\s+/).filter(Boolean)
+    if (tokens[0]?.toLowerCase() !== 'git') continue
+    const found = gitHit([...tokens.slice(1), ...args.slice(i + 1)])
+    if (found) return found
+  }
+  return null
+}
+
+// Classifies one simple command. Returns a hit or null.
+function commandHit(raw) {
+  const words = unparen(raw)
+  while (words[0] === '!') words.shift()
+  if (!words.length) return null
+  if (ASSIGN_RE.test(words[0])) return hit('NAME=value prefix', words[0])
+  const [head, ...args] = unwrap(words)
+  if (head === undefined) return null
+  if (head.includes('/')) return hit('command path', head)
+  if (['eval', 'exec', 'source', '.'].includes(head)) return hit('eval, exec, or source', head)
+  if (SHELL_KEYWORDS.has(head)) return hit('shell keyword or group', head)
+  if (MUTATION_COMMANDS.has(head)) return hit('tree mutation', head)
+  if (NETWORK_COMMANDS.has(head)) return hit('network access', head)
+  if (FETCH_RUNNERS.has(head)) return hit('package fetch or execution', head)
+  if (PACKAGE_MANAGERS.has(head) && INSTALL_SUBCOMMANDS.has(args[0])) return hit('package install or execution', `${head} ${args[0]}`)
+  // A case-insensitive file system runs GIT as git, so the head match ignores case.
+  if (head.toLowerCase() === 'git') return gitHit(args)
+  if (!DATA_HEADS.has(head)) {
+    const embedded = embeddedGit(args)
+    if (embedded) return embedded
+  }
+  if (head === 'find') {
+    const action = args.find((a) => /^-(?:exec|execdir|ok|okdir|delete|fprint0?|fprintf|fls)$/.test(a))
+    return action ? hit('find action that writes or runs a command', action) : null
+  }
+  if (head === 'sed') return sedHit(args)
+  if (AWK_HEAD_RE.test(head)) {
+    const bad = args.find((a) => AWK_DANGER_RE.test(a) || /^(?:-f|--file|-i|--include|-l|--load)/.test(a))
+    return bad === undefined ? null : hit('awk program that writes or runs a command', bad)
+  }
+  if (SHELL_HEAD_RE.test(head) && (!args.length || args.some((a) => a === '-' || /^-[a-zA-Z]*[cs]/.test(a)))) return hit('inline interpreter code', `${head} ${args[0] ?? ''}`.trim())
+  if (CODE_HEAD_RE.test(head)) {
+    const code = !args.length || args.some((a) => a === '-' || /^-[a-zA-Z]*[cepE]/.test(a) || /^--(?:eval|print|exec|command)\b/.test(a)) || (head === 'deno' && ['eval', 'repl'].includes(args[0]))
+    if (code) return hit('inline interpreter code', `${head} ${args[0] ?? ''}`.trim())
+  }
+  return null
+}
+
+// Returns { name, text } for the first unsafe shape in a check, or null.
+function unsafeCheck(check) {
+  const structural = structuralHit(check)
+  if (structural) return structural
+  const masked = maskQuotes(check, true)
+  for (const [name, re, useMask] of UNSAFE_CHECKS) {
+    const subject = useMask ? masked : check
+    const m = re.exec(subject)
+    if (m) return hit(name, subject.slice(m.index, m.index + 24).trim())
+  }
+  const words = shellWords(check)
+  if (!words) return null
+  let command = []
+  for (const w of [...words, ';']) {
+    if (COMMAND_OPS.includes(w) || w === '|') {
+      const found = commandHit(command)
+      if (found) return found
+      command = []
+    } else command.push(w)
+  }
+  return null
+}
+
+// The user's PreToolUse hook (agents/lib/tool-reroute) denies a shell reader or searcher that reads a file.
+// A check that names a file operand never runs, so the judge cannot give a verdict. This gate mirrors the hook.
+// A filter on a pipe (git log | grep x) reads no file and stays allowed.
+const GUARD_PREFERRED = "run the repository's own test for the criterion (node --test --test-name-pattern, pytest -k, bats -f, a just recipe), or use test -e or git plumbing"
+const GUARD_READERS = {
+  cat: '', tac: 's', head: 'nc', tail: 'ncs', less: 'bhjkoOpPtTxyz#', more: 'n', nl: 'bdfhilnsvw', bat: 'lHmr', batcat: 'lHmr',
+  sed: 'efl', gsed: 'efl', awk: 'Fvfei', gawk: 'Fvfei', mawk: 'Fvfei',
+  grep: 'efmABCdD', egrep: 'efmABCdD', fgrep: 'efmABCdD', rg: 'efgtTmABCjMrdE', ag: 'ABCGgm', ack: 'ABCm',
+}
+// The first operand of these is a pattern or program, unless -e or -f supplies it.
+const GUARD_SCRIPTED = new Set(['sed', 'gsed', 'awk', 'gawk', 'mawk', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack'])
+const GUARD_VALUED_LONG = ['regexp', 'file', 'expression', 'max-count', 'context', 'after-context', 'before-context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth', 'lines', 'bytes', 'line-range', 'style', 'language', 'theme']
+const GUARD_WRAPPERS = new Set(['xargs', 'time', 'command', 'env', 'sudo', 'nice', 'nohup'])
+const GUARD_LISTING = ['--files', '--type-list', '--list-file-types', '--help-types']
+
+// The files that one reader or searcher stage reads. first is true when no pipe feeds the stage.
+function guardedFiles(head, args, first) {
+  const valued = GUARD_READERS[head]
+  if (valued === undefined) return []
+  if (args.some((a) => GUARD_LISTING.includes(a)) || ((head === 'ag' || head === 'ack') && args.includes('-g')) || (head === 'ack' && args.includes('-f'))) return []
+  const operands = []
+  let scripted = false
+  let options = true
+  let recursive = head === 'rg' || head === 'ag' || head === 'ack'
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (/^\d*<<<$/.test(a) || /^\d*<<-?$/.test(a)) i++
+    else if (/^\d*<</.test(a)) continue
+    else if (/^\d*<$/.test(a)) { if (args[i + 1] !== undefined) operands.push(args[++i]) }
+    else if (/^\d*<./.test(a)) operands.push(a.replace(/^\d*</, ''))
+    else if (/^(?:\d*|&)>/.test(a)) { if (/^(?:\d*|&)>>?&?$/.test(a)) i++ }
+    else if (options && a === '--') options = false
+    else if (options && a.startsWith('--')) {
+      const [name, value] = a.slice(2).split('=')
+      if (['regexp', 'file', 'expression'].includes(name)) scripted = true
+      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
+      if (value === undefined && GUARD_VALUED_LONG.includes(name)) i++
+    } else if (options && a.length > 1 && a.startsWith('-')) {
+      const letters = a.slice(1)
+      for (let k = 0; k < letters.length; k++) {
+        if (/grep$/.test(head) && 'rR'.includes(letters[k])) recursive = true
+        if (!valued.includes(letters[k])) continue
+        if ('ef'.includes(letters[k])) scripted = true
+        if (k === letters.length - 1) i++
+        break
+      }
+    } else if (a !== '-' && !a.startsWith('+')) operands.push(a)
+  }
+  if (GUARD_SCRIPTED.has(head) && !scripted) operands.shift()
+  if (!operands.length && first && recursive) return ['.']
+  return operands
+}
+
+// Returns why a check cannot run under the PreToolUse guard, or '' when it can.
+function guardedReaderReason(check) {
+  const words = shellWords(check)
+  if (!words) return ''
+  let stage = []
+  let first = true
+  for (const w of [...words, ';']) {
+    if (!COMMAND_OPS.includes(w) && w !== '|') { stage.push(w); continue }
+    const command = stage.map((s) => s.replace(/^\(+|\)+$/g, '')).filter(Boolean)
+    let wrapped = false
+    while (command.length && (command[0] === '!' || ASSIGN_RE.test(command[0]) || GUARD_WRAPPERS.has(command[0]) || (wrapped && command[0].startsWith('-')))) {
+      wrapped = wrapped || GUARD_WRAPPERS.has(command[0])
+      command.shift()
+    }
+    const files = command.length ? guardedFiles(command[0], command.slice(1), first) : []
+    if (files.length) return `\`${command[0]}\` reads ${files.join(', ')}, which the repository's PreToolUse guard denies, so the check never runs. Instead ${GUARD_PREFERRED}`
+    first = w !== '|'
+    stage = []
+  }
+  return ''
+}
+
+// A negated search passes when its input is missing. Grep and rg exit 2 on a missing file.
+// Git grep exits 1 on an unmatched pathspec. Grep with no file reads empty input.
+// So each path of a negated search needs an existence test earlier in the same && chain.
+// A negated pipeline also hides a failed producer. This check is lexical.
+// The verify judge also tests each path that a check reads.
+const SEARCH_TOOLS = ['grep', 'egrep', 'fgrep', 'rg']
+// Short options whose value is the next word when the option ends its cluster.
+const VALUE_LETTERS = { rg: 'efgtTmABCjMEr', grep: 'efmABCdD' }
+const LONG_VALUE_OPTS = ['regexp', 'file', 'max-count', 'after-context', 'before-context', 'context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth']
+
+// Splits a check into words and the operators && || ; | &, with POSIX quotes removed. A newline counts as ;. Returns null on an open quote.
+function shellWords(check) {
+  const words = []
+  let word = null
+  const end = () => { if (word !== null) words.push(word); word = null }
+  for (let i = 0; i < check.length; i++) {
+    const c = check[i]
+    const pair = check.slice(i, i + 2)
+    if (c === '\n') { end(); words.push(';') }
+    else if (/\s/.test(c)) end()
+    else if (pair === '&&' || pair === '||') { end(); words.push(pair); i++ }
+    else if (pair === '|&') { end(); words.push('|'); i++ }
+    else if (c === '&' && check[i - 1] !== '>' && check[i - 1] !== '<' && check[i + 1] !== '>') { end(); words.push('&') }
+    else if (c === ';' || c === '|') { end(); words.push(c) }
+    else if (c === "'") {
+      const close = check.indexOf("'", i + 1)
+      if (close < 0) return null
+      word = (word ?? '') + check.slice(i + 1, close)
+      i = close
+    } else if (c === '"') {
+      let j = i + 1
+      let text = ''
+      for (; j < check.length && check[j] !== '"'; j++) text += check[j] === '\\' && j + 1 < check.length ? check[++j] : check[j]
+      if (j >= check.length) return null
+      word = (word ?? '') + text
+      i = j
+    } else if (c === '\\' && i + 1 < check.length) word = (word ?? '') + check[++i]
+    else word = (word ?? '') + c
+  }
+  end()
+  return words
+}
+
+// A redirect such as 2>/dev/null, >&2, or &> is not an operand; a bare operator such as > takes the next word.
+const REDIRECT_RE = /^(?:\d*|&)[<>]/
+const BARE_REDIRECT_RE = /^(?:\d*|&)(?:[<>]|>>)&?$/
+// ./a and a name the same path.
+const samePath = (path) => path.replace(/^(?:\.\/)+/, '')
+
+// test -e P, [ -e P ], or [[ -e P ]] with -e, -f, -d, -s, or -r; returns P or ''.
+function guardedPath(words) {
+  const flag = /^-[efdsr]$/
+  if (words.length === 3 && words[0] === 'test' && flag.test(words[1])) return samePath(words[2])
+  if (words.length === 4 && flag.test(words[1]) && ((words[0] === '[' && words[3] === ']') || (words[0] === '[[' && words[3] === ']]'))) return samePath(words[2])
+  return ''
+}
+
+// Returns { tool, paths, stdin } for a grep, rg, or git grep command, or null for any other command.
+function searchOf(words) {
+  const git = words[0] === 'git' && words[1] === 'grep'
+  if (!git && !SEARCH_TOOLS.includes(words[0])) return null
+  const tool = git ? 'git grep' : words[0]
+  const args = words.slice(git ? 2 : 1)
+  const valueLetters = tool === 'rg' ? VALUE_LETTERS.rg : VALUE_LETTERS.grep
+  const positional = []
+  let patternGiven = false
+  let recursive = false
+  let options = true
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (REDIRECT_RE.test(arg)) {
+      if (BARE_REDIRECT_RE.test(arg)) i++
+    } else if (options && arg === '--') options = false
+    else if (options && arg.startsWith('--')) {
+      const [name, value] = arg.slice(2).split('=')
+      if (name === 'regexp' || name === 'file') patternGiven = true
+      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
+      if (value === undefined && LONG_VALUE_OPTS.includes(name)) i++
+    } else if (options && arg.length > 1 && arg.startsWith('-')) {
+      const letters = arg.slice(1)
+      for (let k = 0; k < letters.length; k++) {
+        if (tool !== 'rg' && 'rR'.includes(letters[k])) recursive = true
+        if (!valueLetters.includes(letters[k])) continue
+        if ('ef'.includes(letters[k])) patternGiven = true
+        if (k === letters.length - 1) i++
+        break
+      }
+    } else positional.push(arg)
+  }
+  const paths = (patternGiven ? positional : positional.slice(1)).map(samePath)
+  return { tool, paths, stdin: tool !== 'rg' && tool !== 'git grep' && !paths.length && !recursive }
+}
+
+const COMMAND_OPS = ['&&', '||', ';', '&']
+// A pipe sink reads its input, so it cannot fail on a failed producer.
+const PIPE_SINKS = new Set(['wc', 'head', 'tail', 'cat'])
+const unparen = (words) => words.map((w) => w.replace(/^\(+|\)+$/g, '')).filter(Boolean)
+
+function withoutRedirects(words) {
+  const kept = []
+  for (let i = 0; i < words.length; i++) {
+    if (!REDIRECT_RE.test(words[i])) kept.push(words[i])
+    else if (BARE_REDIRECT_RE.test(words[i])) i++
+  }
+  return kept
+}
+
+function pipelineStages(words) {
+  const stages = [[]]
+  for (const w of words) {
+    if (w === '|') stages.push([])
+    else stages[stages.length - 1].push(w)
+  }
+  return stages.filter((s) => s.length)
+}
+
+const exitsZero = (stage) => stage[0] === 'exit' && (stage.length === 1 || (stage.length === 2 && stage[1] === '0'))
+
+// True when a pipeline stage returns 0 whatever the earlier commands did.
+function cannotFail(stage, piped) {
+  const [head] = stage
+  if (['true', ':', 'echo', 'printf'].includes(head)) return true
+  return (piped && PIPE_SINKS.has(head)) || exitsZero(stage)
+}
+
+// Returns why a check can pass without testing anything, or '' when it can fail.
+function vacuousReason(check) {
+  const words = shellWords(check)
+  if (!words) return 'it has an unclosed quote'
+  const commands = [{ op: '', words: [] }]
+  for (const w of words) {
+    if (COMMAND_OPS.includes(w)) commands.push({ op: w, words: [] })
+    else commands[commands.length - 1].words.push(w)
+  }
+  const shapes = commands.map(({ words: command }) => pipelineStages(withoutRedirects(unparen(command))))
+  if (shapes.every((stages) => stages.every((stage, i) => cannotFail(stage, i > 0)))) return 'every command in it always succeeds'
+  let guarded = new Set()
+  for (const [index, { op, words: command }] of commands.entries()) {
+    const last = index === commands.length - 1
+    const shape = shapes[index]
+    const tail = shape[shape.length - 1]
+    if (tail) {
+      const quiet = cannotFail(tail, shape.length > 1)
+      if (shape.length === 1 && op !== '&&' && exitsZero(tail)) return 'it exits 0 whatever the earlier commands return'
+      if (op === '||' && quiet) return 'it ends in an always-true fallback, which hides every failure'
+      if (shape.length > 1 && quiet) return `its pipeline ends in ${tail[0]}, which hides a failed earlier stage`
+      if (op !== '&&' && last && quiet) return 'its last command always succeeds'
+    }
+    if (op !== '&&' || command[0] === 'cd') guarded = new Set()
+    const negated = command[0] === '!'
+    const body = negated ? command.slice(1) : command
+    const stages = [[]]
+    for (const w of body) {
+      if (w === '|') stages.push([])
+      else stages[stages.length - 1].push(w)
+    }
+    if (!negated) {
+      const path = guardedPath(body)
+      if (path) guarded.add(path)
+      continue
+    }
+    const search = searchOf(stages[stages.length - 1])
+    if (!search) continue
+    if (stages.length > 1) return `it negates a pipeline into ${search.tool}, which passes when the producer fails`
+    if (search.stdin) return `it negates ${search.tool} with no file, which reads empty input`
+    const open = search.paths.filter((p) => !guarded.has(p))
+    if (open.length) return `it negates ${search.tool} over ${open.join(', ')} with no existence test of that path earlier in the same && chain`
+  }
+  return ''
+}
+// END module guard
+
+// BEGIN module schema
+// module: schema; provides: str, int, bool, strs, ints, text, oneOf, list, obj, CHECK_KINDS, ADVICE_VERDICTS, FIX_STATUSES, PHASE_STATUSES, FINDING_SEVERITIES, FIX_COSTS; requires: none
+// Schema builders: one constant per shape, so a contract reads as data.
+const str = { type: 'string' }
+const int = { type: 'integer' }
+const bool = { type: 'boolean' }
+const strs = { type: 'array', items: { type: 'string' } }
+const ints = { type: 'array', items: { type: 'integer' } }
+const text = (description) => ({ type: 'string', description })
+const oneOf = (values) => ({ type: 'string', enum: values })
+const list = (items) => ({ type: 'array', items })
+const obj = (properties) => ({ type: 'object', required: Object.keys(properties), properties })
+// Closed sets that more than one workflow shares.
+const CHECK_KINDS = ['command', 'test', 'inspection', 'ci']
+const ADVICE_VERDICTS = ['approve', 'revise', 'stop']
+const FIX_STATUSES = ['fixed', 'partial', 'blocked']
+const PHASE_STATUSES = ['ok', 'partial', 'blocked']
+const FINDING_SEVERITIES = ['blocker', 'high', 'medium', 'low']
+const FIX_COSTS = ['contained', 'moderate', 'sprawling', 'n/a']
+// END module schema
+
+// BEGIN module graph
+// module: graph; provides: waves, duplicates, baseChain, mergeWaitErrors; requires: call
+// Returns the sorted ids that appear more than once.
+function duplicates(ids) {
+  return [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))].sort()
+}
+// Groups items by dependency. Each wave holds the ids whose depends_on all finished earlier. cycle lists the ids that never become ready.
+function waves(items) {
+  const pending = new Map(items.map((t) => [t.id, new Set(t.depends_on)]))
+  const out = []
+  while (pending.size) {
+    const ready = [...pending].filter(([, deps]) => deps.size === 0).map(([id]) => id).sort()
+    if (!ready.length) return { order: out, cycle: [...pending.keys()].sort() }
+    out.push(ready)
+    for (const id of ready) pending.delete(id)
+    for (const deps of pending.values()) for (const id of ready) deps.delete(id)
+  }
+  return { order: out, cycle: [] }
+}
+// The target ids under a target, nearest first: its base, that target's base, and so on.
+// The chain stops at the default branch, which is not a target id, and at a repeated id.
+function baseChain(targets, id) {
+  const byId = new Map(targets.map((t) => [t.id, t]))
+  const chain = []
+  let next = byId.get(id)?.base
+  while (byId.has(next) && !chain.includes(next) && next !== id) {
+    chain.push(next)
+    next = byId.get(next).base
+  }
+  return chain
+}
+// The plan has no merge-wait field. A target waits for a merge when it depends on a target that is not on its base chain.
+// A stacked base needs no merge, because the target builds on that branch.
+function mergeWaitErrors(plan) {
+  const errors = []
+  for (const t of plan.targets) {
+    const chain = baseChain(plan.targets, t.id)
+    for (const d of t.depends_on) {
+      if (!chain.includes(d)) errors.push(substance(`${t.id} waits for ${d}'s merge before publish`))
+    }
+  }
+  return errors
+}
+// END module graph
+
+// BEGIN module criteria
+// module: criteria; provides: norm, blank, refError, checkVerdicts, checkCriteria, CRITERIA_SCHEMA, VERDICT_SCHEMA, VERIFY_BATCH_SCHEMA; requires: call, schema, graph
+const norm = (id) => String(id).trim().toUpperCase()
+const blank = (value) => typeof value !== 'string' || !value.trim()
+// A wrong-case id is a form slip. An unknown id is substance. fixOf maps a ref to its canonical form.
+function refError(ref, known, where, fixOf = norm) {
+  if (known.includes(ref)) return null
+  const fix = fixOf(ref)
+  return known.includes(fix) ? form(`${where}: '${ref}' should be '${fix}'`) : substance(`${where}: unknown id '${ref}'`)
+}
+const VERDICT_SCHEMA = {
+  type: 'object',
+  required: ['criterion', 'passes', 'evidence', 'tree_clean', 'missing_paths'],
+  properties: {
+    criterion: { type: 'string' },
+    passes: { type: 'boolean' },
+    evidence: { type: 'string', description: 'Command run and its observed result' },
+    tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' },
+    missing_paths: { type: 'array', items: { type: 'string' }, description: 'Paths that the check reads and that do not exist in the worktree' },
+    guard_blocked: { type: 'boolean', description: 'true when a hook or guard denied the check command, so the check never ran' },
+  },
+}
+const VERIFY_BATCH_SCHEMA = { type: 'object', required: ['verdicts'], properties: { verdicts: { type: 'array', items: VERDICT_SCHEMA } } }
+const CRITERIA_SCHEMA = {
+  type: 'object',
+  required: ['criteria'],
+  properties: {
+    criteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'statement', 'check_kind', 'check'],
+        properties: {
+          id: { type: 'string', pattern: '^AC-[0-9]+$' },
+          statement: { type: 'string' },
+          check_kind: { type: 'string', enum: CHECK_KINDS },
+          check: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+// One verdict for each criterion in the batch, and no other. With requireAll false, a missing id is no error: the Verify phase fails it as unchecked.
+function checkVerdicts(result, batch, { requireAll = true } = {}) {
+  const ids = batch.map((ac) => ac.id)
+  const errors = []
+  result.verdicts.forEach((v, n) => {
+    errors.push(refError(v.criterion, ids, `verdicts[${n}].criterion`))
+    if (blank(v.evidence)) errors.push(substance(`verdicts[${n}].evidence must name the check run and its result`))
+  })
+  const seen = result.verdicts.map((v) => norm(v.criterion))
+  for (const id of duplicates(seen)) errors.push(substance(`verdicts lists ${id} twice`))
+  if (requireAll) for (const id of ids) if (!seen.includes(id)) errors.push(substance(`no verdict for ${id}; run its check`))
+  return errors.filter(Boolean)
+}
+// Exact coverage: one criterion per spec AC id. gate(criterion, where) returns the errors for one check.
+// The caller passes its own gate for command safety, so this module stays pure. CI-owned checks skip the gate.
+const checkCriteria = (acIds, gate = () => []) => (value) => {
+  const errors = []
+  const seen = new Set()
+  value.criteria.forEach((c, i) => {
+    const where = `$.criteria[${i}]`
+    const idError = refError(c.id, acIds, `${where}.id`)
+    if (idError) errors.push(idError)
+    else if (seen.has(c.id)) errors.push(substance(`${where}.id: duplicate id '${c.id}'`))
+    seen.add(c.id)
+    if (blank(c.statement)) errors.push(substance(`${where}.statement must not be blank`))
+    if (blank(c.check)) errors.push(substance(`${where}.check must not be blank`))
+    else if (c.check_kind !== 'ci') errors.push(...gate(c, where))
+  })
+  for (const id of acIds) if (!seen.has(id)) errors.push(substance(`${id} has no criterion`))
+  return errors
+}
+// END module criteria
+
+// BEGIN module advise
+// module: advise; provides: adviceSchema, ADVICE_SCHEMA, ROUND_TWO_RULE, checkAdvice, checkPlanAdvice, checkRoundTwo, adviceStep, adviseLoop, adviceResult, blockingOf; requires: call, schema, criteria
+// blocking true adds blocking_questions: questions only the user can settle.
+const adviceSchema = ({ blocking = false } = {}) => ({
+  type: 'object',
+  required: ['verdict', 'concerns', 'guidance', ...(blocking ? ['blocking_questions'] : [])],
+  properties: {
+    verdict: { type: 'string', enum: ADVICE_VERDICTS },
+    concerns: { type: 'array', items: { type: 'string' } },
+    guidance: { type: 'string', description: 'Under 80 words' },
+    ...(blocking ? {
+      blocking_questions: { type: 'array', description: 'Questions only the user can settle; leave empty when none', items: {
+        type: 'object',
+        required: ['question', 'options', 'recommended', 'evidence'],
+        properties: {
+          question: { type: 'string' },
+          options: { type: 'array', items: { type: 'string' } },
+          recommended: { type: 'string', description: 'one of options, or empty' },
+          evidence: { type: 'string' },
+        },
+      } },
+    } : {}),
+  },
+})
+const ADVICE_SCHEMA = adviceSchema()
+// A second review judges the first review's concerns. It does not reopen the plan.
+const ROUND_TWO_RULE = 'payload.prior_concerns holds your concerns from the last round. Judge only whether each prior concern is resolved. Raise a new concern only when it makes the work wrong or unsafe, and start it with "NEW:". Never reverse a prior concern.'
+function checkAdvice(advice) {
+  return advice.verdict !== 'approve' && !advice.concerns.length
+    ? [substance(`verdict ${advice.verdict} needs at least one concern`)]
+    : []
+}
+function checkPlanAdvice(advice, ids) {
+  const errors = []
+  const idError = refError(advice.chosen, ids, 'chosen')
+  if (idError) errors.push(idError)
+  if (advice.verdict !== 'approve' && !advice.concerns.length) errors.push(substance(`verdict ${advice.verdict} needs at least one concern`))
+  return errors
+}
+// ROUND_TWO_RULE as code: a round-two concern repeats a prior concern or starts with "NEW:".
+function checkRoundTwo(advice, priorConcerns) {
+  return advice.concerns
+    .filter((c) => !priorConcerns.includes(c) && !(typeof c === 'string' && c.startsWith('NEW:')))
+    .map((c) => substance(`concern '${c}' is neither a prior concern nor marked NEW:`))
+}
+// round counts the revisions done so far. A revise verdict ends unsettled once the revisions are spent.
+function adviceStep(advice, round, maxRevisions) {
+  if (!advice) return 'unsettled'
+  if (advice.verdict === 'approve') return 'approve'
+  if (advice.verdict === 'stop') return 'stop'
+  return round < maxRevisions ? 'revise' : 'unsettled'
+}
+// ask(round, priorConcerns) returns advice. revise(advice, round) changes the work. Returns { outcome, advice, rounds }.
+const adviseLoop = async ({ ask, revise, maxRevisions }) => {
+  let prior = []
+  for (let round = 0; ; round++) {
+    const advice = await ask(round, prior)
+    const outcome = adviceStep(advice, round, maxRevisions)
+    if (outcome !== 'revise') return { outcome, advice, rounds: round }
+    await revise(advice, round)
+    prior = advice.concerns
+  }
+}
+// The record of one advice stage: ok is true when no error remains.
+const adviceResult = (stage, value, errors) => ({ stage, value, errors, ok: errors.length === 0 })
+function blockingOf(advice) {
+  return (Array.isArray(advice.blocking_questions) ? advice.blocking_questions : []).filter((b) => b && typeof b.question === 'string' && b.question.trim())
+}
+// END module advise
+
+// BEGIN module findings
+// module: findings; provides: isMediumPlus, needsCure, normalizeFile, routeFindings, findingErrors, enumErrors, splitBlocked, cureBatches; requires: call, stale, schema
+const isMediumPlus = (f) => f.severity !== 'low'
+const needsCure = (f) => isMediumPlus(f) || f.fix_cost_now === 'contained'
+// A finding file may carry a leading ./ or a worktree prefix; both name the same repo path.
+// The prefix is the producer's own worktree_path, or any scratch worktree root.
+const normalizeFile = (file, worktreePath) => {
+  let p = String(file).trim()
+  const root = worktreePath ? String(worktreePath).replace(/\/+$/, '') + '/' : null
+  p = root && p.startsWith(root) ? p.slice(root.length) : p.replace(new RegExp(`^${SCRATCH_PATH_SRC}\\/`), '')
+  return p.replace(/^(\.\/)+/, '')
+}
+// A finding owned by two curds routes to the first owner in slug order. Each other owner lands in shared, keyed to the owners that cure it.
+// unrouted is true when a finding that needs cure has no owner (an unowned low that needs no cure stays out),
+// or when the result claims medium+ findings or contained lows that its list does not carry.
+function routeFindings(result, filesBySlug, slugs, worktreePath) {
+  const bySlug = new Map()
+  const shared = new Map()
+  const sharedFindings = new Map()
+  // unownedMedium marks a medium+ finding that no curd owns. unrouted also fires for an unowned contained low.
+  let unownedMedium = Boolean(result.has_medium_plus_findings) && !result.findings.some(isMediumPlus)
+  let unrouted = unownedMedium ||
+    (Boolean(result.has_cheap_lows) && !result.findings.some((f) => f.severity === 'low' && f.fix_cost_now === 'contained'))
+  for (const f of result.findings.filter(needsCure)) {
+    const file = normalizeFile(f.file, worktreePath)
+    const owners = slugs.filter((s) => (filesBySlug[s] || []).includes(file))
+    if (!owners.length) {
+      unrouted = true
+      if (isMediumPlus(f)) unownedMedium = true
+      continue
+    }
+    const [first, ...others] = owners
+    bySlug.set(first, [...(bySlug.get(first) || []), { ...f, file }])
+    for (const s of others) {
+      shared.set(s, new Set([...(shared.get(s) || []), first]))
+      sharedFindings.set(s, [...(sharedFindings.get(s) || []), { ...f, file }])
+    }
+  }
+  return { bySlug, shared, sharedFindings, unrouted, unownedMedium }
+}
+// A closed set checked in code: the schema keeps the field a plain string.
+const enumErrors = (path, value, allowed, kind = form) => (allowed.includes(value) ? [] : [kind(`${path} must be one of ${allowed.join(', ')}`)])
+const findingErrors = (v) => v.findings.flatMap((f, i) => [
+  ...enumErrors(`$.findings[${i}].severity`, f.severity, FINDING_SEVERITIES, substance),
+  ...enumErrors(`$.findings[${i}].fix_cost_now`, f.fix_cost_now, FIX_COSTS, substance),
+])
+// A reviewer may answer status "blocked: <reason>" as one string. Code splits it into status and reason.
+// A halt is a blocked review too. Every caller still treats a status other than ok as no review.
+const splitBlocked = (v) => {
+  const m = v !== null && typeof v === 'object' && typeof v.status === 'string' ? /^(blocked|halt)\s*:\s*(.+)$/i.exec(v.status.trim()) : null
+  if (m) {
+    v.status = 'blocked'
+    v.reason = typeof v.reason === 'string' && v.reason.trim() ? v.reason : m[2]
+  }
+  return v
+}
+// bySlug maps a curd slug to its findings. Returns { slug, findings } batches in map order. A batch holds at most cap findings.
+function cureBatches(bySlug, cap) {
+  const size = Math.max(1, cap)
+  const batches = []
+  for (const [slug, found] of bySlug) {
+    for (let i = 0; i < found.length; i += size) batches.push({ slug, findings: found.slice(i, i + size) })
+  }
+  return batches
+}
+// END module findings
+
+// BEGIN module status
+// module: status; provides: STATUS, finish, blockedResult, gapField, report, donePayload, runStatus, countStatuses; requires: none
+// The status values that a workflow result carries.
+const STATUS = Object.freeze({ ok: 'ok', partial: 'partial', blocked: 'blocked', needsInput: 'needs-input', needsApproval: 'needs-approval' })
+
+// A result with a status. base holds the keys that every result of the workflow carries; extra overrides them.
+const finish = (status, extra = {}, base = {}) => ({ ...base, status, ...extra })
+
+// A blocked result. The key reason holds the cause.
+const blockedResult = (reason, extra = {}, base = {}) => finish(STATUS.blocked, { reason, ...extra }, base)
+
+// The gaps key of a result, or nothing when there is no gap.
+const gapField = (gaps) => (gaps.length ? { gaps } : {})
+
+// A report result. The note is logged and returned, as an empty string when absent. log resolves at call time.
+function report(status, note, fields = {}) {
+  if (note) log(note)
+  return { status, note: note || '', ...fields }
+}
+
+// A done payload: fields and extra merged, without the keys whose value is undefined.
+function donePayload(fields, extra = {}) {
+  const merged = { ...fields, ...extra }
+  return Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== undefined))
+}
+
+// A run is ok only when something was produced, every row has the clean status, nothing stopped it, and no gap remains.
+function runStatus({ stopped = '', gaps = [], produced = 0, rows = [], clean = 'clean' } = {}) {
+  return stopped || gaps.length || !produced || rows.some((r) => r.status !== clean) ? STATUS.partial : STATUS.ok
+}
+
+// Counts the rows for each status. A status in seed starts at its seed count.
+function countStatuses(rows, seed = { clean: 0, dirty: 0, failed: 0 }) {
+  const counts = { ...seed }
+  for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1
+  return counts
+}
+// END module status
 
 // Tracked source: claude/workflows/cheese-factory.js in the dotfiles repo.
 // Replaces claude/workflows/curd-flock.js (deleted, no alias). Spec:
@@ -535,9 +1501,9 @@ function findDuplicateSlugs(curds) {
 // Press and cure: 3 attempts + 1 expansion each.
 // The fixed per-run overhead is about 80 agents: about 53 barrier agents, 3 Ground attempts (ADR-018), plus at most 24 for ADR-015..017 (criteria 3, plan advice 3, multi-curd revise 9, second plan advice 3, one batch verify x 3, done advice 3).
 // runOverhead keeps the earlier per-criterion count of 149 as margin, so the curd limits below do not change.
-// Each brie-ground child counts toward the cap at up to BRIE_GROUND_MAX_AGENTS (shared prelude).
-// So 12 curds spend about 833 agents at worst without research (12 x 57 + 149). curdCap lowers the curd limit by what research spent:
-// 3 children spend 105 more (938 total), so up to 3 children keep 12 curds. Recount before a reader raises maxCurds.
+// Each brie-ground child counts toward the cap at up to BRIE_GROUND_MAX_AGENTS (ground module).
+// So 12 curds spend about 833 agents at worst without research (12 x 57 + 149). curdCap lowers the curd limit by what research and Verify reserve:
+// the verify-criteria child reserves VERIFY_CRITERIA_MAX_AGENTS (12 at the current limits), and 3 brie-ground children spend 105 more. floor((1000 - 149 - 3 x 35 - 12) / 57) = 12, so up to 3 children keep 12 curds. Recount before a reader raises maxCurds.
 const LIMITS = { fixRounds: 2, continuations: 3, minBudget: 50000, maxCurds: 12, maxCriteria: 24, advisorRevisions: 1, maxResearch: 3, agentCap: 1000, curdAgents: 57, runOverhead: 149 }
 // The curd limit for Decompose. Research sets it once, before any decomposer runs.
 let curdCap = LIMITS.maxCurds
@@ -553,23 +1519,14 @@ function noteWorktree(path, into = scratchWorktrees) {
   const p = typeof path === 'string' ? path.trim() : ''
   if (isScratchWorktree(p)) into.add(p)
 }
-// Code checks a SHA, not a schema pattern. A bad SHA is always substance: a formatter has no repo access and could only invent one.
-// typed() trims the SHA fields in TRIM_FIELDS before a check runs, so a padded SHA in those fields never reaches this test.
-const shaErrors = (path, value) =>
-  (typeof value === 'string' && FULL_SHA_RE.test(value) ? [] : [substance(`${path} must be a 40-hex commit SHA`)])
 const TASTE_VERDICTS = ['pass', 'revise', 'halt']
-const FIX_STATUSES = ['fixed', 'partial', 'blocked']
 const PRESS_STATUSES = ['ok', 'partial', 'blocked']
 const AGE_STATUSES = ['ok', 'blocked']
 const CURE_STATUSES = ['ok', 'partial', 'blocked']
 const PLATE_STATUSES = ['ok', 'failed', 'blocked']
-const FINDING_SEVERITIES = ['blocker', 'high', 'medium', 'low']
-const FIX_COSTS = ['contained', 'moderate', 'sprawling', 'n/a']
 
 const sanitizeReason = (text) => String(text).replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
 
-// A closed set checked in code: the schema keeps the field a plain string.
-const enumErrors = (path, value, allowed, kind = form) => (allowed.includes(value) ? [] : [kind(`${path} must be one of ${allowed.join(', ')}`)])
 // A phase status is the producer's outcome. A formatter must not pick one, so an out-of-enum status makes the producer redo the call.
 // Cook is the exception; see checkCook.
 const statusErrors = (v, allowed) => enumErrors('$.status', v.status, allowed, substance)
@@ -679,21 +1636,8 @@ const checkIntegrate = (slugs) => checkWith(INTEGRATE_SCHEMA,
   (v) => shaErrors('$.head', v.head),
   worktreeErrors,
   fileListErrors)
-const findingErrors = (v) => v.findings.flatMap((f, i) => [
-  ...enumErrors(`$.findings[${i}].severity`, f.severity, FINDING_SEVERITIES, substance),
-  ...enumErrors(`$.findings[${i}].fix_cost_now`, f.fix_cost_now, FIX_COSTS, substance),
-])
-// A reviewer may answer status "blocked: <reason>" as one string (reviewer.md). Code splits it into status and reason.
-// A halt is a blocked review too. Every caller still treats a status other than ok as no review.
+// A reviewer may answer status "blocked: <reason>" as one string (reviewer.md). splitBlocked (findings module) splits it into status and reason.
 const BLOCKED_STATUS_RE = /^(blocked|halt)\s*:\s*(.+)$/i
-const splitBlocked = (v) => {
-  const m = v !== null && typeof v === 'object' && typeof v.status === 'string' ? BLOCKED_STATUS_RE.exec(v.status.trim()) : null
-  if (m) {
-    v.status = 'blocked'
-    v.reason = typeof v.reason === 'string' && v.reason.trim() ? v.reason : m[2]
-  }
-  return v
-}
 // A blocked answer carries no findings, so it skips the review shape. It stays blocked, so no caller reads it as a review.
 const reviewCheck = (...checks) => {
   const full = checkWith(...checks)
@@ -711,46 +1655,7 @@ const checkPlate = checkWith(PLATE_SCHEMA)
 const checkCleanup = checkWith(CLEANUP_SCHEMA)
 
 // ---- routing: code assigns findings to curds by the files each curd changed ----
-const isMediumPlus = (f) => f.severity !== 'low'
-const needsCure = (f) => isMediumPlus(f) || f.fix_cost_now === 'contained'
-// A finding owned by two curds routes to the first owner in slug order. Each other owner lands in shared, keyed to the owners that cure it.
-// unrouted is true when a finding that needs cure has no owner (an unowned low that needs no cure stays out),
-// or when the result claims medium+ findings or contained lows that its list does not carry.
-// A finding file may carry a leading ./ or a worktree prefix; both name the same repo path.
-// The prefix is the producer's own worktree_path, or any scratch worktree root.
-const SCRATCH_PREFIX_RE = new RegExp(`^${SCRATCH_PATH_SRC}\\/`)
-const normalizeFile = (file, worktreePath) => {
-  let p = String(file).trim()
-  const root = worktreePath ? String(worktreePath).replace(/\/+$/, '') + '/' : null
-  p = root && p.startsWith(root) ? p.slice(root.length) : p.replace(SCRATCH_PREFIX_RE, '')
-  return p.replace(/^(\.\/)+/, '')
-}
 const ownsFinding = (routing, slug) => routing.bySlug.has(slug) || routing.shared.has(slug)
-function routeFindings(result, filesBySlug, slugs, worktreePath) {
-  const bySlug = new Map()
-  const shared = new Map()
-  const sharedFindings = new Map()
-  // unownedMedium marks a medium+ finding that no curd owns. unrouted also fires for an unowned contained low.
-  let unownedMedium = Boolean(result.has_medium_plus_findings) && !result.findings.some(isMediumPlus)
-  let unrouted = unownedMedium ||
-    (Boolean(result.has_cheap_lows) && !result.findings.some((f) => f.severity === 'low' && f.fix_cost_now === 'contained'))
-  for (const f of result.findings.filter(needsCure)) {
-    const file = normalizeFile(f.file, worktreePath)
-    const owners = slugs.filter((s) => (filesBySlug[s] || []).includes(file))
-    if (!owners.length) {
-      unrouted = true
-      if (isMediumPlus(f)) unownedMedium = true
-      continue
-    }
-    const [first, ...others] = owners
-    bySlug.set(first, [...(bySlug.get(first) || []), { ...f, file }])
-    for (const s of others) {
-      shared.set(s, new Set([...(shared.get(s) || []), first]))
-      sharedFindings.set(s, [...(sharedFindings.get(s) || []), { ...f, file }])
-    }
-  }
-  return { bySlug, shared, sharedFindings, unrouted, unownedMedium }
-}
 
 // Provenance: this file copies attempt and typed from move-my-cheese.js. This copy differs as listed below.
 // typed takes the nullIsFinal parameter. typed calls noteWorktree on every non-null isolated answer.
@@ -761,18 +1666,6 @@ function routeFindings(result, filesBySlug, slugs, worktreePath) {
 // With nullIsFinal, a missing answer returns at once, because a redo of a writer can overwrite the work ref.
 // The Plate call and the cook calls use it. Plate never redoes, because a redo repeats publication.
 // Every non-null isolated attempt records its worktree, so a rejected attempt that a redo replaces still gets cleaned up.
-async function attempt(text, opts) {
-  try {
-    return { value: await agent(text, opts), threw: null }
-  } catch (e) {
-    return { value: null, threw: e && e.message ? e.message : String(e) }
-  }
-}
-
-// A writer is a coder call, or an isolated worktree call that is not a reviewer. All other calls are read-only.
-// A writer throw is final, because the work ref may have moved. A read-only throw retries within LIMITS.fixRounds.
-const isWriter = (opts) => opts.agentType === 'coder' || (opts.isolation === 'worktree' && opts.agentType !== 'reviewer')
-
 // A status or verdict that differs only by case or spaces is the same answer. A field in TRIM_FIELDS loses its surrounding spaces and its case. Callers read the normalized value.
 const normalizeEnums = (v) => {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return v
@@ -791,78 +1684,49 @@ const normalizeEnums = (v) => {
   return out
 }
 
-// A writer that commits but returns a short SHA needs no redo. A read-only haiku call expands the SHA, and code checks the result.
+// A writer that commits but returns a short SHA needs no redo. A read-only runner agent expands the SHAs with wfx rev-parse, and code checks the envelope.
 const SHA_FIELDS = ['head_sha', 'head', 'checkpoint']
 // TRIM_FIELDS loses surrounding spaces and its case. base_sha is a resolver fact that never needs expansion.
 const TRIM_FIELDS = [...SHA_FIELDS, 'base_sha']
-const SHORT_SHA_RE = /^[0-9a-f]{7,16}$/i
-const SHA_EXPAND_SCHEMA = { type: 'object', required: ['sha'], properties: { sha: { type: 'string' } } }
+// The envelope that wfx rev-parse prints: { ok: true, data: { shas: { <prefix>: <full sha> } } } on success, { ok: false, error } on failure.
+const REV_PARSE_SCHEMA = { type: 'object', required: ['ok'], properties: { ok: { type: 'boolean' }, data: { type: 'object', properties: { shas: { type: 'object' } } }, error: { type: 'object' } } }
+// One runner call expands every short SHA of the value. A prefix that the envelope leaves unresolved, or resolves to a SHA without that prefix, fails the whole expansion.
 async function expandShortShas(value, opts) {
   if (value === null || typeof value !== 'object') return null
+  const shortOf = (field) => (typeof value[field] === 'string' ? value[field] : '')
+  const shorts = [...new Set(SHA_FIELDS.map(shortOf).filter((s) => SHORT_SHA_RE.test(s)))]
+  if (!shorts.length) return null
+  const worktree = typeof value.worktree_path === 'string' ? value.worktree_path.trim() : ''
+  const command = `wfx rev-parse${worktree ? ` --repo ${shq(worktree)}` : ''} ${shorts.join(' ')}`
+  const { value: reply } = await attempt(prompt(
+    'Run exactly the one command in request.command, in the foreground, and nothing else. Return the JSON envelope that it prints on stdout, unchanged.',
+    data('request', { command }),
+  ), { label: `${opts.label}:sha`, phase: opts.phase, agentType: 'runner', schema: REV_PARSE_SCHEMA, model: 'haiku', effort: 'low' })
+  const env = unwrapEnvelope(reply)
+  const shas = env && env.ok === true && env.data && env.data.shas
+  if (shas === null || typeof shas !== 'object') return null
   const out = { ...value }
-  let changed = false
   for (const field of SHA_FIELDS) {
-    const short = typeof value[field] === 'string' ? value[field] : ''
+    const short = shortOf(field)
     if (!SHORT_SHA_RE.test(short)) continue
-    const { value: reply } = await attempt(prompt(
-      'Expand a short commit SHA. Run git rev-parse --verify "<short>^{commit}" in the repo at worktree_path. Use the current directory when worktree_path is empty. Return {"sha":"<40 hex>"}.',
-      data('request', { short, worktree_path: typeof value.worktree_path === 'string' ? value.worktree_path : '' }),
-    ), { label: `${opts.label}:sha`, phase: opts.phase, agentType: 'explorer', schema: SHA_EXPAND_SCHEMA, model: 'haiku', effort: 'low' })
-    const full = reply && typeof reply.sha === 'string' ? reply.sha.trim() : ''
-    if (!FULL_SHA_RE.test(full) || !full.startsWith(short)) return null
+    const full = typeof shas[short] === 'string' ? shas[short].trim() : ''
+    if (!FULL_SHA_RE.test(full) || !full.toLowerCase().startsWith(short.toLowerCase())) return null
     out[field] = full
-    changed = true
   }
-  return changed ? out : null
+  return out
 }
 
-async function typed(text, opts, check, nullIsFinal = false) {
-  let sent = { text, opts }
-  let { value, threw } = await attempt(sent.text, sent.opts)
-  let expanded = false
-  let repairedFrom = null
-  let repairErrors = []
-  for (let round = 1; ; round++) {
-    if (threw != null) {
-      if (isWriter(sent.opts) || round > LIMITS.fixRounds) return { value: null, errors: [substance(`agent threw: ${threw}`)], lost: 'threw' }
-      sent = { text: sent.text, opts: { ...sent.opts, label: `${opts.label}:retry${round}` } }
-      ;({ value, threw } = await attempt(sent.text, sent.opts))
-      continue
-    }
-    if (value != null) {
-      value = normalizeEnums(value)
-      if (opts.isolation === 'worktree') {
-        noteWorktree(value.worktree_path, opts.agentType === 'reviewer' ? reportWorktrees : scratchWorktrees)
-        if (opts.agentType !== 'reviewer') { noteHead(value.head_sha); noteHead(value.checkpoint) }
-      }
-    }
-    let errors = value == null ? [substance('agent returned no output')] : check(value)
-    if (errors.length && !expanded && !nullIsFinal && value != null) {
-      expanded = true
-      const full = await expandShortShas(value, opts)
-      // A repair or redo then starts from the expanded value, so only the remaining errors drive it.
-      if (full) {
-        value = full
-        errors = check(value)
-      }
-    }
-    // A formatter repairs form only. A repair that rewrites a decision field changes the review, so the producer redoes the call.
-    if (repairedFrom && value != null) {
-      const changed = decisionDrift(repairedFrom, value, opts.schema)
-      if (changed) errors = [substance(`a formatter repair changed ${changed}; fix the original errors yourself`), ...repairErrors.map((e) => substance(e.msg)), ...errors]
-    }
-    repairedFrom = null
-    if (!errors.length) return { value, errors, lost: null }
-    if (round > LIMITS.fixRounds || (value == null && nullIsFinal)) return { value: null, errors, lost: value == null ? 'missing' : null }
-    const formOnly = errors.every((e) => e.kind === 'form')
-    repairedFrom = formOnly ? value : null
-    repairErrors = formOnly ? errors : []
-    sent = formOnly
-      ? { text: repairPrompt(value, errors), opts: { label: `${opts.label}:repair${round}`, phase: opts.phase, schema: opts.schema, model: 'haiku', effort: 'low', agentType: 'formatter' } }
-      : { text: redoPrompt(text, errors), opts: { ...opts, label: `${opts.label}:redo${round}` } }
-    ;({ value, threw } = await attempt(sent.text, sent.opts))
-  }
+// The shared typed() core runs every call. These hooks plug in the cheese-factory steps.
+const factoryHooks = {
+  normalize: normalizeEnums,
+  expandShas: expandShortShas,
+  driftOf: decisionDrift,
+  onWorktree: (value, opts) => {
+    noteWorktree(value.worktree_path, opts.agentType === 'reviewer' ? reportWorktrees : scratchWorktrees)
+    if (opts.agentType !== 'reviewer') { noteHead(value.head_sha); noteHead(value.checkpoint) }
+  },
 }
+const typedCall = (text, opts, check, nullIsFinal = false) => typed(text, opts, check, { ...factoryHooks, nullIsFinal })
 
 // ---- prompts: stable preamble first, stage rules next, variable data last ----
 // Ground output enters a prompt only when it holds a decision or a research answer. grounding resolves at call time.
@@ -1209,531 +2073,27 @@ Scope fence: submit those branches and open or update their PRs only through the
 Return {"results":[{"slug":"...","status":"ok|failed|blocked","pr_url":"...","reason":"..."}]}. Report status ok only for a slug that the plate skill submitted and whose PR is open; pr_url is then required. Add reason to every row whose status is not ok.`)
 }
 
-// Provenance: this section copies the judge helpers from claude/workflows/move-my-cheese.js (norm, blank, refError, the negated-search gate, checkAdvice, checkVerdict, judgePrompt, shq, advisorPrompt, verifyPrompt).
-// The check gate (UNSAFE_CHECKS, unsafeCheck, vacuousReason) is stricter than move-my-cheese: it adds a structural pre-filter, per-command rules, tree-mutation rules, and always-pass rules.
-// Follow-up cfh-criteria-fu-3 ports the gate back when the helpers move into the prelude.
-const CHECK_KINDS = ['command', 'test', 'inspection', 'ci']
-const ADVICE_VERDICTS = ['approve', 'revise', 'stop']
-const ADVICE_SCHEMA = {
-  type: 'object',
-  required: ['verdict', 'concerns', 'guidance'],
-  properties: {
-    verdict: { type: 'string', enum: ADVICE_VERDICTS },
-    concerns: { type: 'array', items: { type: 'string' } },
-    guidance: { type: 'string', description: 'Under 80 words' },
-  },
-}
-const VERDICT_SCHEMA = {
-  type: 'object',
-  required: ['criterion', 'passes', 'evidence', 'tree_clean', 'missing_paths'],
-  properties: {
-    criterion: { type: 'string' },
-    passes: { type: 'boolean' },
-    evidence: { type: 'string', description: 'Command run and its observed result' },
-    tree_clean: { type: 'boolean', description: 'git status --porcelain printed nothing before the check' },
-    missing_paths: { type: 'array', items: { type: 'string' }, description: 'Paths that the check reads and that do not exist in the worktree' },
-    guard_blocked: { type: 'boolean', description: 'true when a hook or guard denied the check command, so the check never ran' },
-  },
-}
-const VERIFY_BATCH_SCHEMA = { type: 'object', required: ['verdicts'], properties: { verdicts: { type: 'array', items: VERDICT_SCHEMA } } }
-const CRITERIA_SCHEMA = {
-  type: 'object',
-  required: ['criteria'],
-  properties: {
-    criteria: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['id', 'statement', 'check_kind', 'check'],
-        properties: {
-          id: { type: 'string', pattern: '^AC-[0-9]+$' },
-          statement: { type: 'string' },
-          check_kind: { type: 'string', enum: CHECK_KINDS },
-          check: { type: 'string' },
-        },
-      },
-    },
-  },
-}
-
-const norm = (id) => String(id).trim().toUpperCase()
-const blank = (value) => typeof value !== 'string' || !value.trim()
-
-function refError(ref, known, where) {
-  if (known.includes(ref)) return null
-  const fix = norm(ref)
-  return known.includes(fix) ? form(`${where}: '${ref}' should be '${fix}'`) : substance(`${where}: unknown id '${ref}'`)
-}
-
-// A judge runs each criterion check, so a check must not fetch, write, or mutate.
-// Three layers run in order: a structural pre-filter on the raw text, this denylist, and per-command rules.
-// The layers are defense in depth; the judge agent definition is the other guard.
-// The third field marks a rule that reads the text with quoted spans masked.
-const UNSAFE_CHECKS = [
-  ['network access', /\b(?:curl|wget|nc|ssh|scp)\b/i],
-  ['pipe into a shell', /\|\s*(?:sh|bash|zsh)\b/i],
-  // Only fd duplication (>&1, 2>&1, >&-) and a redirect to the whole token /dev/null stay allowed.
-  ['output redirection to a file', />(?!>?\s*\/dev\/null(?![^\s;|&)])|&(?:\d+|-)(?![^\s;|&)]))/, true],
-  ['tree mutation', /(?:^|[;&|(]\s*|\b(?:sudo|xargs|env|command|time)\s+)(?:touch|mkdir|rmdir|cp|mv|chmod|chown|chgrp|ln|install|truncate|dd|patch)\s/i],
-  ['tee to a file', /\btee\b/i],
-  ['inline interpreter code', /\b(?:python3?|node|perl|ruby)\s+-[ce]\b/i],
-  ['in-place edit', /\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i/i],
-  ['file removal', /\brm\s|\s-delete\b|\bunlink\b|\btruncate\b/i],
-  ['package publish or install', /\b(?:npm|pnpm|yarn|cargo|pip3?|uv)\s+(?:publish|install|add|ci)\b/i],
-  ['GitHub mutation', /\bgh\s+(?:pr\s+(?:merge|close|comment|edit|ready|review|create|reopen)|issue|release|workflow\s+run|run\s+(?:rerun|cancel)|repo\s+(?:edit|delete|rename)|secret|variable|label)\b/i],
-  ['GitHub API write', /\bgh\s+api\b.*(?:-X|--method)[\s=]*(?:POST|PATCH|PUT|DELETE)\b/i],
-  ['GitHub API field write', /\bgh\s+api\b.*\s(?:-f|-F|--field|--raw-field|--input)[\s=]/i],
-]
-
-const hit = (name, text = '') => ({ name, text })
-
-// Replaces each quoted span and each backslash escape with Q, so an operator inside a quote is data.
-// Double quotes stay readable unless maskDouble is true, because $ and backticks expand inside them.
-function maskQuotes(check, maskDouble) {
-  let out = ''
-  for (let i = 0; i < check.length; i++) {
-    const c = check[i]
-    if (c === '\\') { out += 'Q'; i++ } else if (c === "'") {
-      const close = check.indexOf("'", i + 1)
-      if (close < 0) return out + check.slice(i)
-      out += 'Q'
-      i = close
-    } else if (c === '"') {
-      let j = i + 1
-      let inner = ''
-      for (; j < check.length && check[j] !== '"'; j++) inner += check[j] === '\\' ? (j++, 'Q') : check[j]
-      if (j >= check.length) return out + check.slice(i)
-      out += maskDouble ? 'Q' : `"${inner}"`
-      i = j
-    } else out += c
-  }
-  return out
-}
-
-// Shapes that hide a command from the lexical rules: raw newlines, here documents, and shell expansion.
-function structuralHit(check) {
-  if (/[\r\n]/.test(check)) return hit('raw newline or carriage return')
-  const heredoc = /<<-?/.exec(maskQuotes(check, true))
-  if (heredoc) return hit('here document', heredoc[0])
-  const readable = maskQuotes(check, false)
-  const expansion = /\$(?:[({A-Za-z_]|\d|[?!@*#$-])|`/.exec(readable)
-  if (expansion) return hit('shell expansion or substitution', readable.slice(expansion.index, expansion.index + 24).trim())
-  return null
-}
-
-const ASSIGN_RE = /^[A-Za-z_]\w*=/
-const WRAPPERS = new Set(['env', 'command', 'time', 'sudo', 'doas', 'xargs', 'nohup', 'nice', 'timeout', 'builtin', 'stdbuf', 'setsid', 'ionice'])
-const WRAPPER_VALUE_OPTS = { xargs: ['-I', '-L', '-n', '-P', '-s', '-E', '-d', '-a'], env: ['-u', '-C', '-S'], sudo: ['-u', '-g', '-C', '-h', '-p', '-r', '-t', '-U'], timeout: ['-s', '-k'], nice: ['-n'] }
-const SHELL_KEYWORDS = new Set(['{', '}', 'if', 'then', 'else', 'elif', 'fi', 'do', 'done', 'while', 'until', 'for', 'case', 'esac', 'function', 'select', 'coproc'])
-const MUTATION_COMMANDS = new Set(['touch', 'mkdir', 'rmdir', 'cp', 'mv', 'chmod', 'chown', 'chgrp', 'ln', 'install', 'truncate', 'dd', 'patch', 'rm', 'unlink', 'shred', 'mkfifo', 'mknod'])
-const NETWORK_COMMANDS = new Set(['curl', 'wget', 'nc', 'ncat', 'netcat', 'telnet', 'ftp', 'sftp', 'ssh', 'scp', 'rsync', 'socat'])
-const FETCH_RUNNERS = new Set(['npx', 'pnpx', 'bunx', 'uvx', 'pipx'])
-const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun', 'pip', 'pip3', 'cargo', 'uv', 'gem'])
-const INSTALL_SUBCOMMANDS = new Set(['install', 'i', 'ci', 'add', 'exec', 'x', 'dlx', 'create', 'init', 'update', 'upgrade', 'publish', 'remove', 'uninstall', 'link'])
-const SHELL_HEAD_RE = /^(?:sh|bash|zsh|dash|ksh|fish|csh|tcsh)$/
-const CODE_HEAD_RE = /^(?:python|ruby|perl|php|lua|node|nodejs|deno|bun|osascript)[\d.]*$/
-const AWK_HEAD_RE = /^[gmn]?awk$/
-const AWK_DANGER_RE = /\bsystem\s*\(|\bgetline\b|\bprintf?\b[^}]*[>|]|-i\s*inplace|@(?:include|load)|\|&/
-const SED_WRITE_RE = /(?:^|[;{}])\s*(?:\d+|\$|\/[^/]*\/)?\s*(?:w\s*\S|e\b)|s\/[^/]*\/[^/]*\/[a-zA-Z0-9]*[we]\b/
-const GIT_VALUE_OPTS = new Set(['-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--exec-path'])
-const GIT_MUTATIONS = new Set(['push', 'add', 'commit', 'reset', 'checkout', 'switch', 'merge', 'rebase', 'stash', 'clean', 'tag', 'am', 'apply', 'restore', 'rm', 'mv', 'init', 'cherry-pick', 'revert', 'pull', 'worktree', 'update-ref', 'config', 'fetch', 'clone', 'ls-remote', 'submodule', 'gc', 'prune', 'maintenance', 'notes', 'replace', 'filter-branch', 'bisect', 'sparse-checkout', 'format-patch', 'checkout-index', 'read-tree', 'write-tree', 'commit-tree', 'fast-import', 'unpack-objects', 'bundle', 'archive', 'send-email', 'difftool', 'mergetool'])
-
-// Skips wrapper commands and their options so the real command head shows.
-function unwrap(words) {
-  let i = 0
-  while (WRAPPERS.has(words[i])) {
-    const valued = WRAPPER_VALUE_OPTS[words[i++]] ?? []
-    while (i < words.length && (words[i].startsWith('-') || ASSIGN_RE.test(words[i]) || /^\d+(?:\.\d+)?[smhd]?$/.test(words[i]))) i += valued.includes(words[i]) ? 2 : 1
-  }
-  return words.slice(i)
-}
-
-// Reads the git subcommand from tokens, so the cost stays linear in the option count.
-function gitHit(args) {
-  let i = 0
-  for (; i < args.length && args[i].startsWith('-'); i++) {
-    const arg = args[i]
-    if ((arg.startsWith('-c') && !arg.startsWith('--')) || arg.startsWith('--config-env')) return hit('git config override', arg)
-    if (GIT_VALUE_OPTS.has(arg)) i++
-  }
-  const sub = (args[i] ?? '').toLowerCase()
-  const rest = args.slice(i + 1)
-  if (GIT_MUTATIONS.has(sub)) return hit('git mutation', `git ${sub}`)
-  if (sub === 'branch' && rest.some((a) => /^-[a-zA-Z]*[dDmMfcC]|^--(?:delete|move|copy|force|set-upstream|unset-upstream|edit-description)/.test(a))) return hit('git mutation', 'git branch')
-  const output = rest.find((a) => /^--output(?:=|$)/.test(a) || (sub === 'grep' && /^(?:-O|--open-files-in-pager)/.test(a)))
-  return output ? hit('git option that writes a file or runs a program', output) : null
-}
-
-function sedHit(args) {
-  const programs = []
-  let bare = true
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]
-    if (/^-[a-zA-Z]*[if]|^--(?:in-place|file)/.test(arg)) return hit('in-place edit or script file', arg)
-    if (arg === '-e' || arg === '--expression') { programs.push(args[++i] ?? ''); bare = false } else if (arg.startsWith('--expression=')) { programs.push(arg.slice(13)); bare = false } else if (bare && !arg.startsWith('-')) { programs.push(arg); bare = false }
-  }
-  const bad = programs.find((p) => SED_WRITE_RE.test(p))
-  return bad === undefined ? null : hit('sed command that writes or runs', bad)
-}
-
-// Classifies one simple command. Returns a hit or null.
-function commandHit(raw) {
-  const words = unparen(raw)
-  while (words[0] === '!') words.shift()
-  if (!words.length) return null
-  if (ASSIGN_RE.test(words[0])) return hit('NAME=value prefix', words[0])
-  const [head, ...args] = unwrap(words)
-  if (head === undefined) return null
-  if (head.includes('/')) return hit('command path', head)
-  if (['eval', 'exec', 'source', '.'].includes(head)) return hit('eval, exec, or source', head)
-  if (SHELL_KEYWORDS.has(head)) return hit('shell keyword or group', head)
-  if (MUTATION_COMMANDS.has(head)) return hit('tree mutation', head)
-  if (NETWORK_COMMANDS.has(head)) return hit('network access', head)
-  if (FETCH_RUNNERS.has(head)) return hit('package fetch or execution', head)
-  if (PACKAGE_MANAGERS.has(head) && INSTALL_SUBCOMMANDS.has(args[0])) return hit('package install or execution', `${head} ${args[0]}`)
-  if (head === 'git') return gitHit(args)
-  if (head === 'find') {
-    const action = args.find((a) => /^-(?:exec|execdir|ok|okdir|delete|fprint0?|fprintf|fls)$/.test(a))
-    return action ? hit('find action that writes or runs a command', action) : null
-  }
-  if (head === 'sed') return sedHit(args)
-  if (AWK_HEAD_RE.test(head)) {
-    const bad = args.find((a) => AWK_DANGER_RE.test(a) || /^(?:-f|--file|-i|--include|-l|--load)/.test(a))
-    return bad === undefined ? null : hit('awk program that writes or runs a command', bad)
-  }
-  if (SHELL_HEAD_RE.test(head) && (!args.length || args.some((a) => a === '-' || /^-[a-zA-Z]*[cs]/.test(a)))) return hit('inline interpreter code', `${head} ${args[0] ?? ''}`.trim())
-  if (CODE_HEAD_RE.test(head)) {
-    const code = !args.length || args.some((a) => a === '-' || /^-[a-zA-Z]*[cepE]/.test(a) || /^--(?:eval|print|exec|command)\b/.test(a)) || (head === 'deno' && ['eval', 'repl'].includes(args[0]))
-    if (code) return hit('inline interpreter code', `${head} ${args[0] ?? ''}`.trim())
-  }
-  return null
-}
-
-// Returns { name, text } for the first unsafe shape in a check, or null.
-function unsafeCheck(check) {
-  const structural = structuralHit(check)
-  if (structural) return structural
-  const masked = maskQuotes(check, true)
-  for (const [name, re, useMask] of UNSAFE_CHECKS) {
-    const subject = useMask ? masked : check
-    const m = re.exec(subject)
-    if (m) return hit(name, subject.slice(m.index, m.index + 24).trim())
-  }
-  const words = shellWords(check)
-  if (!words) return null
-  let command = []
-  for (const w of [...words, ';']) {
-    if (COMMAND_OPS.includes(w) || w === '|') {
-      const found = commandHit(command)
-      if (found) return found
-      command = []
-    } else command.push(w)
-  }
-  return null
-}
-
-// The user's PreToolUse hook (agents/lib/tool-reroute) denies a shell reader or searcher that reads a file.
-// A check that names a file operand never runs, so the judge cannot give a verdict. This gate mirrors the hook.
-// A filter on a pipe (git log | grep x) reads no file and stays allowed.
-const GUARD_PREFERRED = "run the repository's own test for the criterion (node --test --test-name-pattern, pytest -k, bats -f, a just recipe), or use test -e or git plumbing"
-const GUARD_READERS = {
-  cat: '', tac: 's', head: 'nc', tail: 'ncs', less: 'bhjkoOpPtTxyz#', more: 'n', nl: 'bdfhilnsvw', bat: 'lHmr', batcat: 'lHmr',
-  sed: 'efl', gsed: 'efl', awk: 'Fvfei', gawk: 'Fvfei', mawk: 'Fvfei',
-  grep: 'efmABCdD', egrep: 'efmABCdD', fgrep: 'efmABCdD', rg: 'efgtTmABCjMrdE', ag: 'ABCGgm', ack: 'ABCm',
-}
-// The first operand of these is a pattern or program, unless -e or -f supplies it.
-const GUARD_SCRIPTED = new Set(['sed', 'gsed', 'awk', 'gawk', 'mawk', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack'])
-const GUARD_VALUED_LONG = ['regexp', 'file', 'expression', 'max-count', 'context', 'after-context', 'before-context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth', 'lines', 'bytes', 'line-range', 'style', 'language', 'theme']
-const GUARD_WRAPPERS = new Set(['xargs', 'time', 'command', 'env', 'sudo', 'nice', 'nohup'])
-const GUARD_LISTING = ['--files', '--type-list', '--list-file-types', '--help-types']
-
-// The files that one reader or searcher stage reads. first is true when no pipe feeds the stage.
-function guardedFiles(head, args, first) {
-  const valued = GUARD_READERS[head]
-  if (valued === undefined) return []
-  if (args.some((a) => GUARD_LISTING.includes(a)) || ((head === 'ag' || head === 'ack') && args.includes('-g')) || (head === 'ack' && args.includes('-f'))) return []
-  const operands = []
-  let scripted = false
-  let options = true
-  let recursive = head === 'rg' || head === 'ag' || head === 'ack'
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i]
-    if (/^\d*<<<$/.test(a) || /^\d*<<-?$/.test(a)) i++
-    else if (/^\d*<</.test(a)) continue
-    else if (/^\d*<$/.test(a)) { if (args[i + 1] !== undefined) operands.push(args[++i]) }
-    else if (/^\d*<./.test(a)) operands.push(a.replace(/^\d*</, ''))
-    else if (/^(?:\d*|&)>/.test(a)) { if (/^(?:\d*|&)>>?&?$/.test(a)) i++ }
-    else if (options && a === '--') options = false
-    else if (options && a.startsWith('--')) {
-      const [name, value] = a.slice(2).split('=')
-      if (['regexp', 'file', 'expression'].includes(name)) scripted = true
-      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
-      if (value === undefined && GUARD_VALUED_LONG.includes(name)) i++
-    } else if (options && a.length > 1 && a.startsWith('-')) {
-      const letters = a.slice(1)
-      for (let k = 0; k < letters.length; k++) {
-        if (/grep$/.test(head) && 'rR'.includes(letters[k])) recursive = true
-        if (!valued.includes(letters[k])) continue
-        if ('ef'.includes(letters[k])) scripted = true
-        if (k === letters.length - 1) i++
-        break
-      }
-    } else if (a !== '-' && !a.startsWith('+')) operands.push(a)
-  }
-  if (GUARD_SCRIPTED.has(head) && !scripted) operands.shift()
-  if (!operands.length && first && recursive) return ['.']
-  return operands
-}
-
-// Returns why a check cannot run under the PreToolUse guard, or '' when it can.
-function guardedReaderReason(check) {
-  const words = shellWords(check)
-  if (!words) return ''
-  let stage = []
-  let first = true
-  for (const w of [...words, ';']) {
-    if (!COMMAND_OPS.includes(w) && w !== '|') { stage.push(w); continue }
-    const command = stage.map((s) => s.replace(/^\(+|\)+$/g, '')).filter(Boolean)
-    let wrapped = false
-    while (command.length && (command[0] === '!' || ASSIGN_RE.test(command[0]) || GUARD_WRAPPERS.has(command[0]) || (wrapped && command[0].startsWith('-')))) {
-      wrapped = wrapped || GUARD_WRAPPERS.has(command[0])
-      command.shift()
-    }
-    const files = command.length ? guardedFiles(command[0], command.slice(1), first) : []
-    if (files.length) return `\`${command[0]}\` reads ${files.join(', ')}, which the repository's PreToolUse guard denies, so the check never runs. Instead ${GUARD_PREFERRED}`
-    first = w !== '|'
-    stage = []
-  }
-  return ''
-}
-
-// A negated search passes when its input is missing. Grep and rg exit 2 on a missing file.
-// Git grep exits 1 on an unmatched pathspec. Grep with no file reads empty input.
-// So each path of a negated search needs an existence test earlier in the same && chain.
-// A negated pipeline also hides a failed producer. This check is lexical.
-// The verify judge also tests each path that a check reads.
-const SEARCH_TOOLS = ['grep', 'egrep', 'fgrep', 'rg']
-// Short options whose value is the next word when the option ends its cluster.
-const VALUE_LETTERS = { rg: 'efgtTmABCjMEr', grep: 'efmABCdD' }
-const LONG_VALUE_OPTS = ['regexp', 'file', 'max-count', 'after-context', 'before-context', 'context', 'include', 'exclude', 'exclude-dir', 'glob', 'iglob', 'type', 'type-not', 'max-depth']
-
-// Splits a check into words and the operators && || ; | &, with POSIX quotes removed. A newline counts as ;. Returns null on an open quote.
-function shellWords(check) {
-  const words = []
-  let word = null
-  const end = () => { if (word !== null) words.push(word); word = null }
-  for (let i = 0; i < check.length; i++) {
-    const c = check[i]
-    const pair = check.slice(i, i + 2)
-    if (c === '\n') { end(); words.push(';') }
-    else if (/\s/.test(c)) end()
-    else if (pair === '&&' || pair === '||') { end(); words.push(pair); i++ }
-    else if (pair === '|&') { end(); words.push('|'); i++ }
-    else if (c === '&' && check[i - 1] !== '>' && check[i - 1] !== '<' && check[i + 1] !== '>') { end(); words.push('&') }
-    else if (c === ';' || c === '|') { end(); words.push(c) }
-    else if (c === "'") {
-      const close = check.indexOf("'", i + 1)
-      if (close < 0) return null
-      word = (word ?? '') + check.slice(i + 1, close)
-      i = close
-    } else if (c === '"') {
-      let j = i + 1
-      let text = ''
-      for (; j < check.length && check[j] !== '"'; j++) text += check[j] === '\\' && j + 1 < check.length ? check[++j] : check[j]
-      if (j >= check.length) return null
-      word = (word ?? '') + text
-      i = j
-    } else if (c === '\\' && i + 1 < check.length) word = (word ?? '') + check[++i]
-    else word = (word ?? '') + c
-  }
-  end()
-  return words
-}
-
-// A redirect such as 2>/dev/null, >&2, or &> is not an operand; a bare operator such as > takes the next word.
-const REDIRECT_RE = /^(?:\d*|&)[<>]/
-const BARE_REDIRECT_RE = /^(?:\d*|&)(?:[<>]|>>)&?$/
-// ./a and a name the same path.
-const samePath = (path) => path.replace(/^(?:\.\/)+/, '')
-
-// test -e P, [ -e P ], or [[ -e P ]] with -e, -f, -d, -s, or -r; returns P or ''.
-function guardedPath(words) {
-  const flag = /^-[efdsr]$/
-  if (words.length === 3 && words[0] === 'test' && flag.test(words[1])) return samePath(words[2])
-  if (words.length === 4 && flag.test(words[1]) && ((words[0] === '[' && words[3] === ']') || (words[0] === '[[' && words[3] === ']]'))) return samePath(words[2])
-  return ''
-}
-
-// Returns { tool, paths, stdin } for a grep, rg, or git grep command, or null for any other command.
-function searchOf(words) {
-  const git = words[0] === 'git' && words[1] === 'grep'
-  if (!git && !SEARCH_TOOLS.includes(words[0])) return null
-  const tool = git ? 'git grep' : words[0]
-  const args = words.slice(git ? 2 : 1)
-  const valueLetters = tool === 'rg' ? VALUE_LETTERS.rg : VALUE_LETTERS.grep
-  const positional = []
-  let patternGiven = false
-  let recursive = false
-  let options = true
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]
-    if (REDIRECT_RE.test(arg)) {
-      if (BARE_REDIRECT_RE.test(arg)) i++
-    } else if (options && arg === '--') options = false
-    else if (options && arg.startsWith('--')) {
-      const [name, value] = arg.slice(2).split('=')
-      if (name === 'regexp' || name === 'file') patternGiven = true
-      if (name === 'recursive' || name === 'dereference-recursive') recursive = true
-      if (value === undefined && LONG_VALUE_OPTS.includes(name)) i++
-    } else if (options && arg.length > 1 && arg.startsWith('-')) {
-      const letters = arg.slice(1)
-      for (let k = 0; k < letters.length; k++) {
-        if (tool !== 'rg' && 'rR'.includes(letters[k])) recursive = true
-        if (!valueLetters.includes(letters[k])) continue
-        if ('ef'.includes(letters[k])) patternGiven = true
-        if (k === letters.length - 1) i++
-        break
-      }
-    } else positional.push(arg)
-  }
-  const paths = (patternGiven ? positional : positional.slice(1)).map(samePath)
-  return { tool, paths, stdin: tool !== 'rg' && tool !== 'git grep' && !paths.length && !recursive }
-}
-
-const COMMAND_OPS = ['&&', '||', ';', '&']
-// A pipe sink reads its input, so it cannot fail on a failed producer.
-const PIPE_SINKS = new Set(['wc', 'head', 'tail', 'cat'])
-const unparen = (words) => words.map((w) => w.replace(/^\(+|\)+$/g, '')).filter(Boolean)
-
-function withoutRedirects(words) {
-  const kept = []
-  for (let i = 0; i < words.length; i++) {
-    if (!REDIRECT_RE.test(words[i])) kept.push(words[i])
-    else if (BARE_REDIRECT_RE.test(words[i])) i++
-  }
-  return kept
-}
-
-function pipelineStages(words) {
-  const stages = [[]]
-  for (const w of words) {
-    if (w === '|') stages.push([])
-    else stages[stages.length - 1].push(w)
-  }
-  return stages.filter((s) => s.length)
-}
-
-const exitsZero = (stage) => stage[0] === 'exit' && (stage.length === 1 || (stage.length === 2 && stage[1] === '0'))
-
-// True when a pipeline stage returns 0 whatever the earlier commands did.
-function cannotFail(stage, piped) {
-  const [head] = stage
-  if (['true', ':', 'echo', 'printf'].includes(head)) return true
-  return (piped && PIPE_SINKS.has(head)) || exitsZero(stage)
-}
-
-// Returns why a check can pass without testing anything, or '' when it can fail.
-function vacuousReason(check) {
-  const words = shellWords(check)
-  if (!words) return 'it has an unclosed quote'
-  const commands = [{ op: '', words: [] }]
-  for (const w of words) {
-    if (COMMAND_OPS.includes(w)) commands.push({ op: w, words: [] })
-    else commands[commands.length - 1].words.push(w)
-  }
-  const shapes = commands.map(({ words: command }) => pipelineStages(withoutRedirects(unparen(command))))
-  if (shapes.every((stages) => stages.every((stage, i) => cannotFail(stage, i > 0)))) return 'every command in it always succeeds'
-  let guarded = new Set()
-  for (const [index, { op, words: command }] of commands.entries()) {
-    const last = index === commands.length - 1
-    const shape = shapes[index]
-    const tail = shape[shape.length - 1]
-    if (tail) {
-      const quiet = cannotFail(tail, shape.length > 1)
-      if (shape.length === 1 && op !== '&&' && exitsZero(tail)) return 'it exits 0 whatever the earlier commands return'
-      if (op === '||' && quiet) return 'it ends in an always-true fallback, which hides every failure'
-      if (shape.length > 1 && quiet) return `its pipeline ends in ${tail[0]}, which hides a failed earlier stage`
-      if (op !== '&&' && last && quiet) return 'its last command always succeeds'
-    }
-    if (op !== '&&' || command[0] === 'cd') guarded = new Set()
-    const negated = command[0] === '!'
-    const body = negated ? command.slice(1) : command
-    const stages = [[]]
-    for (const w of body) {
-      if (w === '|') stages.push([])
-      else stages[stages.length - 1].push(w)
-    }
-    if (!negated) {
-      const path = guardedPath(body)
-      if (path) guarded.add(path)
-      continue
-    }
-    const search = searchOf(stages[stages.length - 1])
-    if (!search) continue
-    if (stages.length > 1) return `it negates a pipeline into ${search.tool}, which passes when the producer fails`
-    if (search.stdin) return `it negates ${search.tool} with no file, which reads empty input`
-    const open = search.paths.filter((p) => !guarded.has(p))
-    if (open.length) return `it negates ${search.tool} over ${open.join(', ')} with no existence test of that path earlier in the same && chain`
-  }
-  return ''
-}
-
-function checkAdvice(advice) {
-  return advice.verdict !== 'approve' && !advice.concerns.length
-    ? [substance(`verdict ${advice.verdict} needs at least one concern`)]
-    : []
-}
-
-// One verdict per known check id. A missing id is not an error here: the Verify phase fails it as unchecked.
-function checkVerdicts(value, acs) {
-  const ids = acs.map((ac) => ac.id)
+// The check gate for one criterion: the unsafe-command denylist, the always-pass rules, and the guarded-reader rules (guard module).
+// checkCriteria (criteria module) runs it on every check that CI does not own.
+const criterionGate = (c, where) => {
   const errors = []
-  const seen = new Set()
-  value.verdicts.forEach((v, i) => {
-    const where = `$.verdicts[${i}]`
-    const idError = refError(v.criterion, ids, `${where}.criterion`)
-    if (idError) errors.push(idError)
-    else if (seen.has(v.criterion)) errors.push(substance(`${where}.criterion: duplicate id '${v.criterion}'`))
-    seen.add(v.criterion)
-    if (blank(v.evidence)) errors.push(substance(`${where}.evidence must name the check run and its result`))
-  })
+  const unsafe = unsafeCheck(c.check)
+  if (unsafe) errors.push(substance(`${where}.check is unsafe: ${unsafe.name}${unsafe.text ? ` (near "${unsafe.text}")` : ''}`))
+  else {
+    const why = vacuousReason(c.check)
+    if (why) errors.push(substance(`${where}.check can pass without testing anything: ${why}`))
+  }
+  const guarded = guardedReaderReason(c.check)
+  if (guarded) errors.push(substance(`${where}.check ${guarded}`))
   return errors
 }
-
-// Exact coverage: one criterion per spec AC id. Every check that CI does not own passes the check gate, which is stricter than move-my-cheese.
-const checkCriteria = (specAcIds) => checkWith(CRITERIA_SCHEMA, (v) => {
-  const errors = []
-  const seen = new Set()
-  v.criteria.forEach((c, i) => {
-    const where = `$.criteria[${i}]`
-    const idError = refError(c.id, specAcIds, `${where}.id`)
-    if (idError) errors.push(idError)
-    else if (seen.has(c.id)) errors.push(substance(`${where}.id: duplicate id '${c.id}'`))
-    seen.add(c.id)
-    if (blank(c.statement)) errors.push(substance(`${where}.statement must not be blank`))
-    if (blank(c.check)) errors.push(substance(`${where}.check must not be blank`))
-    else if (c.check_kind !== 'ci') {
-      const unsafe = unsafeCheck(c.check)
-      if (unsafe) errors.push(substance(`${where}.check is unsafe: ${unsafe.name}${unsafe.text ? ` (near "${unsafe.text}")` : ''}`))
-      else {
-        const why = vacuousReason(c.check)
-        if (why) errors.push(substance(`${where}.check can pass without testing anything: ${why}`))
-      }
-      const guarded = guardedReaderReason(c.check)
-      if (guarded) errors.push(substance(`${where}.check ${guarded}`))
-    }
-  })
-  for (const id of specAcIds) if (!seen.has(id)) errors.push(substance(`${id} has no criterion`))
-  return errors
-})
+// Exact coverage: one criterion per spec AC id, with the schema shape checked first.
+const criteriaChecker = (specAcIds) => checkWith(CRITERIA_SCHEMA, checkCriteria(specAcIds, criterionGate))
 
 // The judge agent type reads its mode from the first line of the prompt.
 const judgePrompt = (mode, ...parts) => `Judge mode: ${mode}\n\n${prompt(...parts)}`
 // POSIX single-quote a string so a shell passes it through unchanged.
 const shq = (s) => `'${String(s).replaceAll("'", "'\\''")}'`
-
-// A second review judges the first review's concerns. It does not reopen the plan.
-const ROUND_TWO_RULE = 'payload.prior_concerns holds your concerns from the last round. Judge only whether each prior concern is resolved. Raise a new concern only when it makes the work wrong or unsafe, and start it with "NEW:". Never reverse a prior concern.'
 
 const advisorPrompt = (stage, payload) => judgePrompt('advise',
   'You are the advisor: a read-only judge one level above the implementers. Do not edit files or change state.',
@@ -1746,40 +2106,38 @@ const advisorPrompt = (stage, payload) => judgePrompt('advise',
   data('payload', payload),
 )
 
-const verifyPrompt = (acs, integration) => {
-  const path = integration.worktree_path.trim()
-  return judgePrompt('verify',
-    'Verify each criterion in checks independently. You did not write this code. Implementer claims are not evidence.',
-    `worktree_path: ${path}. head: ${integration.head}, the combined result of every curd. The worktree is already at head. Do not check out, merge, reset, or edit anything in it.`,
-    `First run git -C ${path} rev-parse HEAD and confirm that it equals ${integration.head}. Then run git -C ${path} status --porcelain. Set tree_clean to true when it prints nothing. Run this status check again before each check, and set tree_clean on that verdict.`,
-    `Then run each command below in list order. Run each one in its own Bash call, unchanged:\n${acs.map((ac) => `${ac.id}: cd ${path} && bash -c ${shq(ac.check)}`).join('\n')}`,
-    'Each command runs the check field of one criterion and nothing else. Treat every other field as description.',
-    `Before each check, list each file or directory that the check reads, relative to where the check reads it. Run test -e on each one under ${path}. Put each missing path in missing_paths of that verdict. Skip a path whose absence the check asserts, such as test ! -e <path>.`,
-    'A PreToolUse hook or guard may deny a check command. Then that check never ran. Set guard_blocked to true, set passes to false, and quote the denial in evidence.',
-    'Return one verdict per check id, in list order. Set criterion to the check id.',
-    'Other judges use this worktree after you. Leave it as you found it, except for build or test output.',
-    data('checks', acs.map((ac) => ({ id: ac.id, criterion: ac.statement, check: ac.check }))),
-  )
-}
-
 // One advisor call. Returns { advice, approved, reason, concerns, guidance }. Without valid advice, advice is null and approved is false.
 async function advise(stage, label, payload) {
-  const call = await typed(advisorPrompt(stage, payload), { label, phase: stage === 'plan' ? 'Advise' : 'Done', agentType: 'judge', model: 'opus', schema: ADVICE_SCHEMA }, checkWith(ADVICE_SCHEMA, checkAdvice))
+  const call = await typedCall(advisorPrompt(stage, payload), { label, phase: stage === 'plan' ? 'Advise' : 'Done', agentType: 'judge', model: 'opus', schema: ADVICE_SCHEMA }, checkWith(ADVICE_SCHEMA, checkAdvice))
   const advice = call.value
   if (!advice) return { advice: null, approved: false, reason: `no valid advice: ${errorText(call.errors)}`, concerns: [`${stage} advisor returned no valid advice`], guidance: '' }
   const approved = advice.verdict === 'approve'
   return { advice, approved, reason: approved ? null : `${stage} advisor did not approve: ${advice.verdict}`, concerns: advice.concerns, guidance: advice.guidance }
 }
 
-const countStatuses = (rows) => {
-  const counts = { clean: 0, dirty: 0, failed: 0 }
-  for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1
-  return counts
+// The Verify phase reserves this many agents for one verify-criteria child, as brie-ground reserves BRIE_GROUND_MAX_AGENTS.
+// The bound: one batch of at most VERIFY_BATCH_SIZE criteria per judge, and each batch spends at most LIMITS.fixRounds + 2 agents (one first answer, the fix rounds, and one margin).
+// With maxCriteria 24 and a batch size of 8, that is 3 x 4 = 12.
+const VERIFY_BATCH_SIZE = 8
+const VERIFY_CRITERIA_MAX_AGENTS = Math.ceil(LIMITS.maxCriteria / VERIFY_BATCH_SIZE) * (LIMITS.fixRounds + 2)
+// One verify-criteria child call. Returns { verdicts } or { failure }. A thrown child, a blocked child, and an invalid answer are failures.
+// A criterion without a verdict is no failure here: the Verify phase fails it as unchecked.
+async function verifyCriteria(acs, tree) {
+  let r = null
+  try {
+    r = await workflow('verify-criteria', { worktree_path: tree.worktree_path.trim(), head: tree.head, criteria: acs, batch_size: VERIFY_BATCH_SIZE, preflight: false })
+  } catch (e) {
+    return { failure: `verify-criteria failed: ${e && e.message}` }
+  }
+  if (r === null || typeof r !== 'object' || !['ok', 'partial', 'blocked'].includes(r.status)) return { failure: 'verify-criteria returned no valid status' }
+  if (r.status === 'blocked') return { failure: `verify-criteria blocked: ${typeof r.reason === 'string' && r.reason.trim() ? r.reason : 'no reason given'}` }
+  if (!Array.isArray(r.verdicts)) return { failure: 'verify-criteria returned no verdict list' }
+  const errors = checkWith(VERIFY_BATCH_SCHEMA, (v) => checkVerdicts(v, acs, { requireAll: false }))({ verdicts: r.verdicts })
+  return errors.length ? { failure: `verify-criteria returned invalid verdicts: ${errorText(errors)}` } : { verdicts: r.verdicts }
 }
-
 // ---- Resolve ----
 phase('Resolve')
-const resolveCall = await typed(resolvePrompt(), { label: 'resolve', phase: 'Resolve', agentType: 'explorer', model: 'haiku', schema: RESOLVE_SCHEMA }, checkResolve)
+const resolveCall = await typedCall(resolvePrompt(), { label: 'resolve', phase: 'Resolve', agentType: 'explorer', model: 'haiku', schema: RESOLVE_SCHEMA }, checkResolve)
 if (!resolveCall.value) {
   log(`Resolve failed: ${errorText(resolveCall.errors)}`)
   return { error: `Resolve failed: ${errorText(resolveCall.errors)}` }
@@ -1846,7 +2204,7 @@ const criteriaPrompt = (feedback) => prompt(
 
 async function extractCriteria(feedback, round = 0) {
   const label = round ? `criteria:r${round}` : 'criteria'
-  const call = await typed(criteriaPrompt(feedback), { label, phase: 'Criteria', agentType: 'explorer', model: 'opus', schema: CRITERIA_SCHEMA }, checkCriteria(specAcIds))
+  const call = await typedCall(criteriaPrompt(feedback), { label, phase: 'Criteria', agentType: 'explorer', model: 'opus', schema: CRITERIA_SCHEMA }, criteriaChecker(specAcIds))
   if (!call.value) {
     log(`Criteria failed: ${errorText(call.errors)}`)
     return { error: `Criteria failed: ${errorText(call.errors)}` }
@@ -1857,7 +2215,7 @@ async function extractCriteria(feedback, round = 0) {
 let criteriaList = []
 if (RESUME) {
   const ids = RESUME.criteria.map((c) => c && c.id)
-  if (RESUME.spec_digest !== specDigest(resolved.spec_text) || ids.join(',') !== specAcIds.join(',') || (specAcIds.length && checkCriteria(specAcIds)({ criteria: RESUME.criteria }).length)) {
+  if (RESUME.spec_digest !== specDigest(resolved.spec_text) || ids.join(',') !== specAcIds.join(',') || (specAcIds.length && criteriaChecker(specAcIds)({ criteria: RESUME.criteria }).length)) {
     log('The resume arg does not match the spec')
     return { error: 'resume does not match the spec; the spec or its acceptance ids changed since that run. Rerun without resume.', usage: RESUME_USAGE }
   }
@@ -1897,7 +2255,7 @@ function checkGrounding(g) {
 }
 
 if (!RESUME) phase('Ground')
-const grounded = RESUME ? null : await typed(groundPrompt(), { label: 'ground', phase: 'Ground', agentType: 'explorer', schema: GROUND_RESEARCH_SCHEMA }, checkWith(GROUND_RESEARCH_SCHEMA, checkGrounding))
+const grounded = RESUME ? null : await typedCall(groundPrompt(), { label: 'ground', phase: 'Ground', agentType: 'explorer', schema: GROUND_RESEARCH_SCHEMA }, checkWith(GROUND_RESEARCH_SCHEMA, checkGrounding))
 if (grounded && !grounded.value) {
   log(`Wiki grounding failed (${errorText(grounded.errors)}): the run plans without recorded decisions.`)
   gaps.push('wiki grounding failed; the run planned without recorded decisions')
@@ -1931,7 +2289,7 @@ if (researchQuestions.length) {
     grounding.research.push(r.found)
   }
   // Each child's agents count toward the runtime cap, so research leaves fewer curds.
-  curdCap = Math.min(LIMITS.maxCurds, Math.floor((LIMITS.agentCap - LIMITS.runOverhead - grounding.research.length * BRIE_GROUND_MAX_AGENTS) / LIMITS.curdAgents))
+  curdCap = Math.min(LIMITS.maxCurds, Math.floor((LIMITS.agentCap - LIMITS.runOverhead - grounding.research.length * BRIE_GROUND_MAX_AGENTS - VERIFY_CRITERIA_MAX_AGENTS) / LIMITS.curdAgents))
   if (curdCap < LIMITS.maxCurds) log(`${grounding.research.length} research child(ren) leave room for ${curdCap} curds under the ${LIMITS.agentCap}-agent cap.`)
 }
 
@@ -1942,7 +2300,7 @@ async function decomposeCurds(feedback, round = 0) {
   const single = { curds: [{ slug: parentSlug, spec_path: parentSpecPath, brief: null, files: [] }], singlePass: true }
   if (candidateCurds < 2) return single
   phase('Decompose')
-  const decomposeCall = await typed(decomposePrompt(resolved.spec_text, feedback), { label: `decompose:plan${suffix}`, phase: 'Decompose', agentType: 'explorer', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
+  const decomposeCall = await typedCall(decomposePrompt(resolved.spec_text, feedback), { label: `decompose:plan${suffix}`, phase: 'Decompose', agentType: 'explorer', model: 'opus', schema: DECOMPOSE_SCHEMA }, checkDecompose)
   if (!decomposeCall.value) {
     log(`Decompose failed: ${errorText(decomposeCall.errors)}`)
     return { error: `Decompose failed: ${errorText(decomposeCall.errors)}` }
@@ -1968,7 +2326,7 @@ async function decomposeCurds(feedback, round = 0) {
     return { error: `Duplicate curd slug(s): ${duplicateSlugs.join(', ')}` }
   }
 
-  const miniSpecCall = await typed(miniSpecPrompt(parentSlug, merged), { label: `decompose:write-minispecs${suffix}`, phase: 'Decompose', agentType: 'coder', model: 'opus', schema: MINISPEC_SCHEMA }, checkMiniSpecs)
+  const miniSpecCall = await typedCall(miniSpecPrompt(parentSlug, merged), { label: `decompose:write-minispecs${suffix}`, phase: 'Decompose', agentType: 'coder', model: 'opus', schema: MINISPEC_SCHEMA }, checkMiniSpecs)
   if (!miniSpecCall.value) {
     log(`Mini-spec writing failed: ${errorText(miniSpecCall.errors)}`)
     return { error: `Mini-spec writing failed: ${errorText(miniSpecCall.errors)}` }
@@ -2061,7 +2419,7 @@ async function cookCurd(curd, branch) {
   const opts = { phase: 'Cook', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: COOK_SCHEMA }
   const stop = (message) => ({ curd, branch, cook: null, sha: null, failure: { stage: 'cook', message } })
   let callLabel = `cook:${curd.slug}`
-  let call = await typed(cookPrompt(curd, baseSha), { ...opts, label: callLabel }, checkCook, true)
+  let call = await typedCall(cookPrompt(curd, baseSha), { ...opts, label: callLabel }, checkCook, true)
   let lastCheckpoint = null
   for (let round = 1; ; round++) {
     // "blocked: <reason>" is a blocked cook with a reason. Every other out-of-enum status is salvaged (user decision B).
@@ -2092,13 +2450,13 @@ async function cookCurd(curd, branch) {
     noteHead(lastCheckpoint)
     log(`${curd.slug}: resuming cook from ${lastCheckpoint} (continuation ${round})`)
     callLabel = `cook:${curd.slug}:c${round}`
-    call = await typed(cookContinuationPrompt(curd, resume), { ...opts, label: callLabel }, checkCook, true)
+    call = await typedCall(cookContinuationPrompt(curd, resume), { ...opts, label: callLabel }, checkCook, true)
   }
 }
 
 // Returns null when the ref is absent, and { failed } when the salvage call itself failed.
 async function salvage(curd) {
-  const found = await typed(salvagePrompt(curd, baseSha), { label: `salvage:${curd.slug}`, phase: 'Cook', agentType: 'explorer', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA }, checkSalvage)
+  const found = await typedCall(salvagePrompt(curd, baseSha), { label: `salvage:${curd.slug}`, phase: 'Cook', agentType: 'explorer', model: 'haiku', effort: 'low', schema: SALVAGE_SCHEMA }, checkSalvage)
   const state = found.value
   if (!state) return { failed: errorText(found.errors) }
   return state.found
@@ -2112,7 +2470,7 @@ const stageFailure = (stage, message) => ({ stage, message })
 
 // One taste call. Returns { taste } or { failure }. A blocked answer and a halt are final: no redo and no corrective round follows.
 async function tasteAt(curd, sha, label) {
-  const tasted = await typed(tastePrompt(curd, sha), { label, phase: 'Taste', agentType: 'taste-tester', schema: TASTE_SCHEMA }, checkTaste)
+  const tasted = await typedCall(tastePrompt(curd, sha), { label, phase: 'Taste', agentType: 'taste-tester', schema: TASTE_SCHEMA }, checkTaste)
   if (!tasted.value) return { failure: errorText(tasted.errors) }
   const answer = splitBlocked(tasted.value)
   if (answer.status === 'blocked') return { failure: `taste reviewer is blocked: ${sanitizeReason(answer.reason || 'no reason given')}` }
@@ -2137,7 +2495,7 @@ const chainResults = await pipeline(
     let taste = tasted.taste
     let round = 0
     while (taste.verdict === 'revise' && round < CORRECTIVE_ROUNDS) {
-      const corrected = await typed(correctivePrompt(curd, current, taste), { label: `correct:${curd.slug}:r${round + 1}`, phase: 'Taste', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CORRECT_SCHEMA }, checkCorrect)
+      const corrected = await typedCall(correctivePrompt(curd, current, taste), { label: `correct:${curd.slug}:r${round + 1}`, phase: 'Taste', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CORRECT_SCHEMA }, checkCorrect)
       if (!corrected.value) return stageRecord(prev, { sha: current, taste }, stageFailure('taste-correct', errorText(corrected.errors)))
       const correction = corrected.value
       if (writerStopped(correction)) return stageRecord(prev, { sha: current, taste }, stageFailure('taste-correct', `corrective pass stopped: ${stopText(correction)}`))
@@ -2158,7 +2516,7 @@ const chainResults = await pipeline(
   async (prev) => {
     const { curd, sha, taste, cook } = prev
     if (prev.failure || !taste || taste.verdict === 'revise') return stageRecord(prev, {}, prev.failure || stageFailure('taste', 'taste did not reach pass within correctiveRounds'))
-    const pressed = await typed(pressPrompt(curd, sha, cookHandoff(cook, curd.slug)), { label: `press:${curd.slug}`, phase: 'Press', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: PHASE_SCHEMA }, checkPress)
+    const pressed = await typedCall(pressPrompt(curd, sha, cookHandoff(cook, curd.slug)), { label: `press:${curd.slug}`, phase: 'Press', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: PHASE_SCHEMA }, checkPress)
     if (!pressed.value) return stageRecord(prev, {}, stageFailure('press', errorText(pressed.errors)))
     const press = pressed.value
     if (writerStopped(press)) return stageRecord(prev, { press }, stageFailure('press', `press stopped: ${stopText(press)}`))
@@ -2178,7 +2536,7 @@ if (surviving.length) {
   const refs = surviving
     .map((r) => ({ slug: r.curd.slug, branch: r.branch, sha: r.sha }))
     .sort((a, b) => (a.slug < b.slug ? -1 : 1))
-  const integrated = await typed(integratePrompt(baseSha, refs), { label: 'integrate', phase: 'Integrate', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA }, checkIntegrate(refs.map((r) => r.slug)))
+  const integrated = await typedCall(integratePrompt(baseSha, refs), { label: 'integrate', phase: 'Integrate', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA }, checkIntegrate(refs.map((r) => r.slug)))
   integrate = integrated.value
   if (!integrate) integrateReason = errorText(integrated.errors)
   if (integrate) {
@@ -2214,7 +2572,7 @@ if (integrate && integratedRefs.length) {
     }
   }
   if (!ageResult) {
-    const aged = await typed(ageBarrierPrompt(integrate.head), { label: 'age:barrier', phase: 'Age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: AGE_BARRIER_SCHEMA }, checkAge)
+    const aged = await typedCall(ageBarrierPrompt(integrate.head), { label: 'age:barrier', phase: 'Age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: AGE_BARRIER_SCHEMA }, checkAge)
     if (!aged.value) log(`Barrier age returned no valid result (${errorText(aged.errors)}) — integrated curds cannot be verified; excluding them from plate.`)
     else if (aged.value.status !== 'ok') {
       ageBlocked = sanitizeReason(aged.value.reason || aged.value.status)
@@ -2239,7 +2597,7 @@ if (routing && !routing.unrouted && routing.bySlug.size) {
   toCure = integratedRefs.map((r) => r.slug).filter((slug) => routing.bySlug.has(slug))
   const cures = await parallel(toCure.map((slug) => () => {
     const entry = surviving.find((r) => r.curd.slug === slug)
-    return typed(curePrompt(entry.curd, entry.sha, routing.bySlug.get(slug), integrate.head), { label: `cure:${slug}`, phase: 'Cure', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CURE_SCHEMA }, checkCure)
+    return typedCall(curePrompt(entry.curd, entry.sha, routing.bySlug.get(slug), integrate.head), { label: `cure:${slug}`, phase: 'Cure', agentType: 'coder', isolation: 'worktree', model: 'sonnet', schema: CURE_SCHEMA }, checkCure)
       .then(({ value, errors }) => (value && writerStopped(value) ? { slug, cure: null, errors: [substance(`cure stopped: ${stopText(value)}`)] } : { slug, cure: value, errors }))
   }))
   cureBySlug = new Map(cures.filter(Boolean).map((c) => [c.slug, c.cure]))
@@ -2260,7 +2618,7 @@ if ([...cureBySlug.values()].some((c) => c && c.committed)) {
     const cure = cureBySlug.get(ref.slug)
     return cure && cure.committed ? { ...ref, sha: cure.head_sha } : ref
   })
-  const remerged = await typed(remergePrompt(baseSha, remergeRefs), { label: 're-merge', phase: 'Re-age', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA }, checkIntegrate(integratedRefs.map((r) => r.slug)))
+  const remerged = await typedCall(remergePrompt(baseSha, remergeRefs), { label: 're-merge', phase: 'Re-age', agentType: 'coder', model: 'sonnet', isolation: 'worktree', schema: INTEGRATE_SCHEMA }, checkIntegrate(integratedRefs.map((r) => r.slug)))
   remerge = remerged.value
   if (!remerge) {
     remergeInvalid = errorText(remerged.errors)
@@ -2268,7 +2626,7 @@ if ([...cureBySlug.values()].some((c) => c && c.committed)) {
   }
   if (remerge) {
     const prior = toCure.flatMap((slug) => routing.bySlug.get(slug))
-    const reaged = await typed(reagePrompt(integrate.head, remerge.head, integratedRefs, prior), { label: 'age:reage', phase: 'Re-age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: AGE_BARRIER_SCHEMA }, checkReage)
+    const reaged = await typedCall(reagePrompt(integrate.head, remerge.head, integratedRefs, prior), { label: 'age:reage', phase: 'Re-age', agentType: 'reviewer', model: 'opus', isolation: 'worktree', schema: AGE_BARRIER_SCHEMA }, checkReage)
     if (!reaged.value) {
       reageBlocked = sanitizeReason(`no valid result (${errorText(reaged.errors)})`)
       log(`Re-age returned no valid result (${errorText(reaged.errors)}) — the re-merged head has no ok review; integrated curds stay dirty.`)
@@ -2345,7 +2703,6 @@ const withStatus = chainResults.map((r, i) => {
 const cleanEntries = withStatus.filter((r) => r && r.status === 'clean')
 
 // ---- Verify and Done (ADR-016, ADR-017): one judge checks every criterion at the final head, then the done advisor signs off before Plate ----
-const floorMessage = () => `budget floor reached before Plate: ${budget.remaining()} remaining, below ${LIMITS.minBudget}`
 let budgetReason = null
 let blockReason = null
 let blockedText
@@ -2353,7 +2710,7 @@ let doneAdvice = null
 let doneConcerns = null
 let verification = { status: 'not-run', head: null, criteria: [] }
 if (cleanEntries.length && floorReached()) {
-  budgetReason = floorMessage()
+  budgetReason = floorReason('Plate')
   blockedText = budgetReason
   log(`${budgetReason} — skipping verify and plate.`)
 } else if (cleanEntries.length) {
@@ -2364,9 +2721,9 @@ if (cleanEntries.length && floorReached()) {
   let byId = new Map()
   let lost = null
   if (judgedAcs.length) {
-    const judged = await typed(verifyPrompt(judgedAcs, { worktree_path: tree.worktree_path, head: tree.head }), { label: 'verify', phase: 'Verify', agentType: 'judge', model: 'sonnet', effort: 'medium', schema: VERIFY_BATCH_SCHEMA }, checkWith(VERIFY_BATCH_SCHEMA, (v) => checkVerdicts(v, judgedAcs)))
-    if (judged.value) byId = new Map(judged.value.verdicts.map((v) => [v.criterion, v]))
-    else lost = `not verified: ${errorText(judged.errors)}`
+    const judged = await verifyCriteria(judgedAcs, tree)
+    if (judged.verdicts) byId = new Map(judged.verdicts.map((v) => [v.criterion, v]))
+    else lost = `not verified: ${judged.failure}`
   }
   for (const ac of criteriaList) {
     if (ac.check_kind === 'ci') {
@@ -2407,7 +2764,7 @@ if (cleanEntries.length && floorReached()) {
       blockedText = 'plate blocked: done advisor did not approve'
       log(`${blockReason} — skipping plate.`)
     } else if (floorReached()) {
-      budgetReason = floorMessage()
+      budgetReason = floorReason('Plate')
       blockedText = budgetReason
       log(`${budgetReason} — skipping plate.`)
     }
@@ -2419,7 +2776,7 @@ let plateRows = []
 let plateRan = false
 let plateFailure = null
 if (cleanEntries.length && !budgetReason && !blockReason) {
-  const plated = await typed(platePrompt(cleanEntries.map((r) => ({ slug: r.curd.slug, sha: r.sha })), singlePass), { label: 'plate', phase: 'Plate', agentType: 'coder', model: 'opus', schema: PLATE_SCHEMA }, checkPlate, true)
+  const plated = await typedCall(platePrompt(cleanEntries.map((r) => ({ slug: r.curd.slug, sha: r.sha })), singlePass), { label: 'plate', phase: 'Plate', agentType: 'coder', model: 'opus', schema: PLATE_SCHEMA }, checkPlate, true)
   if (plated.value) {
     plateRows = plated.value.results
     plateRan = true
@@ -2468,14 +2825,12 @@ log(`Report: ${curdsOut.length} curd(s) — clean:${summary.clean} dirty:${summa
 const removable = [...scratchWorktrees].filter((p) => !reportWorktrees.has(p)).sort()
 if (curdsOut.length && curdsOut.every((c) => c.status === 'clean' && platedBySlug.has(c.slug)) && removable.length) {
   const recordedShas = [...new Set([integrate && integrate.head, remerge && remerge.head, ...chainResults.map((r) => r && r.sha), ...[...cureBySlug.values()].map((c) => c && c.head_sha), ...withStatus.map((r) => r && r.sha), ...chainHeads].filter((s) => typeof s === 'string' && s))].sort()
-  const cleaned = await typed(cleanupPrompt(removable, recordedShas), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', agentType: 'runner', schema: CLEANUP_SCHEMA }, checkCleanup)
+  const cleaned = await typedCall(cleanupPrompt(removable, recordedShas), { label: 'cleanup', phase: 'Report', model: 'haiku', effort: 'low', agentType: 'runner', schema: CLEANUP_SCHEMA }, checkCleanup)
   if (!cleaned.value) log(`Worktree cleanup returned no valid result (${errorText(cleaned.errors)}).`)
 }
 
-// A run is ok only when a curd plated, every curd is clean, and Ground left no gap.
-const runStatus = budgetReason || blockReason || gaps.length || !platedBySlug.size || curdsOut.some((c) => c.status !== 'clean') ? 'partial' : 'ok'
 return {
-  status: runStatus,
+  status: runStatus({ stopped: budgetReason || blockReason, gaps, produced: platedBySlug.size, rows: curdsOut }),
   reason: budgetReason || blockReason || undefined,
   concerns: doneConcerns || undefined,
   curds: curdsOut,

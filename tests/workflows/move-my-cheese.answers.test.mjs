@@ -167,7 +167,7 @@ test('revise alone on a needs-input landing keeps the open questions', async () 
   ])
   assert.equal(second.result.status, 'needs-input')
   assert.deepEqual(plain(second.result.questions), QUESTIONS)
-  assert.equal(second.labels.some((l) => l.startsWith('advise:')), false)
+  assert.equal(second.allLabels.some((l) => l.startsWith('advise:')), false)
   assert.ok(call(second.trace, 'plan:revise').prompt.includes('Keep the open questions of previous_plan'))
 })
 

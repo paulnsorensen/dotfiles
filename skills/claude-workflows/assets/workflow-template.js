@@ -14,6 +14,11 @@ export const meta = {
 // Template for /claude-workflows. Copy it, rename meta.name, and rewrite the
 // prompt builders. Keep the control flow: code owns state, gates, and limits;
 // agents own judgment. Args: { goal: string, context?: object } or a bare goal.
+//
+// This template stays self-contained for teaching, so it holds its own typed()
+// and guard copies. Real workflows in the dotfiles repository vendor these from
+// claude/workflow-prelude/modules/ (call, guard, and others), run git and gh
+// steps through wfx, and verify criteria with the verify-criteria child.
 
 // ---- Limits: every loop has a bound in code, never in a prompt ----
 const LIMITS = { fixRounds: 2, continuations: 3, advisorRevisions: 1, maxTasks: 12, minBudget: 50000 }
