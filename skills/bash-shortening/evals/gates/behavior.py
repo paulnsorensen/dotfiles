@@ -1,8 +1,9 @@
 """Behavior gate for the bash-shortening autoimprove task cases. It prints {"score": 1} or {"score": 0, "failed": [...]}.
 
-The contract inlines this file as the `task` grader argv. The workspace holds one fixture `evals/files/NAME.sh`
-and the candidate `output/NAME.sh`. The gate checks two hard rules:
-1. `output/NAME.sh` exists and `bash -n` accepts it.
+The contract inlines this file as the `task` grader argv. The workspace root holds the staged fixture
+`evals/files/NAME.sh`. The runner snapshots the task workspace under `output/`, so the task's in-place edit is
+`output/evals/files/NAME.sh`. The gate checks two hard rules:
+1. The edited script exists, differs from the staged fixture, and `bash -n` accepts it.
 2. For each recorded run in RUNS, the candidate and the original give the same exit status, the same stdout,
    and the same final file tree in the working directory. The gate does not compare stderr.
 The task never sees RUNS, so the runs act as a held-out behavior test. Each run starts from a clean tree at the
@@ -220,14 +221,18 @@ def main() -> None:
         failed.append("no-fixture")
     for original in fixtures:
         name = original.name
-        candidate = pathlib.Path("output") / name
+        candidate = pathlib.Path("output") / original
         runs = RUNS.get(name)
         if runs is None:
             failed.append(f"{name}:unknown-fixture")
             continue
         if not candidate.is_file():
             failed.append(f"{name}:missing-output")
-            print(f"{name}: output/{name} is missing", file=sys.stderr)
+            print(f"{name}: the task deleted {original}", file=sys.stderr)
+            continue
+        if candidate.read_bytes() == original.read_bytes():
+            failed.append(f"{name}:unchanged")
+            print(f"{name}: the task left {original} unchanged", file=sys.stderr)
             continue
         syntax = subprocess.run(
             ["bash", "-n", str(candidate)],
