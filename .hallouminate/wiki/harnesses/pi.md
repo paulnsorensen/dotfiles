@@ -33,6 +33,14 @@ Pi uses its built-in MCP support (Pi 0.99 and later). `~/.pi/agent/mcp.json` lis
 
 The repo retired `pi-mcp-adapter` in October 2026. Pi 1.0 built-in MCP covers direct exposure, OAuth, and resources. The adapter also caused drift: it wrote `"-builtin:mcp"` to `settings.json`, and its Pi peer range lagged Pi releases. The registry sets `extensions: []`, which removes that live entry. Its `toolPrefix: none` naming has no built-in equivalent.
 
+## Compaction
+
+`chezmoi/.chezmoidata/pi.yaml` sets `compaction.reserveTokens: 16384` and `keepRecentTokens: 20000`.
+
+Pi 1.4.0 changes the meaning of `reserveTokens`. In 1.3.0, the value also capped the summary output. Reasoning-heavy summaries could fail with "generation hit the token cap". In 1.4.0, compaction and branch summaries use the model's output limit. The value now sets only the context headroom at which compaction starts.
+
+The repo needs no change. Summary failures of the token-cap kind stop after the upgrade. Raise `reserveTokens` only if long compactions near the context limit overflow.
+
 ## Shared resources
 
 `run_onchange_after_install-agents-doc.sh.tmpl` installs `agents/AGENTS.md` as `~/.pi/agent/AGENTS.md`.
