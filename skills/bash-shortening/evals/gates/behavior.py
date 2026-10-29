@@ -30,6 +30,12 @@ LOGS = {
     "logs/x.txt": "no\n",
 }
 REPORT = "name,email,status\nann,ann@x.io,active\nbob,bob@x.io,disabled\ndee,dee@x.io,active,admin\n"
+ERRORS_LOG = (
+    "2026-10-01 ERROR E42 disk full\n2026-10-01 INFO ok\n2026-10-01 ERROR E7 timeout\n"
+    "2026-10-02 ERROR E42 disk full\n2026-10-02 ERROR E13 auth\n2026-10-02 ERROR E7 timeout\n"
+    "2026-10-03 ERROR E42 disk full\n2026-10-03 ERROR E99 other\n"
+)
+HOSTS = "10.0.0.1 db\n10.0.0.2 cache web\n10.0.0.3 mailer\n"
 
 RUNS: dict[str, list[dict[str, object]]] = {
     "sorted-diff.sh": [
@@ -150,6 +156,79 @@ RUNS: dict[str, list[dict[str, object]]] = {
         },
         {},
     ],
+    "top-errors.sh": [
+        {"files": {"app.log": ERRORS_LOG}, "args": ["app.log"]},
+        {"files": {"ok.log": "2026-10-01 INFO started\n"}, "args": ["ok.log"]},
+        {"args": ["missing.log"]},
+    ],
+    "config-diff.sh": [
+        {
+            "files": {
+                "a.conf": "# a\nport=80\n\nhost=x\n",
+                "b.conf": "host=x\n# b\nport=80\n",
+            },
+            "args": ["a.conf", "b.conf"],
+        },
+        {
+            "files": {
+                "a.conf": "port=80\nhost=x\n",
+                "b.conf": "port=81\nhost=x\nmode=fast\n",
+            },
+            "args": ["a.conf", "b.conf"],
+        },
+        {
+            "files": {"a.conf": "# only comments\n", "b.conf": ""},
+            "args": ["a.conf", "b.conf"],
+        },
+        {"files": {"a.conf": "k=v\n"}, "args": ["a.conf", "missing.conf"]},
+    ],
+    "pair-names.sh": [
+        {"files": {"u.csv": "3,carol\n1,alice\n2,bob smith\n"}, "args": ["u.csv"]},
+        {"files": {"one.csv": "7,zed"}, "args": ["one.csv"]},
+        {"files": {"empty.csv": ""}, "args": ["empty.csv"]},
+    ],
+    "version-parts.sh": [
+        {"args": ["1.2.3-rc1"]},
+        {"args": ["10.0.7"]},
+        {"args": ["2.0.0-beta.1-x"]},
+        {"files": {"VERSION": "0.9.9\n"}, "args": []},
+    ],
+    "url-parts.sh": [
+        {
+            "args": [
+                "https://example.com/a/b",
+                "http://localhost:8080",
+                "https://api.example.com:8443/v1/users?id=2",
+                "http://x.org/",
+                "ftp://files.example.net:2121/pub",
+            ]
+        },
+    ],
+    "clean-tmp.sh": [
+        {
+            "files": {
+                "w/a.tmp": "",
+                "w/b c.tmp": "",
+                "w/sub/d.tmp": "",
+                "w/keep.txt": "k",
+            },
+            "args": ["w"],
+        },
+        {"files": {"w/keep.txt": "k"}, "args": ["w"]},
+        {"files": {"x.tmp": "", "y.txt": ""}, "args": []},
+    ],
+    "host-lookup.sh": [
+        {"files": {"hosts": HOSTS}, "args": ["hosts", "db", "web"]},
+        {"files": {"hosts": HOSTS}, "args": ["hosts", "db", "mail", "web"]},
+        {"files": {"hosts": HOSTS}, "args": ["hosts"]},
+        {"args": ["nohosts", "db"]},
+    ],
+    "env-defaults.sh": [
+        {},
+        {"env": {"LOG_LEVEL": "", "COLOR": "never"}},
+        {"env": {"LOG_FILE": "", "NO_COLOR": "1"}},
+        {"env": {"COLOR": "", "LOG_LEVEL": "debug"}},
+    ],
 }
 
 
@@ -186,6 +265,7 @@ def execute(
         "HOME": str(home),
         "LC_ALL": "C.UTF-8",
         "LANG": "C.UTF-8",
+        **{str(key): str(value) for key, value in dict(run.get("env", {})).items()},
     }
     args = [str(arg) for arg in list(run.get("args", []))]
     try:

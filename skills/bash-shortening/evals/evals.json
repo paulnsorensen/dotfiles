@@ -381,6 +381,143 @@
       "files": [
         "evals/files/count-ext.sh"
       ]
+    },
+    {
+      "id": 29,
+      "name": "task-top-errors",
+      "kind": "task",
+      "family": "temp-files",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/top-errors.sh. Keep its output and exit codes identical. Apply every change you judge safe without asking me. Edit evals/files/top-errors.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten top-errors.sh runs the grep matches once into a variable or one pipeline, replaces the five /tmp files with one grep | cut | sort | uniq -c | sort -rn | head -3 pipeline, and counts with wc -l or grep -c without cat. It keeps the 'no errors' branch with exit 0. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten top-errors.sh contains no /tmp path.",
+        "The rewritten top-errors.sh ranks the codes with one cut | sort | uniq -c | sort -rn | head pipeline.",
+        "The rewritten top-errors.sh contains no cat | wc pipeline.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/top-errors.sh"
+      ]
+    },
+    {
+      "id": 30,
+      "name": "task-config-diff",
+      "kind": "task",
+      "family": "temp-files",
+      "prompt": "Clean up this bash with the bash-shortening skill: evals/files/config-diff.sh. Its output and exit status must stay identical. Apply every change you judge safe without asking me, and edit the file in place. Then list each change with its reason.",
+      "expected_output": "The rewritten config-diff.sh puts the repeated grep -v | grep -v | sort filter in one function or a single grep -v -e '^#' -e '^$' call, and feeds diff with two process substitutions instead of /tmp files. It keeps the match and differ messages and exit 0 or 1. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten config-diff.sh contains no /tmp path.",
+        "The rewritten config-diff.sh writes the comment-and-blank filter once, in a function or one grep call.",
+        "The rewritten config-diff.sh feeds diff with process substitution.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/config-diff.sh"
+      ]
+    },
+    {
+      "id": 31,
+      "name": "task-pair-names",
+      "kind": "task",
+      "family": "temp-files",
+      "prompt": "This script is too long. Use the bash-shortening skill on evals/files/pair-names.sh, apply the safe changes without asking, and edit the file in place. Its output must stay identical. Then list each change with its reason.",
+      "expected_output": "The rewritten pair-names.sh builds the pairs in one pass, for example with paste on two process substitutions or a while IFS=, read -r id name loop, sorts once, and keeps the result in a variable or prints the count from the same data. It uses no /tmp file. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten pair-names.sh contains no /tmp path.",
+        "The rewritten pair-names.sh sorts the pairs once.",
+        "The rewritten pair-names.sh reads the CSV through process substitution, a pipeline, or one read loop.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/pair-names.sh"
+      ]
+    },
+    {
+      "id": 32,
+      "name": "task-version-parts",
+      "kind": "task",
+      "family": "expansion",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/version-parts.sh. Keep its output identical for every version string, with or without a pre-release part. Apply every change you judge safe without asking me. Edit evals/files/version-parts.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten version-parts.sh uses ${1:-$(<VERSION)} or a similar default, splits the core with ${version%%-*} and IFS=. read -r major minor patch, and computes the next patch with $(( )). Because ${version#*-} returns the whole string when no '-' exists, it guards the pre-release part (for example with [[ $version == *-* ]]). The response names that edge case.",
+      "assertions": [
+        "The rewritten version-parts.sh contains no cut, echo pipeline, or expr call.",
+        "The rewritten version-parts.sh splits the core version with IFS=. read or parameter expansion.",
+        "The rewritten version-parts.sh prints pre=none for a version without a '-'.",
+        "The response names the no-dash edge case of ${var#*-}.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/version-parts.sh"
+      ]
+    },
+    {
+      "id": 33,
+      "name": "task-url-parts",
+      "kind": "task",
+      "family": "expansion",
+      "prompt": "Is there a shorter way to do this in bash? Use the bash-shortening skill on evals/files/url-parts.sh, apply the safe changes without asking, and edit the file in place with identical output for every URL. Then list each change with its reason.",
+      "expected_output": "The rewritten url-parts.sh replaces the six echo | sed and echo | cut subshells per URL with ${url%%://*}, ${url#*://}, ${rest%%/*}, ${hostport%%:*}, and guarded ${var#*/} and ${var#*:} expansions, because those expansions return the whole string when the delimiter is absent. It picks the default port with a case or a short conditional. The response names the missing-delimiter edge case.",
+      "assertions": [
+        "The rewritten url-parts.sh runs no sed, cut, or echo pipeline inside the loop.",
+        "The rewritten url-parts.sh guards the path and port expansions for a URL without a path or a port.",
+        "The response names the missing-delimiter edge case of ${var#*/} or ${var#*:}.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/url-parts.sh"
+      ]
+    },
+    {
+      "id": 34,
+      "name": "task-clean-tmp",
+      "kind": "task",
+      "family": "restraint",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/clean-tmp.sh. Keep its behavior identical, including file names with spaces and directories with no .tmp files. Apply every change you judge safe without asking me. Edit evals/files/clean-tmp.sh in place. Then list each change and each change you rejected, with reasons.",
+      "expected_output": "The rewritten clean-tmp.sh drops the /tmp list file, for example with find -delete plus a count, or a read loop over process substitution. It avoids find | xargs rm, which breaks on spaces and fails on empty input without -0 and -r. The response names that xargs pitfall.",
+      "assertions": [
+        "The rewritten clean-tmp.sh contains no /tmp path.",
+        "The rewritten clean-tmp.sh uses no xargs without both -0 and -r.",
+        "The response names the space or empty-input pitfall of find | xargs rm.",
+        "The response lists each applied change and each rejected change with its reason."
+      ],
+      "files": [
+        "evals/files/clean-tmp.sh"
+      ]
+    },
+    {
+      "id": 35,
+      "name": "task-host-lookup",
+      "kind": "task",
+      "family": "restraint",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/host-lookup.sh. Keep its output and exit codes identical. Apply every change you judge safe without asking me. Edit evals/files/host-lookup.sh in place. Then list each change and each change you rejected, with reasons.",
+      "expected_output": "The rewritten host-lookup.sh shortens the status checks, for example entry=$(grep -w ...) || return 2 and if addr=$(lookup ...); then, and drops the echo | awk pipe. It keeps local on its own line or uses the || form, because local entry=$(cmd) hides the exit status of cmd. The response names that pitfall.",
+      "assertions": [
+        "The rewritten host-lookup.sh tests exit status directly with || or if cmd, not with $? comparisons.",
+        "The rewritten host-lookup.sh does not combine local with a command substitution in one statement.",
+        "The response names how local var=$(cmd) hides the exit status of cmd.",
+        "The response lists each applied change and each rejected change with its reason."
+      ],
+      "files": [
+        "evals/files/host-lookup.sh"
+      ]
+    },
+    {
+      "id": 36,
+      "name": "task-env-defaults",
+      "kind": "task",
+      "family": "restraint",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/env-defaults.sh. Keep its behavior identical for set, empty, and unset variables. Apply every change you judge safe without asking me. Edit evals/files/env-defaults.sh in place. Then list each change and each change you rejected, with reasons.",
+      "expected_output": "The rewritten env-defaults.sh replaces each unset-only default block with : \"${VAR=default}\" or ${VAR-default}, without the colon, because ${VAR:-default} or ${VAR:=default} would also replace a deliberate empty value. It may fold the COLOR auto branch into a short conditional. The response names the colon difference.",
+      "assertions": [
+        "The rewritten env-defaults.sh sets the defaults with ${VAR=default} or ${VAR-default}, not the :- or := forms.",
+        "The rewritten env-defaults.sh keeps an empty LOG_LEVEL, LOG_FILE, or COLOR empty.",
+        "The response explains the difference between ${VAR-x} and ${VAR:-x} for an empty value.",
+        "The response lists each applied change and each rejected change with its reason."
+      ],
+      "files": [
+        "evals/files/env-defaults.sh"
+      ]
     }
   ]
 }

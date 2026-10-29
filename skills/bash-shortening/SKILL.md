@@ -54,11 +54,15 @@ Parallel writes to one file race, and category rewrites overlap on the same line
    When a rule gives a surprising result, revert and narrow with `--rules` or `--skip`.
    Done when syntax and shellcheck pass and every hunk is expected.
 6. **Show the punch list.** Present the analyzer hits the rewriter did not cover.
-   Let the user pick categories, especially where anti-pattern hits conflict with shortening hits.
+   When the user says to apply changes without asking, go to step 7 without a pick.
+   Otherwise let the user pick categories, especially where anti-pattern hits conflict with shortening hits.
 7. **Hand-edit.** Apply one technique per change, with its rationale visible.
    Use the before/after examples in the matching reference.
    Keep quoting, `set -euo pipefail`, and error handling.
    Stop before a rewrite needs a comment to explain *what* it does.
+   Keep a change only when it gives the same output and exit status for every input.
+   Write the edits to the file, then list each change with a one-line reason.
+   Done when the file holds every kept change and `bash -n` passes.
 
 **Analyzer brief** (substitute `<category>` and `<target>`):
 
