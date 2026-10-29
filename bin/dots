@@ -198,6 +198,12 @@ do_sync() {
     SKILL_EXCLUDE_AGENTS="$skill_exclude_agents" \
         "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
         "$DOTFILES_DIR/skills/_registry.yaml" --force
+
+    # The weekly cleanup timer cannot run on hosts without a systemd user bus (devbox containers).
+    if [[ -x "$DOTFILES_DIR/bin/bin-doctor" ]]; then
+        "$DOTFILES_DIR/bin/bin-doctor" clean --sync ||
+            echo -e "${YELLOW}⚠️  cleanup: a bin-doctor clean step failed; sync itself succeeded.${NC}" >&2
+    fi
 }
 
 # Show status
