@@ -10,7 +10,7 @@ agent harness you're in and apply the methodology by hand, or install
 ast-grep:
 
   brew install ast-grep        # macOS / Linuxbrew
-  cargo install ast-grep --bin sg
+  cargo install ast-grep --locked
 
 Two opt-in extensions:
 
@@ -308,7 +308,7 @@ _SG_MISSING_DIAGNOSTIC = (
     "\n"
     "Install one of:\n"
     "  brew install ast-grep\n"
-    "  cargo install ast-grep --bin sg\n"
+    "  cargo install ast-grep --locked\n"
     "\n"
     "Or skip the script entirely and follow the reference-driven\n"
     "methodology in skills/bash-shortening/SKILL.md — see its\n"

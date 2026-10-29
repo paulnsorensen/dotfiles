@@ -119,7 +119,7 @@ The rewriter cannot do data-flow work: single-use variable inlining, temp-file â
 Those are hand-edits from the references.
 
 When ast-grep is missing, the script exits with a diagnostic.
-Install it (`brew install ast-grep` or `cargo install ast-grep --bin sg`), or skip the rewriter and run only the analyzer sweep.
+Install it (`brew install ast-grep`, `cargo install ast-grep --locked`, or `uv tool install ast-grep-cli`), or skip the rewriter and run only the analyzer sweep.
 To add or change a rule, read `AGENTS.md` first.
 
 ## Quick wins

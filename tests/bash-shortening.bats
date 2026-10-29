@@ -605,9 +605,9 @@ SH
 
 # -- ast-grep engine ------------------------------------------------------
 #
-# `sg` (ast-grep) is a hard requirement. The suite asserts the dispatch
-# fires on its sg-handled rules and that the missing-sg path produces a
-# friendly diagnostic.
+# ast-grep (`ast-grep`, or the deprecated `sg` alias) is a hard requirement.
+# The suite asserts the dispatch fires on its sg-handled rules and that the
+# missing-ast-grep path produces a friendly diagnostic.
 
 @test "non-sg-handled rules still fire (echo-wc-c via regex path)" {
     local got
@@ -644,11 +644,15 @@ SH
     [[ "$err" == *"applied backticks: 1"* ]]
 }
 
-@test "missing sg exits with friendly diagnostic" {
-    # Run with an empty PATH that excludes sg. Use `env -i` to clear,
-    # then add /usr/bin so python3 still resolves.
-    local out
-    out="$(env -i PATH=/usr/bin:/bin python3 "$SCRIPT" /etc/hosts 2>&1 || true)"
+@test "missing ast-grep exits with friendly diagnostic" {
+    # PATH holds only an empty directory, so neither `ast-grep` nor `sg`
+    # resolves, even on a host with /usr/bin/ast-grep. python3 runs by its
+    # absolute path.
+    local out py empty
+    py="$(command -v python3)"
+    empty="$BATS_TEST_TMPDIR/empty-bin"
+    mkdir -p "$empty"
+    out="$(env -i PATH="$empty" "$py" "$SCRIPT" /etc/hosts 2>&1 || true)"
     [[ "$out" == *"requires ast-grep"* ]]
     [[ "$out" == *"bash-shortening"* ]]
 }
