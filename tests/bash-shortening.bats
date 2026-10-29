@@ -653,6 +653,19 @@ SH
     [[ "$out" == *"bash-shortening"* ]]
 }
 
+@test "finds ast-grep under its own name when no sg alias is on PATH" {
+    # Minimal PATHs (such as the autoimprove sandbox) may carry only
+    # `ast-grep`; upstream deprecates the `sg` alias.
+    local real bin got
+    real="$(command -v ast-grep || true)"
+    [ -n "$real" ] || skip "ast-grep not installed"
+    bin="$BATS_TEST_TMPDIR/bin"
+    mkdir -p "$bin"
+    ln -s "$real" "$bin/ast-grep"
+    got="$(printf 'V=`pwd`\n' | env -i PATH="$bin:/usr/bin:/bin" python3 "$SCRIPT" - 2>/dev/null)"
+    [[ "$got" == *'V=$(pwd)'* ]]
+}
+
 # -- Real-world regression fixtures ----------------------------------------
 # Surfaced by dogfooding the rewriter on ~/Dev/dotfiles. Both issues
 # are now fixed by the ast-grep engine: tree-sitter-bash distinguishes

@@ -93,7 +93,7 @@ The article numbers map to the example numbers inside each reference.
 ## Rewriter
 
 `scripts/bash-shorten.py` applies the high-confidence rewrites.
-It needs no third-party Python packages, but it requires [ast-grep](https://ast-grep.github.io/) (`sg`) on PATH.
+It needs no third-party Python packages, but it requires [ast-grep](https://ast-grep.github.io/) on PATH as `ast-grep` or `sg`.
 It is a dry run by default: it prints a unified diff and per-rule counts.
 
 ```bash
@@ -118,7 +118,7 @@ python3 scripts/bash-shorten.py --self-test
 The rewriter cannot do data-flow work: single-use variable inlining, temp-file → pipeline, function extraction, parallelization, or judging whether an `&& … ||` chain is safe.
 Those are hand-edits from the references.
 
-When `sg` is missing, the script exits with a diagnostic.
+When ast-grep is missing, the script exits with a diagnostic.
 Install it (`brew install ast-grep` or `cargo install ast-grep --bin sg`), or skip the rewriter and run only the analyzer sweep.
 To add or change a rule, read `AGENTS.md` first.
 

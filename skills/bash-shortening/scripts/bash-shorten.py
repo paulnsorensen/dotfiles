@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """bash-shorten — apply high-confidence rewrites from the bash-shortening skill.
 
-ast-grep (`sg`) is a hard requirement. Structural patterns route through
-ast-grep first using the rule pack at scripts/sg-rules/; remaining
-regex-only rules run after. If `sg` is not on PATH, the script exits
+ast-grep (`ast-grep`, or its deprecated `sg` alias) is a hard requirement.
+Structural patterns route through ast-grep first using the rule pack at
+scripts/sg-rules/; remaining regex-only rules run after. If neither name
+is on PATH, the script exits
 with a friendly diagnostic — load the bash-shortening skill in whatever
 agent harness you're in and apply the methodology by hand, or install
 ast-grep:
@@ -303,7 +304,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 _SG_MISSING_DIAGNOSTIC = (
-    "bash-shorten requires ast-grep (`sg`) on PATH.\n"
+    "bash-shorten requires ast-grep (`ast-grep` or `sg`) on PATH.\n"
     "\n"
     "Install one of:\n"
     "  brew install ast-grep\n"
