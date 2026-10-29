@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Print the deploy URL and replica count for an environment name.
+# Preview environments are named pr-<number>, for example pr-42.
+# Example check: [ $(deploy-url.sh prod | wc -l) -eq 2 ] && echo ok
 
 env_name=$1
 
@@ -15,6 +17,9 @@ elif [ "$env_name" = "prod" ]; then
 elif [ "$env_name" = "production" ]; then
   url="https://example.com"
   replicas=6
+elif echo "$env_name" | grep -qE '^pr-[0-9]+$'; then
+  url="https://$env_name.preview.example.internal"
+  replicas=1
 else
   echo "unknown environment: $env_name" >&2
   exit 64

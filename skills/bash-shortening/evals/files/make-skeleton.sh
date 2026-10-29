@@ -4,6 +4,7 @@
 if [ ! -d src ]; then mkdir src; fi
 if [ ! -d tests ]; then mkdir tests; fi
 if [ ! -d docs ]; then mkdir docs; fi
+if [ ! -d "release notes" ]; then mkdir "release notes"; fi
 mkdir -p src/lib
 mkdir -p src/bin
 for i in 1 2 3 4 5; do
@@ -15,4 +16,5 @@ done
 for n in 2 4 6 8 10; do
   touch "docs/chapter-$n.md"
 done
+touch "release notes/v1.0.md"
 echo "created $(find . -type d | wc -l) directories and $(find . -type f | wc -l) files"

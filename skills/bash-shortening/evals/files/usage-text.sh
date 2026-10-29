@@ -12,5 +12,8 @@ echo "  -n        dry run; print what would change"
 echo "  -b DIR    put backups in DIR (default: \$HOME/.backups)"
 echo '  -x GLOB   skip files that match GLOB, for example "*.tmp"'
 echo '  -v        verbose; print the `rsync` command before it runs'
+echo '  -j N      run N copies at once (default: $(nproc))'
+echo ""
+echo -e "Columns:\tNAME\tSIZE\tSTATUS"
 echo ""
 echo "Exit status is 0 on success and 2 when SOURCE is missing."

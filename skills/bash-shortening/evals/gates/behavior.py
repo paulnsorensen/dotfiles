@@ -62,6 +62,8 @@ RUNS: dict[str, list[dict[str, object]]] = {
         },
         {"files": {"a/x": "", "a/y": "", "b/y": ""}, "args": ["b", "a"]},
         {"files": {"a/x": ""}, "args": ["a", "a"]},
+        {"files": {"a/x": ""}, "args": []},
+        {"files": {"a/x": ""}, "args": ["a"]},
     ],
     "path-parts.sh": [
         {
@@ -105,7 +107,17 @@ RUNS: dict[str, list[dict[str, object]]] = {
     ],
     "deploy-url.sh": [
         {"args": [name]}
-        for name in ("dev", "staging", "prod", "production", "Prod", "")
+        for name in (
+            "dev",
+            "staging",
+            "prod",
+            "production",
+            "Prod",
+            "",
+            "pr-42",
+            "pr-4x",
+            "pr-",
+        )
     ],
     "usage-text.sh": [{"args": []}, {"args": ["-h"]}],
     "rotate-spool.sh": [
@@ -181,9 +193,20 @@ RUNS: dict[str, list[dict[str, object]]] = {
             "args": ["a.conf", "b.conf"],
         },
         {"files": {"a.conf": "k=v\n"}, "args": ["a.conf", "missing.conf"]},
+        {
+            "files": {
+                "a.conf": "url=http://host/#top\n# note\n",
+                "b.conf": "url=http://host/#bottom\n",
+            },
+            "args": ["a.conf", "b.conf"],
+        },
     ],
     "pair-names.sh": [
         {"files": {"u.csv": "3,carol\n1,alice\n2,bob smith\n"}, "args": ["u.csv"]},
+        {
+            "files": {"x.csv": "5,erin,erin@x.io,admin\n4,dan\n6,fay,fay@x.io\n"},
+            "args": ["x.csv"],
+        },
         {"files": {"one.csv": "7,zed"}, "args": ["one.csv"]},
         {"files": {"empty.csv": ""}, "args": ["empty.csv"]},
     ],

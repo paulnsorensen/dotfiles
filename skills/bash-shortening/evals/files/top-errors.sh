@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Report the three most frequent error codes in a log file.
+# A log with no ERROR lines, or a missing log, prints "no errors" and exits 0.
+set -euo pipefail
 
 log=$1
 
-grep 'ERROR' "$log" > /tmp/errors.$$
-count=$(cat /tmp/errors.$$ | wc -l)
+grep 'ERROR' "$log" > /tmp/errors.$$ 2>/dev/null || true
+count=`cat /tmp/errors.$$ | wc -l`
 if [ $count -eq 0 ]; then
   echo "no errors"
   rm -f /tmp/errors.$$

@@ -151,11 +151,11 @@
       "kind": "task",
       "family": "temp-files",
       "prompt": "This script is too long for what it does. Use the bash-shortening skill on evals/files/compare-dirs.sh, apply the safe changes without asking, and edit the file in place. It must print exactly what it prints today. Tell me what you changed and why.",
-      "expected_output": "The rewritten compare-dirs.sh runs comm -23 on two process substitutions, keeps the result in one variable instead of a temp file read twice, and tests the variable for emptiness instead of counting lines with cat | wc -l. The output text stays identical. The response lists each change with a reason.",
+      "expected_output": "The rewritten compare-dirs.sh runs comm -23 on two process substitutions, keeps the result in one variable instead of a temp file read twice, and replaces the backtick count with $( ) or an emptiness test. It leaves the escaped backticks inside the usage heredoc and the backticks in the header comment unchanged, because they are text, not command substitutions. The usage text and exit 64 stay identical. The response lists each change with a reason.",
       "assertions": [
         "The rewritten compare-dirs.sh uses comm -23 with two <(...) process substitutions.",
         "The rewritten compare-dirs.sh contains no /tmp path.",
-        "The rewritten compare-dirs.sh computes the comm result once and reuses it.",
+        "The rewritten compare-dirs.sh keeps the backtick text in the header comment and the usage heredoc unchanged.",
         "The response lists each change with its reason."
       ],
       "files": [
@@ -270,11 +270,12 @@
       "kind": "task",
       "family": "structure",
       "prompt": "Use the bash-shortening skill to shorten evals/files/deploy-url.sh. Keep its output and exit codes identical. Apply every change you judge safe without asking me. Edit evals/files/deploy-url.sh in place. Then list each change with its reason.",
-      "expected_output": "The rewritten deploy-url.sh replaces the four-branch if/elif chain with a case statement (prod | production share one arm) or an associative array lookup with a default branch. The unknown-environment message still goes to stderr with exit 64. The response lists each change with a reason.",
+      "expected_output": "The rewritten deploy-url.sh replaces the if/elif chain with a case statement (prod | production share one arm) or an associative array lookup with a default branch. The preview arm still accepts only pr- followed by digits, so a case glob such as pr-[0-9]*) is wrong; it needs [[ $env_name =~ ^pr-[0-9]+$ ]] or an extglob pattern. The header comments stay unchanged. The response names the glob-versus-regex difference.",
       "assertions": [
         "The rewritten deploy-url.sh uses case or an associative array in place of the if/elif chain.",
-        "The rewritten deploy-url.sh maps prod and production through one shared arm or entry pair without a duplicated block.",
+        "The rewritten deploy-url.sh accepts pr-42 and rejects pr-4x and pr-.",
         "The rewritten deploy-url.sh keeps the stderr message and exit 64 for an unknown environment.",
+        "The response names the difference between the pr-[0-9]* glob and the ^pr-[0-9]+$ regex.",
         "The response lists each change with its reason."
       ],
       "files": [
@@ -287,10 +288,11 @@
       "kind": "task",
       "family": "structure",
       "prompt": "Use the bash-shortening skill to shorten evals/files/usage-text.sh. The printed text must stay byte-for-byte identical. Apply every change you judge safe without asking me. Edit evals/files/usage-text.sh in place. Then list each change with its reason.",
-      "expected_output": "The rewritten usage-text.sh replaces the run of echo lines with a heredoc. Because the text holds a literal $HOME and backticks, the rewrite quotes the delimiter (<<'EOF') and prints the $name line apart, or escapes $HOME and the backticks in an unquoted heredoc. It replaces basename \"$0\" with ${0##*/}. The response names the expansion risk of an unquoted heredoc.",
+      "expected_output": "The rewritten usage-text.sh replaces the run of echo lines with a heredoc. Because the text holds a literal $HOME, backticks, and $(nproc), the rewrite quotes the delimiter (<<'EOF') and prints the $name line apart, or escapes each one in an unquoted heredoc. The echo -e line needs real tab characters in the heredoc, or printf. The response names both risks.",
       "assertions": [
         "The rewritten usage-text.sh prints the body with a heredoc instead of one echo per line.",
-        "The rewritten usage-text.sh prints the literal text $HOME/.backups and `rsync` without expanding them.",
+        "The rewritten usage-text.sh prints the literal text $HOME/.backups, `rsync`, and $(nproc) without expanding them.",
+        "The rewritten usage-text.sh prints real tab characters in the Columns line.",
         "The response explains the quoted-delimiter or escaping choice for the heredoc.",
         "The response lists each change with its reason."
       ],
@@ -321,11 +323,11 @@
       "kind": "task",
       "family": "structure",
       "prompt": "Use the bash-shortening skill to shorten evals/files/make-skeleton.sh. It must create the same tree and print the same line. Apply every change you judge safe without asking me. Edit evals/files/make-skeleton.sh in place. Then list each change with its reason.",
-      "expected_output": "The rewritten make-skeleton.sh replaces the guarded mkdir calls with one mkdir -p and brace expansion (src/{lib,bin}, tests/case{01..05}) and the literal loops with {01..05} and {2..10..2}, for example touch tests/case{01..05}/input.txt docs/chapter-{2..10..2}.md. The response lists each change with a reason.",
+      "expected_output": "The rewritten make-skeleton.sh replaces the guarded mkdir calls with one mkdir -p and brace expansion, and the literal loops with {01..05} and {2..10..2}. Because 'release notes' holds a space, it quotes that name, for example mkdir -p src/{lib,bin} tests docs 'release notes'; an unquoted {docs,release notes} brace does not expand. The response lists each change with a reason.",
       "assertions": [
         "The rewritten make-skeleton.sh creates the directories with mkdir -p and brace expansion, with no if [ ! -d ] guards.",
         "The rewritten make-skeleton.sh uses the zero-padded range {01..05} and the step range {2..10..2} or equal brace expansions.",
-        "The rewritten make-skeleton.sh has no for loop over a literal number list.",
+        "The rewritten make-skeleton.sh quotes the release notes directory name.",
         "The response lists each change with its reason."
       ],
       "files": [
@@ -388,11 +390,12 @@
       "kind": "task",
       "family": "temp-files",
       "prompt": "Use the bash-shortening skill to shorten evals/files/top-errors.sh. Keep its output and exit codes identical. Apply every change you judge safe without asking me. Edit evals/files/top-errors.sh in place. Then list each change with its reason.",
-      "expected_output": "The rewritten top-errors.sh runs the grep matches once into a variable or one pipeline, replaces the five /tmp files with one grep | cut | sort | uniq -c | sort -rn | head -3 pipeline, and counts with wc -l or grep -c without cat. It keeps the 'no errors' branch with exit 0. The response lists each change with a reason.",
+      "expected_output": "The rewritten top-errors.sh replaces the five /tmp files with one grep | cut | sort | uniq -c | sort -rn | head -3 pipeline and the backtick count with $( ). Under set -euo pipefail, grep exits 1 on no match, so errors=$(grep ...) or grep -c without || true would stop the script; the rewrite keeps the no-match and missing-log paths printing 'no errors' with exit 0. The response names that set -e risk.",
       "assertions": [
-        "The rewritten top-errors.sh contains no /tmp path.",
+        "The rewritten top-errors.sh contains no /tmp path and no backticks.",
         "The rewritten top-errors.sh ranks the codes with one cut | sort | uniq -c | sort -rn | head pipeline.",
-        "The rewritten top-errors.sh contains no cat | wc pipeline.",
+        "The rewritten top-errors.sh keeps set -euo pipefail.",
+        "The response names how grep exiting 1 interacts with set -e and pipefail.",
         "The response lists each change with its reason."
       ],
       "files": [
@@ -405,10 +408,11 @@
       "kind": "task",
       "family": "temp-files",
       "prompt": "Clean up this bash with the bash-shortening skill: evals/files/config-diff.sh. Its output and exit status must stay identical. Apply every change you judge safe without asking me, and edit the file in place. Then list each change with its reason.",
-      "expected_output": "The rewritten config-diff.sh puts the repeated grep -v | grep -v | sort filter in one function or a single grep -v -e '^#' -e '^$' call, and feeds diff with two process substitutions instead of /tmp files. It keeps the match and differ messages and exit 0 or 1. The response lists each change with a reason.",
+      "expected_output": "The rewritten config-diff.sh puts the repeated grep -v | grep -v | sort filter in one function or a single grep -v -e '^#' -e '^$' call, and feeds diff with two process substitutions instead of /tmp files. It keeps a value that holds '#' after the start of the line, so sed 's/#.*//' is wrong. It keeps the [[ -r ]] check, the messages, and exit 0, 1, or 2. The response lists each change with a reason.",
       "assertions": [
         "The rewritten config-diff.sh contains no /tmp path.",
         "The rewritten config-diff.sh writes the comment-and-blank filter once, in a function or one grep call.",
+        "The rewritten config-diff.sh removes only lines that start with '#', not text after a '#' inside a value.",
         "The rewritten config-diff.sh feeds diff with process substitution.",
         "The response lists each change with its reason."
       ],
@@ -422,11 +426,11 @@
       "kind": "task",
       "family": "temp-files",
       "prompt": "This script is too long. Use the bash-shortening skill on evals/files/pair-names.sh, apply the safe changes without asking, and edit the file in place. Its output must stay identical. Then list each change with its reason.",
-      "expected_output": "The rewritten pair-names.sh builds the pairs in one pass, for example with paste on two process substitutions or a while IFS=, read -r id name loop, sorts once, and keeps the result in a variable or prints the count from the same data. It uses no /tmp file. The response lists each change with a reason.",
+      "expected_output": "The rewritten pair-names.sh builds the pairs in one pass, for example with a while IFS=, read -r id name _ loop (the _ absorbs extra columns) or paste on two process substitutions, sorts once, and replaces the backtick count. It uses no /tmp file. The response names the extra-column pitfall of IFS=, read -r id name.",
       "assertions": [
-        "The rewritten pair-names.sh contains no /tmp path.",
+        "The rewritten pair-names.sh contains no /tmp path and no backticks.",
         "The rewritten pair-names.sh sorts the pairs once.",
-        "The rewritten pair-names.sh reads the CSV through process substitution, a pipeline, or one read loop.",
+        "The rewritten pair-names.sh keeps only the first two columns for a row with extra columns.",
         "The response lists each change with its reason."
       ],
       "files": [
