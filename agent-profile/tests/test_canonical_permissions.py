@@ -229,11 +229,11 @@ def test_global_deny_seed_protects_secrets(global_manifest):
 
 
 def test_sanctioned_tools_not_denied(global_manifest):
-    """Negative: fd/sg stay allowed, rg is prompt-gated rather than denied, and
+    """Negative: fd/ast-grep stay allowed, rg is prompt-gated rather than denied, and
     ``Read`` itself is never denied."""
     allow = set(global_manifest.settings.get("permissions_allow", []))
     deny = set(global_manifest.settings.get("permissions_deny", []))
-    for sanctioned in ("Bash(fd:*)", "Bash(sg:*)"):
+    for sanctioned in ("Bash(fd:*)", "Bash(ast-grep:*)"):
         assert sanctioned in allow
         assert sanctioned not in deny
     assert "Bash(rg:*)" not in allow

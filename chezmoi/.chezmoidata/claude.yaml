@@ -171,6 +171,7 @@ claude:
   permissions:
     allow:
       - "Bash(approve:*)"
+      - "Bash(ast-grep:*)"
       - "Bash(basename:*)"
       - "Bash(bats:*)"
       - "Bash(cargo build:*)"
@@ -272,7 +273,6 @@ claude:
       # which breaks git discovery under /tmp. rmdir refuses a non-empty dir.
       - "Bash(rmdir /tmp/.git)"
       - "Bash(sd:*)"
-      - "Bash(sg:*)"
       - "Bash(sha256sum:*)"
       - "Bash(sleep:*)"
       - "Bash(tail:*)"

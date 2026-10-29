@@ -10,7 +10,7 @@ description: >
   changes. Do NOT use for correctness or bug review — use /age or /code-review.
 model: sonnet
 effort: medium
-allowed-tools: mcp__tilth__tilth_read, mcp__tilth__tilth_search, mcp__tilth__tilth_write, Bash(sg:*)
+allowed-tools: mcp__tilth__tilth_read, mcp__tilth__tilth_search, mcp__tilth__tilth_write, Bash(ast-grep:*)
 ---
 
 # de-slop

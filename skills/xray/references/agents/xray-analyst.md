@@ -7,7 +7,7 @@ spec search and external research, then synthesizing a verdict.
 
 - **Model**: sonnet
 - **Tools**: `mcp__tilth__tilth_read`, `mcp__tilth__tilth_search`, Bash, Agent
-- **Allowed Bash**: `sg` (ast-grep) for test shape analysis — `Bash(sg:*)`
+- **Allowed Bash**: `ast-grep` for test shape analysis — `Bash(ast-grep:*)`
 
 ## Input
 
@@ -143,20 +143,20 @@ Use ast-grep to analyze test files associated with this node:
 
 ```bash
 # Find test files
-sg --lang {language} -p 'describe("$DESC", $$$)' --json {test_dir}
-sg --lang {language} -p 'def test_$NAME($$$): $$$BODY' --json {test_dir}
-sg --lang {language} -p 'it("$DESC", $$$)' --json {test_dir}
+ast-grep --lang {language} -p 'describe("$DESC", $$$)' --json {test_dir}
+ast-grep --lang {language} -p 'def test_$NAME($$$): $$$BODY' --json {test_dir}
+ast-grep --lang {language} -p 'it("$DESC", $$$)' --json {test_dir}
 
 # Count assertions on values vs existence
-sg --lang {language} -p 'expect($X).toBe($Y)' --json {test_dir}     # value
-sg --lang {language} -p 'expect($X).toBeDefined()' --json {test_dir} # existence
-sg --lang {language} -p 'assert $X == $Y' --json {test_dir}          # value
-sg --lang {language} -p 'assert $X is not None' --json {test_dir}    # existence
+ast-grep --lang {language} -p 'expect($X).toBe($Y)' --json {test_dir}     # value
+ast-grep --lang {language} -p 'expect($X).toBeDefined()' --json {test_dir} # existence
+ast-grep --lang {language} -p 'assert $X == $Y' --json {test_dir}          # value
+ast-grep --lang {language} -p 'assert $X is not None' --json {test_dir}    # existence
 
 # Count mocked dependencies
-sg --lang {language} -p 'mock($$$)' --json {test_dir}
-sg --lang {language} -p 'patch("$TARGET")' --json {test_dir}
-sg --lang {language} -p 'jest.mock("$MODULE")' --json {test_dir}
+ast-grep --lang {language} -p 'mock($$$)' --json {test_dir}
+ast-grep --lang {language} -p 'patch("$TARGET")' --json {test_dir}
+ast-grep --lang {language} -p 'jest.mock("$MODULE")' --json {test_dir}
 ```
 
 Compute:
