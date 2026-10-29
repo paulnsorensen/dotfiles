@@ -22,7 +22,7 @@ Two complementary tools — changes must respect their boundaries:
 
 | Tool | Domain | Skill |
 |---|---|---|
-| ast-grep (`sg`) | Structural pattern matching (code shapes) | trace |
+| ast-grep (`ast-grep`; `sg` is a deprecated alias) | Structural pattern matching (code shapes) | trace |
 | LSP plugins | Type inference, diagnostics, symbol lookup, cross-refs | lsp |
 
 Do not attribute one tool's capabilities to another in descriptions or docs.

@@ -83,11 +83,14 @@ jobs:
         unzip -q "$RUNNER_TEMP/duckdb.zip" -d "$RUNNER_TEMP/duckdb-bin"
         echo "$RUNNER_TEMP/duckdb-bin" >> "$GITHUB_PATH"
 
-    # The bash-shortening tests need `sg` (ast-grep). Ubuntu's util-linux also
-    # ships `sg`, so put the uv tool bin first on PATH.
+    # The bash-shortening tests need ast-grep. The uv tool installs both the
+    # `ast-grep` binary and its deprecated `sg` alias; Ubuntu's util-linux
+    # also ships `sg`, so put the uv tool bin first on PATH. Keep this pin
+    # equal to "aqua:ast-grep/ast-grep" in chezmoi/dot_config/mise/config.toml;
+    # Renovate bumps both in one PR (group "ast-grep").
     - name: Install ast-grep
       run: |
-        uv tool install ast-grep-cli==0.42.1
+        uv tool install ast-grep-cli==0.51.0
         uv tool dir --bin >> "$GITHUB_PATH"
 
     - name: Install chezmoi
