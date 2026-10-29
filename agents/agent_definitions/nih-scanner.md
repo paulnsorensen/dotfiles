@@ -20,59 +20,59 @@ Run the `ast-grep` patterns for the detected languages. Each targets one categor
 
 ```bash
 # RETRY
-sg --lang typescript -p 'while ($COND) { try { $$$BODY } catch ($E) { $$$HANDLER } }' --json {scope}
+ast-grep --lang typescript -p 'while ($COND) { try { $$$BODY } catch ($E) { $$$HANDLER } }' --json {scope}
 # UUID
-sg --lang typescript -p 'Math.random().toString($$$).substring($$$)' --json {scope}
+ast-grep --lang typescript -p 'Math.random().toString($$$).substring($$$)' --json {scope}
 # DEBOUNCE
-sg --lang typescript -p 'clearTimeout($TIMER)' --json {scope}
-sg --lang typescript -p 'setTimeout($FN, $DELAY)' --json {scope}
+ast-grep --lang typescript -p 'clearTimeout($TIMER)' --json {scope}
+ast-grep --lang typescript -p 'setTimeout($FN, $DELAY)' --json {scope}
 # CLONE
-sg --lang typescript -p 'JSON.parse(JSON.stringify($OBJ))' --json {scope}
+ast-grep --lang typescript -p 'JSON.parse(JSON.stringify($OBJ))' --json {scope}
 # PATH
-sg --lang typescript -p '$A + "/" + $B' --json {scope}
+ast-grep --lang typescript -p '$A + "/" + $B' --json {scope}
 # ARGPARSE
-sg --lang typescript -p 'process.argv.slice($$$)' --json {scope}
-sg --lang typescript -p 'process.argv[$IDX]' --json {scope}
+ast-grep --lang typescript -p 'process.argv.slice($$$)' --json {scope}
+ast-grep --lang typescript -p 'process.argv[$IDX]' --json {scope}
 # VALIDATION
-sg --lang typescript -p 'new RegExp($PATTERN).test($INPUT)' --json {scope}
+ast-grep --lang typescript -p 'new RegExp($PATTERN).test($INPUT)' --json {scope}
 ```
 
 **Python**
 
 ```bash
 # RETRY (confirm the body has try/except + sleep)
-sg --lang python -p 'for $_ in range($N):' --json {scope}
+ast-grep --lang python -p 'for $_ in range($N):' --json {scope}
 # ARGPARSE
-sg --lang python -p 'sys.argv[$IDX]' --json {scope}
+ast-grep --lang python -p 'sys.argv[$IDX]' --json {scope}
 # VALIDATION
-sg --lang python -p 're.match($PATTERN, $INPUT)' --json {scope}
+ast-grep --lang python -p 're.match($PATTERN, $INPUT)' --json {scope}
 ```
 
 **Rust**
 
 ```bash
 # ERROR (thiserror alternative)
-sg --lang rust -p 'impl std::fmt::Display for $TYPE { $$$BODY }' --json {scope}
-sg --lang rust -p 'impl std::error::Error for $TYPE { $$$BODY }' --json {scope}
+ast-grep --lang rust -p 'impl std::fmt::Display for $TYPE { $$$BODY }' --json {scope}
+ast-grep --lang rust -p 'impl std::error::Error for $TYPE { $$$BODY }' --json {scope}
 # ARGPARSE
-sg --lang rust -p 'std::env::args()' --json {scope}
+ast-grep --lang rust -p 'std::env::args()' --json {scope}
 # SERIALIZATION (serde_derive alternative)
-sg --lang rust -p 'impl Serialize for $TYPE { $$$BODY }' --json {scope}
+ast-grep --lang rust -p 'impl Serialize for $TYPE { $$$BODY }' --json {scope}
 ```
 
 **Go**
 
 ```bash
 # ARGPARSE (cobra/urfave alternative)
-sg --lang go -p 'os.Args[$IDX]' --json {scope}
+ast-grep --lang go -p 'os.Args[$IDX]' --json {scope}
 ```
 
 **Shell**
 
 ```bash
 # ARGPARSE (getopt alternative)
-sg --lang bash -p 'while getopts $OPTS $VAR' --json {scope}
-sg --lang bash -p 'case "$1" in' --json {scope}
+ast-grep --lang bash -p 'while getopts $OPTS $VAR' --json {scope}
+ast-grep --lang bash -p 'case "$1" in' --json {scope}
 ```
 
 Stdlib is not NIH. Never flag `logging.basicConfig` or `timedelta` (Python), or `http.Client` (Go). A bare counted `for` loop is too generic — flag it only when the body contains `time.Sleep`.
