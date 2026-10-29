@@ -11,12 +11,15 @@ ast-grep:
   brew install ast-grep        # macOS / Linuxbrew
   cargo install ast-grep --bin sg
 
-One opt-in extension:
+Two opt-in extensions:
 
 - --include modernize : enable the off-by-default modernize rule group
   that suggests sd/rg in place of sed/grep for the most literal cases.
   Requires the target binary to be installed for the rewritten code to
   actually run.
+- --include ascii : enable echo-wc-c and cut-c-substring. They count
+  characters where wc -c and cut -c count bytes, so use them only when
+  every value is ASCII.
 
 Defaults to dry-run (prints a unified diff). Pass --apply to write.
 
@@ -289,7 +292,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument(
         "--include",
         help="comma-separated opt-in rule groups to enable (default: core only). "
-        "Known: core, modernize.",
+        "Known: core, ascii, modernize.",
     )
     ap.add_argument("--list", action="store_true", help="list all rules and exit")
     ap.add_argument("--explain", metavar="ID", help="describe one rule and exit")

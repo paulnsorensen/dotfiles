@@ -110,6 +110,9 @@ python3 scripts/bash-shorten.py --self-test
 - **`core`** (default): idiomatic rewrites that keep the same tools.
 - **`modernize`** (opt-in): rewrites to `sd`, `rg -F`, and `fd`.
   They need those binaries, and `find → fd` changes behavior because `fd` respects `.gitignore`.
+- **`ascii`** (opt-in): `echo-wc-c` and `cut-c-substring`.
+  `wc -c` and `cut -c` count bytes, but `${#S}` and `${S:0:N}` count characters in a UTF-8 locale.
+  Enable the group only when every value is ASCII.
 - **Opt-out:** a `# bash-shorten: disable` … `# bash-shorten: enable` span, or `# bash-shorten: skip` for the next line, protects code from every rule.
 
 The rewriter cannot do data-flow work: single-use variable inlining, temp-file → pipeline, function extraction, parallelization, or judging whether an `&& … ||` chain is safe.
@@ -124,10 +127,10 @@ To add or change a rule, read `AGENTS.md` first.
 | Verbose form | Idiomatic form | Reference (article #) |
 |---|---|---|
 | `if [ -z "$X" ]; then X=default; fi` | `X=${X:-default}` | parameter-expansion (8) |
-| `$(echo "$S" \| cut -c1-5)` | `${S:0:5}` | parameter-expansion (10) |
+| `$(echo "$S" \| cut -c1-5)` | `${S:0:5}` — ASCII values only: `cut -c` selects bytes | parameter-expansion (10) |
 | `$(basename "$P")` / `$(dirname "$P")` | `${P##*/}` / `${P%/*}` — hand-edit only: both break on a trailing `/`, and `dirname` returns `.` for a path with no `/` | parameter-expansion (11-12) |
 | `$(echo "$S" \| sed 's/a/b/g')` | `${S//a/b}` | parameter-expansion (13-14) |
-| `$(echo -n "$S" \| wc -c)` | `${#S}` | parameter-expansion (15) |
+| `$(echo -n "$S" \| wc -c)` | `${#S}` — ASCII values only: `wc -c` counts bytes | parameter-expansion (15) |
 | `$(expr $A + $B)` / `C=$(expr $C + 1)` | `$((A + B))` / `((C+=1))` | arithmetic (32-34) |
 | `[ $X -gt 100 ]` / `[ $A ] && [ $B ]` | `((X > 100))` / `[[ $A && $B ]]` | arithmetic (35, 37) |
 | `mkdir a; mkdir b; mkdir c` | `mkdir -p {a,b,c}` | brace-expansion (21-22) |

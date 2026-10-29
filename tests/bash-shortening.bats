@@ -23,11 +23,13 @@ setup() {
 }
 
 # Pipe `$1` through the script in stdin mode and assert the stdout
-# contains `$2` verbatim. Bats' `run` clobbers pipes, so we capture
-# manually and use a printf+grep idiom.
+# contains `$2` verbatim. Extra arguments go to the script before `-`.
+# Bats' `run` clobbers pipes, so we capture manually and use a
+# printf+grep idiom.
 assert_rewrite() {
     local input="$1" expected="$2" got
-    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" - 2>/dev/null)"
+    shift 2
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" "$@" - 2>/dev/null)"
     if [[ "$got" != *"$expected"* ]]; then
         printf 'input:    %s\nexpected: %s\ngot:      %s\n' \
             "$input" "$expected" "$got" >&2
@@ -217,8 +219,22 @@ assert_rewrite() {
     assert_rewrite "X=\$(echo \"\$S\" | sed 's/old/new/g')" 'X=${S//old/new}'
 }
 
-@test "rule echo-wc-c rewrites length idiom" {
-    assert_rewrite 'LEN=$(echo -n "$S" | wc -c)' 'LEN=${#S}'
+@test "rule echo-wc-c rewrites length idiom with --include ascii" {
+    assert_rewrite 'LEN=$(echo -n "$S" | wc -c)' 'LEN=${#S}' --include ascii
+}
+
+@test "ascii group is OFF by default — echo-wc-c and cut-c-substring do not fire" {
+    local input='LEN=$(echo -n "$S" | wc -c); PRE=$(echo "$S" | cut -c1-5)'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "ascii rules count characters where wc -c and cut -c count bytes" {
+    # The reason the group is opt-in: a multibyte value changes the result.
+    local S='Café Tools'
+    [ "$(echo -n "$S" | LC_ALL=C.UTF-8 wc -c)" -eq 11 ]
+    [ "$(LC_ALL=C.UTF-8 bash -c 'S="Café Tools"; echo ${#S}')" -eq 10 ]
 }
 
 @test "rule expr-arith-vars rewrites numeric expr" {
@@ -244,8 +260,8 @@ assert_rewrite() {
     assert_rewrite 'TOTAL=$(expr $A + 1)' 'TOTAL=$((A + 1))'
 }
 
-@test "rule cut-c-substring rewrites cut -c1-N to substring" {
-    assert_rewrite 'PRE=$(echo "$NAME" | cut -c1-5)' 'PRE=${NAME:0:5}'
+@test "rule cut-c-substring rewrites cut -c1-N to substring with --include ascii" {
+    assert_rewrite 'PRE=$(echo "$NAME" | cut -c1-5)' 'PRE=${NAME:0:5}' --include ascii
 }
 
 @test "rule for-range-expansion collapses consecutive integers" {
@@ -527,7 +543,8 @@ SH
     run python3 "$SCRIPT" --apply "$FIXTURE"
     [ "$status" -eq 0 ]
     grep -qF 'DIR=$(pwd)' "$FIXTURE"
-    grep -q 'LEN=${#FILENAME}' "$FIXTURE"
+    # echo-wc-c is in the opt-in ascii group, so the default run keeps it.
+    grep -qF 'LEN=$(echo -n "$FILENAME" | wc -c)' "$FIXTURE"
     grep -q 'ENV=${ENV:-"dev"}' "$FIXTURE"
     grep -q 'mkdir -p "${DIR}"' "$FIXTURE"
     grep -qF '[ -z "$USER" ]' "$FIXTURE"
@@ -594,7 +611,7 @@ SH
 
 @test "non-sg-handled rules still fire (echo-wc-c via regex path)" {
     local got
-    got="$(printf 'LEN=$(echo -n "$S" | wc -c)\n' | python3 "$SCRIPT" -)"
+    got="$(printf 'LEN=$(echo -n "$S" | wc -c)\n' | python3 "$SCRIPT" --include ascii -)"
     [[ "$got" == *'LEN=${#S}'* ]]
 }
 
@@ -686,7 +703,7 @@ SH
         'LEN=$(echo -n "$S" | wc -c)' \
         '# bash-shorten: enable')"
     local got
-    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" --include ascii -)"
     # backticks (sg-handled) and echo-wc-c (regex path) both untouched.
     [[ "$got" == *'V=`pwd`'* ]] \
         && [[ "$got" == *'LEN=$(echo -n "$S" | wc -c)'* ]] \
