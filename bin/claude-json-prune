@@ -71,6 +71,8 @@ cp "$CLAUDE_JSON" "$backup_file"
 # under --args jq treats every non-option argument (including a filename)
 # as a positional string, so feeding $CLAUDE_JSON as an arg makes jq read
 # from stdin instead and drop the file's contents.
+tmpfile=""
+trap 'rm -f "$tmpfile"' EXIT
 tmpfile=$(mktemp "${TMPDIR:-.}/prune.XXXXXX")
 jq --args 'reduce $ARGS.positional[] as $p (.; del(.projects[$p]))' \
     -- "${stale_paths[@]}" < "$CLAUDE_JSON" > "$tmpfile"

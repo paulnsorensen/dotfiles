@@ -49,7 +49,7 @@ asd_stale_brokers() {
     dupes=$(printf '%s\n' "$rows" | cut -f3 | sort | uniq -d)
     while IFS=$'\t' read -r pid script sock; do
         [[ -e "$script" ]] || printf 'missing-script\t%s\t%s\n' "$pid" "$script"
-        if [[ -n "$dupes" ]] && printf '%s\n' "$dupes" | grep -Fxq -- "$sock"; then
+        if [[ -n "$dupes" ]] && grep -Fxq -- "$sock" <<< "$dupes"; then
             printf 'duplicate-socket\t%s\t%s\n' "$pid" "$sock"
         fi
     done <<< "$rows"

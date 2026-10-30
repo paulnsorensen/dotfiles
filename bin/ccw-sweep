@@ -132,8 +132,8 @@ check_worktree() {
     # (the local ref is often stale; origin/<default> matches what's on GitHub)
     if $branch_exists; then
         local merged
-        merged="$(git -C "$repo_root" branch --merged "$default_remote" 2>/dev/null | sed 's/^[ *]*//')"
-        if echo "$merged" | grep -qx "$branch"; then
+        merged="$(git -C "$repo_root" branch --merged "$default_remote" --format='%(refname:short)' 2>/dev/null)"
+        if grep -qxF -- "$branch" <<<"$merged"; then
             is_merged=true
             reasons+=("merged into ${default_branch}")
         fi
@@ -234,7 +234,7 @@ check_worktree() {
     echo -e "  ${color}[${status}]${RESET} ${BOLD}${slug}${RESET} ${DIM}(${last_commit_relative})${RESET}"
     echo -e "         ${reason_str}"
 
-    TOTAL=$((TOTAL + 1))
+    ((TOTAL += 1))
 
     # ── Nested worktrees ─────────────────────────────────────────────
     # A parent that nests an unmerged-or-dirty child must not be removed —
