@@ -98,6 +98,6 @@ rust = "1.99.1"
 "npm:basedpyright" = "1.40.2"
 # OpenCode v2 ships on npm only; its GitHub tags carry no release assets for aqua.
 # The package postinstall links the platform binary, so allow its build script.
-"npm:@opencode/cli" = { version = "2.2.1", allow_builds = ["@opencode/cli"] }
+"npm:@opencode/cli" = { version = "2.2.2", allow_builds = ["@opencode/cli"] }
 "cargo:eza" = { version = "0.23.5", features = "vendored-libgit2" }
 "cargo:tokei" = "15.0.0"
