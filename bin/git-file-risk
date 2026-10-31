@@ -15,15 +15,15 @@ file_risk() {
     local file="$1"
 
     if ! git ls-files --error-unmatch "$file" &>/dev/null 2>&1; then
-        echo "{\"file\":\"$file\",\"error\":\"not tracked\"}"
+        jq -nc --arg file "$file" '{file: $file, error: "not tracked"}'
         return
     fi
 
     local authors changes has_reverts last_change_days staleness
 
     authors=$(git log --since="$SINCE" --format='%an' -- "$file" 2>/dev/null | sort -u | wc -l | tr -d ' ')
-    changes=$(git log --since="$SINCE" --oneline -- "$file" 2>/dev/null | wc -l | tr -d ' ')
-    has_reverts=$(git log --oneline --grep='revert' -i -- "$file" 2>/dev/null | wc -l | tr -d ' ')
+    changes=$(git rev-list --count --since="$SINCE" HEAD -- "$file" 2>/dev/null)
+    has_reverts=$(git rev-list --count -i --grep='revert' HEAD -- "$file" 2>/dev/null)
 
     local last_epoch now_epoch
     last_epoch=$(git log -1 --format='%ct' -- "$file" 2>/dev/null || echo "0")
@@ -37,8 +37,10 @@ file_risk() {
         staleness=$(git log -1 --format='%ar' -- "$file" 2>/dev/null)
     fi
 
-    printf '{"file":"%s","authors_90d":%d,"changes_90d":%d,"reverts":%d,"last_change_days":%d,"staleness":"%s"}\n' \
-        "$file" "$authors" "$changes" "$has_reverts" "$last_change_days" "$staleness"
+    jq -nc --arg file "$file" --arg staleness "$staleness" \
+        --argjson authors "$authors" --argjson changes "$changes" \
+        --argjson reverts "$has_reverts" --argjson days "$last_change_days" \
+        '{file: $file, authors_90d: $authors, changes_90d: $changes, reverts: $reverts, last_change_days: $days, staleness: $staleness}'
 }
 
 echo "["

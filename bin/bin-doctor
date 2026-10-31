@@ -60,7 +60,7 @@ do_check() {
             printf '\n%s — fix: %s\n' "$category" "$(hint_for "$category")"
         fi
         printf '  %-28s %s\n' "$name" "$detail"
-        count=$((count + 1))
+        ((count += 1))
     done <<< "$findings"
     printf '\n✗ bin-doctor: %d finding(s)\n' "$count"
     return 1

@@ -6,9 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/worktree.sh"
 
 usage() {
-    echo "Usage: wt [-o|-m] <slug>" >&2
-    echo "  -o   branch off origin/<default-branch> (fetches first)" >&2
-    echo "  -m   branch off the current branch (default)" >&2
+    cat >&2 <<'EOF'
+Usage: wt [-o|-m] <slug>
+  -o   branch off origin/<default-branch> (fetches first)
+  -m   branch off the current branch (default)
+EOF
     exit 1
 }
 

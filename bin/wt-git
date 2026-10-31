@@ -10,12 +10,14 @@
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
-    echo "Usage: wt-git <worktree-path> <git-command> [args...]" >&2
-    echo "" >&2
-    echo "Examples:" >&2
-    echo "  wt-git .worktrees/my-task status" >&2
-    echo "  wt-git .worktrees/my-task commit -m 'feat: thing'" >&2
-    echo "  wt-git .worktrees/my-task push origin claude/my-task" >&2
+    cat >&2 <<'EOF'
+Usage: wt-git <worktree-path> <git-command> [args...]
+
+Examples:
+  wt-git .worktrees/my-task status
+  wt-git .worktrees/my-task commit -m 'feat: thing'
+  wt-git .worktrees/my-task push origin claude/my-task
+EOF
     exit 1
 fi
 
