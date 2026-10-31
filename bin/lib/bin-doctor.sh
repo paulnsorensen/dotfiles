@@ -315,6 +315,20 @@ bd_clean_steps() {
     return 0
 }
 
+# bd_sync_steps — the cleanups `dots sync` runs: the clean steps, plus
+# `mise prune` and the Docker prunes. The user starts a sync by hand, so it
+# may uninstall unpinned mise versions; the weekly timer job must not.
+# Docker keeps tagged images, because -a would delete the devbox image.
+bd_sync_steps() {
+    bd_clean_steps
+    command -v mise >/dev/null 2>&1 && printf 'mise\tmise prune -y\n'
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        printf 'docker\tdocker image prune -f\n'
+        printf 'docker\tdocker builder prune -f --filter unused-for=168h\n'
+    fi
+    return 0
+}
+
 # bd_outdated_steps — read-only update reports, one per line as
 # <manager>\t<command>. Pinned surfaces (mise, packages.yaml) still move only
 # through Renovate PRs; these reports show what the pins lag behind.
