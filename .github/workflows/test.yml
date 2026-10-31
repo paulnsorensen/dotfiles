@@ -83,8 +83,8 @@ jobs:
         unzip -q "$RUNNER_TEMP/duckdb.zip" -d "$RUNNER_TEMP/duckdb-bin"
         echo "$RUNNER_TEMP/duckdb-bin" >> "$GITHUB_PATH"
 
-    # The bash-shortening tests need ast-grep's `sg` binary. The uv tool
-    # installs both the `ast-grep` binary and its deprecated `sg` alias;
+    # The bash-shortening tests need ast-grep. The rewriter tries `ast-grep`
+    # first, then the deprecated `sg` alias; the uv tool installs both.
     # Ubuntu's util-linux also ships `sg`, so put the uv tool bin first on
     # PATH. Keep this pin equal to "aqua:ast-grep/ast-grep" in
     # chezmoi/dot_config/mise/config.toml. Renovate groups the two bumps

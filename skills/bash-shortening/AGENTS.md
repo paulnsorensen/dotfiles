@@ -42,11 +42,12 @@ Tests: the in-process fixtures run with `--self-test`; the CLI suite is
 
 ## Engine dispatch
 
-The CLI requires `sg` on PATH (verified via `sg --version`'s output to
-distinguish ast-grep from util-linux's `sg`). At dispatch time:
+The CLI requires ast-grep on PATH. It tries `ast-grep` first, then the
+deprecated `sg` alias, and checks `--version` output to tell ast-grep
+from util-linux's `sg` (`_sg_binary` in `engine.py`). At dispatch time:
 
 1. `_apply_sg(text, enabled)` filters sg rules to those whose Python
-   id is in `enabled & SG_HANDLED_IDS`, runs `sg scan --filter` with
+   id is in `enabled & SG_HANDLED_IDS`, runs `ast-grep scan --filter` with
    that regex, returns the rewritten text + per-rule counts.
 2. The Python regex loop runs over `RULES`, **skipping any rule whose
    id is in `SG_HANDLED_IDS`** so Python doesn't double-fire on sg's
@@ -90,7 +91,7 @@ fixtures — but the regex itself never runs at default invocation.
   equality). Use Python regex with `\1` backreferences.
 
 If you're not sure whether ast-grep can express it, write a quick
-probe with `sg --pattern '...' --lang bash <fixture>` before reaching
+probe with `ast-grep run --pattern '...' --lang bash <fixture>` before reaching
 for regex.
 
 ## Counting rewrites for sg-handled rules

@@ -8,7 +8,9 @@ surface this module does not provide.
 Each rule is conservative — when in doubt, the pattern skips. The "core"
 group is enabled by default. The "modernize" group is opt-in because it
 rewrites to non-coreutils binaries (sd, rg, fd) the user may not have
-installed.
+installed. The "ascii" group is opt-in because its rewrites count
+characters where the original counts bytes (wc -c, cut -c), so they change
+behavior for a multibyte value in a UTF-8 locale.
 """
 
 from __future__ import annotations
@@ -49,7 +51,8 @@ class Rule:
     examples: tuple[tuple[str, str], ...] = field(default_factory=tuple)
     # "core" rules are enabled by default. "modernize" rules require an
     # explicit --include modernize because they assume binaries (sd, rg)
-    # the user may not have installed.
+    # the user may not have installed. "ascii" rules require --include ascii
+    # because they are exact only when every value is single-byte.
     group: str = "core"
     # When set, the engine calls apply_fn(text) instead of pattern.subn —
     # used by rules whose rewrite is too context-sensitive for a single
@@ -303,21 +306,25 @@ RULES: list[Rule] = [
     ),
     Rule(
         id="echo-wc-c",
-        description='$(echo -n "$VAR" | wc -c) → ${#VAR}',
+        description='$(echo -n "$VAR" | wc -c) → ${#VAR}  (ASCII values only)',
         pattern=re.compile(rf'\$\(\s*echo\s+-n\s+"\$({_VAR})"\s*\|\s*wc\s+-c\s*\)'),
         replace=lambda m: f"${{#{m.group(1)}}}",
         source_example="15",
-        notes="${#var} counts characters in your locale, not bytes. Use LANG=C wc -c for true byte count.",
+        notes="wc -c counts bytes; ${#var} counts characters in a UTF-8 locale. "
+        "Opt-in (--include ascii): a multibyte value such as 'Café' gives 5 bytes but 4 characters.",
         examples=(('LEN=$(echo -n "$S" | wc -c)', "LEN=${#S}"),),
+        group="ascii",
     ),
     Rule(
         id="cut-c-substring",
-        description='$(echo "$VAR" | cut -c1-N) → ${VAR:0:N}  (leading-N substring)',
+        description='$(echo "$VAR" | cut -c1-N) → ${VAR:0:N}  (leading-N substring, ASCII values only)',
         pattern=re.compile(rf'\$\(\s*echo\s+"\$({_VAR})"\s*\|\s*cut\s+-c1-(\d+)\s*\)'),
         replace=lambda m: f"${{{m.group(1)}:0:{m.group(2)}}}",
         source_example="10",
-        notes="Only matches the cut -c1-N form (start at first char). Other ranges (-c2-7, -c3-) need offset/length math the rule deliberately avoids.",
+        notes="Only matches the cut -c1-N form (start at first char). Other ranges (-c2-7, -c3-) need offset/length math the rule deliberately avoids. "
+        "GNU cut -c selects bytes; ${VAR:0:N} selects characters, so the rule is opt-in (--include ascii).",
         examples=(('PRE=$(echo "$NAME" | cut -c1-5)', "PRE=${NAME:0:5}"),),
+        group="ascii",
     ),
     Rule(
         id="expr-arith-vars",

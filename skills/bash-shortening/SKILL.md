@@ -54,11 +54,15 @@ Parallel writes to one file race, and category rewrites overlap on the same line
    When a rule gives a surprising result, revert and narrow with `--rules` or `--skip`.
    Done when syntax and shellcheck pass and every hunk is expected.
 6. **Show the punch list.** Present the analyzer hits the rewriter did not cover.
-   Let the user pick categories, especially where anti-pattern hits conflict with shortening hits.
+   When the user says to apply changes without asking, go to step 7 without a pick.
+   Otherwise let the user pick categories, especially where anti-pattern hits conflict with shortening hits.
 7. **Hand-edit.** Apply one technique per change, with its rationale visible.
    Use the before/after examples in the matching reference.
    Keep quoting, `set -euo pipefail`, and error handling.
    Stop before a rewrite needs a comment to explain *what* it does.
+   Keep a change only when it gives the same output and exit status for every input.
+   Write the edits to the file, then list each change with a one-line reason.
+   Done when the file holds every kept change and `bash -n` passes.
 
 **Analyzer brief** (substitute `<category>` and `<target>`):
 
@@ -89,7 +93,7 @@ The article numbers map to the example numbers inside each reference.
 ## Rewriter
 
 `scripts/bash-shorten.py` applies the high-confidence rewrites.
-It needs no third-party Python packages, but it requires [ast-grep](https://ast-grep.github.io/) (`sg`) on PATH.
+It needs no third-party Python packages, but it requires [ast-grep](https://ast-grep.github.io/) on PATH as `ast-grep` or `sg`.
 It is a dry run by default: it prints a unified diff and per-rule counts.
 
 ```bash
@@ -106,13 +110,16 @@ python3 scripts/bash-shorten.py --self-test
 - **`core`** (default): idiomatic rewrites that keep the same tools.
 - **`modernize`** (opt-in): rewrites to `sd`, `rg -F`, and `fd`.
   They need those binaries, and `find → fd` changes behavior because `fd` respects `.gitignore`.
+- **`ascii`** (opt-in): `echo-wc-c` and `cut-c-substring`.
+  `wc -c` and `cut -c` count bytes, but `${#S}` and `${S:0:N}` count characters in a UTF-8 locale.
+  Enable the group only when every value is ASCII.
 - **Opt-out:** a `# bash-shorten: disable` … `# bash-shorten: enable` span, or `# bash-shorten: skip` for the next line, protects code from every rule.
 
 The rewriter cannot do data-flow work: single-use variable inlining, temp-file → pipeline, function extraction, parallelization, or judging whether an `&& … ||` chain is safe.
 Those are hand-edits from the references.
 
-When `sg` is missing, the script exits with a diagnostic.
-Install it (`brew install ast-grep` or `cargo install ast-grep --bin sg`), or skip the rewriter and run only the analyzer sweep.
+When ast-grep is missing, the script exits with a diagnostic.
+Install it (`brew install ast-grep`, `cargo install ast-grep --locked`, or `uv tool install ast-grep-cli`), or skip the rewriter and run only the analyzer sweep.
 To add or change a rule, read `AGENTS.md` first.
 
 ## Quick wins
@@ -120,10 +127,10 @@ To add or change a rule, read `AGENTS.md` first.
 | Verbose form | Idiomatic form | Reference (article #) |
 |---|---|---|
 | `if [ -z "$X" ]; then X=default; fi` | `X=${X:-default}` | parameter-expansion (8) |
-| `$(echo "$S" \| cut -c1-5)` | `${S:0:5}` | parameter-expansion (10) |
+| `$(echo "$S" \| cut -c1-5)` | `${S:0:5}` — ASCII values only: `cut -c` selects bytes | parameter-expansion (10) |
 | `$(basename "$P")` / `$(dirname "$P")` | `${P##*/}` / `${P%/*}` — hand-edit only: both break on a trailing `/`, and `dirname` returns `.` for a path with no `/` | parameter-expansion (11-12) |
 | `$(echo "$S" \| sed 's/a/b/g')` | `${S//a/b}` | parameter-expansion (13-14) |
-| `$(echo -n "$S" \| wc -c)` | `${#S}` | parameter-expansion (15) |
+| `$(echo -n "$S" \| wc -c)` | `${#S}` — ASCII values only: `wc -c` counts bytes | parameter-expansion (15) |
 | `$(expr $A + $B)` / `C=$(expr $C + 1)` | `$((A + B))` / `((C+=1))` | arithmetic (32-34) |
 | `[ $X -gt 100 ]` / `[ $A ] && [ $B ]` | `((X > 100))` / `[[ $A && $B ]]` | arithmetic (35, 37) |
 | `mkdir a; mkdir b; mkdir c` | `mkdir -p {a,b,c}` | brace-expansion (21-22) |

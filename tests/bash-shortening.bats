@@ -23,11 +23,13 @@ setup() {
 }
 
 # Pipe `$1` through the script in stdin mode and assert the stdout
-# contains `$2` verbatim. Bats' `run` clobbers pipes, so we capture
-# manually and use a printf+grep idiom.
+# contains `$2` verbatim. Extra arguments go to the script before `-`.
+# Bats' `run` clobbers pipes, so we capture manually and use a
+# printf+grep idiom.
 assert_rewrite() {
     local input="$1" expected="$2" got
-    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" - 2>/dev/null)"
+    shift 2
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" "$@" - 2>/dev/null)"
     if [[ "$got" != *"$expected"* ]]; then
         printf 'input:    %s\nexpected: %s\ngot:      %s\n' \
             "$input" "$expected" "$got" >&2
@@ -217,8 +219,22 @@ assert_rewrite() {
     assert_rewrite "X=\$(echo \"\$S\" | sed 's/old/new/g')" 'X=${S//old/new}'
 }
 
-@test "rule echo-wc-c rewrites length idiom" {
-    assert_rewrite 'LEN=$(echo -n "$S" | wc -c)' 'LEN=${#S}'
+@test "rule echo-wc-c rewrites length idiom with --include ascii" {
+    assert_rewrite 'LEN=$(echo -n "$S" | wc -c)' 'LEN=${#S}' --include ascii
+}
+
+@test "ascii group is OFF by default — echo-wc-c and cut-c-substring do not fire" {
+    local input='LEN=$(echo -n "$S" | wc -c); PRE=$(echo "$S" | cut -c1-5)'
+    local got
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    [ "${got%$'\n'}" = "$input" ]
+}
+
+@test "ascii rules count characters where wc -c and cut -c count bytes" {
+    # The reason the group is opt-in: a multibyte value changes the result.
+    local S='Café Tools'
+    [ "$(echo -n "$S" | LC_ALL=C.UTF-8 wc -c)" -eq 11 ]
+    [ "$(LC_ALL=C.UTF-8 bash -c 'S="Café Tools"; echo ${#S}')" -eq 10 ]
 }
 
 @test "rule expr-arith-vars rewrites numeric expr" {
@@ -244,8 +260,8 @@ assert_rewrite() {
     assert_rewrite 'TOTAL=$(expr $A + 1)' 'TOTAL=$((A + 1))'
 }
 
-@test "rule cut-c-substring rewrites cut -c1-N to substring" {
-    assert_rewrite 'PRE=$(echo "$NAME" | cut -c1-5)' 'PRE=${NAME:0:5}'
+@test "rule cut-c-substring rewrites cut -c1-N to substring with --include ascii" {
+    assert_rewrite 'PRE=$(echo "$NAME" | cut -c1-5)' 'PRE=${NAME:0:5}' --include ascii
 }
 
 @test "rule for-range-expansion collapses consecutive integers" {
@@ -527,7 +543,8 @@ SH
     run python3 "$SCRIPT" --apply "$FIXTURE"
     [ "$status" -eq 0 ]
     grep -qF 'DIR=$(pwd)' "$FIXTURE"
-    grep -q 'LEN=${#FILENAME}' "$FIXTURE"
+    # echo-wc-c is in the opt-in ascii group, so the default run keeps it.
+    grep -qF 'LEN=$(echo -n "$FILENAME" | wc -c)' "$FIXTURE"
     grep -q 'ENV=${ENV:-"dev"}' "$FIXTURE"
     grep -q 'mkdir -p "${DIR}"' "$FIXTURE"
     grep -qF '[ -z "$USER" ]' "$FIXTURE"
@@ -588,13 +605,13 @@ SH
 
 # -- ast-grep engine ------------------------------------------------------
 #
-# `sg` (ast-grep) is a hard requirement. The suite asserts the dispatch
-# fires on its sg-handled rules and that the missing-sg path produces a
-# friendly diagnostic.
+# ast-grep (`ast-grep`, or the deprecated `sg` alias) is a hard requirement.
+# The suite asserts the dispatch fires on its sg-handled rules and that the
+# missing-ast-grep path produces a friendly diagnostic.
 
 @test "non-sg-handled rules still fire (echo-wc-c via regex path)" {
     local got
-    got="$(printf 'LEN=$(echo -n "$S" | wc -c)\n' | python3 "$SCRIPT" -)"
+    got="$(printf 'LEN=$(echo -n "$S" | wc -c)\n' | python3 "$SCRIPT" --include ascii -)"
     [[ "$got" == *'LEN=${#S}'* ]]
 }
 
@@ -627,13 +644,30 @@ SH
     [[ "$err" == *"applied backticks: 1"* ]]
 }
 
-@test "missing sg exits with friendly diagnostic" {
-    # Run with an empty PATH that excludes sg. Use `env -i` to clear,
-    # then add /usr/bin so python3 still resolves.
-    local out
-    out="$(env -i PATH=/usr/bin:/bin python3 "$SCRIPT" /etc/hosts 2>&1 || true)"
+@test "missing ast-grep exits with friendly diagnostic" {
+    # PATH holds only an empty directory, so neither `ast-grep` nor `sg`
+    # resolves, even on a host with /usr/bin/ast-grep. python3 runs by its
+    # absolute path.
+    local out py empty
+    py="$(command -v python3)"
+    empty="$BATS_TEST_TMPDIR/empty-bin"
+    mkdir -p "$empty"
+    out="$(env -i PATH="$empty" "$py" "$SCRIPT" /etc/hosts 2>&1 || true)"
     [[ "$out" == *"requires ast-grep"* ]]
     [[ "$out" == *"bash-shortening"* ]]
+}
+
+@test "finds ast-grep under its own name when no sg alias is on PATH" {
+    # Minimal PATHs (such as the autoimprove sandbox) may carry only
+    # `ast-grep`; upstream deprecates the `sg` alias.
+    local real bin got
+    real="$(command -v ast-grep || true)"
+    [ -n "$real" ] || skip "ast-grep not installed"
+    bin="$BATS_TEST_TMPDIR/bin"
+    mkdir -p "$bin"
+    ln -s "$real" "$bin/ast-grep"
+    got="$(printf 'V=`pwd`\n' | env -i PATH="$bin:/usr/bin:/bin" python3 "$SCRIPT" - 2>/dev/null)"
+    [[ "$got" == *'V=$(pwd)'* ]]
 }
 
 # -- Real-world regression fixtures ----------------------------------------
@@ -686,7 +720,7 @@ SH
         'LEN=$(echo -n "$S" | wc -c)' \
         '# bash-shorten: enable')"
     local got
-    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" -)"
+    got="$(printf '%s\n' "$input" | python3 "$SCRIPT" --include ascii -)"
     # backticks (sg-handled) and echo-wc-c (regex path) both untouched.
     [[ "$got" == *'V=`pwd`'* ]] \
         && [[ "$got" == *'LEN=$(echo -n "$S" | wc -c)'* ]] \
