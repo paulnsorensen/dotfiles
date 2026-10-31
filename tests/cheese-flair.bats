@@ -65,7 +65,7 @@ setup() {
 @test "cheese_name generated never leaks the {C} placeholder" {
     # shellcheck source=/dev/null
     source "$LIB"
-    for _ in 1 2 3 4 5; do
+    for _ in {1..5}; do
         local name
         name="$(cheese_name generated)"
         [[ "$name" != *"{C}"* ]]
@@ -75,7 +75,7 @@ setup() {
 @test "cheese_name mixed produces non-empty output" {
     # shellcheck source=/dev/null
     source "$LIB"
-    for _ in 1 2 3 4 5; do
+    for _ in {1..5}; do
         local name
         name="$(cheese_name mixed)"
         [[ -n "$name" ]]
@@ -195,7 +195,7 @@ setup() {
 @test "cheese_names 3 returns three distinct lines" {
     # shellcheck source=/dev/null
     source "$LIB"
-    for _ in 1 2 3 4 5; do
+    for _ in {1..5}; do
         local names line_count distinct_count
         names="$(cheese_names 3)"
         line_count="$(printf '%s\n' "$names" | wc -l | tr -d ' ')"
@@ -217,7 +217,7 @@ setup() {
 @test "cheese_sample always pins Cheese Lord as the first address" {
     # shellcheck source=/dev/null
     source "$LIB"
-    for _ in 1 2 3 4 5; do
+    for _ in {1..5}; do
         local sample first
         sample="$(cheese_sample)"
         first="$(printf '%s\n' "$sample" | awk '/^- Addresses:/ { found = 1; next } /^- Quotes:/ { exit } found && /^  - / { sub(/^  - /, ""); print }' | head -n 1)"
@@ -228,7 +228,7 @@ setup() {
 @test "cheese_sample addresses are distinct across all three slots" {
     # shellcheck source=/dev/null
     source "$LIB"
-    for _ in 1 2 3 4 5; do
+    for _ in {1..5}; do
         local addresses distinct_count
         addresses="$(cheese_sample | awk '/^- Addresses:/ { found = 1; next } /^- Quotes:/ { found = 0 } found && /^  - / { sub(/^  - /, ""); print }')"
         distinct_count="$(printf '%s\n' "$addresses" | sort -u | wc -l | tr -d ' ')"

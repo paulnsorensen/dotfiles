@@ -113,7 +113,7 @@ publish_mise_pin_bump() {
     local own_prs=0
     while IFS=$'\t' read -r pr_url pr_cross pr_oid; do
         [[ "$pr_cross" == "false" ]] || continue
-        own_prs=$((own_prs + 1))
+        ((own_prs += 1))
         if [[ "$pr_oid" == "$commit" ]]; then
             url="$pr_url"
             break

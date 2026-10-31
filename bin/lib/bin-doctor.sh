@@ -190,7 +190,7 @@ bd__strays() {
     local category="$1" manager="$2" allow="$3" declared="$4" installed="$5" name
     while IFS= read -r name; do
         [[ -n "$name" ]] || continue
-        printf '%s\n' "$declared" | grep -qxF "$name" && continue
+        grep -qxF -- "$name" <<< "$declared" && continue
         bd_allowed "$allow" "$manager" "$name" && continue
         printf '%s\t%s\t%s\n' "$category" "$name" "$manager install not declared in packages.yaml"
     done <<< "$installed"
@@ -209,10 +209,11 @@ bd_cargo_install_list() {
 # metadata (cargo lists a binary that is gone), and untracked files in
 # $CARGO_HOME/bin that no crate owns and that are not rustup proxies.
 bd_check_cargo() {
-    local file="$1" allow="$2" bin_dir list declared crate bin entry name
+    local file="$1" allow="$2" bin_dir list list_bins declared crate bin entry name
     command -v cargo >/dev/null 2>&1 || return 0
     bin_dir="${CARGO_HOME:-$HOME/.cargo}/bin"
     list="$(bd_cargo_install_list)"
+    list_bins="$(cut -f2 <<< "$list")"
     declared="$(bd_declared "$file" cargo || true)"
     bd__strays cargo-stray cargo "$allow" "$declared" "$(printf '%s\n' "$list" | cut -f1 | sort -u)"
     while IFS=$'\t' read -r crate bin; do
@@ -223,8 +224,8 @@ bd_check_cargo() {
     [[ -d "$bin_dir" ]] || return 0
     for entry in "$bin_dir"/*; do
         [[ -e "$entry" || -L "$entry" ]] || continue
-        name="$(basename "$entry")"
-        printf '%s\n' "$list" | cut -f2 | grep -qxF "$name" && continue
+        name="${entry##*/}"
+        grep -qxF -- "$name" <<< "$list_bins" && continue
         [[ "$(bd_manager_of "$entry")" == rustup ]] && continue
         bd_allowed "$allow" cargo "$name" && continue
         printf 'cargo-untracked\t%s\t%s\n' "$name" "$entry is owned by no installed crate"
@@ -259,11 +260,11 @@ bd_check_brew() {
     while IFS= read -r name; do
         [[ -n "$name" ]] || continue
         short="${name##*/}"
-        printf '%s\n' "$declared" | grep -qxF -e "$name" -e "$short" && continue
+        grep -qxF -e "$name" -e "$short" <<< "$declared" && continue
         bd_allowed "$2" brew "$short" && continue
         printf 'brew-stray\t%s\t%s\n' "$name" "brew leaf not declared in packages.yaml or the allowlist"
     done <<< "$leaves"
-    if printf '%s\n' "$leaves" | grep -qxF rust && brew list --formula rustup >/dev/null 2>&1; then
+    if grep -qxF rust <<< "$leaves" && brew list --formula rustup >/dev/null 2>&1; then
         printf 'conflict\t%s\t%s\n' rust "brew formula rust shadows the rustup toolchains that mise pins"
     fi
 }
@@ -281,12 +282,12 @@ bd_check_unmanaged() {
     if [[ -d "$go_bin" ]]; then
         for entry in "$go_bin"/*; do
             [[ -f "$entry" ]] || continue
-            printf 'unmanaged\t%s\t%s\n' "$(basename "$entry")" "go install in $go_bin; packages.yaml has no go source"
+            printf 'unmanaged\t%s\t%s\n' "${entry##*/}" "go install in $go_bin; packages.yaml has no go source"
         done
     fi
     if [[ -d "$HOME/.bun/bin" ]]; then
         for entry in "$HOME/.bun/bin"/*; do
-            name="$(basename "$entry")"
+            name="${entry##*/}"
             case "$name" in bun | bunx | '*') continue ;; esac
             printf 'unmanaged\t%s\t%s\n' "$name" "bun global install; packages.yaml has no bun source"
         done

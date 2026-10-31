@@ -65,7 +65,7 @@ teardown() { teardown_test_env; }
     run /usr/bin/plutil -extract AppleSymbolicHotKeys.160.enabled raw -expect bool "$prefs"
     assert_success
     [ "$output" = "true" ]
-    for index in 0 1 2; do
+    for index in {0..2}; do
         run /usr/bin/plutil -extract "AppleSymbolicHotKeys.160.value.parameters.$index" raw -expect integer "$prefs"
         assert_success
     done
@@ -115,7 +115,7 @@ assert_spotlight_modifiers() {
     local target="$HOME/Library/LaunchAgents/com.local.KeyRemapping.plist"
     assert_symlink "$target" "$plist"
 
-    for index in 0 1 2; do
+    for index in {0..2}; do
         run /usr/bin/plutil -extract "ProgramArguments.$index" raw -expect string "$plist"
         assert_success
     done

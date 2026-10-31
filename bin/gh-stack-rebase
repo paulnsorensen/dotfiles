@@ -22,7 +22,7 @@ done
 default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
 git fetch "$remote" "$default_branch"
 
-trunk_branch="$(git for-each-ref --format='%(refname:short)' 'refs/heads/stack-trunk/*' | head -1)"
+trunk_branch="$(git for-each-ref --count=1 --format='%(refname:short)' 'refs/heads/stack-trunk/*')"
 
 if [[ -z "$trunk_branch" ]]; then
     echo "gh-stack-rebase: no stack-trunk/* branch found — nothing to fast-forward, delegating as-is" >&2

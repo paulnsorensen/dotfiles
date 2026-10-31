@@ -72,6 +72,9 @@ run_privileged() {
     "$@"
 }
 
+VAULT_PROVISION_TMP=""
+trap 'rm -f "$VAULT_PROVISION_TMP"' EXIT
+
 install_node_runtime() {
     local source_npx="$1" source_bin source_root version destination target chown_path
     local wrapper temporary
@@ -106,6 +109,7 @@ install_node_runtime() {
 
     wrapper="$destination/bin/agent-secret-npx"
     temporary="$(mktemp)"
+    VAULT_PROVISION_TMP="$temporary"
     printf '#!/bin/sh\nexec %s/bin/node %s/lib/node_modules/npm/bin/npx-cli.js \"$@\"\n' \
         "$destination" "$destination" > "$temporary"
     if [[ -n "$DESTDIR" ]]; then
@@ -114,6 +118,7 @@ install_node_runtime() {
         run_privileged /usr/bin/install -o root -g 0 -m 0755 "$temporary" "$wrapper"
     fi
     rm -f "$temporary"
+    VAULT_PROVISION_TMP=""
     NODE_RUNTIME_NPX="$wrapper"
 }
 

@@ -252,6 +252,22 @@ esac'
     [[ "$output" != *"tinted-theming/tinted/tree"* ]]
 }
 
+# grep -q exits at the first hit. A producer pipe then dies of SIGPIPE, and
+# pipefail turns a found name into a stray. A here-string has no producer.
+@test "strays: a declared name found early in a large list is not a stray under pipefail" {
+    local declared installed
+    declared="$(printf 'pkg%s\n' {1..20000})"
+    installed="$(printf 'pkg1\nweird.name\n')"
+    : > "$ALLOW"
+
+    set -o pipefail
+    run bd__strays brew-stray brew "$ALLOW" "$declared" "$installed"
+    set +o pipefail
+    [[ $status -eq 0 ]]
+    [[ "$output" != *$'\t'"pkg1"$'\t'* ]]
+    [[ "$output" == *"brew-stray"$'\t'"weird.name"$'\t'* ]]
+}
+
 # ── npm / uv ─────────────────────────────────────────────────────────
 
 @test "npm: a package declared by pkg: is not a stray; npm itself is ignored" {
