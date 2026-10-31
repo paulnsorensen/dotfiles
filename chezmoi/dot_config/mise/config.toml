@@ -85,7 +85,7 @@
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 "aqua:axodotdev/cargo-dist" = "v0.33.1"
 "aqua:rust-lang/mdBook" = "v0.5.4"
-"aqua:anthropics/claude-code" = "v2.1.314"
+"aqua:anthropics/claude-code" = "v2.1.316"
 "aqua:openai/codex" = "rust-v0.162.1"
 
 node = "26.13.0"
