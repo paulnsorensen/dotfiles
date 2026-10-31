@@ -253,3 +253,57 @@ EOF
     assert_success
     [[ "$output" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
+
+@test "main handles accepted, missing, wrong-vendor, and failed yq bootstrap" {
+    local tools="$TEST_HOME/yq-tools" tool state
+    mkdir -p "$tools"
+    for tool in dirname grep mkdir uname chmod mv cp rm; do
+        ln -s "$(command -v "$tool")" "$tools/$tool"
+    done
+    cat > "$TEST_HOME/downloaded-yq" <<'EOF'
+#!/bin/bash
+printf '%s\n' 'yq (https://github.com/mikefarah/yq/) version downloaded'
+EOF
+    cat > "$MOCK_BIN/curl" <<'EOF'
+#!/bin/bash
+printf '%s\n' "$*" >> "$HOME/yq-download.log"
+[[ "${YQ_DOWNLOAD_FAIL:-false}" == false ]] || exit 1
+cp "$HOME/downloaded-yq" "$4"
+EOF
+    chmod +x "$MOCK_BIN/curl" "$TEST_HOME/downloaded-yq"
+    PLATFORM=Linux
+    bootstrap_brew_deps_linux() { :; }
+    bootstrap_brew() {
+        printf 'gate-ready: %s\n' "$(yq --version)"
+        return 1
+    }
+
+    for state in accepted missing wrong-vendor failed; do
+        rm -f "$MOCK_BIN/yq" "$HOME/.local/bin/yq" "$TEST_HOME/yq-download.log"
+        export YQ_DOWNLOAD_FAIL=false
+        case "$state" in
+            accepted) cp "$TEST_HOME/downloaded-yq" "$MOCK_BIN/yq" ;;
+            wrong-vendor)
+                printf '#!/bin/bash\nprintf "yq 3.2.3\\n"\n' > "$MOCK_BIN/yq"
+                chmod +x "$MOCK_BIN/yq"
+                ;;
+            failed) export YQ_DOWNLOAD_FAIL=true ;;
+        esac
+
+        PATH="$MOCK_BIN:$tools" run main
+        assert_failure
+        assert_output_not_contains "command not found"
+        if [[ "$state" == failed ]]; then
+            assert_output_contains "Failed to install yq"
+            assert_output_not_contains "gate-ready:"
+            [[ ! -e "$HOME/.local/bin/yq" ]]
+        else
+            assert_output_contains "gate-ready: yq (https://github.com/mikefarah/yq/) version downloaded"
+        fi
+        if [[ "$state" == accepted ]]; then
+            [[ ! -e "$TEST_HOME/yq-download.log" ]]
+        else
+            [[ "$(<"$TEST_HOME/yq-download.log")" == "-fsSL https://github.com/mikefarah/yq/releases/download/$(yq_pinned_version)/yq_linux_"*" -o $HOME/.local/bin/yq.tmp" ]]
+        fi
+    done
+}
