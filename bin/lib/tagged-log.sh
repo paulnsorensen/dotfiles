@@ -6,7 +6,7 @@
 
 _tagged_log_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/lib/term-colors.sh
-source "${_tagged_log_dir}/term-colors.sh"
+source "${_tagged_log_dir}/term-colors.sh" || return 1
 unset _tagged_log_dir
 
 log()  { echo -e "${BLUE}[${LOG_TAG}]${NC} $*"; }

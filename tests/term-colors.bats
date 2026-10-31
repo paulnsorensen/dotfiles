@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Tests for bin/lib/term-colors.sh and bin/lib/tagged-log.sh.
 
+bats_require_minimum_version 1.5.0
+
 setup() {
     LIB_DIR="$BATS_TEST_DIRNAME/../bin/lib"
 }
@@ -18,7 +20,9 @@ setup() {
 }
 
 @test "tagged-log log and ok write the tag to stdout only" {
-    run bash -c 'LOG_TAG=demo; source "$1/tagged-log.sh"; log hello; ok done' _ "$LIB_DIR" 2>/dev/null
+    # shellcheck disable=SC2016 # The child shell expands positional arguments.
+    run --separate-stderr bash -c 'LOG_TAG=demo; source "$1/tagged-log.sh"; log hello; ok done' _ "$LIB_DIR"
+    [ -z "$stderr" ]
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = $'\e[0;34m[demo]\e[0m hello' ]
     [ "${lines[1]}" = $'\e[0;32m[demo]\e[0m done' ]
@@ -41,4 +45,27 @@ setup() {
     run bash -c 'before=$-; LOG_TAG=t; source "$1/tagged-log.sh"; [[ $- == "$before" ]] && declare -F log ok warn err | wc -l' _ "$LIB_DIR"
     [ "$status" -eq 0 ]
     [ "$output" = "4" ]
+}
+
+@test "tagged-log rejects a missing color library before defining helpers" {
+    cp "$LIB_DIR/tagged-log.sh" "$BATS_TEST_TMPDIR/tagged-log.sh"
+    # shellcheck disable=SC2016 # The child shell expands positional arguments.
+    run --separate-stderr bash -c 'source "$1/tagged-log.sh"; rc=$?
+        declare -F log ok warn err
+        exit "$rc"' _ "$BATS_TEST_TMPDIR"
+    [ "$status" -ne 0 ]
+    [ -z "$output" ]
+    [[ "$stderr" == *"term-colors.sh"* ]]
+}
+
+@test "installers stop before host checks when the logger cannot load" {
+    local script
+    for script in install-linux-server linux-install; do
+        cp "$LIB_DIR/../$script" "$BATS_TEST_TMPDIR/$script"
+        run --separate-stderr bash -x "$BATS_TEST_TMPDIR/$script"
+        [ "$status" -eq 1 ]
+        [[ "$stderr" == *"tagged-log.sh"* ]]
+        [[ "$stderr" != *"++ uname"* ]]
+        [ -z "$output" ]
+    done
 }
