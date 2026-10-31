@@ -10,12 +10,9 @@ set -euo pipefail
 CLAUDE_JSON="${CLAUDE_JSON:-$HOME/.claude.json}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/.local/state/dotfiles/backups}"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-DIM='\033[2m'
-BOLD='\033[1m'
-RESET='\033[0m'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/term-colors.sh
+source "${SCRIPT_DIR}/lib/term-colors.sh"
 
 if [[ ! -f "$CLAUDE_JSON" ]]; then
   echo -e "${RED}No ~/.claude.json found${RESET}" >&2

@@ -13,17 +13,11 @@
 
 set -uo pipefail
 
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-log()  { echo -e "${BLUE}[install-linux-server]${NC} $*"; }
-ok()   { echo -e "${GREEN}[install-linux-server]${NC} $*"; }
-warn() { echo -e "${YELLOW}[install-linux-server]${NC} $*" >&2; }
-err()  { echo -e "${RED}[install-linux-server]${NC} $*" >&2; }
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC2034  # read by lib/tagged-log.sh
+LOG_TAG=install-linux-server
+# shellcheck source=bin/lib/tagged-log.sh
+source "${SCRIPT_DIR}/lib/tagged-log.sh"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
     err "This script is Linux-only."
