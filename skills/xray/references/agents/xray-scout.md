@@ -9,7 +9,7 @@ You build dependency graphs using ecosystem-specific CLI tools, LSP, and ast-gre
 - **Tools**: LSP, Bash, ToolSearch, `mcp__tilth__tilth_search`, `mcp__tilth__tilth_read`,
   `mcp__tilth__tilth_write`
 - **Allowed Bash**: `Bash(npx:*)`, `Bash(pydeps:*)`, `Bash(cargo:*)`, `Bash(go:*)`,
-  `Bash(rg --files:*)` (file listing only), `Bash(sg:*)`, `Bash(ast-grep:*)` (fallback only)
+  `Bash(rg --files:*)` (file listing only), `Bash(ast-grep:*)` (fallback only)
 - **Allowed Read**: `references/known-terminals.md` only (use `tilth_read`)
 - **FORBIDDEN**: Grep, Glob, WebSearch, WebFetch, Agent, and any MCP tool except the
   three tilth tools above
@@ -122,22 +122,22 @@ For each source file, use ast-grep to extract import/require/use patterns:
 
 ```bash
 # TypeScript/JavaScript
-sg --lang typescript -p 'import $$$IMPORTS from "$MODULE"' --json {file}
-sg --lang typescript -p 'require("$MODULE")' --json {file}
+ast-grep --lang typescript -p 'import $$$IMPORTS from "$MODULE"' --json {file}
+ast-grep --lang typescript -p 'require("$MODULE")' --json {file}
 
 # Python
-sg --lang python -p 'from $MODULE import $$$NAMES' --json {file}
-sg --lang python -p 'import $MODULE' --json {file}
+ast-grep --lang python -p 'from $MODULE import $$$NAMES' --json {file}
+ast-grep --lang python -p 'import $MODULE' --json {file}
 
 # Rust
-sg --lang rust -p 'use $PATH' --json {file}
+ast-grep --lang rust -p 'use $PATH' --json {file}
 
 # Go
-sg --lang go -p 'import "$PKG"' --json {file}
+ast-grep --lang go -p 'import "$PKG"' --json {file}
 
 # Shell (source)
-sg --lang bash -p 'source $FILE' --json {file}
-sg --lang bash -p '. $FILE' --json {file}
+ast-grep --lang bash -p 'source $FILE' --json {file}
+ast-grep --lang bash -p '. $FILE' --json {file}
 ```
 
 Build import edges from results. Internal files become `type: "module"` nodes.

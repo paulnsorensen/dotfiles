@@ -40,6 +40,8 @@ Distilled from `.cheese/notes/strip-log.md` + Phase D decisions.
 | `bin/install-linux-server` | COPY | Generic Linux server installer |
 | `bin/linux-install` | GENERICIZE | Relaxed root check for container environments; `_sudo` helper wraps all privilege calls |
 | `bin/wt-git` | COPY | Generic worktree git helper |
+| `bin/lib/term-colors.sh` | COPY | Colour constants; `ccw-sweep` and `install-linux-server` source it |
+| `bin/lib/tagged-log.sh` | COPY | Tagged log helpers; `install-linux-server` and `linux-install` source it |
 | `bin/dotsclaude` | SKIP | Personal Claude launcher |
 | `bin/cheatsheet` | SKIP | Personal cheatsheet |
 | `bin/claude-json-prune` | SKIP | Personal session pruner |

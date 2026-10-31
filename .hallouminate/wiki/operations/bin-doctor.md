@@ -11,6 +11,7 @@
 - **Linux uses brew's rustup proxies too.** `zshenv` and `zsh/core.zsh` put `$HOMEBREW_PREFIX/opt/rustup/bin` ahead of brew's bin on both platforms. `bin-doctor` reports a brew `rust` formula beside rustup as a `conflict`.
 - **aqua before cargo.** A crate with release binaries in the aqua registry is a mise pin (cargo-deny, cargo-dist, mdbook, cargo-nextest). `packages.yaml` `source: cargo` is only for source-only crates (cargo-update, cargo-cache, bws).
 - **Weekly `bin-doctor clean`.** A systemd user timer (Linux) or a launchd agent (macOS), both deployed by chezmoi and enabled by `run_onchange_after_install-bin-doctor-clean.sh.tmpl`. It runs only prompt-free cleanups that delete re-downloadable data.
+- **`dots sync` runs `bin-doctor clean --sync`** (2026-10-29). The devbox container has no systemd user bus, so the weekly timer never ran there and `/home` reached 99%. `--sync` adds `mise prune -y`, `docker image prune -f`, and `docker builder prune --filter unused-for=168h`. The user starts a sync, so it may uninstall unpinned mise versions; the weekly job still must not (`tests/bin-doctor.bats` locks this). Docker keeps tagged images because `-a` deletes the 10 GB devbox image.
 - **Rejected:** topgrade and brew autoupdate (in-place upgrades defeat the Renovate pins), cargo-sweep (unmaintained), `brew bundle cleanup` (needs a Brewfile and `--force`). The research report is `research/binary-manager-cleanup-hygiene` in the cheese corpus.
 
 ## Gotchas
@@ -21,6 +22,8 @@
 - **Deleting rustup's proxies from `~/.cargo/bin` is safe only with brew rustup on PATH.** The mise `rust` pin sets `RUSTUP_TOOLCHAIN`; any rustup proxy then selects the pinned toolchain.
 - **`cargo uninstall` refuses a crate whose binary is already gone** ("corrupt metadata"). Remove its entries from `~/.cargo/.crates.toml` and `~/.cargo/.crates2.json`.
 - **Check both PATHs.** Interactive zsh (`mise activate`) and non-interactive shells (mise shims from `zshenv`) resolve differently; agents and timers use the non-interactive one.
+- **`mise prune` leaves stale PATH in running processes.** A shell or agent started before the prune keeps install dirs of pruned versions on PATH. Interactive zsh recomputes PATH on the next prompt. Non-interactive processes fall back to the shims, but sandboxed bats tests (own `MISE_DATA_DIR`) fail with "is not a valid shim". Run `eval "$(mise env -s zsh)"` first.
+- **`uv cache prune` cannot get the cache lock while a `uvx` MCP server runs.** `--sync` sets `UV_LOCK_TIMEOUT=10`, so the step fails in 10 s instead of 300 s.
 - **systemd user timers need a session.** Without `loginctl enable-linger`, the timer runs only while the user is logged in; `Persistent=true` catches up a missed week.
 
 Related: [[operations/brew-machine-prune]] (the macOS prune and the accepted-unmanaged list the allowlist copies), [[operations/mise-manifest-precedence]].

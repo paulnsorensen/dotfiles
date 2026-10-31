@@ -307,6 +307,46 @@ esac'
     [[ ! -s "$LOG" ]]
 }
 
+@test "sync steps add mise prune and the safe docker prunes to the clean steps" {
+    stub uv 'exit 0'
+    stub mise 'exit 0'
+    stub docker 'exit 0'
+    run bd_sync_steps
+    [[ "$output" == *"uv"$'\t'"uv cache prune"* ]]
+    [[ "$output" == *"mise"$'\t'"mise cache prune"* ]]
+    [[ "$output" == *"mise"$'\t'"mise prune -y"* ]]
+    [[ "$output" == *"docker"$'\t'"docker image prune -f"* ]]
+    [[ "$output" == *"docker"$'\t'"docker builder prune -f --filter unused-for=168h"* ]]
+    # -a would delete tagged images such as the devbox image.
+    [[ "$output" != *"prune -a"* ]]
+}
+
+@test "sync steps skip docker when the daemon does not answer" {
+    stub docker 'exit 1'
+    run bd_sync_steps
+    [[ "$output" != *docker* ]]
+}
+
+@test "bin-doctor clean --sync --dry-run prints the sync plan and runs nothing" {
+    stub mise "echo \"mise \$*\" >> '$LOG'"
+    # shellcheck disable=SC2016  # $1 and $* belong to the stub script
+    stub docker '[[ "$1" == info ]] && exit 0; echo "docker $*" >> '"'$LOG'"
+
+    run "$REAL_DOTFILES_DIR/bin/bin-doctor" clean --sync --dry-run
+    [[ $status -eq 0 ]]
+    [[ "$output" == *"would run [mise] mise prune -y"* ]]
+    [[ "$output" == *"would run [docker] docker image prune -f"* ]]
+    [[ ! -s "$LOG" ]]
+}
+
+@test "bin-doctor clean --sync gives a busy uv cache lock a short timeout" {
+    stub uv "echo \"uv timeout=\$UV_LOCK_TIMEOUT \$*\" >> '$LOG'"
+
+    run "$REAL_DOTFILES_DIR/bin/bin-doctor" clean --sync
+    [[ $status -eq 0 ]]
+    grep -qx "uv timeout=10 cache prune" "$LOG"
+}
+
 @test "bin-doctor clean rejects an unknown flag and runs nothing" {
     stub uv "echo \"uv \$*\" >> '$LOG'"
 

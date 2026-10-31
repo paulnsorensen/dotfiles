@@ -51,7 +51,7 @@ settings:
     - Bash(dots:*)
     - Bash(prek:*)
     - Bash(fd:*)
-    - Bash(sg:*)
+    - Bash(ast-grep:*)
     - Bash(sd:*)
     - Bash(gh:*)
     - Bash(yq:*)

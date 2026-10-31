@@ -84,6 +84,13 @@ yq_is_mikefarah() {
     yq --version 2>/dev/null | grep -q mikefarah
 }
 
+# Ensure that registry queries use Mike Farah's yq.
+ensure_yq_linux() {
+    if ! { command -v yq &>/dev/null && yq_is_mikefarah; }; then
+        bootstrap_yq_linux || return 1
+    fi
+}
+
 # The pinned Mike Farah yq version, read from the mise config that owns yq in
 # steady state (chezmoi/dot_config/mise/config.toml). Bootstrap must install
 # this exact version: ~/.local/bin precedes the mise shims on PATH, so a

@@ -58,7 +58,7 @@
 "aqua:tmux/tmux-builds" = "v3.7c"
 "aqua:j178/prek" = "v0.5.7"
 "aqua:ajeetdsouza/zoxide" = "v0.10.0"
-"aqua:atuinsh/atuin" = "v18.24.2"
+"aqua:atuinsh/atuin" = "v18.24.3"
 "aqua:ClementTsang/bottom" = "0.14.9"
 "aqua:bootandy/dust" = "v1.2.6"
 "aqua:dalance/procs" = "v0.14.12"
@@ -85,19 +85,19 @@
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 "aqua:axodotdev/cargo-dist" = "v0.33.1"
 "aqua:rust-lang/mdBook" = "v0.5.4"
-"aqua:anthropics/claude-code" = "v2.1.312"
-"aqua:openai/codex" = "rust-v0.162.1"
+"aqua:anthropics/claude-code" = "v2.1.316"
+"aqua:openai/codex" = "rust-v0.166.0"
 
-node = "26.12.1"
+node = "26.13.0"
 bun = "1.4.4"
 rust = "1.99.1"
 
-"npm:t3" = "0.1.3"
+"npm:t3" = "0.1.6"
 "npm:bash-language-server" = "5.8.1"
 "npm:yaml-language-server" = "2.0.0"
 "npm:basedpyright" = "1.40.2"
 # OpenCode v2 ships on npm only; its GitHub tags carry no release assets for aqua.
 # The package postinstall links the platform binary, so allow its build script.
-"npm:@opencode/cli" = { version = "2.2.0", allow_builds = ["@opencode/cli"] }
+"npm:@opencode/cli" = { version = "2.2.5", allow_builds = ["@opencode/cli"] }
 "cargo:eza" = { version = "0.23.5", features = "vendored-libgit2" }
 "cargo:tokei" = "15.0.0"

@@ -4,7 +4,7 @@ model: opus
 effort: high
 context: fork
 argument-hint: "[directory to scope, or leave blank for full codebase]"
-allowed-tools: Read, Glob, Grep, Bash(sg:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Bash(npm audit:*), Bash(uv pip audit:*), Bash(pip-audit:*), Bash(cargo audit:*), Bash(govulncheck:*), Agent, mcp__serena__*
+allowed-tools: Read, Glob, Grep, Bash(ast-grep:*), Bash(git log:*), Bash(git blame:*), Bash(jq:*), Bash(yq:*), Bash(wc:*), Bash(npm audit:*), Bash(uv pip audit:*), Bash(pip-audit:*), Bash(cargo audit:*), Bash(govulncheck:*), Agent, mcp__serena__*
 description: >
   Scan for custom code that duplicates well-supported libraries, then recommend
   migrations with effort estimates. Detects hand-rolled utilities, retry logic,
