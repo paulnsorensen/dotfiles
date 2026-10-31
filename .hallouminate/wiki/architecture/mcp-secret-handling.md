@@ -49,6 +49,10 @@ those quotes for free; the broker path reads the raw bytes, so
 `vault_secret_value` must strip the matched surrounding quote pair itself or
 every credential file ends up quote-wrapped and rejected by the upstream API.
 
+Provisioning distinguishes an absent Bitwarden Secret from a provider or transport failure: only absence may enter the interactive creation path. The Node snapshot prefix comes from `node -p process.execPath`, must contain the matching npm/npx tree, and rejects Homebrew Cellar roots so provisioning cannot copy a package-manager prefix wholesale. On macOS, changing a broker plist requires a bounded `bootout` wait followed by bounded `bootstrap` retries; `kickstart` alone would restart the old loaded definition.[^provision-hardening]
+
+[^provision-hardening]: `bin/vault-provision:75-106,146-167`; `bin/lib/vault.sh:325-345`; `bin/agent-secret-install:218-257`
+
 ## Operator workflow
 
 1. Install packages with `dots sync`. Put the three provider API keys in the
