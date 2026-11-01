@@ -25,6 +25,16 @@ process from starting, so the flag and tool name must move together.
 
 [^tilth-graduation]: Tilth main `src/main.rs`, `src/mcp/mod.rs`, and `src/mcp/tools/definitions.rs`; dotfiles `agents/preamble.md:17` and `agents/mcp/registry.yaml:31-35`.
 
+### Worktree session ownership
+
+The global preferences keep the worktree rule harness-neutral.
+A Git worktree alone does not bind another session to that checkout.
+The session must start with the correct checkout and permissions before it edits files.
+This avoids repeated requests to expand the parent's write roots or restart the user's session.
+The rule permits harness-native tools, including T3, and a CLI session launcher as a fallback.[^worktree-session]
+
+[^worktree-session]: `agents/AGENTS.md:27-35`; operator decision on 2026-11-01 after the eight-PR repair session.
+
 ## Outcome-first verification
 
 Completion evidence must address the requested outcome, not only a passing test suite.

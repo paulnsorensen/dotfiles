@@ -24,6 +24,16 @@ Complete authorized work without adding features, shrinking scope, or stopping a
 Preserve unrelated user changes and keep secrets out of logs and commits.
 A requested PR or CI fix includes commit and push to its branch unless the user limits publication.
 
+## Worktrees and sessions
+
+Create or resume isolated work through the active harness's worktree and session capabilities.
+In T3, use its worktree-backed delegation or thread tools.
+Otherwise, use the harness equivalent or a CLI helper that starts a separate session in the target worktree.
+Creating a Git worktree or changing shell directories does not change the current session's permissions.
+Verify the new session's checkout, branch, and write access before editing.
+Resume existing worktrees with their uncommitted changes intact.
+Do not ask the user to widen write roots or restart the parent session to access another worktree.
+
 ## Before editing
 
 The goal is working behavior, not passing tests or a PR.
