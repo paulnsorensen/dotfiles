@@ -34,8 +34,10 @@ sources:
     # main gitignores. Pin it so no harness installs the source-only main.
     pin: dist
   paulnsorensen/skillz-that-grillz:
-    # Tracks main (no pin). Ships /skillz with its bundled analytics engine to
-    # every harness; it replaces the retired local skills/skillz.
+    # No pin: follows the remote default branch (dist since
+    # skillz-that-grillz#518; dist ships scripts/*.pyz, main gitignores them).
+    # Ships /skillz with its bundled analytics engine to every harness; it
+    # replaces the retired local skills/skillz.
     description: skillz — add, improve, audit, and self-update skill and agent definitions
   paulnsorensen/routines:
     description: Cloud-routine skills — wiki-curator (applied by the routines at runtime), routine-scaffold, routine-env

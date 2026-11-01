@@ -1,7 +1,7 @@
 # Harness Coverage
 
 The published `agent-session-analytics` package owns discovery and normalization.
-Run `uvx agent-session-analytics@latest schema` for the current schema.
+Run `uvx agent-session-analytics==0.2.1 schema` for the current schema.
 This page records signal limits for local reports, not an independent adapter contract.
 The package skips harnesses with no accessible logs without failing the other harnesses.
 
@@ -171,7 +171,7 @@ e.g. token/cost data is absent from most logs (`token-economics` degrades to
 entries, so `stop_hooks` / `permission_denials` are effectively claude-only.
 Packs must degrade gracefully rather than fabricate.
 
-`uvx agent-session-analytics@latest ingest` returns a JSON `coverage` array.
+`uvx agent-session-analytics==0.2.1 ingest` returns a JSON `coverage` array.
 It reports `results_joined_pct` (tool calls with a joined result) and
 `explicit_error_flag_pct` (results whose error flag came from the source).
 Read it before quoting cross-harness error-rate comparisons. A low join rate

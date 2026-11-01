@@ -126,7 +126,7 @@ teardown() { teardown_test_env; }
 }
 
 @test "failed default ingestion preserves exit four" {
-    local db="$TEST_HOME/.cache/dotfiles/session-analytics/sessions.duckdb"
+    local db="$TEST_HOME/.cache/agent-session-analytics/sessions.duckdb"
     local bindir="$TEST_HOME/bin"
     rm "$db"
     mkdir -p "$bindir"

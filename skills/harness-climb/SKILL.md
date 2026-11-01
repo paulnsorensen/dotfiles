@@ -39,7 +39,7 @@ Resolve symlinks first. Do not derive the path from the repository under change.
 python3 "$HC" <analyze|critic|freeze|field-gate|ledger> --thread <thread> ...
 ```
 
-The script uses `uvx agent-session-analytics@latest` for the session database. Install `uvx` and DuckDB before use.
+The script uses `uvx agent-session-analytics==0.2.1` for the session database. Install `uvx` and DuckDB before use.
 A nonempty `SESSIONS_DB` selects a database without implicit ingestion. Use the package `ingest --force` command to rebuild an incompatible override.
 
 Read [field-gate.md](references/field-gate.md) before you freeze a round or run a field gate.

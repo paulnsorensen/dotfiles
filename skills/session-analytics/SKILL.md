@@ -13,7 +13,7 @@ allowed-tools: Bash, Read
 
 Interactive log queries and report SQL for the published `agent-session-analytics` package.
 The package owns log discovery, ingestion, database placement, and the canonical schema.
-Read its current schema with `uvx agent-session-analytics@latest schema` before writing SQL.
+Read its current schema with `uvx agent-session-analytics==0.2.1 schema` before writing SQL.
 The local `references/` files explain report use, coverage limits, query conventions,
 and calibration. They do not define the engine contract.
 
@@ -22,7 +22,7 @@ Run `<skill-dir>/scripts/query.sh <report> [harness]`. Reports: `tools`,
 `python3`, `hooks`, `compound`, `projects`, `heatmap`, `latency` (model
 round-trips, batching, and quota stops per model). The script uses the package's
 one-hour freshness check and reports a missing database as a failure.
-Use `uvx agent-session-analytics@latest ingest --force` to rebuild explicitly.
+Use `uvx agent-session-analytics==0.2.1 ingest --force` to rebuild explicitly.
 The `latency` report is not a Codex inference-speed measurement. Codex timing and user records stay omitted. The ingest keeps `token_count` events and `cli_version`. Codex `tool_calls` and `stop_reason` are NULL.
 
 Anything not covered: `scripts/query.sh sql "SELECT ..."` with the canonical

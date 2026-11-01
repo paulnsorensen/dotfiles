@@ -516,6 +516,28 @@ _cz_ensure_github_credential_helper() {
     log_warning "no git credential helper for github.com — a private skill source may fail to clone (run 'gh auth login' then 'gh auth setup-git')"
 }
 
+# Fail when a vendored skill's wedge.toml names a build target but the
+# skill lacks scripts/<name>.pyz. A source-only branch gitignores the
+# archives, so the skill installs but each helper command fails (#1489).
+# wedge.toml holds one top-level `name` or a `[[target]]` list.
+#   _cz_check_skill_archives <source> <skill-dir>
+_cz_check_skill_archives() {
+    local source="$1" dir="$2" skill names name
+    skill=$(basename "$dir")
+    [[ -f "$dir/wedge.toml" ]] || return 0
+    if ! names=$(yq -p toml -oy -r '(.name // ""), ((.target // [])[] | .name // "")' "$dir/wedge.toml" 2>/dev/null); then
+        log_error "external skill source $source: cannot parse $skill/wedge.toml"
+        return 1
+    fi
+    local -a missing=()
+    while IFS= read -r name; do
+        [[ -n "$name" && ! -f "$dir/scripts/$name.pyz" ]] && missing+=("scripts/$name.pyz")
+    done <<< "$names"
+    (( ${#missing[@]} == 0 )) && return 0
+    log_error "external skill source $source: skill '$skill' lacks ${missing[*]} named in its wedge.toml (the source branch ships no built archives)"
+    return 1
+}
+
 _cz_vendor_external_skills() {
     local registry="$1" dst="$2" harness="$3"
     [[ -f "$registry" ]] || return 0
@@ -570,22 +592,24 @@ _cz_vendor_external_skills() {
                 log_warning "external skill source $source: fetch failed, using cached checkout"
             fi
         else
-            # Unpinned: float to latest of the default branch on every sync.
-            # A cache left by a removed pin sits on a detached HEAD, so
-            # `pull --ff-only` fails forever and the stale pin never moves.
-            # The pinned path always writes .dotfiles-pin, so the marker
-            # alone identifies such a cache. Re-attach to the remote default
-            # branch first; a pin removal is a pin change, so failure here
-            # is loud like the pinned path.
-            if [[ -f "$cache/.dotfiles-pin" ]]; then
-                local def
-                def=$(GIT_TERMINAL_PROMPT=0 git -C "$cache" ls-remote --symref origin HEAD 2>/dev/null \
-                    | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2; exit }')
+            # Unpinned: float to the remote default branch on every sync.
+            # `pull --ff-only` only follows the clone-time branch, so compare
+            # that branch with the remote HEAD and re-attach when they differ.
+            # This covers a source that changes its default branch (#1489:
+            # skillz moved main -> dist) and a cache left by a removed pin,
+            # which carries a .dotfiles-pin marker. Offline (ls-remote fails)
+            # keeps the cached branch. A pin removal is a pin change, so it
+            # must re-attach or fail loud like the pinned path.
+            local def cur
+            def=$(GIT_TERMINAL_PROMPT=0 git -C "$cache" ls-remote --symref origin HEAD 2>/dev/null \
+                | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2; exit }')
+            cur=$(git -C "$cache" symbolic-ref -q --short HEAD 2>/dev/null || true)
+            if [[ -f "$cache/.dotfiles-pin" || ( -n "$def" && "$def" != "$cur" ) ]]; then
                 if [[ -z "$def" ]] \
                     || ! git -C "$cache" remote set-branches origin "$def" >/dev/null 2>&1 \
                     || ! GIT_TERMINAL_PROMPT=0 git -C "$cache" fetch --depth 1 origin "$def" >/dev/null 2>&1 \
                     || ! git -C "$cache" checkout -q -B "$def" --track "origin/$def" >/dev/null 2>&1; then
-                    log_error "external skill source $source: pin removed but cannot re-attach to the default branch"
+                    log_error "external skill source $source: cannot re-attach '${cur:-detached HEAD}' to the default branch '${def:-unknown}'"
                     return 1
                 fi
                 rm -f "$cache/.dotfiles-pin"
@@ -618,6 +642,7 @@ _cz_vendor_external_skills() {
             local dst_path
             dst_path="$dst/$(_cz_encode_name "$skill" true false)"
             [[ -e "$dst_path" ]] && log_warning "external skill source $source: skill '$skill' overwrites a local skill of the same name (claude.skills in chezmoi/.chezmoidata/claude.yaml)"
+            _cz_check_skill_archives "$source" "$cache/$sp/$skill" || return 1
             _cz_copy_encoded "$cache/$sp/$skill" "$dst_path" || return 1
         done
     done < <(yq -r '.sources | keys | .[]' "$registry")

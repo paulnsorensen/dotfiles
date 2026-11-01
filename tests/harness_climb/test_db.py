@@ -78,7 +78,7 @@ class PackageBoundaryTests(TestCase):
         args, kwargs = run.call_args
         self.assertEqual(
             args[0],
-            ["uvx", "agent-session-analytics@latest", "sql", "--", "SELECT 1 AS value"],
+            ["uvx", "agent-session-analytics==0.2.1", "sql", "--", "SELECT 1 AS value"],
         )
         self.assertEqual(kwargs["env"]["SESSIONS_DB"], str(db))
         self.assertGreater(kwargs["timeout"], 0)
@@ -232,7 +232,7 @@ class LoadRowsTests(RepoCase):
             sessions_ddl,
             *OTHER_DDL,
             "CREATE TABLE schema_info (version INTEGER)",
-            "INSERT INTO schema_info VALUES (1)",
+            "INSERT INTO schema_info VALUES (3)",
             *extra,
         )
 
@@ -296,7 +296,7 @@ class LoadRowsTests(RepoCase):
         db = self.build(sessions_ddl=ddl)
         with self.assertRaisesRegex(
             hc_db.SchemaOutdated,
-            re.escape("run uvx agent-session-analytics@latest ingest --force"),
+            re.escape("run uvx agent-session-analytics==0.2.1 ingest --force"),
         ):
             hc_db.load_rows(db, gate_json(), AFTER, AFTER + DAY)
 

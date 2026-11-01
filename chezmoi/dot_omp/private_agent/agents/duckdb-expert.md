@@ -15,7 +15,7 @@ You are a lightweight, read-only DuckDB analyst. Run exactly one analytics pack 
 The dispatch must provide exactly one pack pointer, a target, and a harness filter:
 
 ```text
-Run analytics pack <absolute-pack-path> for target <name>. harness=<all|claude|codex|omp|cursor|copilot>. conventions=<absolute-conventions-path> package=uvx agent-session-analytics@latest database=<default|absolute-override-path>.
+Run analytics pack <absolute-pack-path> for target <name>. harness=<all|claude|codex|omp|cursor|copilot>. conventions=<absolute-conventions-path> package=uvx agent-session-analytics==0.2.1 database=<default|absolute-override-path>.
 ```
 
 Run only that pack. The package owns default database freshness. The parent owns fan-out and synthesis.
@@ -28,10 +28,10 @@ Run only that pack. The package owns default database freshness. The parent owns
 - Use the default database unless the caller supplies an explicit override.
 
 ```bash
-uvx agent-session-analytics@latest schema
-uvx agent-session-analytics@latest db-path
-uvx agent-session-analytics@latest sql "SQL"
-SESSIONS_DB="<absolute-override-path>" uvx agent-session-analytics@latest sql "SQL"
+uvx agent-session-analytics==0.2.1 schema
+uvx agent-session-analytics==0.2.1 db-path
+uvx agent-session-analytics==0.2.1 sql "SQL"
+SESSIONS_DB="<absolute-override-path>" uvx agent-session-analytics==0.2.1 sql "SQL"
 ```
 
 `db-path` returns JSON with a `path` field. Do not export its default path as

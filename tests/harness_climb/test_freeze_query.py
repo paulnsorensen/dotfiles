@@ -9,10 +9,10 @@ import subprocess
 from typing import Any
 from unittest import mock
 
-import hc_freeze
-
 from .support import call, cli, hc_db
 from .test_freeze import QUERY, FreezeCase, needs_duckdb
+
+hc_freeze = cli.hc_freeze
 
 
 class ContractTests(FreezeCase):
@@ -107,7 +107,7 @@ class DuckdbMissingTests(FreezeCase):
         real = subprocess.run
 
         def run(args: Any, *a: Any, **kw: Any) -> Any:
-            if args[:2] == ["uvx", "agent-session-analytics@latest"]:
+            if args[:2] == ["uvx", "agent-session-analytics==0.2.1"]:
                 return subprocess.CompletedProcess(args, 3, "", '{"exit_code":3}')
             return real(args, *a, **kw)
 

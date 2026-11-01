@@ -53,7 +53,8 @@ packages:
   - xclip: { platform: linux }
   - mold: { platform: linux }                 # fast linker for target.x86_64-unknown-linux-gnu (cargo/config.toml)
   - llvm: { platform: linux }                 # provides clang, required by cargo/config.toml's mold linker config
-  - bubblewrap: { platform: linux }           # `bwrap` namespace sandbox; Claude Code sandbox needs it on Linux (no macOS build)
+  # No brew bubblewrap: Ubuntu's AppArmor userns rule exempts only /usr/bin/bwrap.
+  # A brew bwrap earlier on PATH fails with "setting up uid map". Use the apt package.
 
   # Dev (DOTFILES_DEV=true)
   - pyenv: { dev: true }
@@ -61,7 +62,7 @@ packages:
 
   # AI harnesses not owned by mise
   # renovate: datasource=npm depName=@earendil-works/pi-coding-agent
-  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "1.3.0", flags: ["--ignore-scripts"] }
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "1.4.0", flags: ["--ignore-scripts"] }
 
   # LSP servers not owned by mise
   # renovate: datasource=npm depName=@vtsls/language-server
@@ -77,27 +78,27 @@ packages:
 
   # Linters
   # renovate: datasource=npm depName=eslint
-  - eslint: { source: npm, version: "10.12.0" }
+  - eslint: { source: npm, version: "10.13.0" }
   # renovate: datasource=npm depName=markdownlint-cli2
-  - markdownlint-cli2: { source: npm, version: "0.23.3" }
+  - markdownlint-cli2: { source: npm, version: "0.24.0" }
   # renovate: datasource=npm depName=@withgraphite/graphite-cli
   - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux, version: "1.8.6" } # `gt` — stacked-diff PR workflow
 
   # Zed external-agent adapters (ACP)
   # renovate: datasource=npm depName=@agentclientprotocol/codex-acp
-  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "2.2.2", platform: mac } # runs Codex as a Zed ACP agent
+  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "2.5.0", platform: mac } # runs Codex as a Zed ACP agent
 
   # uv tools (Python)
   # renovate: datasource=pypi depName=ralphify
   - ralphify: { source: uv, version: "0.3.0" }
   # renovate: datasource=pypi depName=ruff
-  - ruff: { source: uv, version: "0.17.0" } # Python linter (just lint-python)
+  - ruff: { source: uv, version: "0.17.2" } # Python linter (just lint-python)
   # renovate: datasource=pypi depName=check-jsonschema
   - check-jsonschema: { source: uv, version: "0.38.2" }
   # renovate: datasource=git-refs depName=agentskills/agentskills
   - skills-ref: { source: uv, pkg: "git+https://github.com/agentskills/agentskills@main#subdirectory=skills-ref", rev: "38a2ff82958afee88dadf4831509e6f7e9d8ef4e" }
   # renovate: datasource=pypi depName=tavily-cli
-  - tavily-cli: { source: uv, version: "0.1.8" } # provides `tvly` CLI for Tavily API
+  - tavily-cli: { source: uv, version: "0.2.1" } # provides `tvly` CLI for Tavily API
   - milknado: { source: uv, pkg: "git+https://github.com/paulnsorensen/milknado@main", float: true } # approved floating own-authored channel; every dots sync pulls latest main
 
   # gh CLI extensions

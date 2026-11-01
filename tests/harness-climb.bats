@@ -6,12 +6,18 @@ WORKFLOW="$REPO_ROOT/.github/workflows/test.yml"
 
 load lib/session-analytics-package
 
-@test "harness-climb unittest suite passes through the Bats gate" {
-    # The suite runs the real package; a shared warm uv cache avoids a PyPI fetch per call.
-    package_warm_cache
-    run python3 -m unittest discover -s "$REPO_ROOT/tests/harness_climb" -t "$REPO_ROOT/tests" -p 'test_*.py'
+# Register each module separately so Bats can run modules in parallel.
+run_unittest_module() {
+    package_warm_cache || return
+    run python3 -m unittest discover -s "$REPO_ROOT/tests/harness_climb" -t "$REPO_ROOT/tests" -p "$1"
     [ "$status" -eq 0 ] || { echo "$output" >&2; false; }
+    [[ "$output" =~ Ran\ [1-9][0-9]*\ test ]] || { echo "$1 ran no tests: $output" >&2; false; }
 }
+
+for module in "$REPO_ROOT"/tests/harness_climb/test_*.py; do
+    bats_test_function --description "harness-climb unittest ${module##*/} passes through the Bats gate" \
+        -- run_unittest_module "${module##*/}"
+done
 
 @test "skill layout" {
     head -n 5 "$SKILL" | grep -qx 'name: harness-climb'

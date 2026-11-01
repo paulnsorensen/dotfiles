@@ -27,6 +27,16 @@
     },
     {
       "customType": "regex",
+      "description": "Update the ast-grep-cli pin in the CI test job",
+      "managerFilePatterns": ["/^\\.github\\/workflows\\/test\\.yml$/"],
+      "matchStrings": [
+        'uv tool install ast-grep-cli==(?<currentValue>\\d+\\.\\d+\\.\\d+)'
+      ],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "ast-grep-cli"
+    },
+    {
+      "customType": "regex",
       "description": "Update pinned OMP npm plugins",
       "managerFilePatterns": ["/^chezmoi\\/\\.chezmoidata\\/omp\\.yaml$/"],
       "matchStrings": [
@@ -67,6 +77,23 @@
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "can1357/oh-my-pi"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the agent-session-analytics pin in session-analytics code, tests, agents, and docs",
+      "managerFilePatterns": [
+        "/^\\.hallouminate\\/wiki\\/.+\\.md$/",
+        "/^agents\\/agent_definitions\\/duckdb-expert\\.md$/",
+        "/^agents\\/registry\\.yaml$/",
+        "/^chezmoi\\/dot_omp\\/private_agent\\/agents\\/duckdb-expert\\.md$/",
+        "/^skills\\/(harness-climb|session-analytics)\\/.+$/",
+        "/^tests\\/.+$/"
+      ],
+      "matchStrings": [
+        'agent-session-analytics==(?<currentValue>\\d+\\.\\d+\\.\\d+)'
+      ],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "agent-session-analytics"
     }
   ],
 
@@ -81,6 +108,11 @@
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": true,
       "automergeType": "pr"
+    },
+    {
+      "description": "Keep the local ast-grep (mise) and the CI ast-grep-cli (PyPI) on one version",
+      "matchDepNames": ["aqua:ast-grep/ast-grep", "ast-grep-cli"],
+      "groupName": "ast-grep"
     },
     {
       "description": "Fast-moving agent tooling: shorten the soak so pins do not trail by days",
@@ -101,7 +133,8 @@
         "@sysid/pi-vim",
         "@upstash/context7-mcp",
         "tavily-mcp",
-        "tavily-cli"
+        "tavily-cli",
+        "agent-session-analytics"
       ],
       "minimumReleaseAge": "4 hours"
     },

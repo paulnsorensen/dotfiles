@@ -34,7 +34,7 @@ jobs:
       uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89 # v4.1.0
       with:
         # renovate: datasource=pypi depName=ruff
-        version: "0.17.0"
+        version: "0.17.2"
         args: "--version"
 
     - name: Install Node linters
@@ -62,7 +62,7 @@ jobs:
       uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
 
     - name: Install uv
-      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
 
     - name: Install zsh
       run: sudo apt-get install -y zsh
@@ -83,18 +83,22 @@ jobs:
         unzip -q "$RUNNER_TEMP/duckdb.zip" -d "$RUNNER_TEMP/duckdb-bin"
         echo "$RUNNER_TEMP/duckdb-bin" >> "$GITHUB_PATH"
 
-    # The bash-shortening tests need `sg` (ast-grep). Ubuntu's util-linux also
-    # ships `sg`, so put the uv tool bin first on PATH.
+    # The bash-shortening tests need ast-grep's `sg` binary. The uv tool
+    # installs both the `ast-grep` binary and its deprecated `sg` alias;
+    # Ubuntu's util-linux also ships `sg`, so put the uv tool bin first on
+    # PATH. Keep this pin equal to "aqua:ast-grep/ast-grep" in
+    # chezmoi/dot_config/mise/config.toml. Renovate groups the two bumps
+    # (group "ast-grep") when both are due at the same time.
     - name: Install ast-grep
       run: |
-        uv tool install ast-grep-cli==0.42.1
+        uv tool install ast-grep-cli==0.51.0
         uv tool dir --bin >> "$GITHUB_PATH"
 
     - name: Install chezmoi
       run: sh -c "$(curl -fsLS get.chezmoi.io)" -- -b /usr/local/bin
 
     - name: Install prek
-      uses: j178/prek-action@1382ad72dea72f9d53832f2bcb65b3e87a947204 # v3.0.1
+      uses: j178/prek-action@44924fe9ef4a6f88253c4b6b1bf11c689d3ce53d # v3.1.0
       with:
         install-only: true
 
@@ -131,7 +135,7 @@ jobs:
       uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
 
     - name: Install uv
-      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
 
     - name: Install Node
       uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

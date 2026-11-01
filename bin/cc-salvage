@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # cc-salvage — reopen recent Claude sessions that died (box restart, crash).
 #
-# Usage: cc-salvage [--since 24h] [--until 0s] [--session NAME] [--limit 6] [--dry-run]
+# Usage: cc-salvage [--since 24h] [--until 0s] [--session NAME] [--limit 10] [--dry-run]
 #
 # Reads ~/.claude/sessions, skips sessions that still run, and opens one tmux
-# window per dead session: `claude --resume <id>` in its original cwd.
+# window per dead session: `claude --resume <id> --remote-control` in its
+# original cwd.
 # The logic lives in bin/lib/cc-salvage.sh.
 set -euo pipefail
 

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Isolated session logs for package-backed Bats tests.
-# -q keeps uv install progress out of asserted output. Each test runs with its own HOME, so a
-# per-test uv cache would refetch the package index under parallel load. One warm step per bats
-# run fills a shared cache; tests then run with UV_OFFLINE=1.
-PACKAGE_CLI=(uvx -q agent-session-analytics@latest)
+# Keep uv progress out of asserted output. Isolated homes share one run-wide cache.
+# Warm the pinned package once, then run consumers offline.
+PACKAGE_CLI=(uvx -q agent-session-analytics==0.2.1)
 
 package_real_binary() {
     local candidate
@@ -24,7 +23,7 @@ package_warm_cache() {
         if mkdir "$lock" 2>/dev/null; then
             if mkdir -p "$root/cache" "$root/python" &&
                 UV_CACHE_DIR="$root/cache" UV_PYTHON_INSTALL_DIR="$root/python" \
-                    uvx -q agent-session-analytics@latest --help >/dev/null 2>&1; then
+                    "${PACKAGE_CLI[@]}" --help >/dev/null 2>&1; then
                 : >"$root/warm"
             fi
             rmdir "$lock"

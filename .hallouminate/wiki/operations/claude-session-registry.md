@@ -26,8 +26,16 @@ Open follow-up: keep this state in a cc-salvage file instead of inside Claude's 
 
 - `tmux new-window -c` and `-n` expand `#` formats (tmux 3.7c). A cwd with `#S` opens the pane in `$HOME`. Pass `${cwd//#/##}`. `#(cmd)` does not run in these options.
 - `new-window` takes its environment from the tmux server, not from the caller. `DOTFILES_DIR` is absent in the window, so launch through `bin/dotsclaude`, which finds its clone and exports it.
-- Use `env CLAUDE_BIN=claude bin/dotsclaude`, so the `bin/claude` session guard still applies.
+- Use `env CLAUDE_BIN=claude bin/dotsclaude`, so the `bin/claude` session guard can apply.
+- On crabbot, the guard does not apply to salvage windows. In their PATH, the mise install directory and `mise/shims` come before `~/dotfiles/bin`, so `claude` runs the real binary (checked 2026-10-21).
 - A tmux session name with `:` or `.` breaks `-t` targets, so `--session` rejects both.
+
+## Remote Control on resume
+
+- cc-salvage appends `--remote-control` as the last argument. The flag takes an optional name, so a later argument would become the name.
+- With `--resume`, the flag first tries to reattach the earlier cloud session. One window reported "Couldn't reconnect to your Remote Control session".
+- `/remote-control` typed in a resumed session reattached the earlier bridge id for some sessions. For other sessions, it created a new one.
+- On 2026-10-21, six sessions connected. Every later attempt failed with "Session creation failed", also in a fresh session. The debug log shows only `[code-session] Session create request failed:`. The cause is not known; a cap on concurrent Remote Control sessions is the likely cause.
 
 ## Related gotcha: git auto maintenance in test temp repos
 

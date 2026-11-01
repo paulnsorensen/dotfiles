@@ -46,6 +46,23 @@ A later outcome audit must check whether agents satisfy user goals with less rep
 [^outcome-verification]: `agents/AGENTS.md`, `agents/agent_definitions/coder.md`, and root `AGENTS.md`.
 [^dispatch-preflight]: `agents/preamble.md` and `tests/phase-agent-handoff.bats`.
 
+## eatmydata for throwaway test I/O (2026-10-24)
+
+`agents/AGENTS.md` tells agents to wrap throwaway test suites, gates, and builds in `eatmydata <cmd>` when `eatmydata` is on PATH.
+`eatmydata` uses LD_PRELOAD to make fsync, fdatasync, and sync no-ops for the wrapped process tree.[^eatmydata]
+
+On crabbot, the `io full avg60` alert stayed above 40% all day.
+The NVMe was 90–95% busy at 17–23 MB/s, with about 97 cache flushes/s and 66 ms write wait.
+One skillz e2e test made 1,012 fsyncs in 150 s; 16 xdist workers match the observed flush rate.
+On ext4, each fsync also forces a journal commit for all pending small-file metadata.
+
+The rule excludes commands that write data you keep and tests that check durability or crash recovery.
+The PATH check is explicit because not every machine has `eatmydata`.
+The `eatmydata` wrapper treats its first argument as the program, so `eatmydata FOO=1 cmd` fails; use `FOO=1 eatmydata cmd`.
+The rule raised the `agents/AGENTS.md` ceiling to 850 and the global and Pi stacks to match.
+
+[^eatmydata]: `agents/AGENTS.md` (While editing); `agents/instruction-budgets.toml`.
+
 ## Facts moved out of the agents doc (still true, just not standing context)
 
 - **Agent permission modes**: `acceptEdits` and `bypassPermissions` only
@@ -79,10 +96,11 @@ These removals follow ownership and simplicity, not a measured causal effect on 
 
 The existing budget helper measures both tokenizers and rejects undeclared instruction sources.[^1]
 Run `bin/agent-instruction-budget agents/instruction-budgets.toml`.
-The following counts cover concatenated repository-owned source text only.
+The following counts record the September 15 rewrite; current ceilings live in `agents/instruction-budgets.toml`.
+The counts cover concatenated repository-owned source text only.
 They exclude native prompts, tool schemas, loaded skills, agent bodies, user messages, and external instructions.
 
-| Source or stack | Before o200k / cl100k | After o200k / cl100k | New ceiling |
+| Source or stack | Before o200k / cl100k | After o200k / cl100k | Ceiling on 2026-09-15 |
 |---|---:|---:|---:|
 | Shared AGENTS | 1,021 / 1,029 | 463 / 463 | 550 |
 | Shared preamble | 1,227 / 1,231 | 435 / 436 | 500 |

@@ -91,6 +91,16 @@ EOF
     assert_output_contains "env CLAUDE_BIN=claude $DOTFILES_DIR/bin/dotsclaude --resume aaaa1111-0000-0000-0000-000000000001"
 }
 
+@test "a resumed session turns on Remote Control" {
+    add_session 501 rc000000-0000-0000-0000-000000000001 "$WT"
+    add_transcript rc000000-0000-0000-0000-000000000001 30
+
+    run cc-salvage --since 2h
+    assert_success
+    run grep -F "bash -c" "$TMUX_LOG"
+    assert_output_contains "--resume rc000000-0000-0000-0000-000000000001 --remote-control"
+}
+
 @test "a session whose process still runs is not resumed" {
     add_session 502 bbbb2222-0000-0000-0000-000000000002 "$WT" cli 777
     add_transcript bbbb2222-0000-0000-0000-000000000002 5
@@ -403,9 +413,9 @@ stub_ps() {
     assert_output_contains "dead-nostart"
 }
 
-@test "no --limit opens at most 6 windows" {
+@test "no --limit opens at most 10 windows" {
     local i
-    for i in 1 2 3 4 5 6 7 8; do
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
         add_session "60$i" "limit000-$i" "$WT"
         add_transcript "limit000-$i" "$i"
     done
@@ -413,7 +423,7 @@ stub_ps() {
     run cc-salvage
     assert_success
     run grep -c new-window "$TMUX_LOG"
-    [[ "$output" == 6 ]]
+    [[ "$output" == 10 ]]
 }
 
 @test "the default window is 24 hours" {
@@ -503,6 +513,6 @@ stub_ps() {
     run cc-salvage
     assert_success
     run grep -F "bash -c" "$TMUX_LOG"
-    assert_output_contains "claude --resume plain-session"
+    assert_output_contains "claude --resume plain-session --remote-control"
     assert_output_not_contains "dotsclaude"
 }

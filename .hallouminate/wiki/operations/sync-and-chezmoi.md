@@ -231,6 +231,22 @@ The separate export matches the persistent environment used by the real sync cal
 
 **Fix:** `skills/_registry.yaml` pins `paulnsorensen/easy-cheese` to `dist`. Every harness now installs the built branch, whatever the GitHub default is. The pinned path fetches the pin on every sync, so a cache left on `main` moves to `dist`. Bats: `tests/chezmoi-wiring.bats` "installs scripts/ from a pinned dist branch over a main cache" and "skill registry pins easy-cheese to its built dist branch".
 
-**Open gap:** an unpinned source still never follows a changed remote default branch. Its cache stays on the clone-time branch. A change to `.sync-lib.sh` that re-attached on a default-branch change was dropped from PR #1390 as not needed for easy-cheese.
+**Gap closed (2026-10-30, #1489):** an unpinned source now follows a changed remote default branch. See the next section.
 
 **Check:** after `dots sync`, `ls ~/.claude/skills/*/scripts` must match the `scripts/` folders on the source branch.
+
+## Gotcha: unpinned skill caches must follow a remote default-branch change (fixed 2026-10-30)
+
+**Symptom:** `~/.claude/skills/skillz` had no `scripts/` directory, so every `/skillz` command that runs `scripts/*.pyz` failed. `~/.agents/skills/skillz` (from `npx skills add`) had all four archives.
+
+**Cause:** skillz-that-grillz#518 made `dist` the default branch and gitignored `skills/*/scripts/*.pyz` on `main`. The cache was a single-branch shallow clone of `main`. The unpinned path ran only `git pull --ff-only`, which follows the clone-time branch forever.
+
+**Fix:** `_cz_vendor_external_skills` (`.sync-lib.sh`) runs `git ls-remote --symref origin HEAD` on every sync for an unpinned source. It re-attaches when the remote HEAD differs from the current branch or a `.dotfiles-pin` marker exists. The re-attach is the pin-removal code: `remote set-branches`, a shallow fetch, and `checkout -B --track`. A known but unreachable new branch is a hard error. An offline `ls-remote` keeps the cached branch with the usual pull warning.
+
+**Why not `git remote set-head origin --auto`:** git docs say it works only when `refs/remotes/origin/<new>` already exists. A single-branch cache never fetched `dist`, so `set-head` cannot detect the move. Nothing in the sync reads `origin/HEAD`, so the fix does not maintain it.
+
+**Guard:** `_cz_check_skill_archives` fails the sync when a vendored skill's `wedge.toml` names a target (top-level `name` or `[[target]] name`) and the skill lacks `scripts/<name>.pyz`. This catches any future source-only branch loudly instead of shipping broken helpers.
+
+**No skillz pin:** the default-branch follow makes a `pin: dist` for skillz-that-grillz redundant. The easy-cheese `pin: dist` stays as an explicit choice.
+
+Bats: `tests/chezmoi-wiring.bats` "follows an unpinned source's default-branch move", "keeps the cached branch when the remote is unreachable", and "fails when a wedge.toml target has no scripts/<name>.pyz".
