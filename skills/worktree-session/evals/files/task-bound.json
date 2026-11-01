@@ -1,0 +1,24 @@
+{
+  "scenario": "task-bound",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "T3",
+    "parent": {
+      "binding": {
+        "path": "/repo/task-a",
+        "branch": "feature/a"
+      },
+      "write_roots": [
+        "/repo/task-a"
+      ]
+    },
+    "request": {
+      "move_same_conversation_to": "/repo/task-b",
+      "new_conversation": false
+    },
+    "capabilities": {
+      "second_handoff": false,
+      "new_thread_existing_checkout": true
+    }
+  }
+}

@@ -35,7 +35,20 @@ It replaces `/worktree`, whose checkout-and-`cd` procedure does not create an is
 The `wt` checkout helper and `ccw` Claude launcher remain available.
 The shared pointer reaches Pi, which does not load the execution preamble.[^worktree-session]
 
+Offline `/worktree-session` eval cases must name their case-local synthetic capability and Git observations in the case request.
+The evaluator sends only the case request; it does not list the staged fixture files.
+Without named observations, a model can treat absent T3 tools in the evaluator as real scenario incapability.
+A commit comparison needs explicitly observed commits; it must not infer them.
+Each case keeps its own fixtures, so holdout cases share no evidence.
+The skill reports `ready` only on destination evidence, so cases must supply that evidence as named observations.[^worktree-session-evals]
+These offline cases do not prove live launch, permission verification, or dirty-state preservation.
+Production policy and test guards do not change for them.
+A previous validation run used an unreferenced fixture file and no hashes, so its result is confounded.
+
 [^worktree-session]: `agents/AGENTS.md:27`; `skills/worktree-session/SKILL.md`; `skills/worktree-session/references/`; operator decision on 2026-11-01.
+[^worktree-session-evals]: `skills/worktree-session/evals/evals.json`; `skills/worktree-session/SKILL.md:59-70`; installed skillz `_candidate.stage_task` and `_evaluator._prompt`; skillz `references/eval-formats.md:44` and its experiments reference require named fixture paths.
+
+*Source: worktree-session eval-fixture repair session · Updated: 2026-11-01*
 
 ## Outcome-first verification
 

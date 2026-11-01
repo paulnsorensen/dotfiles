@@ -96,9 +96,11 @@
       "name": "task-child",
       "family": "t3-child",
       "kind": "task",
-      "prompt": "T3: I am already worktree-bound at /repo/task-a. Delegate the cache fix in a separate worktree from my local commit; continue here.",
+      "prompt": "Offline procedure review. Read evals/files/task-child.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: T3: I am already worktree-bound at /repo/task-a. Delegate the cache fix in a separate worktree from my local commit; continue here.",
       "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
-      "files": [],
+      "files": [
+        "evals/files/task-child.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Selects delegate_task with isolation worktree, not a top-level thread or handoff.",
@@ -111,9 +113,11 @@
       "name": "task-dirty",
       "family": "t3-existing",
       "kind": "task",
-      "prompt": "T3: Open a separate conversation in existing dirty /repo/task-b on feature/b. Preserve staged and untracked changes.",
+      "prompt": "Offline procedure review. Read evals/files/task-dirty.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: T3: Open a separate conversation in existing dirty /repo/task-b on feature/b. Preserve staged and untracked changes.",
       "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
-      "files": [],
+      "files": [
+        "evals/files/task-dirty.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Selects t3_thread_launch with existing_worktree strategy, exact path, and branch.",
@@ -126,9 +130,11 @@
       "name": "task-root",
       "family": "t3-handoff",
       "kind": "task",
-      "prompt": "T3: Move this current root-thread task into a new worktree based on feature/base's local commits.",
+      "prompt": "Offline procedure review. Read evals/files/task-root.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: T3: Move this current root-thread task into a new worktree based on feature/base's local commits.",
       "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
-      "files": [],
+      "files": [
+        "evals/files/task-root.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Checks t3_worktree_status before handoff.",
@@ -141,9 +147,11 @@
       "name": "task-bound",
       "family": "t3-blocked",
       "kind": "task",
-      "prompt": "T3: This thread is already bound to /repo/task-a. Move this same conversation into /repo/task-b. I do not want a new conversation.",
+      "prompt": "Offline procedure review. Read evals/files/task-bound.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: T3: This thread is already bound to /repo/task-a. Move this same conversation into /repo/task-b. I do not want a new conversation.",
       "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
-      "files": [],
+      "files": [
+        "evals/files/task-bound.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Does not call a second handoff or launch a top-level conversation.",
@@ -156,9 +164,11 @@
       "name": "task-codex",
       "family": "native-unsupported",
       "kind": "task",
-      "prompt": "Standalone Codex: Resume edits in /repo/task-b. Only /repo/task-a is writable. No native or terminal session launcher is available. Do not widen permissions.",
+      "prompt": "Offline procedure review. Read evals/files/task-codex.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: Standalone Codex: Resume edits in /repo/task-b. Only /repo/task-a is writable. No native or terminal session launcher is available. Do not widen permissions.",
       "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
-      "files": [],
+      "files": [
+        "evals/files/task-codex.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Reports blocked because no supported launcher can bind a destination session.",
@@ -171,9 +181,11 @@
       "name": "task-claude",
       "family": "cli-base",
       "kind": "task",
-      "prompt": "Standalone Claude: Create independent fix-cache work from the remote default branch and start an isolated editing session. wt and ccw exist; no terminal surface exists here.",
+      "prompt": "Offline procedure review. Read evals/files/task-claude.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: Standalone Claude: Create independent fix-cache work from the remote default branch and start an isolated editing session. wt and ccw exist; no terminal surface exists here.",
       "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
-      "files": [],
+      "files": [
+        "evals/files/task-claude.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Identifies a pending operator launch rather than starting an unattended nested interactive process.",
@@ -186,9 +198,11 @@
       "name": "task-native",
       "family": "native-discovery",
       "kind": "task",
-      "prompt": "Standalone OMP or Pi: Start a worktree session for a dependent task. The available tool catalog names no session launcher.",
+      "prompt": "Offline procedure review. Read evals/files/task-native.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: Standalone OMP or Pi: Start a worktree session for a dependent task. The available tool catalog names no session launcher.",
       "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
-      "files": [],
+      "files": [
+        "evals/files/task-native.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Inspects current capabilities or primary documentation before choosing a mechanism.",
@@ -201,9 +215,11 @@
       "name": "task-dirty-child",
       "family": "t3-child-existing",
       "kind": "task",
-      "prompt": "T3: Delegate a child to resume existing dirty /repo/task-b. The delegate_task contract supports only fresh worktree isolation.",
+      "prompt": "Offline procedure review. Read evals/files/task-dirty-child.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: T3: Delegate a child to resume existing dirty /repo/task-b. The delegate_task contract supports only fresh worktree isolation.",
       "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
-      "files": [],
+      "files": [
+        "evals/files/task-dirty-child.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Does not substitute a fresh checkout for the requested dirty checkout.",
@@ -216,9 +232,11 @@
       "name": "task-dependent-dirty-base",
       "family": "transition-safety",
       "kind": "task",
-      "prompt": "T3: Delegate implementation that depends on my uncommitted changes. Use a separate worktree. Do not commit or copy my changes.",
+      "prompt": "Offline procedure review. Read evals/files/task-dependent-dirty-base.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: T3: Delegate implementation that depends on my uncommitted changes. Use a separate worktree. Do not commit or copy my changes.",
       "expected_output": "Explains that fresh worktree isolation starts at the local commit and asks for a supported plan before launching.",
-      "files": [],
+      "files": [
+        "evals/files/task-dependent-dirty-base.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Does not launch a child with a stale committed base.",
@@ -231,9 +249,11 @@
       "name": "task-lost-launch-response",
       "family": "transition-safety",
       "kind": "task",
-      "prompt": "T3: I explicitly requested another conversation in a new worktree. The launch call timed out without returning a threadId. What next?",
+      "prompt": "Offline procedure review. Read evals/files/task-lost-launch-response.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: T3: I explicitly requested another conversation in a new worktree. The launch call timed out without returning a threadId. What next?",
       "expected_output": "Inspects existing threads before retrying a non-idempotent launch and reports pending until binding is verified.",
-      "files": [],
+      "files": [
+        "evals/files/task-lost-launch-response.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Inspects t3_thread_list before retrying.",
@@ -246,9 +266,11 @@
       "name": "task-no-destination-evidence",
       "family": "transition-safety",
       "kind": "task",
-      "prompt": "Standalone Pi: a supported native launcher accepts the requested worktree. It returns a session ID, but destination permission and checkout verification are unavailable. Can work start?",
+      "prompt": "Offline procedure review. Read evals/files/task-no-destination-evidence.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: Standalone Pi: a supported native launcher accepts the requested worktree. It returns a session ID, but destination permission and checkout verification are unavailable. Can work start?",
       "expected_output": "Returns pending with the session ID and missing destination evidence, without allowing edits.",
-      "files": [],
+      "files": [
+        "evals/files/task-no-destination-evidence.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Reports pending rather than ready.",
@@ -261,14 +283,67 @@
       "name": "task-independent-child-base-mismatch",
       "family": "t3-child",
       "kind": "task",
-      "prompt": "T3: The parent HEAD contains feature commits and differs from origin/main. Delegate an independent child in a new worktree from origin/main. Do not create a separate conversation or change the parent branch.",
+      "prompt": "Offline procedure review. Read evals/files/task-independent-child-base-mismatch.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: T3: The parent HEAD contains feature commits and differs from origin/main. Delegate an independent child in a new worktree from origin/main. Do not create a separate conversation or change the parent branch.",
       "expected_output": "Resolves the requested origin/main commit, compares it with parent HEAD, and reports blocked before delegation.",
-      "files": [],
+      "files": [
+        "evals/files/task-independent-child-base-mismatch.json"
+      ],
       "expected_skill": "worktree-session",
       "assertions": [
         "Identifies that child isolation starts from parent HEAD, not the requested origin/main commit.",
         "Reports blocked without launching a child from the wrong base.",
         "Does not create a substitute conversation or change the parent branch."
+      ]
+    },
+    {
+      "id": 22,
+      "name": "task-bound-same-destination",
+      "family": "t3-blocked",
+      "kind": "task",
+      "prompt": "Offline procedure review. Read evals/files/task-bound-same-destination.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: T3: Resume this already-bound conversation in /repo/task-a. Keep my staged and untracked changes.",
+      "expected_output": "Uses the verified current binding and reports ready without a handoff or new launch.",
+      "files": [
+        "evals/files/task-bound-same-destination.json"
+      ],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Confirms the current destination path, branch, write access, and preserved changes before ready.",
+        "Does not call handoff or launch another thread for the same checkout.",
+        "Keeps staged and untracked changes intact and uses the existing thread."
+      ]
+    },
+    {
+      "id": 23,
+      "name": "task-destination-base-mismatch",
+      "family": "transition-safety",
+      "kind": "task",
+      "prompt": "Offline procedure review. Read evals/files/task-destination-base-mismatch.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: T3: A new worktree launch returned a thread ID, but the destination starts from the wrong commit. Can edits start?",
+      "expected_output": "Rejects ready and edits; reports the expected and observed starting commits while preserving the parent.",
+      "files": [
+        "evals/files/task-destination-base-mismatch.json"
+      ],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Compares expected and observed full commit IDs and rejects ready despite valid path, branch, and write access.",
+        "Does not edit the wrong-base destination or silently change its base.",
+        "Retains the thread receipt and preserves parent state and user changes."
+      ]
+    },
+    {
+      "id": 24,
+      "name": "task-lost-response-ambiguous",
+      "family": "transition-safety",
+      "kind": "task",
+      "prompt": "Offline procedure review. Read evals/files/task-lost-response-ambiguous.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: T3: My new-worktree launch response was lost. The thread list shows two plausible matches. What next?",
+      "expected_output": "Reports pending without guessing a thread ID or duplicating the launch until binding is resolved.",
+      "files": [
+        "evals/files/task-lost-response-ambiguous.json"
+      ],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Inspects both plausible thread-list entries and does not guess a thread ID.",
+        "Does not retry the non-idempotent launch or create a duplicate checkout.",
+        "Reports pending until destination binding and authorized write access identify the correct thread."
       ]
     }
   ]

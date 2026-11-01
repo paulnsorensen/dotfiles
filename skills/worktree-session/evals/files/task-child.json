@@ -1,0 +1,42 @@
+{
+  "scenario": "task-child",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "T3",
+    "parent": {
+      "thread": "parent-a",
+      "binding": {
+        "path": "/repo/task-a",
+        "branch": "feature/a"
+      },
+      "dirty": {
+        "unstaged": [
+          "cache/config.ts"
+        ]
+      }
+    },
+    "request": {
+      "separate_child": true,
+      "base": "local commit",
+      "requested_base_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "capabilities": {
+      "delegate_task": {
+        "isolation": "worktree",
+        "starting_commit": "parent HEAD"
+      }
+    },
+    "git": {
+      "rev-parse HEAD": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "receipt": {
+      "taskId": "child-cache-17",
+      "accepted": true
+    },
+    "destination": {
+      "checkout": null,
+      "branch": null,
+      "write_access": null
+    }
+  }
+}

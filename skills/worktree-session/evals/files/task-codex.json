@@ -1,0 +1,28 @@
+{
+  "scenario": "task-codex",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "standalone Codex",
+    "parent": {
+      "checkout": "/repo/task-a",
+      "write_roots": [
+        "/repo/task-a"
+      ],
+      "dirty": {
+        "unstaged": [
+          "src/cache.ts"
+        ]
+      }
+    },
+    "request": {
+      "resume_checkout": "/repo/task-b"
+    },
+    "capabilities": {
+      "native_session_launcher": false,
+      "terminal_session_launcher": false
+    },
+    "destination": {
+      "authorized_write_access": false
+    }
+  }
+}
