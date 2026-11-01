@@ -24,7 +24,7 @@ codex:
   # merge preserves whatever that script set.
   config:
     model: "gpt-6-sol"
-    model_reasoning_effort: "medium"
+    model_reasoning_effort: "high"
     approval_policy: "on-request"
     approvals_reviewer: "guardian_subagent"
     sandbox_mode: "workspace-write"

@@ -252,3 +252,15 @@ Keep the device code, OAuth token, and `secrets/` files out of Git.
   keeps custom themes in app storage, not in `settings.json`. Import
   `theme/t3/chocolate-donut-2-color-theme.json` (VS Code format) through
   Settings → Appearance → import, then pick it for dark mode.
+
+### Model reasoning defaults (T3 0.1.6)
+
+T3 0.1.6 supports one `defaultModelSelection`, including its options.
+Its settings schema does not expose a per-model reasoning-default map.
+Custom-model entries cannot override built-in model capabilities; matching slugs only change names.
+Do not add same-slug custom models to change reasoning defaults.
+The Codex root `model_reasoning_effort` setting does not replace explicit T3 thread options.[^reasoning-defaults]
+
+[^reasoning-defaults]: Installed T3 0.1.6 executable, embedded `ServerSettings`, `CustomModelEntry`, and `providerModelsFromSettings` source; inspected 2026-11-01.
+
+_Source: local T3 0.1.6 schema and model resolver · Updated: 2026-11-01 · Supersedes: none_
