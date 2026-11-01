@@ -1,19 +1,20 @@
 # ast-grep config for the bash-shortening skill.
 #
-# This is the AST-aware rule pack used by bash-shorten.py. ast-grep (`sg`)
-# is a hard requirement of the script: structural rules in sg-rules/ run
-# first, then the remaining regex-only rules in rules.py run over the
-# output. See SKILL.md for the full ruleset (currently 21 rules across
-# `core` and `modernize` groups) and which subset routes through sg.
+# This is the AST-aware rule pack used by bash-shorten.py. ast-grep
+# (`ast-grep`, or its deprecated `sg` alias) is a hard requirement of the
+# script: structural rules in sg-rules/ run first, then the remaining
+# regex-only rules in rules.py run over the output. See SKILL.md for the
+# rule groups (`core`, opt-in `ascii`, opt-in `modernize`) and which subset
+# routes through ast-grep.
 #
-# Run the sg pack directly with:
-#   sg scan --config skills/bash-shortening/scripts/sgconfig.yml path/to/script.sh
+# Run the rule pack directly with:
+#   ast-grep scan --config skills/bash-shortening/scripts/sgconfig.yml path/to/script.sh
 #
 # Or via the wrapper (the typical entry point — handles the regex pass too):
 #   python3 scripts/bash-shorten.py path/to/script.sh
 #
 # The Python script orchestrates: it dispatches the rules in this directory
-# to sg, then runs the remaining (regex-only) rules over the sg output.
+# to ast-grep, then runs the remaining (regex-only) rules over its output.
 #
 # Why isn't every rule here?
 #
