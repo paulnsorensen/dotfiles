@@ -194,6 +194,44 @@ STUB
     [[ -z "$(git -C "$stub_dir" status --porcelain -- chezmoi/dot_config/mise/config.toml)" ]]
 }
 
+# stub_bin_doctor <stub-dir> [exit-code] — records the cleanup call.
+stub_bin_doctor() {
+    printf '#!/bin/bash\necho "stub-bin-doctor $*"\nexit %s\n' "${2:-0}" > "$1/bin/bin-doctor"
+    chmod +x "$1/bin/bin-doctor"
+}
+
+@test "dots sync runs bin-doctor clean --sync after the skill refresh" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    stub_bin_doctor "$stub_dir"
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
+    assert_success
+    assert_output_contains "stub-bin-doctor clean --sync"
+
+    local skill_line clean_line
+    skill_line=$(printf '%s\n' "$output" | grep -n 'stub-skill-sync' | head -1 | cut -d: -f1)
+    clean_line=$(printf '%s\n' "$output" | grep -n 'stub-bin-doctor' | head -1 | cut -d: -f1)
+    [[ "$skill_line" -lt "$clean_line" ]]
+}
+
+@test "dots sync succeeds with a warning when the cleanup fails" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    stub_bin_doctor "$stub_dir" 1
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync
+    assert_success
+    assert_output_contains "cleanup"
+}
+
+@test "dots sync --dry-run skips the cleanup" {
+    local stub_dir="$TEST_HOME/stub-dotfiles"
+    stub_upgrade_dotfiles "$stub_dir"
+    stub_bin_doctor "$stub_dir"
+    PATH="$stub_dir/bin:$PATH" DOTFILES_DIR="$stub_dir" run "$stub_dir/bin/dots" sync --dry-run
+    assert_success
+    assert_output_not_contains "stub-bin-doctor"
+}
+
 @test "dots sync --dry-run skips the skill refresh" {
     local stub_dir="$TEST_HOME/stub-dotfiles"
     stub_upgrade_dotfiles "$stub_dir"
@@ -234,14 +272,20 @@ STUB
 }
 
 @test "dots doctor issue count grows with each recorded drift file" {
-    # Stub zsh so the shell-startup timing check in `dots doctor` never adds
-    # its own issue; otherwise a slow real `zsh -i` run makes the before/after
-    # comparison flaky. setup() already put $stub_bin on PATH.
+    # Pin the shell-startup timing check in `dots doctor` so it never adds its
+    # own issue. The check times three `zsh -i` runs with `date`. Under heavy
+    # load, even a stub zsh plus the `date` forks can average over 500ms and
+    # count as slow. A stub zsh and a constant clock make the measured time
+    # zero. setup() already put $stub_bin on PATH.
     cat > "$stub_bin/zsh" <<'STUB'
 #!/bin/bash
 exit 0
 STUB
-    chmod +x "$stub_bin/zsh"
+    cat > "$stub_bin/date" <<'STUB'
+#!/bin/bash
+echo 0
+STUB
+    chmod +x "$stub_bin/zsh" "$stub_bin/date"
     # Run doctor from a minimal dotfiles tree. Host-dependent checks never run
     # there: bin-doctor, the broker inventory, and VS Code have no files in the
     # tree. A stub chezmoi pins the chezmoi health check. A tree without .git

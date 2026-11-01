@@ -204,6 +204,22 @@ teardown() {
     [[ "$err" == "not tracked" ]]
 }
 
+# --- JSON escaping ---
+
+@test "git-file-risk: emits valid JSON for a file name with a double quote" {
+    cd "$REPO_DIR"
+    local name='we"ird.txt'
+    echo "x" > "$name"
+    git add -- "$name"
+    git commit -m "add quoted" --quiet
+
+    run "$REAL_BIN/git-file-risk" "$name" 'miss"ing.txt'
+    assert_success
+    local parsed
+    parsed=$(jq -r '.[0].file, .[1].file' <<<"$output")
+    [[ "$parsed" == $'we"ird.txt\nmiss"ing.txt' ]]
+}
+
 # --- Hotspot detection (integration) ---
 
 @test "git-file-risk: hotspot file has high author and change counts" {

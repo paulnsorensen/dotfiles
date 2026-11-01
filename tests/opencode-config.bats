@@ -61,7 +61,7 @@ JSON
 JSON
     [ "$status" -eq 0 ]
     [ "$(jq -S '.mcp' <<<"$output")" = "$(yq -o=json '.opencode.config.mcp' "$REGISTRY" | jq -S .)" ]
-    [ "$stderr" = "" ]
+    [ -z "$stderr" ]
 }
 
 @test "home opencode config removes MCP overrides and preserves unrelated settings" {
@@ -71,7 +71,7 @@ JSON
     [ "$status" -eq 0 ]
     local cleaned="$output"
     [ "$(jq -S . <<<"$cleaned")" = "$(jq -S 'del(.mcp)' <<<"$live")" ]
-    [ "$stderr" = "" ]
+    [ -z "$stderr" ]
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$script" <<<"$cleaned"
     [ "$status" -eq 0 ]
     [ "$output" = "$cleaned" ]
@@ -86,7 +86,7 @@ JSON
     for live in '{bad' '[]' 'null' '{} {}' '   '; do
         run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$script" <<<"$live"
         [ "$status" -eq 1 ]
-        [ "$output" = "" ]
+        [ -z "$output" ]
         [ "$stderr" = "OpenCode config is not a JSON object" ]
     done
 }

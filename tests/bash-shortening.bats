@@ -800,3 +800,9 @@ SH
     grep -qF 'A=$(pwd)' "$FIXTURE" \
         && grep -qF 'B=`whoami`' "$FIXTURE"
 }
+
+@test "behavior gate accepts comment edits and rejects changed stderr" {
+    run python3 "$REPO_ROOT/tests/lib/bash_shortening_gate.py" "$REPO_ROOT"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"changed stderr rejected"* ]]
+}

@@ -60,9 +60,10 @@ Parallel writes to one file race, and category rewrites overlap on the same line
    Use the before/after examples in the matching reference.
    Keep quoting, `set -euo pipefail`, and error handling.
    Stop before a rewrite needs a comment to explain *what* it does.
-   Keep a change only when it gives the same output and exit status for every input.
+   Keep a change only when stdout, stderr, exit status, and intended file effects remain equal for every input.
    Write the edits to the file, then list each change with a one-line reason.
-   Done when the file holds every kept change and `bash -n` passes.
+   After the final edit, rerun `bash -n <file>` and `shellcheck <file>` when available.
+   Done when the file holds every kept change and these checks pass.
 
 **Analyzer brief** (substitute `<category>` and `<target>`):
 

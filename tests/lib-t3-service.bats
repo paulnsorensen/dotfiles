@@ -126,7 +126,7 @@ EOF
     write_runtime 0.0.42 "not installed"
     run sync_t3_service "$MANIFEST"
     [ "$status" -eq 0 ]
-    [ "$output" = "" ]
+    [ -z "$output" ]
     [ "$(grep -c '^update\|^service install' "$CALLS")" -eq 0 ]
 }
 
@@ -145,7 +145,7 @@ EOF
     write_manifest 0.0.44
     run sync_t3_service "$MANIFEST"
     [ "$status" -eq 0 ]
-    [ "$output" = "" ]
+    [ -z "$output" ]
     [ ! -e "$CALLS" ]
 }
 

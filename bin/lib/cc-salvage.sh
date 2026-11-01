@@ -197,12 +197,12 @@ salvage_resume_rows() {
             status=skipped:limit
         elif [[ "$dry_run" == true ]]; then
             status=dry-run
-            launched=$(( launched + 1 ))
+            ((launched += 1))
         else
             [[ -n "$target" ]] || target="$(salvage_target_session "$session")"
             if salvage_launch "$target" "$row"; then
                 status=resumed
-                launched=$(( launched + 1 ))
+                ((launched += 1))
             else
                 status=failed
             fi

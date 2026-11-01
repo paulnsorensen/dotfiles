@@ -252,6 +252,22 @@ esac'
     [[ "$output" != *"tinted-theming/tinted/tree"* ]]
 }
 
+# grep -q exits at the first hit. A producer pipe then dies of SIGPIPE, and
+# pipefail turns a found name into a stray. A here-string has no producer.
+@test "strays: a declared name found early in a large list is not a stray under pipefail" {
+    local declared installed
+    declared="$(printf 'pkg%s\n' {1..20000})"
+    installed="$(printf 'pkg1\nweird.name\n')"
+    : > "$ALLOW"
+
+    set -o pipefail
+    run bd__strays brew-stray brew "$ALLOW" "$declared" "$installed"
+    set +o pipefail
+    [[ $status -eq 0 ]]
+    [[ "$output" != *$'\t'"pkg1"$'\t'* ]]
+    [[ "$output" == *"brew-stray"$'\t'"weird.name"$'\t'* ]]
+}
+
 # ── npm / uv ─────────────────────────────────────────────────────────
 
 @test "npm: a package declared by pkg: is not a stray; npm itself is ignored" {
@@ -305,6 +321,46 @@ esac'
     [[ "$output" != *"brew autoremove"* ]]
     [[ "$output" != *"mise prune"* ]]
     [[ ! -s "$LOG" ]]
+}
+
+@test "sync steps add mise prune and the safe docker prunes to the clean steps" {
+    stub uv 'exit 0'
+    stub mise 'exit 0'
+    stub docker 'exit 0'
+    run bd_sync_steps
+    [[ "$output" == *"uv"$'\t'"uv cache prune"* ]]
+    [[ "$output" == *"mise"$'\t'"mise cache prune"* ]]
+    [[ "$output" == *"mise"$'\t'"mise prune -y"* ]]
+    [[ "$output" == *"docker"$'\t'"docker image prune -f"* ]]
+    [[ "$output" == *"docker"$'\t'"docker builder prune -f --filter unused-for=168h"* ]]
+    # -a would delete tagged images such as the devbox image.
+    [[ "$output" != *"prune -a"* ]]
+}
+
+@test "sync steps skip docker when the daemon does not answer" {
+    stub docker 'exit 1'
+    run bd_sync_steps
+    [[ "$output" != *docker* ]]
+}
+
+@test "bin-doctor clean --sync --dry-run prints the sync plan and runs nothing" {
+    stub mise "echo \"mise \$*\" >> '$LOG'"
+    # shellcheck disable=SC2016  # $1 and $* belong to the stub script
+    stub docker '[[ "$1" == info ]] && exit 0; echo "docker $*" >> '"'$LOG'"
+
+    run "$REAL_DOTFILES_DIR/bin/bin-doctor" clean --sync --dry-run
+    [[ $status -eq 0 ]]
+    [[ "$output" == *"would run [mise] mise prune -y"* ]]
+    [[ "$output" == *"would run [docker] docker image prune -f"* ]]
+    [[ ! -s "$LOG" ]]
+}
+
+@test "bin-doctor clean --sync gives a busy uv cache lock a short timeout" {
+    stub uv "echo \"uv timeout=\$UV_LOCK_TIMEOUT \$*\" >> '$LOG'"
+
+    run "$REAL_DOTFILES_DIR/bin/bin-doctor" clean --sync
+    [[ $status -eq 0 ]]
+    grep -qx "uv timeout=10 cache prune" "$LOG"
 }
 
 @test "bin-doctor clean rejects an unknown flag and runs nothing" {

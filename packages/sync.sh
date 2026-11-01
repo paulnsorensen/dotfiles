@@ -15,7 +15,7 @@ PLATFORM="$(uname)"
 MISE_CONFIG_FILE="${MISE_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/mise/config.toml}"
 MISE_BOOTSTRAP_CONFIG_FILE="${MISE_BOOTSTRAP_CONFIG_FILE:-$SCRIPT_DIR/../chezmoi/dot_config/mise/config.toml}"
 # renovate: datasource=github-releases depName=can1357/oh-my-pi
-OMP_PIN="v18.13.3"
+OMP_PIN="v18.14.2"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -152,7 +152,7 @@ brew_install_pkgs() {
         # Tap-qualified keys (user/tap/formula) install under their short
         # name — `brew list` prints `moshi-hook`, not `rjyo/moshi/moshi-hook` —
         # so compare by the path tail.
-        if echo "$installed" | grep -qx "${pkg##*/}"; then
+        if grep -qxF -- "${pkg##*/}" <<< "$installed"; then
             echo "  + $pkg"
         else
             echo "  Installing $pkg..."
@@ -275,7 +275,7 @@ sync_brew() {
         tapped=$(brew tap)
         while IFS= read -r tap; do
             [[ -z "$tap" ]] && continue
-            if echo "$tapped" | grep -qx "$tap"; then
+            if grep -qxF -- "$tap" <<< "$tapped"; then
                 echo "  + $tap"
             else
                 echo "  Installing tap $tap..."
@@ -530,7 +530,7 @@ sync_cargo() {
             continue
         fi
 
-        if echo "$installed" | grep -qx "$name"; then
+        if grep -qxF -- "$name" <<< "$installed"; then
             echo "  + $name"
             continue
         fi
@@ -685,7 +685,7 @@ sync_uv() {
             continue
         fi
 
-        if echo "$installed" | grep -qx "$name"; then
+        if grep -qxF -- "$name" <<< "$installed"; then
             if [[ "$float" == "true" ]]; then
                 echo "  Upgrading $name (float)..."
                 uv tool upgrade "$name" </dev/null || log_warning "uv tool upgrade $name failed"
@@ -764,7 +764,7 @@ sync_gh_extensions() {
             continue
         fi
 
-        if echo "$installed" | grep -qx "$pkg"; then
+        if grep -qxF -- "$pkg" <<< "$installed"; then
             echo "  + $name"
         else
             echo "  Installing $pkg..."

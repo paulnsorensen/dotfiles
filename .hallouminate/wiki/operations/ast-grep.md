@@ -8,6 +8,15 @@ ast-grep has one version in two places, and the `bash-shortening` rewriter needs
 
 **Call `ast-grep`, not `sg`.** Upstream deprecates the `sg` alias (`sg --version` prints a deprecation banner). On Linux, util-linux also ships `sg`. Agent permissions (`Bash(ast-grep:*)`) and agent prompts in this repo call `ast-grep`. The rewriter `skills/bash-shortening/scripts/engine.py` (`_sg_binary`) tries `ast-grep` first, then `sg`, and checks `--version` for the string `ast-grep`. The zsh alias `sg='ast-grep'` (`zsh/aliases.zsh`) stays for interactive use only; a non-interactive shell does not see it.
 
+**Preserve benchmark behavior, including errors.** The Bash behavior gate compares stderr, stdout, exit status, and the final work tree.[^gate]
+Frozen scripts remain comparison inputs, not production repair targets.
+Changing their error handling changes the benchmark contract.
+The real-gate regression accepts comment-only candidates and rejects a changed `deploy-url.sh` error message.[^regression]
+Keep the grader self-contained because the contract inlines it.[^gate]
+
+[^gate]: skills/bash-shortening/evals/gates/behavior.py:3-10,306-318
+[^regression]: tests/lib/bash_shortening_gate.py:31-68
+
 ## Gotcha: the autoimprove sandbox needs a real binary in /usr/bin
 
 `skillz autoimprove` runs task calls with `PATH=<claude dir>:/usr/bin:/bin` (the claude transport in `skillz-experiment.pyz`). mise puts ast-grep under `~/.local/share/mise/installs/`, so a task cannot find it, and the skill falls back to hand edits. Runs 1–6 of the bash-shortening onboarding never ran the rewriter for this reason.

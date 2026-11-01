@@ -485,6 +485,85 @@ YAML
     [ ! -e "$cache/.dotfiles-pin" ]
 }
 
+# Seed a bare origin whose default branch is main, a work clone that
+# pushes to it, and an unpinned single-branch cache of main. main
+# gitignores skills/*/scripts/*.pyz, as skillz-that-grillz does (#1489).
+# Sets: origin (bare), work, cache, registry (unpinned).
+seed_unpinned_main_cache() {
+    export XDG_CACHE_HOME="$TEST_HOME/cache"
+    origin="$TEST_HOME/origin.git"
+    work="$TEST_HOME/work"
+    cache="$XDG_CACHE_HOME/dotfiles/claude-skill-sources/someorg__somerepo"
+    git init -q --bare -b main "$origin"
+    git init -q -b main "$work"
+    mkdir -p "$work/skills/foo"
+    echo "main-v1" > "$work/skills/foo/SKILL.md"
+    echo 'name = "foo"' > "$work/skills/foo/wedge.toml"
+    echo 'skills/*/scripts/*.pyz' > "$work/.gitignore"
+    git -C "$work" add -A
+    git -C "$work" -c user.email=t@t -c user.name=t commit -qm main-v1
+    git -C "$work" push -q "$origin" main
+    mkdir -p "$(dirname "$cache")"
+    git clone -q --depth 1 "file://$origin" "$cache"
+    registry="$TEST_HOME/registry.yaml"
+    printf 'sources:\n  someorg/somerepo:\n    description: test\n' > "$registry"
+}
+
+@test "_cz_vendor_external_skills follows an unpinned source's default-branch move" {
+    local origin work cache registry
+    seed_unpinned_main_cache
+
+    # The source builds archives on dist and makes dist its default branch.
+    git -C "$work" checkout -q -b dist
+    mkdir -p "$work/skills/foo/scripts"
+    echo "zip" > "$work/skills/foo/scripts/foo.pyz"
+    git -C "$work" add -f -A
+    git -C "$work" -c user.email=t@t -c user.name=t commit -qm dist-v1
+    git -C "$work" push -q "$origin" dist
+    git -C "$origin" symbolic-ref HEAD refs/heads/dist
+
+    run _cz_vendor_external_skills "$registry" "$TEST_HOME/dst" claude
+    assert_success
+    [ "$(git -C "$cache" branch --show-current)" = "dist" ]
+    assert_file_exists "$TEST_HOME/dst/exact_foo/exact_scripts/foo.pyz"
+
+    # Later dist commits arrive through the normal fast-forward pull.
+    echo "dist-v2" > "$work/skills/foo/SKILL.md"
+    git -C "$work" -c user.email=t@t -c user.name=t commit -qam dist-v2
+    git -C "$work" push -q "$origin" dist
+    run _cz_vendor_external_skills "$registry" "$TEST_HOME/dst2" claude
+    assert_success
+    grep -rq "^dist-v2$" "$TEST_HOME/dst2"
+}
+
+@test "_cz_vendor_external_skills keeps the cached branch when the remote is unreachable" {
+    local origin work cache registry
+    seed_unpinned_main_cache
+    # No archive check here: this case covers only the offline fallback.
+    rm -f "$cache/skills/foo/wedge.toml"
+    rm -rf "$origin"
+
+    run _cz_vendor_external_skills "$registry" "$TEST_HOME/dst" claude
+    assert_success
+    [ "$(git -C "$cache" branch --show-current)" = "main" ]
+    grep -rq "^main-v1$" "$TEST_HOME/dst"
+}
+
+@test "_cz_vendor_external_skills fails when a wedge.toml target has no scripts/<name>.pyz" {
+    local origin work cache registry
+    seed_unpinned_main_cache
+    # Remote HEAD stays on main, so the cache stays on the source-only branch.
+    mkdir -p "$cache/skills/foo/scripts"
+    printf '[[target]]\nname = "foo"\n\n[[target]]\nname = "bar"\n' > "$cache/skills/foo/wedge.toml"
+    echo "zip" > "$cache/skills/foo/scripts/foo.pyz"
+
+    run _cz_vendor_external_skills "$registry" "$TEST_HOME/dst" claude
+    assert_failure
+    assert_output_contains "skill 'foo' lacks scripts/bar.pyz named in its wedge.toml"
+    assert_output_not_contains "scripts/foo.pyz"
+    [ ! -e "$TEST_HOME/dst/exact_foo" ]
+}
+
 @test "_cz_vendor_external_skills installs scripts/ from a pinned dist branch over a main cache" {
     export XDG_CACHE_HOME="$TEST_HOME/cache"
 

@@ -32,6 +32,7 @@ teardown() { teardown_test_env; }
     local live="$TEST_HOME/live.toml"
     cat >"$live" <<'EOF'
 model = "stale-model"
+model_reasoning_effort = "low"
 model_instructions_file = "/home/u/.codex/preamble.md"
 
 [projects."/home/u/Dev/thing"]
@@ -67,8 +68,8 @@ EOF
     # An undeclared root scalar owned by another sync leg is preserved.
     [ "$(yq -p=toml -oy -r '.model_instructions_file' "$out")" = "/home/u/.codex/preamble.md" ]
     # Declared routing and protected execution policy stay exact.
-    [ "$(yq -p=toml -oy -r '.model' "$out")" = "gpt-6-sol" ]
-    [ "$(yq -p=toml -oy -r '.model_reasoning_effort' "$out")" = "medium" ]
+    [ "$(yq -p=toml -oy -r '.model' "$out")" = "gpt-6.1-sol" ]
+    [ "$(yq -p=toml -oy -r '.model_reasoning_effort' "$out")" = "high" ]
     [ "$(yq -p=toml -oy -r '.approval_policy' "$out")" = "on-request" ]
     [ "$(yq -p=toml -oy -r '.approvals_reviewer' "$out")" = "guardian_subagent" ]
     [ "$(yq -p=toml -oy -r '.sandbox_mode' "$out")" = "workspace-write" ]

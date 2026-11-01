@@ -5,7 +5,7 @@ The contract inlines this file as the `task` grader argv. The workspace root hol
 `output/evals/files/NAME.sh`. The gate checks two hard rules:
 1. The edited script exists, differs from the staged fixture, and `bash -n` accepts it.
 2. For each recorded run in RUNS, the candidate and the original give the same exit status, the same stdout,
-   and the same final file tree in the working directory. The gate does not compare stderr.
+   the same stderr, and the same final file tree in the working directory.
 The task never sees RUNS, so the runs act as a held-out behavior test. Each run starts from a clean tree at the
 same absolute path, so `$0`, `$HOME`, and the working directory are equal for both scripts.
 On a failure, stderr names the run and the first difference, for the gate diagnostic.
@@ -306,12 +306,13 @@ def execute(
     return {
         "status": done.returncode,
         "stdout": done.stdout.decode(errors="replace"),
+        "stderr": done.stderr.decode(errors="replace"),
         "tree": tree(work),
     }
 
 
 def first_difference(want: dict[str, object], got: dict[str, object]) -> str:
-    for field in ("status", "stdout", "tree"):
+    for field in ("status", "stdout", "stderr", "tree"):
         if want.get(field) != got.get(field):
             return f"{field}: original {json.dumps(want.get(field))[:300]} candidate {json.dumps(got.get(field))[:300]}"
     return ""
