@@ -10,6 +10,7 @@ the CLI.
 from __future__ import annotations
 
 import difflib
+import functools
 import json
 import os
 import re
@@ -37,27 +38,40 @@ _DIRECTIVE = re.compile(
 )
 
 
-def _sg_available() -> bool:
-    """True iff `sg` on PATH is the ast-grep binary AND sgconfig.yml exists.
+@functools.cache
+def _sg_binary() -> str | None:
+    """Return the ast-grep executable name on PATH, or None when absent.
 
-    On Linux, `sg` is also util-linux's "execute command as a different group"
-    — same binary name, totally different tool. We must not let that mask
-    the missing-ast-grep case. `sg --version` on ast-grep prints
-    "ast-grep <version>"; on util-linux it errors out. We probe that.
+    Prefer `ast-grep`: upstream deprecates the `sg` alias, and some installs
+    (or a minimal PATH such as /usr/bin:/bin) carry only `ast-grep`. Fall back
+    to `sg`. On Linux, `sg` is also util-linux's "execute command as a
+    different group" — same binary name, totally different tool. `--version`
+    on ast-grep prints "ast-grep <version>"; on util-linux it errors out, so
+    the probe rejects it.
     """
-    if shutil.which("sg") is None or not _SG_CONFIG.is_file():
-        return False
-    try:
-        result = subprocess.run(
-            ["sg", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-    return "ast-grep" in (result.stdout + result.stderr).lower()
+    if not _SG_CONFIG.is_file():
+        return None
+    for name in ("ast-grep", "sg"):
+        if shutil.which(name) is None:
+            continue
+        try:
+            result = subprocess.run(
+                [name, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        if "ast-grep" in (result.stdout + result.stderr).lower():
+            return name
+    return None
+
+
+def _sg_available() -> bool:
+    """True iff an ast-grep binary is on PATH AND sgconfig.yml exists."""
+    return _sg_binary() is not None
 
 
 def _apply_sg(text: str, enabled: set[str]) -> tuple[str, dict[str, int]]:
@@ -97,7 +111,14 @@ def _apply_sg(text: str, enabled: set[str]) -> tuple[str, dict[str, int]]:
         tmp.write(text)
         tmp_path = Path(tmp.name)
 
-    base_cmd = ["sg", "scan", "--config", str(_SG_CONFIG), "--filter", filter_regex]
+    base_cmd = [
+        str(_sg_binary()),
+        "scan",
+        "--config",
+        str(_SG_CONFIG),
+        "--filter",
+        filter_regex,
+    ]
     try:
         try:
             # --json and --update-all conflict, so count matches with a

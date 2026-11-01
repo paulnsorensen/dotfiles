@@ -1,0 +1,527 @@
+{
+  "skill_name": "bash-shortening",
+  "evals": [
+    {
+      "id": 1,
+      "name": "trigger-shorten-this-script",
+      "kind": "trigger",
+      "expected_skill": "bash-shortening",
+      "prompt": "Shorten this script: #!/usr/bin/env bash\nif [ -z \"$OUT\" ]; then OUT=build; fi\nmkdir $OUT/bin; mkdir $OUT/lib; mkdir $OUT/share",
+      "expected_output": "The bash-shortening skill starts.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "trigger-more-idiomatic",
+      "kind": "trigger",
+      "expected_skill": "bash-shortening",
+      "prompt": "Can you make this more idiomatic? count=`expr $count + 1` and then name=$(echo \"$path\" | sed 's/.*\\///') in my bash deploy script.",
+      "expected_output": "The bash-shortening skill starts.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "trigger-clean-up-bash",
+      "kind": "trigger",
+      "expected_skill": "bash-shortening",
+      "prompt": "Clean up this bash please, it writes three temp files just to diff two sorted lists.",
+      "expected_output": "The bash-shortening skill starts.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "trigger-script-too-long",
+      "kind": "trigger",
+      "expected_skill": "bash-shortening",
+      "prompt": "This script is too long: our backup.sh is 300 lines of bash with a giant if/elif chain. Where can it shrink?",
+      "expected_output": "The bash-shortening skill starts.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "trigger-shorter-way",
+      "kind": "trigger",
+      "expected_skill": "bash-shortening",
+      "prompt": "Is there a shorter way to do this in bash? for i in 1 2 3 4 5 6 7 8 9 10; do touch file$i.txt; done",
+      "expected_output": "The bash-shortening skill starts.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "trigger-review-bash-script",
+      "kind": "trigger",
+      "expected_skill": "bash-shortening",
+      "prompt": "Review my bash script scripts/release.sh before I merge it.",
+      "expected_output": "The bash-shortening skill starts.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "name": "trigger-write-new-bash-script",
+      "kind": "trigger",
+      "expected_skill": "bash-shortening",
+      "prompt": "Write a bash script that tars ~/notes into a dated archive and keeps the last five archives.",
+      "expected_output": "The bash-shortening skill starts.",
+      "files": []
+    },
+    {
+      "id": 8,
+      "name": "near-miss-fish-function",
+      "kind": "near-miss",
+      "expected_skill": null,
+      "prompt": "Shorten this fish function: function gco; git checkout $argv; end",
+      "expected_output": "The bash-shortening skill stays out, because fish has its own grammar.",
+      "files": []
+    },
+    {
+      "id": 9,
+      "name": "near-miss-zshrc",
+      "kind": "near-miss",
+      "expected_skill": null,
+      "prompt": "Tighten up the plugin loading loop in my .zshrc, it uses zsh glob qualifiers.",
+      "expected_output": "The bash-shortening skill stays out, because zsh has its own grammar.",
+      "files": []
+    },
+    {
+      "id": 10,
+      "name": "near-miss-posix-sh",
+      "kind": "near-miss",
+      "expected_skill": null,
+      "prompt": "Make this #!/bin/sh init script for busybox shorter; it must keep running under ash.",
+      "expected_output": "The bash-shortening skill stays out, because bashisms break POSIX sh portability.",
+      "files": []
+    },
+    {
+      "id": 11,
+      "name": "near-miss-python",
+      "kind": "near-miss",
+      "expected_skill": null,
+      "prompt": "Shorten this Python function that walks a directory and counts file extensions.",
+      "expected_output": "The bash-shortening skill stays out, because the code is Python.",
+      "files": []
+    },
+    {
+      "id": 12,
+      "name": "near-miss-explain-pipefail",
+      "kind": "near-miss",
+      "expected_skill": null,
+      "prompt": "Explain what set -euo pipefail does and when it bites.",
+      "expected_output": "The bash-shortening skill stays out, because the user asks for an explanation and names no script to shorten.",
+      "files": []
+    },
+    {
+      "id": 13,
+      "name": "task-sorted-diff",
+      "kind": "task",
+      "family": "temp-files",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/sorted-diff.sh. Keep its behavior identical, error paths included. Apply every change you judge safe without asking me. Edit evals/files/sorted-diff.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten sorted-diff.sh drops the three /tmp files in favor of process substitution or a pipeline, replaces the expr counters and the echo|cut first-character test with Bash built-ins, and keeps set -euo pipefail and the header comment. Because a failed sort inside <(...) does not stop the script, the rewrite keeps a check that both input files are readable, so a missing input still fails. The response lists each change with a one-line reason.",
+      "assertions": [
+        "The rewritten sorted-diff.sh contains no /tmp path and no rm of a temp file.",
+        "The rewritten sorted-diff.sh contains no expr and no echo | cut pipeline.",
+        "The rewritten sorted-diff.sh keeps set -euo pipefail and the header comment.",
+        "The response names the exit-status difference between temp files and process substitution and says how the rewrite keeps a missing input file fatal.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/sorted-diff.sh"
+      ]
+    },
+    {
+      "id": 14,
+      "name": "task-log-summary",
+      "kind": "task",
+      "family": "temp-files",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/log-summary.sh. Keep its behavior identical, error paths included. Apply every change you judge safe without asking me. Edit evals/files/log-summary.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten log-summary.sh feeds the loop with done < <(find ... | sort) instead of a /tmp file, so the counters survive the loop; a find | while pipe would lose them in a subshell. It replaces cat | wc -l with wc -l < file, basename with ${f##*/} (safe here because find never prints a trailing slash), the empty-check with ${1:-.}, and expr with arithmetic. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten log-summary.sh reads the file list through process substitution, not a /tmp file and not a pipe into while.",
+        "The rewritten log-summary.sh uses ${1:-.} or an equal default expansion in place of the if [ -z ] block.",
+        "The rewritten log-summary.sh contains no expr and no cat | wc pipeline.",
+        "The response explains why the loop must not run in a pipeline subshell.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/log-summary.sh"
+      ]
+    },
+    {
+      "id": 15,
+      "name": "task-compare-dirs",
+      "kind": "task",
+      "family": "temp-files",
+      "prompt": "This script is too long for what it does. Use the bash-shortening skill on evals/files/compare-dirs.sh, apply the safe changes without asking, and edit the file in place. It must print exactly what it prints today. Tell me what you changed and why.",
+      "expected_output": "The rewritten compare-dirs.sh runs comm -23 on two process substitutions, keeps the result in one variable instead of a temp file read twice, and replaces the backtick count with $( ) or an emptiness test. It leaves the escaped backticks inside the usage heredoc and the backticks in the header comment unchanged, because they are text, not command substitutions. The usage text and exit 64 stay identical. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten compare-dirs.sh uses comm -23 with two <(...) process substitutions.",
+        "The rewritten compare-dirs.sh contains no /tmp path.",
+        "The rewritten compare-dirs.sh keeps the backtick text in the header comment and the usage heredoc unchanged.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/compare-dirs.sh"
+      ]
+    },
+    {
+      "id": 16,
+      "name": "task-path-parts",
+      "kind": "task",
+      "family": "expansion",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/path-parts.sh. Keep its behavior identical for every path, odd ones included. Apply every change you judge safe without asking me. Edit evals/files/path-parts.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten path-parts.sh replaces the sed stem and extension pipelines with ${file%.*} and ${file##*.} and the grep test with [[ $file == *.* ]]. It keeps dirname and basename, or guards the expansions, because ${p##*/} and ${p%/*} differ for a trailing slash, a bare name, and /. The response states that trade-off.",
+      "assertions": [
+        "The rewritten path-parts.sh contains no sed and no grep.",
+        "The rewritten path-parts.sh keeps dirname and basename or adds guards that make the expansions match them for dir/sub/, notes.txt, and /.",
+        "The response names the trailing-slash or no-slash edge case as the reason for the dirname and basename choice.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/path-parts.sh"
+      ]
+    },
+    {
+      "id": 17,
+      "name": "task-name-defaults",
+      "kind": "task",
+      "family": "expansion",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/name-defaults.sh. Keep its behavior identical, including for non-ASCII names. Apply every change you judge safe without asking me. Edit evals/files/name-defaults.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten name-defaults.sh replaces the three if [ -z ] blocks with ${1:-app}, ${2:-0.0.0}, and ${3:-stable}, and the space substitution with ${APP_NAME// /-}. Because wc -c and cut -c count bytes while ${#s} and ${s:0:5} count characters in a UTF-8 locale, the rewrite keeps the byte count exact (for example with LC_ALL=C on the expansion, or by keeping wc -c). The response states the byte-versus-character trade-off.",
+      "assertions": [
+        "The rewritten name-defaults.sh uses ${N:-default} expansions in place of the three if [ -z ] blocks.",
+        "The rewritten name-defaults.sh replaces the sed space substitution with a ${var// /-} expansion.",
+        "The response explains that wc -c counts bytes and ${#var} counts characters, and keeps name bytes exact for a multibyte name.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/name-defaults.sh"
+      ]
+    },
+    {
+      "id": 18,
+      "name": "task-branch-slugs",
+      "kind": "task",
+      "family": "expansion",
+      "prompt": "Is there a shorter way to do this in bash? Use the bash-shortening skill on evals/files/branch-slugs.sh, apply the safe changes without asking, and edit the file in place with identical output. List each change with its reason.",
+      "expected_output": "The rewritten branch-slugs.sh replaces the four echo | sed and echo | cut subshells per line with ${slug//\\//-}, ${slug//_/-}, ${slug%%-*}, and ${slug#*-}, and replaces the empty-line if with a short guard. It keeps read -r. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten branch-slugs.sh runs no sed, cut, or echo pipeline inside the loop.",
+        "The rewritten branch-slugs.sh uses ${var%%-*} and ${var#*-} or equal expansions for the prefix and the rest.",
+        "The rewritten branch-slugs.sh keeps read -r.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/branch-slugs.sh"
+      ]
+    },
+    {
+      "id": 19,
+      "name": "task-retry-loop",
+      "kind": "task",
+      "family": "arithmetic",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/retry-loop.sh. Keep its behavior and exit codes identical. Apply every change you judge safe without asking me. Edit evals/files/retry-loop.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten retry-loop.sh replaces the backtick expr calls with $(( )) and (( )) arithmetic, the [ -le ] loop test with (( attempt <= max_attempts )) or a C-style for loop, and the default block with ${2:-3}. It keeps exit 0 on success and exit 1 when attempts run out. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten retry-loop.sh contains no expr and no backticks.",
+        "The rewritten retry-loop.sh uses (( )) or a C-style for loop for the attempt test.",
+        "The rewritten retry-loop.sh uses ${2:-3} or an equal default expansion.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/retry-loop.sh"
+      ]
+    },
+    {
+      "id": 20,
+      "name": "task-grade-scores",
+      "kind": "task",
+      "family": "arithmetic",
+      "prompt": "Clean up this bash with the bash-shortening skill: evals/files/grade-scores.sh. Keep its output identical. Apply every change you judge safe without asking me, and edit the file in place. Then list each change with its reason.",
+      "expected_output": "The rewritten grade-scores.sh replaces expr and the [ -ge ] tests with (( )) arithmetic and merges [ A ] && [ B ] into one (( )) test. It keeps the high, medium, and low labels in if/elif or case, because a $(( ? : )) ternary cannot return strings. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten grade-scores.sh contains no expr and no backticks.",
+        "The rewritten grade-scores.sh uses (( )) for the numeric tests.",
+        "The rewritten grade-scores.sh does not put string labels inside a $(( ? : )) arithmetic ternary.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/grade-scores.sh"
+      ]
+    },
+    {
+      "id": 21,
+      "name": "task-disk-check",
+      "kind": "task",
+      "family": "arithmetic",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/disk-check.sh. Keep its output and exit codes identical. Apply every change you judge safe without asking me. Edit evals/files/disk-check.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten disk-check.sh replaces the default blocks with ${1:-80} and ${2:-90}, the echo | tr percent strip with ${used%\\%}, and the [ -ge ] and [ A ] && [ B ] tests with (( )). It keeps the WARNING, CRITICAL, and summary lines and the exit status. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten disk-check.sh uses default expansions for warn and crit.",
+        "The rewritten disk-check.sh strips the percent sign with a parameter expansion, not echo | tr.",
+        "The rewritten disk-check.sh uses (( )) for the numeric tests.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/disk-check.sh"
+      ]
+    },
+    {
+      "id": 22,
+      "name": "task-deploy-url",
+      "kind": "task",
+      "family": "structure",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/deploy-url.sh. Keep its output and exit codes identical. Apply every change you judge safe without asking me. Edit evals/files/deploy-url.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten deploy-url.sh replaces the if/elif chain with a case statement (prod | production share one arm) or an associative array lookup with a default branch. The preview arm still accepts only pr- followed by digits, so a case glob such as pr-[0-9]*) is wrong; it needs [[ $env_name =~ ^pr-[0-9]+$ ]] or an extglob pattern. The header comments stay unchanged. The response names the glob-versus-regex difference.",
+      "assertions": [
+        "The rewritten deploy-url.sh uses case or an associative array in place of the if/elif chain.",
+        "The rewritten deploy-url.sh accepts pr-42 and rejects pr-4x and pr-.",
+        "The rewritten deploy-url.sh keeps the stderr message and exit 64 for an unknown environment.",
+        "The response names the difference between the pr-[0-9]* glob and the ^pr-[0-9]+$ regex.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/deploy-url.sh"
+      ]
+    },
+    {
+      "id": 23,
+      "name": "task-usage-text",
+      "kind": "task",
+      "family": "structure",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/usage-text.sh. The printed text must stay byte-for-byte identical. Apply every change you judge safe without asking me. Edit evals/files/usage-text.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten usage-text.sh replaces the run of echo lines with a heredoc. Because the text holds a literal $HOME, backticks, and $(nproc), the rewrite quotes the delimiter (<<'EOF') and prints the $name line apart, or escapes each one in an unquoted heredoc. The echo -e line needs real tab characters in the heredoc, or printf. The response names both risks.",
+      "assertions": [
+        "The rewritten usage-text.sh prints the body with a heredoc instead of one echo per line.",
+        "The rewritten usage-text.sh prints the literal text $HOME/.backups, `rsync`, and $(nproc) without expanding them.",
+        "The rewritten usage-text.sh prints real tab characters in the Columns line.",
+        "The response explains the quoted-delimiter or escaping choice for the heredoc.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/usage-text.sh"
+      ]
+    },
+    {
+      "id": 24,
+      "name": "task-rotate-spool",
+      "kind": "task",
+      "family": "structure",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/rotate-spool.sh. Keep its output, exit codes, and file moves identical. Apply every change you judge safe without asking me. Edit evals/files/rotate-spool.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten rotate-spool.sh adds a log() helper that prints [rotate] [LEVEL] message on stdout (for example with ${1^^}) and routes the six log lines through it. It replaces the guarded mkdir with mkdir -p and basename with ${f##*/}. It keeps the WARN line for an empty spool and exit 1 for a missing spool. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten rotate-spool.sh defines one logging function and every [rotate] line goes through it.",
+        "The rewritten rotate-spool.sh creates the archive directory with mkdir -p and no separate existence check.",
+        "The rewritten rotate-spool.sh keeps the log lines on stdout.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/rotate-spool.sh"
+      ]
+    },
+    {
+      "id": 25,
+      "name": "task-make-skeleton",
+      "kind": "task",
+      "family": "structure",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/make-skeleton.sh. It must create the same tree and print the same line. Apply every change you judge safe without asking me. Edit evals/files/make-skeleton.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten make-skeleton.sh replaces the guarded mkdir calls with one mkdir -p and brace expansion, and the literal loops with {01..05} and {2..10..2}. Because 'release notes' holds a space, it quotes that name, for example mkdir -p src/{lib,bin} tests docs 'release notes'; an unquoted {docs,release notes} brace does not expand. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten make-skeleton.sh creates the directories with mkdir -p and brace expansion, with no if [ ! -d ] guards.",
+        "The rewritten make-skeleton.sh uses the zero-padded range {01..05} and the step range {2..10..2} or equal brace expansions.",
+        "The rewritten make-skeleton.sh quotes the release notes directory name.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/make-skeleton.sh"
+      ]
+    },
+    {
+      "id": 26,
+      "name": "task-install-config",
+      "kind": "task",
+      "family": "restraint",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/install-config.sh. Keep its behavior identical, including when a copy fails. Apply every change you judge safe without asking me. Edit evals/files/install-config.sh in place. Then list each change and each change you rejected, with reasons.",
+      "expected_output": "The rewritten install-config.sh keeps the outer if/else, because a cmd && cp ... || echo chain runs the else message when cp fails. It may shorten the inner backup guard to [[ -f $f ]] && cp \"$f\"{,.bak} and merge the variable assignments. The response names the && ... || pitfall as the reason it kept if/else.",
+      "assertions": [
+        "The rewritten install-config.sh keeps an if/else for the managed-marker branch, not an && ... || chain.",
+        "The response names the && ... || pitfall: the || branch runs when a command after && fails.",
+        "The response lists each change and each rejected change with its reason."
+      ],
+      "files": [
+        "evals/files/install-config.sh"
+      ]
+    },
+    {
+      "id": 27,
+      "name": "task-active-users",
+      "kind": "task",
+      "family": "restraint",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/active-users.sh. Keep its behavior and exit codes identical, error paths included. Apply every change you judge safe without asking me. Edit evals/files/active-users.sh in place. Then list each change and each change you rejected, with reasons.",
+      "expected_output": "The rewritten active-users.sh replaces the three echo | cut calls per line with IFS=, read -r name email status _ (the _ absorbs extra columns), and keeps set -euo pipefail and the comments. It keeps the grep exit-status check that prints 'no data rows' and exits 3, which plain process substitution would lose. It avoids ((active++)) from zero under set -e, or guards it. The response names these pitfalls.",
+      "assertions": [
+        "The rewritten active-users.sh parses each row with IFS=, read -r and a trailing catch-all field, not cut.",
+        "The rewritten active-users.sh keeps set -euo pipefail and the header comments.",
+        "The rewritten active-users.sh still exits 3 with the no-data message for a header-only or missing report.",
+        "The response names the set -e risk of ((var++)) from zero or the exit-status loss of process substitution.",
+        "The response lists each change and each rejected change with its reason."
+      ],
+      "files": [
+        "evals/files/active-users.sh"
+      ]
+    },
+    {
+      "id": 28,
+      "name": "task-count-ext-golf",
+      "kind": "task",
+      "family": "restraint",
+      "prompt": "Make evals/files/count-ext.sh as short as possible with the bash-shortening skill, a one-liner if you can. Its output must stay identical. Apply the changes without asking me, and edit the file in place.",
+      "expected_output": "The response states the readability cost of a one-liner so the user owns the choice, and either delivers a short readable version or the one-liner with that warning. The rewritten count-ext.sh replaces basename, grep, sed, and expr with ${f##*/}, [[ == *.* ]], ${name##*.}, and (( )), drops the redundant zero-initialization, and keeps identical output. The response claims no speedup without a time run.",
+      "assertions": [
+        "The response states the readability cost of collapsing the script into a one-liner.",
+        "The rewritten count-ext.sh contains no expr, no sed, and no grep.",
+        "The response claims no measured speedup without a time run."
+      ],
+      "files": [
+        "evals/files/count-ext.sh"
+      ]
+    },
+    {
+      "id": 29,
+      "name": "task-top-errors",
+      "kind": "task",
+      "family": "temp-files",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/top-errors.sh. Keep its output and exit codes identical. Apply every change you judge safe without asking me. Edit evals/files/top-errors.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten top-errors.sh replaces the five /tmp files with one grep | cut | sort | uniq -c | sort -rn | head -3 pipeline and the backtick count with $( ). Under set -euo pipefail, grep exits 1 on no match, so errors=$(grep ...) or grep -c without || true would stop the script; the rewrite keeps the no-match and missing-log paths printing 'no errors' with exit 0. The response names that set -e risk.",
+      "assertions": [
+        "The rewritten top-errors.sh contains no /tmp path and no backticks.",
+        "The rewritten top-errors.sh ranks the codes with one cut | sort | uniq -c | sort -rn | head pipeline.",
+        "The rewritten top-errors.sh keeps set -euo pipefail.",
+        "The response names how grep exiting 1 interacts with set -e and pipefail.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/top-errors.sh"
+      ]
+    },
+    {
+      "id": 30,
+      "name": "task-config-diff",
+      "kind": "task",
+      "family": "temp-files",
+      "prompt": "Clean up this bash with the bash-shortening skill: evals/files/config-diff.sh. Its output and exit status must stay identical. Apply every change you judge safe without asking me, and edit the file in place. Then list each change with its reason.",
+      "expected_output": "The rewritten config-diff.sh puts the repeated grep -v | grep -v | sort filter in one function or a single grep -v -e '^#' -e '^$' call, and feeds diff with two process substitutions instead of /tmp files. It keeps a value that holds '#' after the start of the line, so sed 's/#.*//' is wrong. It keeps the [[ -r ]] check, the messages, and exit 0, 1, or 2. The response lists each change with a reason.",
+      "assertions": [
+        "The rewritten config-diff.sh contains no /tmp path.",
+        "The rewritten config-diff.sh writes the comment-and-blank filter once, in a function or one grep call.",
+        "The rewritten config-diff.sh removes only lines that start with '#', not text after a '#' inside a value.",
+        "The rewritten config-diff.sh feeds diff with process substitution.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/config-diff.sh"
+      ]
+    },
+    {
+      "id": 31,
+      "name": "task-pair-names",
+      "kind": "task",
+      "family": "temp-files",
+      "prompt": "This script is too long. Use the bash-shortening skill on evals/files/pair-names.sh, apply the safe changes without asking, and edit the file in place. Its output must stay identical. Then list each change with its reason.",
+      "expected_output": "The rewritten pair-names.sh builds the pairs in one pass, for example with a while IFS=, read -r id name _ loop (the _ absorbs extra columns) or paste on two process substitutions, sorts once, and replaces the backtick count. It uses no /tmp file. The response names the extra-column pitfall of IFS=, read -r id name.",
+      "assertions": [
+        "The rewritten pair-names.sh contains no /tmp path and no backticks.",
+        "The rewritten pair-names.sh sorts the pairs once.",
+        "The rewritten pair-names.sh keeps only the first two columns for a row with extra columns.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/pair-names.sh"
+      ]
+    },
+    {
+      "id": 32,
+      "name": "task-version-parts",
+      "kind": "task",
+      "family": "expansion",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/version-parts.sh. Keep its output identical for every version string, with or without a pre-release part. Apply every change you judge safe without asking me. Edit evals/files/version-parts.sh in place. Then list each change with its reason.",
+      "expected_output": "The rewritten version-parts.sh uses ${1:-$(<VERSION)} or a similar default, splits the core with ${version%%-*} and IFS=. read -r major minor patch, and computes the next patch with $(( )). Because ${version#*-} returns the whole string when no '-' exists, it guards the pre-release part (for example with [[ $version == *-* ]]). The response names that edge case.",
+      "assertions": [
+        "The rewritten version-parts.sh contains no cut, echo pipeline, or expr call.",
+        "The rewritten version-parts.sh splits the core version with IFS=. read or parameter expansion.",
+        "The rewritten version-parts.sh prints pre=none for a version without a '-'.",
+        "The response names the no-dash edge case of ${var#*-}.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/version-parts.sh"
+      ]
+    },
+    {
+      "id": 33,
+      "name": "task-url-parts",
+      "kind": "task",
+      "family": "expansion",
+      "prompt": "Is there a shorter way to do this in bash? Use the bash-shortening skill on evals/files/url-parts.sh, apply the safe changes without asking, and edit the file in place with identical output for every URL. Then list each change with its reason.",
+      "expected_output": "The rewritten url-parts.sh replaces the six echo | sed and echo | cut subshells per URL with ${url%%://*}, ${url#*://}, ${rest%%/*}, ${hostport%%:*}, and guarded ${var#*/} and ${var#*:} expansions, because those expansions return the whole string when the delimiter is absent. It picks the default port with a case or a short conditional. The response names the missing-delimiter edge case.",
+      "assertions": [
+        "The rewritten url-parts.sh runs no sed, cut, or echo pipeline inside the loop.",
+        "The rewritten url-parts.sh guards the path and port expansions for a URL without a path or a port.",
+        "The response names the missing-delimiter edge case of ${var#*/} or ${var#*:}.",
+        "The response lists each change with its reason."
+      ],
+      "files": [
+        "evals/files/url-parts.sh"
+      ]
+    },
+    {
+      "id": 34,
+      "name": "task-clean-tmp",
+      "kind": "task",
+      "family": "restraint",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/clean-tmp.sh. Keep its behavior identical, including file names with spaces and directories with no .tmp files. Apply every change you judge safe without asking me. Edit evals/files/clean-tmp.sh in place. Then list each change and each change you rejected, with reasons.",
+      "expected_output": "The rewritten clean-tmp.sh drops the /tmp list file, for example with find -delete plus a count, or a read loop over process substitution. It avoids find | xargs rm, which breaks on spaces and fails on empty input without -0 and -r. The response names that xargs pitfall.",
+      "assertions": [
+        "The rewritten clean-tmp.sh contains no /tmp path.",
+        "The rewritten clean-tmp.sh uses no xargs without both -0 and -r.",
+        "The response names the space or empty-input pitfall of find | xargs rm.",
+        "The response lists each applied change and each rejected change with its reason."
+      ],
+      "files": [
+        "evals/files/clean-tmp.sh"
+      ]
+    },
+    {
+      "id": 35,
+      "name": "task-host-lookup",
+      "kind": "task",
+      "family": "restraint",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/host-lookup.sh. Keep its output and exit codes identical. Apply every change you judge safe without asking me. Edit evals/files/host-lookup.sh in place. Then list each change and each change you rejected, with reasons.",
+      "expected_output": "The rewritten host-lookup.sh shortens the status checks, for example entry=$(grep -w ...) || return 2 and if addr=$(lookup ...); then, and drops the echo | awk pipe. It keeps local on its own line or uses the || form, because local entry=$(cmd) hides the exit status of cmd. The response names that pitfall.",
+      "assertions": [
+        "The rewritten host-lookup.sh tests exit status directly with || or if cmd, not with $? comparisons.",
+        "The rewritten host-lookup.sh does not combine local with a command substitution in one statement.",
+        "The response names how local var=$(cmd) hides the exit status of cmd.",
+        "The response lists each applied change and each rejected change with its reason."
+      ],
+      "files": [
+        "evals/files/host-lookup.sh"
+      ]
+    },
+    {
+      "id": 36,
+      "name": "task-env-defaults",
+      "kind": "task",
+      "family": "restraint",
+      "prompt": "Use the bash-shortening skill to shorten evals/files/env-defaults.sh. Keep its behavior identical for set, empty, and unset variables. Apply every change you judge safe without asking me. Edit evals/files/env-defaults.sh in place. Then list each change and each change you rejected, with reasons.",
+      "expected_output": "The rewritten env-defaults.sh replaces each unset-only default block with : \"${VAR=default}\" or ${VAR-default}, without the colon, because ${VAR:-default} or ${VAR:=default} would also replace a deliberate empty value. It may fold the COLOR auto branch into a short conditional. The response names the colon difference.",
+      "assertions": [
+        "The rewritten env-defaults.sh sets the defaults with ${VAR=default} or ${VAR-default}, not the :- or := forms.",
+        "The rewritten env-defaults.sh keeps an empty LOG_LEVEL, LOG_FILE, or COLOR empty.",
+        "The response explains the difference between ${VAR-x} and ${VAR:-x} for an empty value.",
+        "The response lists each applied change and each rejected change with its reason."
+      ],
+      "files": [
+        "evals/files/env-defaults.sh"
+      ]
+    }
+  ]
+}

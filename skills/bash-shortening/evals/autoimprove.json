@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "status": "approved",
+  "skill": "bash-shortening",
+  "invocation": "/bash-shortening",
+  "kinds": {
+    "task": {
+      "grader": "hybrid",
+      "gate": "evals/gates/behavior.py",
+      "rubric": "The behavior gate already passed: output/<name>.sh parses and matches the original script's exit status, stdout, and file effects on hidden runs. Grade the response and the rewritten script on each criterion. `reference` holds `expected_output` and the `assertions` that the criteria come from. Judge readability as a maintainer would: fewer subprocesses, temp files, and intermediate variables count for the rewrite; nested expansions or one-liners that hide intent count against it. A response that ignores the named script or writes no rewrite meets no criterion."
+    }
+  },
+  "editable": [
+    "SKILL.md",
+    "references/advanced.md",
+    "references/anti-patterns.md",
+    "references/arithmetic.md",
+    "references/brace-expansion.md",
+    "references/command-substitution.md",
+    "references/functions.md",
+    "references/parameter-expansion.md",
+    "references/process-substitution.md",
+    "references/real-world.md"
+  ]
+}
