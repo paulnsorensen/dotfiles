@@ -387,7 +387,7 @@ claude:
     - version-doctor
     - wat
     - work-recovery
-    - worktree
+    - worktree-session
     - worktree-find
     - worktree-triage
     - wt-git

@@ -24,5 +24,5 @@ prompts that no permission setting suppresses. Route around them:
   (no bash involved).
 
 Gotchas: `wt-git` must be on PATH (sub-agents may lack it); quote paths with
-spaces. Don't create worktrees (/worktree) or use this for the repo you're
+spaces. Don't create sessions (/worktree-session) or use this for the repo you're
 already in.

@@ -54,27 +54,6 @@ assert_not_contains() {
     }
 }
 
-# ── worktree/scripts/create.sh ──────────────────────────────────────
-
-@test "create.sh creates a worktree and reports path, branch, base" {
-    cd "$REPO"
-    run "$SKILLS/worktree/scripts/create.sh" -m feature
-    [ "$status" -eq 0 ]
-    assert_contains "$output" "Worktree ready: $REPO/.worktrees/feature"
-    assert_contains "$output" "Branch: worktree/feature"
-    assert_contains "$output" "Base: "
-    [ -d "$REPO/.worktrees/feature" ]
-}
-
-@test "create.sh resumes an existing worktree" {
-    cd "$REPO"
-    run "$SKILLS/worktree/scripts/create.sh" -m feature
-    [ "$status" -eq 0 ]
-    run "$SKILLS/worktree/scripts/create.sh" -m feature
-    [ "$status" -eq 0 ]
-    assert_contains "$output" "Worktree resumed: $REPO/.worktrees/feature"
-}
-
 # ── worktree-find/scripts/find-touching.sh ──────────────────────────
 
 @test "find-touching.sh finds the worktree with an uncommitted touch" {

@@ -27,13 +27,15 @@ process from starting, so the flag and tool name must move together.
 
 ### Worktree session ownership
 
-The global preferences keep the worktree rule harness-neutral.
-A Git worktree alone does not bind another session to that checkout.
-The session must start with the correct checkout and permissions before it edits files.
-This avoids repeated requests to expand the parent's write roots or restart the user's session.
-The rule permits harness-native tools, including T3, and a CLI session launcher as a fallback.[^worktree-session]
+The global preferences keep one pointer to `/worktree-session` for isolated work.
+Detailed standing instructions exceed the source and assembled-stack token budgets.
+The skill selects session ownership before checkout creation and verifies destination permissions before edits.
+Its conditional references separate T3 routing from standalone Claude, Codex, OMP, and Pi capability discovery.
+It replaces `/worktree`, whose checkout-and-`cd` procedure does not create an isolated editing session.
+The `wt` checkout helper and `ccw` Claude launcher remain available.
+The shared pointer reaches Pi, which does not load the execution preamble.[^worktree-session]
 
-[^worktree-session]: `agents/AGENTS.md:27-35`; operator decision on 2026-11-01 after the eight-PR repair session.
+[^worktree-session]: `agents/AGENTS.md:27`; `skills/worktree-session/SKILL.md`; `skills/worktree-session/references/`; operator decision on 2026-11-01.
 
 ## Outcome-first verification
 

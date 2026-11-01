@@ -39,7 +39,7 @@ The colon (`:`) is the tell — it means "file contents at ref", not "commit det
 | Read a file in the current worktree | Use `tilth_read` directly |
 | Compare a file across versions | `git diff <ref> -- <path>` (shows diff, not raw content) |
 | See what changed in a file between refs | `git diff <ref> HEAD -- <path>` (shows delta, not raw content) |
-| Read a file from another branch in isolation | Use `tilth_read` after switching branches via `/worktree` — isolated worktree is the safe pattern |
+| Read a file from another branch in isolation | Use `/worktree-session` for the isolated session, then read with `tilth_read` |
 | View commit metadata | `git show <commit>` (no colon — this is fine) |
 | View commit stats | `git show --stat <commit>` (fine) |
 | List files changed in a commit | `git diff-tree --no-commit-id -r <commit>` (fine) |

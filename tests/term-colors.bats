@@ -42,9 +42,9 @@ setup() {
 
 @test "tagged-log sets no shell options and loads from any cwd" {
     cd /
-    run bash -c 'before=$-; LOG_TAG=t; source "$1/tagged-log.sh"; [[ $- == "$before" ]] && declare -F log ok warn err | wc -l' _ "$LIB_DIR"
+    run bash -c 'before=$-; LOG_TAG=t; source "$1/tagged-log.sh"; [[ $- == "$before" ]] && declare -F log ok warn err' _ "$LIB_DIR"
     [ "$status" -eq 0 ]
-    [ "$output" = "4" ]
+    [ "$output" = $'log\nok\nwarn\nerr' ]
 }
 
 @test "tagged-log rejects a missing color library before defining helpers" {

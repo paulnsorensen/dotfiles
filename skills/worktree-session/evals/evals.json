@@ -1,0 +1,275 @@
+{
+  "skill_name": "worktree-session",
+  "evals": [
+    {
+      "id": 1,
+      "name": "trigger-1",
+      "kind": "trigger",
+      "prompt": "create an isolated worktree",
+      "expected_output": "The worktree-session skill loads.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": []
+    },
+    {
+      "id": 2,
+      "name": "trigger-2",
+      "kind": "trigger",
+      "prompt": "resume a worktree session",
+      "expected_output": "The worktree-session skill loads.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": []
+    },
+    {
+      "id": 3,
+      "name": "trigger-3",
+      "kind": "trigger",
+      "prompt": "move this task into a worktree",
+      "expected_output": "The worktree-session skill loads.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": []
+    },
+    {
+      "id": 4,
+      "name": "trigger-4",
+      "kind": "trigger",
+      "prompt": "delegate in a worktree",
+      "expected_output": "The worktree-session skill loads.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": []
+    },
+    {
+      "id": 5,
+      "name": "trigger-5",
+      "kind": "trigger",
+      "prompt": "start a worktree session",
+      "expected_output": "The worktree-session skill loads.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": []
+    },
+    {
+      "id": 6,
+      "name": "trigger-6",
+      "kind": "trigger",
+      "prompt": "/worktree-session fix-cache",
+      "expected_output": "The worktree-session skill loads.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": []
+    },
+    {
+      "id": 7,
+      "name": "near-miss-find",
+      "kind": "near-miss",
+      "prompt": "Find the worktree for PR 1503.",
+      "expected_output": "The worktree-session skill stays unloaded.",
+      "files": [],
+      "expected_skill": null,
+      "assertions": []
+    },
+    {
+      "id": 8,
+      "name": "near-miss-triage",
+      "kind": "near-miss",
+      "prompt": "Triage stale worktrees without deleting them.",
+      "expected_output": "The worktree-session skill stays unloaded.",
+      "files": [],
+      "expected_skill": null,
+      "assertions": []
+    },
+    {
+      "id": 9,
+      "name": "near-miss-git",
+      "kind": "near-miss",
+      "prompt": "Run git status in another worktree.",
+      "expected_output": "The worktree-session skill stays unloaded.",
+      "files": [],
+      "expected_skill": null,
+      "assertions": []
+    },
+    {
+      "id": 10,
+      "name": "task-child",
+      "family": "t3-child",
+      "kind": "task",
+      "prompt": "T3: I am already worktree-bound at /repo/task-a. Delegate the cache fix in a separate worktree from my local commit; continue here.",
+      "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Selects delegate_task with isolation worktree, not a top-level thread or handoff.",
+        "Keeps the parent binding unchanged and states that uncommitted edits do not transfer.",
+        "Reports pending until the child confirms destination checkout, branch, and authorized write access."
+      ]
+    },
+    {
+      "id": 11,
+      "name": "task-dirty",
+      "family": "t3-existing",
+      "kind": "task",
+      "prompt": "T3: Open a separate conversation in existing dirty /repo/task-b on feature/b. Preserve staged and untracked changes.",
+      "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Selects t3_thread_launch with existing_worktree strategy, exact path, and branch.",
+        "Preserves staged and untracked changes without stash, reset, clean, or commit.",
+        "Retains threadId and requires destination binding and access evidence before ready."
+      ]
+    },
+    {
+      "id": 12,
+      "name": "task-root",
+      "family": "t3-handoff",
+      "kind": "task",
+      "prompt": "T3: Move this current root-thread task into a new worktree based on feature/base's local commits.",
+      "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Checks t3_worktree_status before handoff.",
+        "Selects t3_worktree_handoff with explicit baseRef and startFromOrigin false.",
+        "Makes handoff the final action with a continuationPrompt requiring destination verification."
+      ]
+    },
+    {
+      "id": 13,
+      "name": "task-bound",
+      "family": "t3-blocked",
+      "kind": "task",
+      "prompt": "T3: This thread is already bound to /repo/task-a. Move this same conversation into /repo/task-b. I do not want a new conversation.",
+      "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Does not call a second handoff or launch a top-level conversation.",
+        "Reports the unsupported current-thread transition without creating a checkout.",
+        "Does not widen write roots or restart the parent."
+      ]
+    },
+    {
+      "id": 14,
+      "name": "task-codex",
+      "family": "native-unsupported",
+      "kind": "task",
+      "prompt": "Standalone Codex: Resume edits in /repo/task-b. Only /repo/task-a is writable. No native or terminal session launcher is available. Do not widen permissions.",
+      "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Reports blocked because no supported launcher can bind a destination session.",
+        "Does not create a checkout, change directories as a permission fix, or request broader roots.",
+        "Leaves existing changes and provider selection untouched."
+      ]
+    },
+    {
+      "id": 15,
+      "name": "task-claude",
+      "family": "cli-base",
+      "kind": "task",
+      "prompt": "Standalone Claude: Create independent fix-cache work from the remote default branch and start an isolated editing session. wt and ccw exist; no terminal surface exists here.",
+      "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Identifies a pending operator launch rather than starting an unattended nested interactive process.",
+        "Distinguishes wt -o base preparation from ccw's current-branch default.",
+        "Does not claim a checkout alone proves destination permissions."
+      ]
+    },
+    {
+      "id": 16,
+      "name": "task-native",
+      "family": "native-discovery",
+      "kind": "task",
+      "prompt": "Standalone OMP or Pi: Start a worktree session for a dependent task. The available tool catalog names no session launcher.",
+      "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Inspects current capabilities or primary documentation before choosing a mechanism.",
+        "Does not invent Claude or Codex flags or silently switch providers.",
+        "Reports a missing capability if no verified launcher exists."
+      ]
+    },
+    {
+      "id": 17,
+      "name": "task-dirty-child",
+      "family": "t3-child-existing",
+      "kind": "task",
+      "prompt": "T3: Delegate a child to resume existing dirty /repo/task-b. The delegate_task contract supports only fresh worktree isolation.",
+      "expected_output": "Returns a safe session route with honest ready, pending, or blocked state.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Does not substitute a fresh checkout for the requested dirty checkout.",
+        "Does not open a top-level conversation without an explicit user request.",
+        "Reports the existing-checkout child limitation and leaves changes intact."
+      ]
+    },
+    {
+      "id": 18,
+      "name": "task-dependent-dirty-base",
+      "family": "transition-safety",
+      "kind": "task",
+      "prompt": "T3: Delegate implementation that depends on my uncommitted changes. Use a separate worktree. Do not commit or copy my changes.",
+      "expected_output": "Explains that fresh worktree isolation starts at the local commit and asks for a supported plan before launching.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Does not launch a child with a stale committed base.",
+        "Does not commit, stash, or copy user changes.",
+        "Reports the uncommitted dependency before proceeding."
+      ]
+    },
+    {
+      "id": 19,
+      "name": "task-lost-launch-response",
+      "family": "transition-safety",
+      "kind": "task",
+      "prompt": "T3: I explicitly requested another conversation in a new worktree. The launch call timed out without returning a threadId. What next?",
+      "expected_output": "Inspects existing threads before retrying a non-idempotent launch and reports pending until binding is verified.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Inspects t3_thread_list before retrying.",
+        "Does not claim ready from the failed acknowledgment.",
+        "Does not duplicate an existing matching launch."
+      ]
+    },
+    {
+      "id": 20,
+      "name": "task-no-destination-evidence",
+      "family": "transition-safety",
+      "kind": "task",
+      "prompt": "Standalone Pi: a supported native launcher accepts the requested worktree. It returns a session ID, but destination permission and checkout verification are unavailable. Can work start?",
+      "expected_output": "Returns pending with the session ID and missing destination evidence, without allowing edits.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Reports pending rather than ready.",
+        "Names missing checkout, branch, preservation, and write-access evidence.",
+        "Does not widen the parent write roots."
+      ]
+    },
+    {
+      "id": 21,
+      "name": "task-independent-child-base-mismatch",
+      "family": "t3-child",
+      "kind": "task",
+      "prompt": "T3: The parent HEAD contains feature commits and differs from origin/main. Delegate an independent child in a new worktree from origin/main. Do not create a separate conversation or change the parent branch.",
+      "expected_output": "Resolves the requested origin/main commit, compares it with parent HEAD, and reports blocked before delegation.",
+      "files": [],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Identifies that child isolation starts from parent HEAD, not the requested origin/main commit.",
+        "Reports blocked without launching a child from the wrong base.",
+        "Does not create a substitute conversation or change the parent branch."
+      ]
+    }
+  ]
+}

@@ -21,10 +21,11 @@ hooks = [
 ]
 
 # Shellcheck for shell scripts (use system binary, not shellcheck-py which triggers uv panic)
+# Skill eval fixtures (skills/*/evals/files/) are deliberately verbose inputs for autoimprove cases.
 [[repos]]
 repo = "local"
 hooks = [
-  { id = "shellcheck", name = "shellcheck", entry = "shellcheck -e SC1091,SC2148,SC2030,SC2031,SC2155,SC2314,SC2329", language = "system", types = ["shell"], exclude = "zsh/" },
+  { id = "shellcheck", name = "shellcheck", entry = "shellcheck -e SC1091,SC2148,SC2030,SC2031,SC2155,SC2314,SC2329", language = "system", types = ["shell"], exclude = "zsh/|^skills/[^/]+/evals/files/" },
 ]
 
 # Local hooks

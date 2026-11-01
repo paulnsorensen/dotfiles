@@ -15,7 +15,6 @@ respective renderer test modules.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -96,9 +95,12 @@ def test_settings_allow_and_deny_both_union_merge(env):
 def _checkout() -> Path:
     """The dotfiles checkout under test. Profiles resolve from here, not
     from ``~/Dev/dotfiles``."""
-    return Path(
-        os.environ.get("DOTFILES_DIR") or Path(__file__).resolve().parents[2]
-    )
+    return Path(__file__).resolve().parents[2]
+
+
+def test_checkout_ignores_external_dotfiles_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    assert _checkout() == Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(scope="module")

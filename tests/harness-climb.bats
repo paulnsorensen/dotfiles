@@ -4,10 +4,11 @@ REPO_ROOT="$BATS_TEST_DIRNAME/.."
 SKILL="$REPO_ROOT/skills/harness-climb/SKILL.md"
 WORKFLOW="$REPO_ROOT/.github/workflows/test.yml"
 
-# One Bats test per unittest module, so `bats --jobs` runs the modules in
-# parallel. A single discover run was the longest test in the suite.
-# Registration globs the directory, so a new module gets a test automatically.
+load lib/session-analytics-package
+
+# Register each module separately so Bats can run modules in parallel.
 run_unittest_module() {
+    package_warm_cache || return
     run python3 -m unittest discover -s "$REPO_ROOT/tests/harness_climb" -t "$REPO_ROOT/tests" -p "$1"
     [ "$status" -eq 0 ] || { echo "$output" >&2; false; }
     [[ "$output" =~ Ran\ [1-9][0-9]*\ test ]] || { echo "$1 ran no tests: $output" >&2; false; }

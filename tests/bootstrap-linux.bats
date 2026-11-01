@@ -257,9 +257,11 @@ EOF
 @test "main handles accepted, missing, wrong-vendor, and failed yq bootstrap" {
     local tools="$TEST_HOME/yq-tools" tool state
     mkdir -p "$tools"
-    for tool in dirname grep mkdir uname chmod mv cp rm; do
+    for tool in dirname grep mkdir chmod mv cp rm; do
         ln -s "$(command -v "$tool")" "$tools/$tool"
     done
+    printf '#!/bin/bash\necho x86_64\n' > "$tools/uname"
+    chmod +x "$tools/uname"
     cat > "$TEST_HOME/downloaded-yq" <<'EOF'
 #!/bin/bash
 printf '%s\n' 'yq (https://github.com/mikefarah/yq/) version downloaded'
@@ -303,7 +305,7 @@ EOF
         if [[ "$state" == accepted ]]; then
             [[ ! -e "$TEST_HOME/yq-download.log" ]]
         else
-            [[ "$(<"$TEST_HOME/yq-download.log")" == "-fsSL https://github.com/mikefarah/yq/releases/download/$(yq_pinned_version)/yq_linux_"*" -o $HOME/.local/bin/yq.tmp" ]]
+            [[ "$(<"$TEST_HOME/yq-download.log")" == "-fsSL https://github.com/mikefarah/yq/releases/download/$(yq_pinned_version)/yq_linux_amd64 -o $HOME/.local/bin/yq.tmp" ]]
         fi
     done
 }

@@ -98,3 +98,9 @@ _Source: PR #1224 cure; `agent-session-analytics` 0.1.0 package and C4 consumer 
 [^package-pin]: skillz-that-grillz PR #511 (0.2.0, schema 3); `skills/session-analytics/scripts/report-lib.sh`; `skills/harness-climb/scripts/hc_db.py`; `renovate.json5`.
 [^cache-move]: skillz-that-grillz PR #545 and release `agent-session-analytics-v0.2.1` (`_db.py::_default_db_path`).
 [^fixture-isolation]: `tests/lib/session-analytics-package.bash`; package `tests/conftest.py`.
+
+Bats package tests warm the exact pinned package in a run-wide uv cache before exporting `UV_OFFLINE=1`.
+Per-test homes still isolate session discovery.
+Recheck the warm marker after lock acquisition: another caller can publish it between the initial check and acquisition.[^cache-warm]
+
+[^cache-warm]: `tests/lib/session-analytics-package.bash:18-38`; `tests/session-analytics-cache.bats:18-35`; PR #1425.
