@@ -633,6 +633,14 @@ resolved version and fail the apply on a mismatch.[^nightly-pin]
 This check is separate from the second-prefix prune. One protects the active
 npm prefix from a moving-tag race. The other removes stale competing prefixes.
 
+**Registry lag exception**: `npm view` can list a new nightly before its
+tarball is fetchable. On 2026-10-26, `tilth-nightly@0.0.0-experimental.192.1`
+returned 404 three minutes after publication, and the failed install aborted the
+whole `chezmoi apply`. Now, when `npm install` exits non-zero and an older
+nightly is installed, the installer warns, keeps that version, and exits 0. The
+next sync retries. It still fails when no version is installed, or when npm
+exits 0 but leaves the old version in place.
+
 [^nightly-pin]: `chezmoi/.chezmoiscripts/run_after_install-tilth.sh.tmpl:31-48`, `chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl:37-54`, and `tests/chezmoi-wiring.bats`.
 
 ## Known drift pattern: Claude CLI SGR residue corrupts pasted setting values

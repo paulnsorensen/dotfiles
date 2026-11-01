@@ -1173,6 +1173,55 @@ EOF
     assert_output_contains "expected 0.0.0-experimental.70.1, got 0.0.0-experimental.69.1"
 }
 
+@test "nightly installer keeps the installed package when npm cannot fetch a fresh release" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+
+    local tool template script npm_bin
+    for tool in tilth hallouminate; do
+        template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_install-$tool.sh.tmpl"
+        script="$TEST_HOME/install-$tool.sh"
+        npm_bin="$TEST_HOME/lagging-registry-$tool-npm-bin"
+        mkdir -p "$npm_bin"
+        chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$script"
+        # The registry lists 192.1, but its tarball still returns 404.
+        cat > "$npm_bin/npm" <<EOF
+#!/bin/bash
+case "\$1 \$2" in
+    "view @paulnsorensen/$tool-nightly") echo "0.0.0-experimental.192.1" ;;
+    "install -g") echo "npm error 404 Not Found" >&2; exit 1 ;;
+    "ls -g") echo "└── @paulnsorensen/$tool-nightly@0.0.0-experimental.191.1" ;;
+esac
+EOF
+        chmod +x "$npm_bin/npm"
+
+        run env HOME="$TEST_HOME" PATH="$npm_bin:/usr/bin:/bin" /bin/bash "$script"
+        assert_success
+        assert_output_contains "keeping installed 0.0.0-experimental.191.1"
+    done
+}
+
+@test "nightly installer fails when npm cannot install and nothing is installed" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+
+    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_install-tilth.sh.tmpl"
+    local script="$TEST_HOME/install-tilth.sh"
+    local npm_bin="$TEST_HOME/empty-nightly-npm-bin"
+    mkdir -p "$npm_bin"
+    chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$script"
+    cat > "$npm_bin/npm" <<'EOF'
+#!/bin/bash
+case "$1 $2" in
+    "view @paulnsorensen/tilth-nightly") echo "0.0.0-experimental.192.1" ;;
+    "install -g") exit 1 ;;
+esac
+EOF
+    chmod +x "$npm_bin/npm"
+
+    run env HOME="$TEST_HOME" PATH="$npm_bin:/usr/bin:/bin" /bin/bash "$script"
+    assert_failure
+    assert_output_contains "none is installed"
+}
+
 @test "nightly installer removes a second npm prefix's copy of the bin" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 
