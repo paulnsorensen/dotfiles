@@ -107,7 +107,7 @@ looked like a T3 MCP problem.
 
 | Source | Target | Purpose |
 |---|---|---|
-| `chezmoi/.chezmoidata/t3.yaml` → `dot_t3/userdata/modify_settings.json` | `~/.t3/userdata/settings.json` | Merges `providerInstances.{claudeAgent,codex,opencode}` (`driver`, `config.binaryPath`, and the claudeAgent `config.launchArgs`) into the live file. T3 rewrites this file from its UI, so the guard preserves UI state through `lib/drift-gate.sh` with `lib/t3-settings-ignore.txt`. `lib/t3-settings-retired.txt` deletes the legacy `providers` map. |
+| `chezmoi/.chezmoidata/t3.yaml` → `dot_t3/userdata/modify_settings.json` | `~/.t3/userdata/settings.json` | Merges `defaultModelSelection` and `providerInstances.{claudeAgent,codex,opencode}` (`driver`, `config.binaryPath`, and the claudeAgent `config.launchArgs`) into the live file. T3 rewrites this file from its UI, so the guard preserves UI state through `lib/drift-gate.sh` with `lib/t3-settings-ignore.txt`. `lib/t3-settings-retired.txt` deletes the legacy `providers` map. |
 | `dot_t3/userdata/claude-settings.json` | `~/.t3/userdata/claude-settings.json` | Passed via `--settings`. Sets `disableClaudeAiConnectors: true` for T3 sessions only, so the connectors never push tilth into the deferred tool list. |
 | `dot_config/systemd/user/t3code.service.d/telemetry.conf` (Linux only) | `~/.config/systemd/user/t3code.service.d/telemetry.conf` | Sets `T3CODE_TELEMETRY_ENABLED=false` for the background service. A drop-in, because `t3 service install` and `t3 update` rewrite the unit file. `run_onchange_after_reload-t3-service.sh.tmpl` runs `daemon-reload` only; the setting applies at the next service restart. |
 | `zsh/core.zsh` | shell profile | Exports `T3CODE_TELEMETRY_ENABLED=false` for the macOS desktop app, which reads the shell profile, and for foreground `t3 serve`. |
@@ -236,8 +236,8 @@ Keep the device code, OAuth token, and `secrets/` files out of Git.
 - T3 reads `settings.json` at thread start. Restart T3 or open a new thread
   after `dots sync`.
 - The T3 provider instance key is `claudeAgent`, not `claude`.
-- The registry owns only each instance `driver`, the three `binaryPath`
-  leaves, and the claudeAgent `launchArgs`. Enable toggles, credentials,
+- The registry owns `defaultModelSelection`, each instance `driver`, the
+  three `binaryPath` leaves, and the claudeAgent `launchArgs`. Enable toggles, credentials,
   custom models, `defaultThreadEnvMode`, and sidebar state stay T3-owned;
   add new T3 UI keys to `lib/t3-settings-ignore.txt`, not to the registry.
 - The registry writes each wrapper path as `$DOTFILES/bin/dots*`. The modify
@@ -257,9 +257,16 @@ Keep the device code, OAuth token, and `secrets/` files out of Git.
 
 T3 0.1.6 supports one `defaultModelSelection`, including its options.
 Its settings schema does not expose a per-model reasoning-default map.
+The user approves Sol/high as the single default instead.
+The registry sets `defaultModelSelection` to instance `codex`, model `gpt-6.1-sol`, and option `reasoningEffort=high`.[^default-selection]
+This choice sets the new-thread default without changing explicit thread or project selections.
+Terra and Luna still need explicit reasoning selections in T3.
+
 Custom-model entries cannot override built-in model capabilities; matching slugs only change names.
 Do not add same-slug custom models to change reasoning defaults.
 The Codex root `model_reasoning_effort` setting does not replace explicit T3 thread options.[^reasoning-defaults]
+
+[^default-selection]: `chezmoi/.chezmoidata/t3.yaml`; `tests/t3-config.bats` verifies fresh and stale settings through the merge script. User approval: 2026-11-01.
 
 [^reasoning-defaults]: Installed T3 0.1.6 executable, embedded `ServerSettings`, `CustomModelEntry`, and `providerModelsFromSettings` source; inspected 2026-11-01.
 
