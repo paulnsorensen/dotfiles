@@ -198,6 +198,12 @@ do_sync() {
     SKILL_EXCLUDE_AGENTS="$skill_exclude_agents" \
         "$DOTFILES_DIR/chezmoi/lib/install-external.sh" \
         "$DOTFILES_DIR/skills/_registry.yaml" --force
+
+    # The weekly cleanup timer cannot run on hosts without a systemd user bus (devbox containers).
+    if [[ -x "$DOTFILES_DIR/bin/bin-doctor" ]]; then
+        "$DOTFILES_DIR/bin/bin-doctor" clean --sync ||
+            echo -e "${YELLOW}⚠️  cleanup: a bin-doctor clean step failed; sync itself succeeded.${NC}" >&2
+    fi
 }
 
 # Show status
@@ -249,7 +255,7 @@ do_status() {
 
     # Last sync info
     if [[ -f "$DOTFILES_STATE_DIR/last_sync" ]]; then
-        LAST_SYNC=$(cat "$DOTFILES_STATE_DIR/last_sync")
+        LAST_SYNC=$(<"$DOTFILES_STATE_DIR/last_sync")
         if [[ "$(uname)" == "Darwin" ]]; then
             LAST_SYNC_DATE=$(date -r "$LAST_SYNC" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "unknown")
         else
@@ -275,12 +281,12 @@ do_doctor() {
     while IFS= read -r link; do
         if [[ ! -e "$link" ]]; then
             echo -e "  ${RED}✗ Broken: $link${NC}"
-            broken_links=$((broken_links + 1))
-            issues=$((issues + 1))
+            ((broken_links += 1))
+            ((issues += 1))
         fi
     done < <(find "$HOME" -maxdepth 2 -type l 2>/dev/null)
 
-    if [[ $broken_links -eq 0 ]]; then
+    if ((broken_links == 0)); then
         echo -e "  ${GREEN}✓ All symlinks valid${NC}"
     fi
 
@@ -321,7 +327,7 @@ do_doctor() {
         # chezmoi doctor would kill the script before the status check.
         local chezmoi_rc=0
         chezmoi --source "$DOTFILES_DIR/chezmoi" doctor 2>&1 | sed 's/^/  /' || chezmoi_rc=$?
-        if [[ $chezmoi_rc -ne 0 ]]; then
+        if ((chezmoi_rc != 0)); then
             issues=$((issues + 1))
         fi
     else
@@ -368,11 +374,11 @@ do_doctor() {
         local drift_tmp drift_rc=0
         drift_tmp=$(mktemp)
         drift_print_recorded "      " > "$drift_tmp" || drift_rc=$?
-        if [[ $drift_rc -eq 0 ]]; then
+        if ((drift_rc == 0)); then
             issues=$((issues + DRIFT_RECORDED_COUNT))
             cat "$drift_tmp"
             echo -e "    Fold each key into its registry, then run: ${GREEN}dots sync${NC}"
-        elif [[ $drift_rc -eq 2 ]]; then
+        elif ((drift_rc == 2)); then
             issues=$((issues + 1))
             echo -e "  ${YELLOW}⚠ Cannot read the harness drift state directory${NC}"
         else
@@ -464,7 +470,7 @@ do_claude_diff() {
         local gate_err gate_rc=0
         gate_err=$(CHEZMOI_SOURCE_DIR="$DOTFILES_DIR/chezmoi" sh "$modify" \
             <"$settings" 2>&1 >/dev/null) || gate_rc=$?
-        if [[ $gate_rc -ne 0 ]]; then
+        if ((gate_rc != 0)); then
             echo -e "${RED}settings.json would HALT the next sync:${NC}" >&2
             printf '%s\n' "$gate_err" >&2
             exit "$gate_rc"
@@ -474,7 +480,7 @@ do_claude_diff() {
 
     local diff_output rc=0
     diff_output=$(chezmoi --source "$DOTFILES_DIR/chezmoi" diff "$HOME/.claude") || rc=$?
-    if [[ $rc -ne 0 ]]; then
+    if ((rc != 0)); then
         echo -e "${RED}chezmoi diff failed (exit $rc)${NC}" >&2
         exit $rc
     fi

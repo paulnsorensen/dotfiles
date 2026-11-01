@@ -6,8 +6,8 @@ bats_require_minimum_version 1.5.0
 # The T3 guard (chezmoi/dot_t3/userdata/modify_settings.json) merges the
 # registry keys from .chezmoidata/t3.yaml into the live T3 settings.json.
 # T3 rewrites that file from its UI, so the guard must preserve UI state and
-# only assert the provider-instance contract: drivers, wrapper binaryPaths,
-# and the claudeAgent launchArgs.
+# assert provider instances and the selected default model: drivers, wrapper
+# binaryPaths, claudeAgent launchArgs, and Codex Sol with high reasoning.
 
 teardown() { teardown_test_env; }
 
@@ -45,6 +45,8 @@ setup() {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
     local rendered="$output"
+    run jq -c '.defaultModelSelection' <<<"$rendered"
+    [ "$output" = '{"instanceId":"codex","model":"gpt-6.1-sol","options":[{"id":"reasoningEffort","value":"high"}]}' ]
     run jq -r '.providerInstances.claudeAgent.config.launchArgs' <<<"$rendered"
     [ "$output" = "--permission-mode auto --settings /home/tester/.t3/userdata/claude-settings.json" ]
     run jq -e 'has("providers") | not' <<<"$rendered"
@@ -98,6 +100,7 @@ setup() {
   "projectSettingsFolded": true,
   "sidebarAutoSettleAfterDays": null,
   "defaultThreadEnvMode": "worktree",
+  "defaultModelSelection": {"instanceId":"codex","model":"gpt-6.1-terra","options":[{"id":"reasoningEffort","value":"low"}]},
   "providers": {
     "claudeAgent": { "launchArgs": "--dangerously-skip-permissions" }
   },
@@ -111,6 +114,8 @@ JSON
     [ "$status" -eq 0 ]
     [ -z "$stderr" ]
     local rendered="$output"
+    run jq -c '.defaultModelSelection' <<<"$rendered"
+    [ "$output" = '{"instanceId":"codex","model":"gpt-6.1-sol","options":[{"id":"reasoningEffort","value":"high"}]}' ]
     run jq -c '[.projectSettingsFolded, .sidebarAutoSettleAfterDays, .defaultThreadEnvMode, .providerInstances.cursor.enabled, .providerInstances.claudeAgent.enabled, .providerInstances.opencode.config.serverUrl, .providerInstances.claudeAgent.config.customModels]' <<<"$rendered"
     [ "$output" = '[true,null,"worktree",false,true,"",[]]' ]
     run jq -r '.providerInstances.claudeAgent.config.launchArgs, .providerInstances.claudeAgent.config.binaryPath, .providerInstances.opencode.config.binaryPath' <<<"$rendered"

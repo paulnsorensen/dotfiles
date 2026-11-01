@@ -4,6 +4,7 @@
 # Usage:
 #   bin-doctor [check]          Report duplicate, stray, and stale installs (exit 1 on findings)
 #   bin-doctor clean [--dry-run] Run each package manager's safe cache cleanup
+#   bin-doctor clean --sync [--dry-run]  Also prune unpinned mise versions and Docker (dots sync)
 #   bin-doctor outdated         Report available updates (read-only)
 #
 # The install contract lives in chezmoi/dot_config/mise/config.toml (mise
@@ -22,7 +23,7 @@ PACKAGES_FILE="${BIN_DOCTOR_PACKAGES:-$DOTFILES_DIR/packages/packages.yaml}"
 ALLOW_FILE="${BIN_DOCTOR_ALLOW:-$DOTFILES_DIR/packages/bin-doctor.allow}"
 
 usage() {
-    sed -n '3,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '3,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 hint_for() {
@@ -60,7 +61,7 @@ do_check() {
             printf '\n%s — fix: %s\n' "$category" "$(hint_for "$category")"
         fi
         printf '  %-28s %s\n' "$name" "$detail"
-        count=$((count + 1))
+        ((count += 1))
     done <<< "$findings"
     printf '\n✗ bin-doctor: %d finding(s)\n' "$count"
     return 1
@@ -92,21 +93,26 @@ main() {
     case "$cmd" in
         check) do_check ;;
         clean)
-            local dry_run=false
-            if [[ $# -gt 1 ]]; then
-                usage >&2
-                return 2
-            fi
-            case "${1:-}" in
-                "") ;;
-                --dry-run | -n) dry_run=true ;;
-                *)
-                    usage >&2
-                    return 2
-                    ;;
-            esac
+            local dry_run=false sync=false
+            while (($#)); do
+                case "$1" in
+                    --dry-run | -n) dry_run=true ;;
+                    --sync) sync=true ;;
+                    *)
+                        usage >&2
+                        return 2
+                        ;;
+                esac
+                shift
+            done
             bd_bootstrap_path
-            run_steps "$dry_run" "$(bd_clean_steps)"
+            if [[ "$sync" == true ]]; then
+                # A busy uv cache lock (a running uvx) must not hold dots sync for uv's 300s default.
+                export UV_LOCK_TIMEOUT="${UV_LOCK_TIMEOUT:-10}"
+                run_steps "$dry_run" "$(bd_sync_steps)"
+            else
+                run_steps "$dry_run" "$(bd_clean_steps)"
+            fi
             ;;
         outdated)
             bd_bootstrap_path

@@ -21,9 +21,11 @@ package_warm_cache() {
     local lock="$root.lock" waited=0
     until [[ -f "$root/warm" ]]; do
         if mkdir "$lock" 2>/dev/null; then
-            if mkdir -p "$root/cache" "$root/python" &&
-                UV_CACHE_DIR="$root/cache" UV_PYTHON_INSTALL_DIR="$root/python" \
-                    "${PACKAGE_CLI[@]}" --help >/dev/null 2>&1; then
+            if [[ -f "$root/warm" ]] || {
+                mkdir -p "$root/cache" "$root/python" &&
+                    UV_CACHE_DIR="$root/cache" UV_PYTHON_INSTALL_DIR="$root/python" \
+                        "${PACKAGE_CLI[@]}" --help >/dev/null 2>&1
+            }; then
                 : >"$root/warm"
             fi
             rmdir "$lock"

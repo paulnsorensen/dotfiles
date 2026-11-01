@@ -141,7 +141,7 @@ wt_find() {
             [[ -e "${child}.git" ]] || continue
             child="${child%/}"
 
-            if [[ -n "$f_slug" && "$(basename "$child")" != *"$f_slug"* ]]; then
+            if [[ -n "$f_slug" && "${child##*/}" != *"$f_slug"* ]]; then
                 continue
             fi
 
