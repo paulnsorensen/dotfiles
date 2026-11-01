@@ -115,3 +115,7 @@
 
 2026-10-14 · 8d50142076b0af8d · merged · harnesses/codex.md · Record the dedicated Codex uv cache inside the existing writable root.
 2026-10-28 · green-harvest-pi-1.4.0 · merged · harnesses/pi.md · Record that Pi 1.4.0 limits compaction.reserveTokens to trigger timing; summaries use the model output limit.
+
+2026-11-01 · e9d49180ff821096c · merged · architecture/t3-code-launch.md · Record T3's single model-selection default and same-slug capability limitation.
+
+2026-11-01 · 7c93ca36e0f9e820 · merged · architecture/t3-code-launch.md · Record the approved Sol/high T3 default because per-model effort defaults are unsupported.
