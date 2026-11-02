@@ -79,7 +79,7 @@ run_steps() {
         fi
         printf '▸ [%s] %s\n' "$manager" "$cmd"
         # shellcheck disable=SC2086  # steps are fixed, space-separated argv
-        if ! $cmd </dev/null; then
+        if ! bd_run_step $cmd </dev/null; then
             printf '✗ [%s] %s failed\n' "$manager" "$cmd" >&2
             failed=1
         fi

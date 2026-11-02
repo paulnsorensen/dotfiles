@@ -32,7 +32,7 @@ setup() {
     mkdir -p "$T/sys"
     local tool
     for tool in bash sh env awk sed grep sort cut tr dirname basename readlink \
-        mkdir chmod cat rm ln printf id head tail wc uniq; do
+        mkdir chmod cat rm ln printf id head tail wc uniq mktemp; do
         [[ -x "/usr/bin/$tool" ]] && ln -s "/usr/bin/$tool" "$T/sys/$tool" && continue
         [[ -x "/bin/$tool" ]] && ln -s "/bin/$tool" "$T/sys/$tool"
     done
@@ -388,6 +388,43 @@ esac'
     [[ $status -eq 1 ]]
     grep -qx "uv cache prune" "$LOG"
     grep -qx "npm cache verify" "$LOG"
+}
+
+@test "bin-doctor clean runs bun's cache clear from a directory with a package.json" {
+    # bun 1.3 refuses `bun pm cache rm` outside a project, even for the global cache.
+    # shellcheck disable=SC2016  # $* belongs to the stub script
+    stub bun '[[ -f package.json ]] || { echo "error: No package.json was found" >&2; exit 1; }; echo "bun $*" >> '"'$LOG'"
+
+    run "$REAL_DOTFILES_DIR/bin/bin-doctor" clean
+    [[ $status -eq 0 ]]
+    grep -qx "bun pm cache rm" "$LOG"
+}
+
+@test "bin-doctor clean --dry-run still names bun's real cache command" {
+    stub bun "echo \"bun \$*\" >> '$LOG'"
+
+    run "$REAL_DOTFILES_DIR/bin/bin-doctor" clean --dry-run
+    [[ "$output" == *"would run [bun] bun pm cache rm"* ]]
+    [[ ! -s "$LOG" ]]
+}
+
+@test "bin-doctor clean reports a busy uv cache lock as a skip, not a failure" {
+    # A running uvx MCP server or uv run daemon holds a shared lock for its whole life.
+    stub uv 'echo "error: Timeout (10s) when waiting for lock on /x/.lock, is another uv process running?" >&2; exit 2'
+
+    run "$REAL_DOTFILES_DIR/bin/bin-doctor" clean --sync
+    [[ $status -eq 0 ]]
+    [[ "$output" == *"skipped [uv]"*"cache lock"* ]]
+    [[ "$output" != *"✗ [uv]"* ]]
+}
+
+@test "bin-doctor clean still fails a uv prune error that is not a busy lock" {
+    stub uv 'echo "error: permission denied" >&2; exit 2'
+
+    run "$REAL_DOTFILES_DIR/bin/bin-doctor" clean
+    [[ $status -eq 1 ]]
+    [[ "$output" == *"permission denied"* ]]
+    [[ "$output" == *"✗ [uv] uv cache prune failed"* ]]
 }
 
 # ── bd_bootstrap_path ───────────────────────────────────────────────

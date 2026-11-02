@@ -330,6 +330,45 @@ bd_sync_steps() {
     return 0
 }
 
+# bd_run_step <argv...> — run one clean step. Two steps need a wrapper; the
+# plan still prints the real command.
+bd_run_step() {
+    case "$*" in
+        "bun pm cache rm") bd_bun_cache_rm ;;
+        "uv cache prune") bd_uv_cache_prune ;;
+        *) "$@" ;;
+    esac
+}
+
+# bd_bun_cache_rm — bun 1.3 exits 1 on `bun pm cache rm` when the working
+# directory has no package.json, although the command clears the global cache.
+bd_bun_cache_rm() {
+    local dir rc=0
+    dir="$(mktemp -d "${TMPDIR:-/tmp}/bd-bun.XXXXXX")" || return 1
+    printf '{}\n' > "$dir/package.json"
+    (cd "$dir" && bun pm cache rm) || rc=$?
+    rm -rf "$dir"
+    return "$rc"
+}
+
+# bd_uv_cache_prune — each `uv run` and `uvx` holds a shared cache lock for
+# its whole life; prune needs an exclusive lock. A lock timeout is a skip, not
+# a failure. --force is unsafe: running uvx environments live in the cache.
+bd_uv_cache_prune() {
+    local err rc=0 holders
+    { err="$(uv cache prune 2>&1 1>&3)" || rc=$?; } 3>&1
+    ((rc == 0)) && return 0
+    if [[ "$err" == *"when waiting for lock"* ]]; then
+        holders="$(pgrep -x uv 2>/dev/null | wc -l | tr -d ' ')" || holders=""
+        [[ "$holders" == 0 ]] && holders=""
+        printf '↷ skipped [uv] uv cache prune: running uv processes hold the cache lock%s\n' \
+            "${holders:+ ($holders running)}"
+        return 0
+    fi
+    printf '%s\n' "$err" >&2
+    return "$rc"
+}
+
 # bd_outdated_steps — read-only update reports, one per line as
 # <manager>\t<command>. Pinned surfaces (mise, packages.yaml) still move only
 # through Renovate PRs; these reports show what the pins lag behind.
