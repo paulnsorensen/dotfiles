@@ -248,10 +248,20 @@ Keep the device code, OAuth token, and `secrets/` files out of Git.
   their own location unless `DOTFILES_DIR` or `AGENTS_DOTFILES` is set.
 - Tests: `tests/t3-config.bats` (settings), `tests/dots-wrappers.bats`
   (wrappers), and `tests/lib-t3-service.bats` (service upgrade).
-- T3 themes are not chezmoi-managed. The theme library (upstream PR #5226)
-  keeps custom themes in app storage, not in `settings.json`. Import
-  `theme/t3/chocolate-donut-2-color-theme.json` (VS Code format) through
-  Settings → Appearance → import, then pick it for dark mode.
+- T3 publishes server themes from `~/.t3/userdata/themes/<id>.json`; the
+  filename is the theme ID. `theme/generate.sh` (`theme/lib-t3.sh`) renders
+  the active scheme to `chezmoi/dot_t3/userdata/themes/dotfiles-theme.json`
+  and `T3_EXTRA_SCHEMES` to `<scheme-id>.json`. Each file sets all 61 T3
+  color roles, so T3 derives nothing from `canvas`/`accent`.
+- The server validates each file and skips invalid ones with a log warning.
+  A VS Code theme fails (`Missing key appearance`); VS Code files only import
+  through Settings → Appearance. The loader also skips symlinks and files
+  over 32 KiB, so chezmoi must write regular files.
+- `t3 theme set dotfiles-theme` selects the theme on every connected client
+  once. It writes `defaultTheme` and `defaultThemeSetAt` to `settings.json`;
+  both are T3-owned keys in `lib/t3-settings-ignore.txt`. `t3 theme show`
+  lists the default and the published themes. Later palette changes reach
+  clients live because the server watches the directory.
 
 ### Model reasoning defaults (T3 0.1.6)
 

@@ -16,6 +16,7 @@ setup() {
     touch "$THEME_REPO/vimrc"
     cp "$REAL_DOTFILES_DIR/theme/generate.sh" "$THEME_REPO/theme/generate.sh"
     cp "$REAL_DOTFILES_DIR/theme/lib-zed.sh" "$THEME_REPO/theme/lib-zed.sh"
+    cp "$REAL_DOTFILES_DIR/theme/lib-t3.sh" "$THEME_REPO/theme/lib-t3.sh"
     cp "$REAL_DOTFILES_DIR/theme/config.yaml" "$THEME_REPO/theme/config.yaml"
     cp -R "$REAL_DOTFILES_DIR/theme/schemes" "$THEME_REPO/theme/schemes"
 }
@@ -135,4 +136,69 @@ PY
     # The extra scheme must not leak into the active theme or later targets.
     [ "$(jq -r '.themes[0].name' "$active_file")" = "Brownfield" ]
     grep -qx 'set -g @thm_fg          "#e6dcd6"' "$THEME_REPO/tmux/theme.conf"
+}
+
+@test "generate_t3_theme writes publishable T3 themes with readable text" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    run bash "$THEME_REPO/theme/generate.sh"
+    assert_success
+
+    local dir="$THEME_REPO/chezmoi/dot_t3/userdata/themes"
+    local theme_file="$dir/dotfiles-theme.json"
+    assert_file_exists "$theme_file"
+    assert_file_exists "$dir/chocolate-donut-2.json"
+
+    # T3's published-theme schema: hex seeds, role keys, and a 32 KiB cap.
+    local f
+    for f in "$theme_file" "$dir/chocolate-donut-2.json"; do
+        jq -e '.version == 1 and .appearance == "dark" and
+          (.canvas | test("^#[0-9a-f]{6}$")) and (.accent | test("^#[0-9a-f]{6}$")) and
+          (.colors | length == 61) and
+          (.colors | to_entries | all(.key | test("^[a-zA-Z][a-zA-Z0-9]{0,63}$"))) and
+          (.colors | to_entries | all(.value | test("^#[0-9a-f]{6}$")))' "$f"
+        [ "$(wc -c < "$f")" -lt 32768 ]
+    done
+
+    jq -e '.colors as $c | .name == "Brownfield" and
+      $c.canvas == "#211a16" and $c.sidebar == "#1c1512" and
+      $c.surface == "#322b26" and $c.surfaceOverlay == "#3c322b" and
+      $c.accent == "#799af9" and $c.messageAction == "#799af9" and
+      $c.accentForeground == "#18110d" and $c.error == "#ff7643" and
+      $c.errorSurface == "#42281d" and $c.warning == "#f5d710"' "$theme_file"
+    # Without a t3.error override, error falls back to base08.
+    jq -e '.name == "Chocolate Donut 2" and .colors.error == "#ee6a25" and
+      .colors.surface == "#27221f"' "$dir/chocolate-donut-2.json"
+
+    python3 - "$theme_file" <<'PY'
+import json
+import sys
+
+colors = json.load(open(sys.argv[1]))["colors"]
+
+def luminance(color):
+    values = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    channels = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in values]
+    return sum(weight * channel for weight, channel in zip((0.2126, 0.7152, 0.0722), channels))
+
+def ratio(a, b):
+    low, high = sorted((luminance(colors[a]), luminance(colors[b])))
+    return (high + 0.05) / (low + 0.05)
+
+pairs = [(fg, bg) for fg in ("text", "textMuted", "placeholder") for bg in ("canvas", "surface", "surfaceOverlay")]
+pairs += [
+    ("sidebarMutedForeground", "sidebarRowActive"),
+    ("accentForeground", "accent"),
+    ("messageActionForeground", "messageAction"),
+    ("messageActionForeground", "messageActionHover"),
+    ("errorForeground", "errorSurface"),
+    ("warningForeground", "warningSurface"),
+    ("updateForeground", "updateSurface"),
+    ("searchMatchForeground", "searchMatchBackground"),
+    ("searchMatchActiveForeground", "searchMatchActiveBackground"),
+]
+for fg, bg in pairs:
+    assert ratio(fg, bg) >= 4.5, (fg, bg, round(ratio(fg, bg), 2))
+PY
+    # The extra scheme must not leak into the active theme.
+    [ "$(jq -r '.themes[0].name' "$THEME_REPO/chezmoi/dot_config/zed/themes/dotfiles-theme.json")" = "Brownfield" ]
 }

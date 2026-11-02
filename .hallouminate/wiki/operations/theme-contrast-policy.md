@@ -16,7 +16,8 @@ rests on hue (neutral vs warm), not brightness.
 ## Palette mirror surfaces (gotcha)
 
 `theme/generate.sh` renders zsh, vimrc, iterm2, bin/colors, tmux, ghostty,
-and Zed from the scheme. The following surfaces hand-mirror palette hexes and
+Zed, and T3 Code from the scheme. T3 text pairs must meet 4.5:1; the light
+blue accent therefore takes dark text (base11), not white (2.5:1). The following surfaces hand-mirror palette hexes and
 must be updated together with any palette change:
 
 - `theme/cursor/chocolate-donut-color-theme.json` (Cursor, frozen pending migration)

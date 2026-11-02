@@ -34,3 +34,6 @@ zed:
   border: "8b8b8b"
   ui_placeholder: "b7b2b0"
   ui_accent: "799af9"
+t3:
+  # base08 is a muted rose. T3 error states use the orange slot so they stand out.
+  error: "ff7643"
