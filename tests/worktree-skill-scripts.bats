@@ -162,7 +162,7 @@ STUB
 
 @test "commands.sh archive emits tag + remove + branch -D with the real branch" {
     make_worktree alpha
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO" alpha archive
+    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" archive
     [ "$status" -eq 0 ]
     assert_contains "$output" "tag archive/alpha worktree/alpha"
     assert_contains "$output" "worktree remove .worktrees/alpha"
@@ -171,20 +171,35 @@ STUB
 
 @test "commands.sh remove adds --force for a dirty tree and omits it when clean" {
     make_worktree alpha
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO" alpha remove
+    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" remove
     [ "$status" -eq 0 ]
     assert_not_contains "$output" "--force"
 
     echo change >> "$REPO/.worktrees/alpha/file.txt"
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO" alpha remove
+    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" remove
     [ "$status" -eq 0 ]
     assert_contains "$output" "worktree remove --force .worktrees/alpha"
 }
 
 @test "commands.sh rejects an unknown action" {
     make_worktree alpha
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO" alpha shred
+    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" shred
     [ "$status" -eq 2 ]
+}
+
+@test "commands.sh takes a worktree outside the repo and uses its absolute path" {
+    git -C "$REPO" worktree add -q "$TMPROOT/t3/alpha" -b worktree/far
+    run "$SKILLS/worktree-triage/scripts/commands.sh" "$TMPROOT/t3/alpha" archive
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "git -C $REPO tag archive/alpha worktree/far"
+    assert_contains "$output" "worktree remove $TMPROOT/t3/alpha"
+    assert_contains "$output" "branch -D worktree/far"
+}
+
+@test "commands.sh refuses the main checkout" {
+    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO" remove
+    [ "$status" -eq 1 ]
+    assert_contains "$output" "main checkout"
 }
 
 # ── wt-git/scripts/pr-create.sh ─────────────────────────────────────

@@ -1,11 +1,31 @@
 #!/usr/bin/env bash
-# ccw-sweep — scan ~/Dev repos for stale worktrees and safely clean them up
+# ccw-sweep — triage every git worktree of the repos under ~/Dev and clean up the safe ones
+#
+# Discovery finds each repo main checkout under the scan root (a .git directory
+# at depth <= 3), then takes ALL its linked worktrees from `git worktree list`.
+# Worktrees outside the repo (T3 Code, Claude Code, oh-my-pi, /tmp) count too.
 #
 # Usage:
-#   ccw-sweep              Interactive sweep with safety checks
-#   ccw-sweep --dry-run    Preview what would be cleaned (no changes)
-#   ccw-sweep --auto       Auto-remove safe worktrees (merged + clean), skip others
-#   ccw-sweep --path DIR   Scan a specific directory instead of ~/Dev
+#   ccw-sweep                   Interactive sweep with safety checks (no idle thresholds)
+#   ccw-sweep --dry-run         Preview the --auto actions (no changes)
+#   ccw-sweep --auto            Remove idle SAFE worktrees (merged + clean), skip others
+#   ccw-sweep --auto --archive  Also tag archive/<slug>, then remove idle clean unmerged WARN worktrees
+#   ccw-sweep --auto --reclaim  Also delete ignored target/ .venv/ node_modules/ in idle kept worktrees
+#   ccw-sweep --path DIR        Scan DIR instead of ~/Dev
+#
+# --archive and --reclaim need --auto or --dry-run. Automatic actions never touch
+# a DIRTY worktree, a worktree with a live process in it, a worktree of an active
+# T3 Code thread, or a branch with an open PR.
+#
+# Environment:
+#   CCW_SWEEP_SAFE_IDLE_DAYS (1), CCW_SWEEP_ARCHIVE_IDLE_DAYS (30),
+#   CCW_SWEEP_RECLAIM_IDLE_DAYS (7)   idle thresholds in whole days
+#   CCW_SWEEP_PR_LIMIT (3000)         PRs read per repo with one `gh pr list`
+#   CCW_SWEEP_REGENERABLE             ignored basenames (globs) that do not block removal
+#   CCW_SWEEP_T3_DB, CCW_SWEEP_T3_ROOT  T3 Code state DB and worktree root
+#   CCW_SWEEP_NOW                     epoch seconds used as "now" (test seam)
+#
+# The last output line is machine-readable: `SUMMARY ccw-sweep: total=N ...`.
 
 set -euo pipefail
 
@@ -22,41 +42,282 @@ source "${SCRIPT_DIR}/lib/term-colors.sh"
 SCAN_ROOT="${HOME}/Dev"
 DRY_RUN=false
 AUTO_CLEAN=false
+ARCHIVE=false
+RECLAIM=false
 
 # ── Parse args ──────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --dry-run) DRY_RUN=true; shift ;;
         --auto)    AUTO_CLEAN=true; shift ;;
-        --path)    SCAN_ROOT="$2"; shift 2 ;;
+        --archive) ARCHIVE=true; shift ;;
+        --reclaim) RECLAIM=true; shift ;;
+        --path)    SCAN_ROOT="${2:?--path needs a directory}"; shift 2 ;;
         -h|--help)
-            echo "Usage: ccw-sweep [--dry-run] [--auto] [--path DIR]"
+            echo "Usage: ccw-sweep [--dry-run] [--auto] [--archive] [--reclaim] [--path DIR]"
             echo ""
-            echo "Scans for stale git worktrees and safely removes them."
+            echo "Triages every git worktree of the repos under DIR and safely cleans them up."
             echo ""
             echo "Options:"
-            echo "  --dry-run   Preview what would be cleaned (no changes)"
-            echo "  --auto      Auto-remove safe worktrees, skip WARN/DIRTY ones"
+            echo "  --dry-run   Preview the --auto actions (no changes)"
+            echo "  --auto      Remove idle SAFE worktrees, skip WARN/DIRTY ones"
+            echo "  --archive   With --auto/--dry-run: tag and remove idle, clean, unmerged worktrees"
+            echo "  --reclaim   With --auto/--dry-run: delete ignored target/.venv/node_modules in idle kept worktrees"
             echo "  --path DIR  Scan DIR instead of ~/Dev"
             exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
 
+if { $ARCHIVE || $RECLAIM; } && ! $AUTO_CLEAN && ! $DRY_RUN; then
+    echo -e "${RED}--archive and --reclaim need --auto or --dry-run${RESET}" >&2
+    exit 1
+fi
+
+SAFE_IDLE_DAYS="${CCW_SWEEP_SAFE_IDLE_DAYS:-1}"
+ARCHIVE_IDLE_DAYS="${CCW_SWEEP_ARCHIVE_IDLE_DAYS:-30}"
+RECLAIM_IDLE_DAYS="${CCW_SWEEP_RECLAIM_IDLE_DAYS:-7}"
+PR_LIMIT="${CCW_SWEEP_PR_LIMIT:-3000}"
+NOW="${CCW_SWEEP_NOW:-$(date +%s)}"
+for setting in "CCW_SWEEP_SAFE_IDLE_DAYS=${SAFE_IDLE_DAYS}" \
+               "CCW_SWEEP_ARCHIVE_IDLE_DAYS=${ARCHIVE_IDLE_DAYS}" \
+               "CCW_SWEEP_RECLAIM_IDLE_DAYS=${RECLAIM_IDLE_DAYS}" \
+               "CCW_SWEEP_PR_LIMIT=${PR_LIMIT}" \
+               "CCW_SWEEP_NOW=${NOW}"; do
+    if [[ ! "${setting#*=}" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}${setting%%=*} must be a whole number, got: '${setting#*=}'${RESET}" >&2
+        exit 1
+    fi
+done
+
+T3_DB="${CCW_SWEEP_T3_DB:-${HOME}/.t3/userdata/state.sqlite}"
+T3_ROOT="${CCW_SWEEP_T3_ROOT:-${HOME}/.t3/worktrees}"
+# Split on whitespace into globs; read -a never expands them against files.
+read -r -a REGENERABLE <<<"${CCW_SWEEP_REGENERABLE:-target .venv node_modules __pycache__ .mypy_cache .pytest_cache .ruff_cache dist build htmlcov .DS_Store .coverage *.log}"
+
 if [[ ! -d "$SCAN_ROOT" ]]; then
     echo -e "${RED}Directory not found: ${SCAN_ROOT}${RESET}" >&2
     exit 1
 fi
 
+RUN_TMP="$(mktemp -d "${TMPDIR:-/tmp}/ccw-sweep.XXXXXX")"
+trap 'rm -rf "$RUN_TMP"' EXIT
+PR_CACHE="${RUN_TMP}/prs.tsv"
+
 # ── Counters ────────────────────────────────────────────────────────
 TOTAL=0
 SAFE=0
 REMOVED=0
+ARCHIVED=0
+RECLAIMED_KIB=0
 SKIPPED=0
+SKIP_RECENT=0
+SKIP_LIVE=0
+SKIP_T3=0
+SKIP_OPEN_PR=0
+SKIP_DIRTY=0
+SKIP_WARN=0
+SKIP_NESTED=0
 
 # ── Helpers ─────────────────────────────────────────────────────────
 # resolve_default_branch, wt_list_nested, and wt_child_blocks_removal live
 # in bin/lib/worktree.sh (sourced above).
+
+# mtime <path> — modification time in epoch seconds (GNU stat, else BSD stat).
+if stat -c %Y / >/dev/null 2>&1; then
+    mtime() { stat -c %Y "$1" 2>/dev/null || echo 0; }
+else
+    mtime() { stat -f %m "$1" 2>/dev/null || echo 0; }
+fi
+
+# load_live_cwds — read the cwd of every live process once per run into
+# LIVE_CWDS (newline-framed). /proc links are canonical; lsof is the fallback.
+# One find call reads every link: a multi-operand readlink stops at the first
+# unreadable link on some coreutils builds (uutils).
+load_live_cwds() {
+    local cwds=""
+    if [[ -e /proc/self/cwd ]]; then
+        cwds="$(find /proc -mindepth 2 -maxdepth 2 -name cwd -type l -printf '%l\n' 2>/dev/null || true)"
+    elif command -v lsof >/dev/null 2>&1; then
+        cwds="$(lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' || true)"
+    fi
+    LIVE_CWDS=$'\n'"${cwds}"$'\n'
+}
+
+# has_live_process <canonical-path> — exit 0 when a live process cwd is the
+# path or lies inside it.
+has_live_process() {
+    [[ "$LIVE_CWDS" == *$'\n'"$1"$'\n'* || "$LIVE_CWDS" == *$'\n'"$1"/* ]]
+}
+
+# load_t3_owned — read the worktree paths of active T3 Code threads once per
+# run into T3_OWNED. When the DB exists but cannot be read, every worktree
+# under T3_ROOT counts as owned (safe bias) and one warning prints.
+load_t3_owned() {
+    T3_OWNED=$'\n'
+    T3_ALL_OWNED=false
+    T3_ROOT_CANON="$(cd -P "$T3_ROOT" 2>/dev/null && pwd)" || T3_ROOT_CANON="$T3_ROOT"
+    [[ -e "$T3_DB" ]] || return 0
+    local rows
+    if command -v sqlite3 >/dev/null 2>&1 \
+        && rows="$(sqlite3 -readonly -cmd '.timeout 5000' "$T3_DB" \
+            "select distinct worktree_path from projection_threads where worktree_path is not null and archived_at is null and deleted_at is null" \
+            2>/dev/null | sed 's:/*$::')"; then
+        T3_OWNED+="${rows}"$'\n'
+    else
+        T3_ALL_OWNED=true
+        echo -e "${YELLOW}warning: cannot read T3 state DB ${T3_DB}; every worktree under ${T3_ROOT} counts as owned${RESET}" >&2
+    fi
+}
+
+# is_t3_owned <path> <canonical-path> — exit 0 when an active T3 thread owns it.
+is_t3_owned() {
+    local wt="$1" canon="$2"
+    if [[ "$T3_OWNED" == *$'\n'"$wt"$'\n'* || "$T3_OWNED" == *$'\n'"$canon"$'\n'* ]]; then
+        return 0
+    fi
+    $T3_ALL_OWNED && [[ "$wt" == "$T3_ROOT"/* || "$canon" == "$T3_ROOT_CANON"/* ]]
+}
+
+# load_repo_caches <repo-root> <default-branch> — once per repo: the branches
+# merged into origin/<default> (MERGED_BRANCHES) and every PR as
+# `head<TAB>state<TAB>headOid` rows in PR_CACHE. A gh failure leaves PR_CACHE
+# empty, which means "no PR info" (safe bias), and PR_INFO_OK=false, which
+# blocks --archive: an open PR could hide behind the failure.
+load_repo_caches() {
+    local repo_root="$1" default_branch="$2" origin_url repo_slug
+    MERGED_BRANCHES=$'\n'"$(git -C "$repo_root" branch --merged "origin/${default_branch}" --format='%(refname:short)' 2>/dev/null || true)"$'\n'
+    : >"$PR_CACHE"
+    PR_INFO_OK=false
+    command -v gh >/dev/null 2>&1 || return 0
+    origin_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
+    # Normalise to OWNER/REPO for gh --repo (handles both git@github.com:o/r.git
+    # and https://github.com/o/r forms; strips trailing .git).
+    repo_slug="$(echo "$origin_url" \
+        | sed -E 's#^(git@github\.com:|https?://[^/]+/)##; s#\.git$##')"
+    [[ -n "$repo_slug" ]] || return 0
+    if gh pr list --repo "$repo_slug" --state all --limit "$PR_LIMIT" \
+        --json headRefName,state,headRefOid \
+        --jq '.[] | [.headRefName,.state,.headRefOid] | @tsv' >"$PR_CACHE" 2>/dev/null; then
+        PR_INFO_OK=true
+    else
+        : >"$PR_CACHE"
+    fi
+}
+
+# is_regenerable <basename> — exit 0 when the name matches a REGENERABLE glob.
+is_regenerable() {
+    local pat
+    for pat in ${REGENERABLE[@]+"${REGENERABLE[@]}"}; do
+        # shellcheck disable=SC2053  # $pat is a glob on purpose; [[ ]] never expands it to files
+        [[ "$1" == $pat ]] && return 0
+    done
+    return 1
+}
+
+# in_regenerable_dir <relative-path> — exit 0 when any path component matches a
+# REGENERABLE glob. Some caches (.pytest_cache, .ruff_cache) hold their own
+# .gitignore, so git lists their files (.pytest_cache/README.md), not the dir.
+in_regenerable_dir() {
+    local rest="$1"
+    while [[ -n "$rest" ]]; do
+        is_regenerable "${rest%%/*}" && return 0
+        [[ "$rest" == */* ]] || return 1
+        rest="${rest#*/}"
+    done
+    return 1
+}
+
+# scan_ignored <wt> — classify the worktree's ignored entries (one git call).
+# Sets IGNORED_BAD (not regenerable: blocks automatic removal) and
+# IGNORED_RECLAIM (whole ignored target/.venv/node_modules dirs that --reclaim
+# may delete). Skips .cheese (DIRTY already covers it) and nested-worktree
+# containers.
+scan_ignored() {
+    local wt="$1" listing entry name
+    IGNORED_BAD=()
+    IGNORED_RECLAIM=()
+    listing="$(git -C "$wt" ls-files --others --ignored --exclude-standard --directory 2>/dev/null || true)"
+    if [[ $'\n'"$listing"$'\n' == *$'\n'".claude/"$'\n'* ]]; then
+        listing+=$'\n'"$(git -C "$wt" ls-files --others --ignored --exclude-standard \
+            -- .claude ':(exclude).claude/worktrees' 2>/dev/null || true)"
+    fi
+    while IFS= read -r entry; do
+        case "$entry" in
+            ''|.claude/|.cheese|.cheese/*|.worktrees|.worktrees/*|.claude/worktrees|.claude/worktrees/*) continue ;;
+        esac
+        name="${entry%/}"
+        if ! in_regenerable_dir "$name"; then
+            IGNORED_BAD+=("$name")
+            continue
+        fi
+        # Reclaim only a whole ignored dir (trailing /): a dir that git lists
+        # file by file can also hold tracked files. git quotes unusual names
+        # (leading "); never guess at those.
+        case "$entry" in
+            \"*) ;;
+            target/|*/target/|.venv/|*/.venv/|node_modules/|*/node_modules/)
+                if [[ ! -L "${wt}/${name}" ]]; then
+                    IGNORED_RECLAIM+=("$name")
+                fi ;;
+        esac
+    done <<<"$listing"
+}
+
+# idle_days <wt> — whole days since the latest of: last commit, worktree root
+# mtime, and the worktree index mtime.
+idle_days() {
+    local wt="$1" last t index
+    last="$(git -C "$wt" log -1 --format=%ct 2>/dev/null || true)"
+    [[ "$last" =~ ^[0-9]+$ ]] || last=0
+    t="$(mtime "$wt")"
+    if (( t > last )); then last=$t; fi
+    index="$(git -C "$wt" rev-parse --path-format=absolute --git-path index 2>/dev/null || true)"
+    if [[ -n "$index" && -e "$index" ]]; then
+        t="$(mtime "$index")"
+        if (( t > last )); then last=$t; fi
+    fi
+    echo $(( (NOW - last) / 86400 ))
+}
+
+# archive_tag_for <repo-root> <slug> <head-sha> — echo the first archive tag
+# that is free or already points at <head-sha>. Exit 1 when none is usable.
+archive_tag_for() {
+    local repo_root="$1" slug="$2" head="$3" tag
+    for tag in "archive/${slug}" "archive/${slug}-${head:0:8}" "archive/wt-${head:0:12}"; do
+        git check-ref-format "refs/tags/${tag}" || continue
+        if ! git -C "$repo_root" show-ref --verify --quiet "refs/tags/${tag}" \
+            || [[ "$(git -C "$repo_root" rev-parse --verify --quiet "refs/tags/${tag}^{commit}")" == "$head" ]]; then
+            echo "$tag"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# reclaim_worktree <wt> — delete the IGNORED_RECLAIM entries (dry run: only
+# measure them) and add the freed KiB to RECLAIMED_KIB.
+reclaim_worktree() {
+    local wt="$1" rel path kib left total=0 names=()
+    for rel in "${IGNORED_RECLAIM[@]}"; do
+        path="${wt}/${rel}"
+        [[ -e "$path" && ! -L "$path" ]] || continue
+        kib="$(du -sk "$path" 2>/dev/null | cut -f1 || true)"
+        [[ "$kib" =~ ^[0-9]+$ ]] || kib=0
+        if ! $DRY_RUN; then
+            rm -rf "${wt:?}/${rel:?}" 2>/dev/null || true
+            if [[ -e "$path" ]]; then
+                left="$(du -sk "$path" 2>/dev/null | cut -f1 || true)"
+                [[ "$left" =~ ^[0-9]+$ ]] && kib=$(( kib > left ? kib - left : 0 ))
+            fi
+        fi
+        total=$((total + kib))
+        names+=("$rel")
+    done
+    (( ${#names[@]} > 0 )) || return 0
+    RECLAIMED_KIB=$((RECLAIMED_KIB + total))
+    echo "         action: reclaim ${total} KiB ($(IFS=' '; echo "${names[*]}"))"
+}
 
 check_worktree() {
     local wt_path="$1"
@@ -80,6 +341,13 @@ check_worktree() {
         return 1
     fi
 
+    local head canon
+    head="$(git -C "$wt_path" rev-parse --verify --quiet HEAD 2>/dev/null || true)"
+    canon="$(cd -P "$wt_path" 2>/dev/null && pwd)" || canon="$wt_path"
+
+    # Local files that are not in git: any of these blocks --archive.
+    local local_files=false
+
     # Check for uncommitted changes (staged or unstaged)
     if ! git -C "$wt_path" diff --quiet HEAD 2>/dev/null; then
         status="DIRTY"
@@ -101,6 +369,7 @@ check_worktree() {
         if [[ "$status" != "DIRTY" ]]; then
             status="WARN"
         fi
+        local_files=true
         reasons+=("${count} untracked file(s)")
     fi
 
@@ -113,6 +382,18 @@ check_worktree() {
         reasons+=("uncommitted .cheese/ notes")
     fi
 
+    # Ignored files that a rebuild cannot recreate (.env, local settings, …).
+    scan_ignored "$wt_path"
+    if (( ${#IGNORED_BAD[@]} > 0 )); then
+        if [[ "$status" == "SAFE" ]]; then
+            status="WARN"
+        fi
+        local_files=true
+        local more=""
+        (( ${#IGNORED_BAD[@]} > 3 )) && more=" (+$(( ${#IGNORED_BAD[@]} - 3 )) more)"
+        reasons+=("ignored files: $(IFS=' '; echo "${IGNORED_BAD[*]:0:3}")${more}")
+    fi
+
     # Empty branch = detached HEAD (symbolic-ref resolves nothing)
     local branch_exists=true
     if [[ -z "$branch" ]]; then
@@ -120,39 +401,52 @@ check_worktree() {
         reasons+=("detached HEAD")
     fi
 
+    # PRs for this branch, from the per-repo cache. A MERGED PR counts only
+    # when HEAD is its head commit or an ancestor of it: commits added after
+    # a squash merge are unique work, even when the remote branch is gone.
+    local pr_open=false pr_merged=false pr_stale=false pr_closed=false pr_state pr_oid
+    if $branch_exists && [[ -s "$PR_CACHE" ]]; then
+        while IFS=$'\t' read -r pr_state pr_oid; do
+            case "$pr_state" in
+                OPEN) pr_open=true ;;
+                MERGED)
+                    if [[ -n "$head" && -n "$pr_oid" ]] && { [[ "$head" == "$pr_oid" ]] \
+                        || git -C "$wt_path" merge-base --is-ancestor "$head" "$pr_oid" 2>/dev/null; }; then
+                        pr_merged=true
+                    else
+                        pr_stale=true
+                    fi ;;
+                CLOSED) pr_closed=true ;;
+            esac
+        done < <(awk -F'\t' -v b="$branch" '$1 == b { print $2 "\t" $3 }' "$PR_CACHE")
+    fi
+
     # Determine merge status — always check the worktree's actual content
     local is_merged=false
 
     # Step 1: git branch --merged against the remote default branch
     # (the local ref is often stale; origin/<default> matches what's on GitHub)
-    if $branch_exists; then
-        local merged
-        merged="$(git -C "$repo_root" branch --merged "$default_remote" --format='%(refname:short)' 2>/dev/null)"
-        if grep -qxF -- "$branch" <<<"$merged"; then
-            is_merged=true
-            reasons+=("merged into ${default_branch}")
-        fi
+    if $branch_exists && [[ "$MERGED_BRANCHES" == *$'\n'"$branch"$'\n'* ]]; then
+        is_merged=true
+        reasons+=("merged into ${default_branch}")
     fi
 
     # Step 2: squash-merged PR check (only if branch ref exists)
-    if ! $is_merged && $branch_exists && command -v gh &>/dev/null; then
-        local origin_url repo_slug
-        origin_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
-        # Normalise to OWNER/REPO for gh --repo (handles both git@github.com:o/r.git
-        # and https://github.com/o/r forms; strips trailing .git).
-        repo_slug="$(echo "$origin_url" \
-            | sed -E 's#^(git@github\.com:|https?://[^/]+/)##; s#\.git$##')"
-        if [[ -n "$repo_slug" ]]; then
-            local pr_state
-            pr_state="$(gh pr list --repo "$repo_slug" \
-                --head "$branch" --state all --json state --jq '.[0].state' 2>/dev/null || true)"
-            if [[ "$pr_state" == "MERGED" ]]; then
-                is_merged=true
-                reasons+=("PR squash-merged")
-            elif [[ "$pr_state" == "CLOSED" ]]; then
-                reasons+=("PR closed without merge")
+    if ! $is_merged; then
+        if $pr_merged; then
+            is_merged=true
+            reasons+=("PR squash-merged")
+        elif $pr_stale; then
+            if [[ "$status" == "SAFE" ]]; then
+                status="WARN"
             fi
+            reasons+=("commits after squash-merge")
+        elif $pr_closed; then
+            reasons+=("PR closed without merge")
         fi
+    fi
+    if $pr_open; then
+        reasons+=("open PR")
     fi
 
     # Step 3: count commits the worktree has that aren't in origin/<default>.
@@ -165,11 +459,11 @@ check_worktree() {
     # through to "NOT merged" because that would force the worktree into WARN
     # on a real tooling failure. Record the ambiguity explicitly and let the
     # downstream NOT-merged check fire under the same banner.
+    local ahead_default="" ahead_rc=0
+    ahead_default="$(git -C "$wt_path" rev-list --count "${default_remote}..HEAD" 2>/dev/null)" || ahead_rc=$?
     if ! $is_merged; then
-        local ahead_default rc=0
-        ahead_default="$(git -C "$wt_path" rev-list --count "${default_remote}..HEAD" 2>/dev/null)" || rc=$?
-        if (( rc != 0 )); then
-            reasons+=("rev-list against ${default_remote} failed (rc=${rc})")
+        if (( ahead_rc != 0 )); then
+            reasons+=("rev-list against ${default_remote} failed (rc=${ahead_rc})")
         elif [[ "$ahead_default" == "0" ]]; then
             is_merged=true
             reasons+=("0 commits ahead of ${default_remote}")
@@ -196,20 +490,35 @@ check_worktree() {
                 fi
                 reasons+=("${ahead} unpushed commit(s)")
             fi
-        else
-            # No upstream — check if there are commits beyond the default branch
-            if ! $is_merged; then
-                local ahead_main
-                ahead_main="$(git -C "$wt_path" rev-list --count "${default_remote}..HEAD" 2>/dev/null || echo 0)"
-                if (( ahead_main > 0 )); then
-                    if [[ "$status" == "SAFE" ]]; then
-                        status="WARN"
-                    fi
-                    reasons+=("${ahead_main} commit(s) ahead of ${default_branch}, no upstream")
-                fi
+        elif ! $is_merged && (( ahead_rc == 0 )) && [[ "$ahead_default" =~ ^[1-9][0-9]*$ ]]; then
+            # No upstream — commits beyond the default branch
+            if [[ "$status" == "SAFE" ]]; then
+                status="WARN"
             fi
+            reasons+=("${ahead_default} commit(s) ahead of ${default_branch}, no upstream")
         fi
     fi
+
+    # Guards: these block every automatic removal and archive. A live process
+    # or a git worktree lock (Claude Code locks its agent worktrees) also
+    # blocks --reclaim. `git worktree remove --force` refuses a locked
+    # worktree, and remove_worktree would then fall back to rm -rf.
+    local live=false locked=false t3=false
+    if has_live_process "$canon"; then
+        live=true
+        reasons+=("live process in worktree")
+    fi
+    if [[ "$LOCKED_WTS" == *$'\n'"$wt_path"$'\n'* ]]; then
+        locked=true
+        reasons+=("locked (git worktree lock)")
+    fi
+    if is_t3_owned "$wt_path" "$canon"; then
+        t3=true
+        reasons+=("owned by an active T3 thread")
+    fi
+
+    local idle
+    idle="$(idle_days "$wt_path")"
 
     # Check age (last commit date)
     local last_commit_relative
@@ -224,12 +533,16 @@ check_worktree() {
     esac
 
     local reason_str
-    reason_str="$(IFS=', '; echo "${reasons[*]}")"
+    reason_str="$(IFS=', '; echo "${reasons[*]-}")"
 
     echo -e "  ${color}[${status}]${RESET} ${BOLD}${slug}${RESET} ${DIM}(${last_commit_relative})${RESET}"
     echo -e "         ${reason_str}"
+    printf '         path: %s\n' "$wt_path"
 
     ((TOTAL += 1))
+    if [[ "$status" == "SAFE" ]]; then
+        SAFE=$((SAFE + 1))
+    fi
 
     # ── Nested worktrees ─────────────────────────────────────────────
     # A parent that nests an unmerged-or-dirty child must not be removed —
@@ -265,45 +578,104 @@ check_worktree() {
     fi
 
     # ── Action ──────────────────────────────────────────────────────
-    if $DRY_RUN; then
-        if [[ "$status" == "SAFE" ]]; then
-            SAFE=$((SAFE + 1))
-        fi
+    if ! $DRY_RUN && ! $AUTO_CLEAN; then
+        interactive_action "$wt_path" "$repo_root" "$branch" "$status" "$has_blocking_nested"
         return 0
     fi
 
-    local should_remove=false
-
-    if [[ "$status" == "SAFE" ]]; then
-        SAFE=$((SAFE + 1))
-        if $AUTO_CLEAN; then
-            should_remove=true
-        else
-            read -rp "         Remove? [y/N] " answer </dev/tty
-            [[ "$answer" =~ ^[Yy] ]] && should_remove=true
-        fi
+    # --auto, or the --dry-run preview of --auto: decide one action.
+    local action="keep" keep_kind="" keep_reason="" tag=""
+    if [[ "$status" == "DIRTY" ]]; then
+        keep_kind=dirty; keep_reason="DIRTY"
+    elif $live; then
+        keep_kind=live; keep_reason="live process in worktree"
+    elif $locked; then
+        keep_kind=live; keep_reason="locked (git worktree lock)"
+    elif $t3; then
+        keep_kind=t3; keep_reason="owned by an active T3 thread"
+    elif $pr_open; then
+        keep_kind=open_pr; keep_reason="open PR"
     elif [[ "$status" == "WARN" ]]; then
-        if ! $AUTO_CLEAN; then
-            read -rp "         Remove anyway? [y/N] " answer </dev/tty
-            [[ "$answer" =~ ^[Yy] ]] && should_remove=true
+        keep_kind=warn
+        if ! $ARCHIVE; then
+            keep_reason="WARN"
+        elif $local_files; then
+            keep_reason="WARN, local files not in git"
+        elif ! $PR_INFO_OK; then
+            keep_reason="WARN, no PR info (gh pr list failed or unavailable)"
+        elif (( ahead_rc != 0 )) || [[ ! "$ahead_default" =~ ^[1-9][0-9]*$ ]]; then
+            keep_reason="WARN, no commits ahead of ${default_remote} to archive"
+        elif (( idle < ARCHIVE_IDLE_DAYS )); then
+            keep_reason="WARN, idle ${idle}d < ${ARCHIVE_IDLE_DAYS}d archive threshold"
+        elif $has_blocking_nested; then
+            keep_kind=nested; keep_reason="nests unmerged/dirty worktree(s)"
+        elif [[ -z "$head" ]] || ! tag="$(archive_tag_for "$repo_root" "$slug" "$head")"; then
+            keep_reason="WARN, no usable archive tag name"
+        else
+            action=archive
         fi
+    elif $has_blocking_nested; then
+        keep_kind=nested; keep_reason="nests unmerged/dirty worktree(s)"
+    elif (( idle < SAFE_IDLE_DAYS )); then
+        keep_kind=recent; keep_reason="recent, idle ${idle}d < ${SAFE_IDLE_DAYS}d"
     else
-        if ! $AUTO_CLEAN; then
-            read -rp "         Has uncommitted work. Remove? [y/N] " answer </dev/tty
-            [[ "$answer" =~ ^[Yy] ]] && should_remove=true
-        fi
+        action=remove
     fi
 
-    # Nested-worktree safety gate: refuse (auto) or require explicit confirm
-    # (interactive) before removing a parent that nests unmerged/dirty work.
-    if $should_remove && $has_blocking_nested; then
-        if $AUTO_CLEAN; then
-            echo -e "         ${YELLOW}Skipping removal — relocate the nested worktree(s) above first${RESET}"
-            should_remove=false
+    if [[ "$action" == "archive" ]]; then
+        echo "         action: archive as ${tag} (idle ${idle}d)"
+        if $DRY_RUN || archive_worktree "$wt_path" "$repo_root" "$branch" "$head" "$tag"; then
+            ARCHIVED=$((ARCHIVED + 1))
         else
-            read -rp "         Parent nests unmerged/dirty worktree(s) — remove anyway? [y/N] " answer </dev/tty
-            [[ "$answer" =~ ^[Yy] ]] || should_remove=false
+            action=keep; keep_kind=warn; keep_reason="WARN, archive tag failed"
         fi
+    elif [[ "$action" == "remove" ]]; then
+        echo "         action: remove (idle ${idle}d)"
+        $DRY_RUN || remove_worktree "$wt_path" "$repo_root" "$branch"
+        REMOVED=$((REMOVED + 1))
+    fi
+
+    if [[ "$action" == "keep" ]]; then
+        echo "         action: keep: ${keep_reason} (idle ${idle}d)"
+        if [[ "$keep_kind" == "nested" ]]; then
+            echo -e "         ${YELLOW}Skipping removal — relocate the nested worktree(s) above first${RESET}"
+        fi
+        SKIPPED=$((SKIPPED + 1))
+        case "$keep_kind" in
+            dirty)   SKIP_DIRTY=$((SKIP_DIRTY + 1)) ;;
+            live)    SKIP_LIVE=$((SKIP_LIVE + 1)) ;;
+            t3)      SKIP_T3=$((SKIP_T3 + 1)) ;;
+            open_pr) SKIP_OPEN_PR=$((SKIP_OPEN_PR + 1)) ;;
+            warn)    SKIP_WARN=$((SKIP_WARN + 1)) ;;
+            nested)  SKIP_NESTED=$((SKIP_NESTED + 1)) ;;
+            recent)  SKIP_RECENT=$((SKIP_RECENT + 1)) ;;
+        esac
+        if $RECLAIM && ! $live && ! $locked && (( idle >= RECLAIM_IDLE_DAYS && ${#IGNORED_RECLAIM[@]} > 0 )); then
+            reclaim_worktree "$wt_path"
+        fi
+    fi
+}
+
+# interactive_action <wt> <repo-root> <branch> <status> <has-blocking-nested>
+# — prompt on /dev/tty, never on stdin (the discovery loop reads fd 3).
+interactive_action() {
+    local wt_path="$1" repo_root="$2" branch="$3" status="$4" has_blocking_nested="$5"
+    local should_remove=false answer
+
+    if [[ "$status" == "SAFE" ]]; then
+        read -rp "         Remove? [y/N] " answer </dev/tty
+    elif [[ "$status" == "WARN" ]]; then
+        read -rp "         Remove anyway? [y/N] " answer </dev/tty
+    else
+        read -rp "         Has uncommitted work. Remove? [y/N] " answer </dev/tty
+    fi
+    [[ "$answer" =~ ^[Yy] ]] && should_remove=true
+
+    # Nested-worktree safety gate: require explicit confirmation before
+    # removing a parent that nests unmerged/dirty work.
+    if $should_remove && $has_blocking_nested; then
+        read -rp "         Parent nests unmerged/dirty worktree(s) — remove anyway? [y/N] " answer </dev/tty
+        [[ "$answer" =~ ^[Yy] ]] || should_remove=false
     fi
 
     if $should_remove; then
@@ -314,19 +686,30 @@ check_worktree() {
     fi
 }
 
+# archive_worktree <wt> <repo-root> <branch> <head-sha> <tag> — tag HEAD (or
+# reuse a tag that already points at it), then remove the worktree and branch.
+archive_worktree() {
+    local wt_path="$1" repo_root="$2" branch="$3" head="$4" tag="$5"
+    if ! git -C "$repo_root" show-ref --verify --quiet "refs/tags/${tag}" \
+        && ! git -C "$repo_root" tag "$tag" "$head"; then
+        echo -e "         ${RED}could not create tag ${tag}; keeping the worktree${RESET}"
+        return 1
+    fi
+    echo -e "         ${GREEN}Tagged ${tag} -> ${head:0:12}${RESET}"
+    remove_worktree "$wt_path" "$repo_root" "$branch"
+}
+
 remove_worktree() {
     local wt_path="$1"
     local repo_root="$2"
     local branch="$3"
-    local slug
-    slug="$(basename "$wt_path")"
 
     # Remove the worktree
     git -C "$repo_root" worktree remove --force "$wt_path" 2>/dev/null \
         || rm -rf "$wt_path"
 
-    # Delete the branch if it exists
-    if git -C "$repo_root" rev-parse --verify "$branch" &>/dev/null; then
+    # Delete the branch if it exists (detached HEAD has none)
+    if [[ -n "$branch" ]] && git -C "$repo_root" rev-parse --verify "$branch" &>/dev/null; then
         git -C "$repo_root" branch -D "$branch" 2>/dev/null || true
     fi
 
@@ -350,15 +733,49 @@ fi
 echo -e "${BOLD}Scanning ${SCAN_ROOT} for worktrees...${RESET}"
 echo ""
 
-FOUND_REPOS=0
+load_live_cwds
+load_t3_owned
 
-# Find all .worktrees directories (max depth 3 to avoid deep traversal)
-while IFS= read -r -u3 wt_root; do
-    repo_root="$(dirname "$wt_root")"
+FOUND_REPOS=0
+VISITED_REPOS=()
+
+# Find repo main checkouts: a .git DIRECTORY at depth <= 3. Linked worktrees
+# have a .git FILE, so they never match; pruned dirs keep the walk shallow.
+while IFS= read -r -u3 git_dir; do
+    repo_root="$(dirname "$git_dir")"
     repo_name="${repo_root#"${SCAN_ROOT}/"}"
 
     # Verify this is actually a git repo
     if ! git -C "$repo_root" rev-parse --is-inside-work-tree &>/dev/null; then
+        continue
+    fi
+
+    # Collect every linked worktree, wherever it lives. The first porcelain
+    # entry is the main checkout; entries whose dir is missing are skipped
+    # (git worktree prune drops them at the end of a real run).
+    local_wts=()
+    LOCKED_WTS=$'\n'
+    linked_entries=0
+    first_entry=true
+    wt_path=""
+    while IFS= read -r line; do
+        if [[ "$line" == "locked" || "$line" == "locked "* ]]; then
+            [[ -n "$wt_path" ]] && LOCKED_WTS+="${wt_path}"$'\n'
+            continue
+        fi
+        [[ "$line" == "worktree "* ]] || continue
+        if $first_entry; then
+            first_entry=false
+            continue
+        fi
+        linked_entries=$((linked_entries + 1))
+        wt_path="${line#worktree }"
+        [[ -d "$wt_path" ]] && local_wts+=("$wt_path")
+    done < <(git -C "$repo_root" worktree list --porcelain 2>/dev/null)
+    if (( linked_entries > 0 )); then
+        VISITED_REPOS+=("$repo_root")
+    fi
+    if (( ${#local_wts[@]} == 0 )); then
         continue
     fi
 
@@ -374,15 +791,6 @@ while IFS= read -r -u3 wt_root; do
         continue
     fi
 
-    # Collect worktrees in this repo
-    local_wts=()
-    for entry in "${wt_root}"/*/; do
-        [[ -d "$entry" ]] && local_wts+=("${entry%/}")
-    done
-    if (( ${#local_wts[@]} == 0 )); then
-        continue
-    fi
-
     # Resolve the repo's default branch. If we can't determine it (no
     # origin/HEAD AND none of main/master/trunk/develop exists on origin),
     # skip the repo — running merge checks against a nonexistent ref would
@@ -394,37 +802,46 @@ while IFS= read -r -u3 wt_root; do
         continue
     fi
 
+    load_repo_caches "$repo_root" "$default_branch"
+
     FOUND_REPOS=$((FOUND_REPOS + 1))
     echo -e "${CYAN}${repo_name}${RESET} ${DIM}(${#local_wts[@]} worktree(s), default: ${default_branch})${RESET}"
 
     for wt_path in "${local_wts[@]}"; do
+        # Gone already: removing its parent earlier in this run deleted it.
+        [[ -d "$wt_path" ]] || continue
         check_worktree "$wt_path" "$repo_root" "$default_branch" || true
     done
     echo ""
 
-done 3< <(find "$SCAN_ROOT" -maxdepth 3 -type d -name '.worktrees' 2>/dev/null)
+done 3< <(find "$SCAN_ROOT" -maxdepth 3 -type d \( -name node_modules -o -name .worktrees -o -name target \) -prune \
+    -o -type d -name .git -prune -print 2>/dev/null | sort)
 
 # ── Summary ─────────────────────────────────────────────────────────
 
 if (( FOUND_REPOS == 0 )); then
     echo -e "${GREEN}No worktrees found under ${SCAN_ROOT}${RESET}"
-    exit 0
-fi
-
-echo -e "${BOLD}Summary:${RESET}"
-echo -e "  Total:   ${TOTAL}"
-echo -e "  Safe:    ${GREEN}${SAFE}${RESET}"
-if ! $DRY_RUN; then
+else
+    echo -e "${BOLD}Summary:${RESET}"
+    echo -e "  Total:   ${TOTAL}"
+    echo -e "  Safe:    ${GREEN}${SAFE}${RESET}"
     echo -e "  Removed: ${GREEN}${REMOVED}${RESET}"
+    echo -e "  Archived: ${GREEN}${ARCHIVED}${RESET}"
+    echo -e "  Reclaimed: ${GREEN}${RECLAIMED_KIB} KiB${RESET}"
     echo -e "  Skipped: ${YELLOW}${SKIPPED}${RESET}"
 fi
 
-# Prune any worktree refs that point to missing directories
-if ! $DRY_RUN && (( REMOVED > 0 )); then
+# Prune worktree refs that point to missing directories, in every visited repo.
+if ! $DRY_RUN && (( ${#VISITED_REPOS[@]} > 0 )); then
     echo ""
     echo -e "${DIM}Running git worktree prune...${RESET}"
-    while IFS= read -r -u3 wt_root; do
-        repo_root="$(dirname "$wt_root")"
+    for repo_root in "${VISITED_REPOS[@]}"; do
         git -C "$repo_root" worktree prune 2>/dev/null || true
-    done 3< <(find "$SCAN_ROOT" -maxdepth 3 -type d -name '.worktrees' 2>/dev/null)
+    done
 fi
+
+echo ""
+echo "SUMMARY ccw-sweep: total=${TOTAL} safe=${SAFE} removed=${REMOVED} archived=${ARCHIVED}" \
+    "reclaimed_kib=${RECLAIMED_KIB} skipped=${SKIPPED} skip_recent=${SKIP_RECENT} skip_live=${SKIP_LIVE}" \
+    "skip_t3=${SKIP_T3} skip_open_pr=${SKIP_OPEN_PR} skip_dirty=${SKIP_DIRTY} skip_warn=${SKIP_WARN}" \
+    "skip_nested=${SKIP_NESTED} dry_run=$($DRY_RUN && echo 1 || echo 0)"

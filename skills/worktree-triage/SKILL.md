@@ -16,9 +16,10 @@ nesting level exists (ADR-348-A). It recommends only: never remove, commit,
 stash, or push.
 
 1. `<skill-dir>/scripts/snapshot.sh [--path DIR]` — WARN/DIRTY worktrees with
-   reasons and nested-child warnings. A parent that nests an unmerged/dirty
-   child must not be removed until the child is relocated (the warning prints
-   the `git worktree move` command).
+   reasons, a `path:` line, and nested-child warnings. The snapshot covers
+   every worktree of each repo, wherever it lives. A parent that nests an
+   unmerged/dirty child must not be removed until the child is relocated (the
+   warning prints the `git worktree move` command).
 2. Fan out one `worktree-content-digest` haiku agent per WARN/DIRTY worktree —
    all in a single message so they run in parallel, one worktree path each.
    Cap at 20, oldest first.
@@ -33,5 +34,6 @@ stash, or push.
    per-worktree overrides.
 5. Report: per-repo table (Worktree | Action | Reason-from-digest | Commits |
    Age), then for each REMOVE/ARCHIVE the output of
-   `<skill-dir>/scripts/commands.sh <repo-root> <slug> <action>` as the
-   recommended commands, plus any relocation warnings from step 1.
+   `<skill-dir>/scripts/commands.sh <worktree-path> <action>` as the
+   recommended commands (`<worktree-path>` is the `path:` line from step 1),
+   plus any relocation warnings from step 1.
