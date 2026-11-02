@@ -13,5 +13,5 @@
 .cheese/notes/
 
 
-# Per-task git worktrees created by the /worktree skill
+# Per-task Git worktrees created by wt or /worktree-session
 .worktrees/

@@ -1,0 +1,40 @@
+{
+  "scenario": "task-dirty",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "T3",
+    "parent": {
+      "binding": {
+        "path": "/repo/task-a",
+        "branch": "feature/a"
+      }
+    },
+    "request": {
+      "new_conversation": true,
+      "existing_checkout": "/repo/task-b"
+    },
+    "existing_checkout": {
+      "path": "/repo/task-b",
+      "branch": "feature/b",
+      "staged": [
+        "src/cache.ts"
+      ],
+      "untracked": [
+        "notes/cache.md"
+      ]
+    },
+    "capabilities": {
+      "t3_thread_launch": {
+        "strategy": "existing_worktree"
+      }
+    },
+    "receipt": {
+      "threadId": "thread-b-42"
+    },
+    "destination": {
+      "binding": null,
+      "write_access": null,
+      "preservation": null
+    }
+  }
+}

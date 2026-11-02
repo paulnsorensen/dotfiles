@@ -1,0 +1,30 @@
+{
+  "scenario": "task-no-destination-evidence",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "standalone Pi",
+    "parent": {
+      "checkout": "/repo/task-a",
+      "write_roots": [
+        "/repo/task-a"
+      ]
+    },
+    "request": {
+      "isolated_session": true,
+      "checkout": "/repo/task-b"
+    },
+    "capabilities": {
+      "native_launcher": true
+    },
+    "receipt": {
+      "session_id": "pi-session-12",
+      "accepted": true
+    },
+    "destination": {
+      "checkout": null,
+      "branch": null,
+      "preservation": null,
+      "write_access": null
+    }
+  }
+}

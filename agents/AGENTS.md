@@ -24,6 +24,8 @@ Complete authorized work without adding features, shrinking scope, or stopping a
 Preserve unrelated user changes and keep secrets out of logs and commits.
 A requested PR or CI fix includes commit and push to its branch unless the user limits publication.
 
+Use `/worktree-session` for isolated work.
+
 ## Before editing
 
 The goal is working behavior, not passing tests or a PR.

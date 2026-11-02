@@ -1,0 +1,34 @@
+{
+  "scenario": "task-root",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "T3",
+    "parent": {
+      "thread": "root-7",
+      "binding": null,
+      "dirty": false
+    },
+    "request": {
+      "move_current_conversation": true,
+      "base_ref": "feature/base",
+      "local_commits": true
+    },
+    "capabilities": {
+      "t3_worktree_status": true,
+      "t3_worktree_handoff": true
+    },
+    "git": {
+      "rev-parse HEAD": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "rev-parse feature/base": "cccccccccccccccccccccccccccccccccccccccc"
+    },
+    "status": {
+      "bound": false,
+      "dirty": false
+    },
+    "destination": {
+      "checkout": null,
+      "branch": null,
+      "write_access": null
+    }
+  }
+}
