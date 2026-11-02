@@ -8,6 +8,9 @@ projectSettingsFolded
 sidebarAutoSettleAfterDays
 # Thread environment default (worktree vs. local); set from the T3 UI.
 defaultThreadEnvMode
+# Environment theme default; `t3 theme set` writes both keys.
+defaultTheme
+defaultThemeSetAt
 # Provider instances: enable toggles, credentials, and custom model lists.
 # The registry owns each instance driver, the claudeAgent launchArgs, and the
 # claudeAgent, codex, and opencode binaryPath leaves.

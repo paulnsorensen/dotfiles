@@ -46,6 +46,7 @@ load_scheme() {
   fi
 
   SCHEME_NAME=$(yq -r '.name' "$SCHEME_FILE")
+  # shellcheck disable=SC2034 # theme/lib-zed.sh reads this variable
   SCHEME_AUTHOR=$(yq -r '.author' "$SCHEME_FILE")
   SCHEME_DESC=$(yq -r '.description' "$SCHEME_FILE")
 
@@ -685,6 +686,33 @@ generate_zed_theme() {
 }
 
 # ---------------------------------------------------------------------------
+# Generate T3 Code theme (chezmoi-managed published theme file)
+# ---------------------------------------------------------------------------
+# These inactive schemes also publish as selectable T3 themes. Each lands in
+# <scheme-id>.json next to dotfiles-theme.json (the active scheme).
+T3_EXTRA_SCHEMES="chocolate-donut-2"
+
+# shellcheck source=theme/lib-t3.sh
+source "$SCRIPT_DIR/lib-t3.sh"
+
+generate_t3_theme() {
+  local out_dir="$REPO_DIR/chezmoi/dot_t3/userdata/themes"
+  mkdir -p "$out_dir"
+
+  write_t3_theme "$out_dir/dotfiles-theme.json"
+
+  local id
+  for id in $T3_EXTRA_SCHEMES; do
+    # The active scheme already publishes as dotfiles-theme; skip a duplicate.
+    [[ "$id" == "$ACTIVE" ]] && continue
+    # The subshell keeps the extra palette from leaking into later targets.
+    (load_scheme "$id" && write_t3_theme "$out_dir/$id.json")
+  done
+
+  log_ok "Generated T3 theme"
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 generate_colors_zsh
@@ -694,5 +722,6 @@ generate_bin_colors
 generate_tmux_theme
 generate_ghostty_config
 generate_zed_theme
+generate_t3_theme
 
 log_ok "All targets generated for: ${SCHEME_NAME}"

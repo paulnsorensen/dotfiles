@@ -100,6 +100,8 @@ setup() {
   "projectSettingsFolded": true,
   "sidebarAutoSettleAfterDays": null,
   "defaultThreadEnvMode": "worktree",
+  "defaultTheme": "dotfiles-theme",
+  "defaultThemeSetAt": "2026-11-01T00:00:00.000Z",
   "defaultModelSelection": {"instanceId":"codex","model":"gpt-6.1-terra","options":[{"id":"reasoningEffort","value":"low"}]},
   "providers": {
     "claudeAgent": { "launchArgs": "--dangerously-skip-permissions" }
@@ -116,8 +118,8 @@ JSON
     local rendered="$output"
     run jq -c '.defaultModelSelection' <<<"$rendered"
     [ "$output" = '{"instanceId":"codex","model":"gpt-6.1-sol","options":[{"id":"reasoningEffort","value":"high"}]}' ]
-    run jq -c '[.projectSettingsFolded, .sidebarAutoSettleAfterDays, .defaultThreadEnvMode, .providerInstances.cursor.enabled, .providerInstances.claudeAgent.enabled, .providerInstances.opencode.config.serverUrl, .providerInstances.claudeAgent.config.customModels]' <<<"$rendered"
-    [ "$output" = '[true,null,"worktree",false,true,"",[]]' ]
+    run jq -c '[.projectSettingsFolded, .sidebarAutoSettleAfterDays, .defaultThreadEnvMode, .defaultTheme, .defaultThemeSetAt, .providerInstances.cursor.enabled, .providerInstances.claudeAgent.enabled, .providerInstances.opencode.config.serverUrl, .providerInstances.claudeAgent.config.customModels]' <<<"$rendered"
+    [ "$output" = '[true,null,"worktree","dotfiles-theme","2026-11-01T00:00:00.000Z",false,true,"",[]]' ]
     run jq -r '.providerInstances.claudeAgent.config.launchArgs, .providerInstances.claudeAgent.config.binaryPath, .providerInstances.opencode.config.binaryPath' <<<"$rendered"
     [ "${lines[0]}" = "--permission-mode auto --settings /home/tester/.t3/userdata/claude-settings.json" ]
     [ "${lines[1]}" = "$REAL_DOTFILES_DIR/bin/dotsclaude" ]
