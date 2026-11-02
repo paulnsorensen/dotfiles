@@ -1,0 +1,32 @@
+{
+  "scenario": "task-lost-launch-response",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "T3",
+    "parent": {
+      "binding": null
+    },
+    "request": {
+      "new_conversation": true,
+      "new_worktree": true
+    },
+    "capabilities": {
+      "t3_thread_launch": true,
+      "t3_thread_list": true
+    },
+    "launch": {
+      "response": "timeout",
+      "threadId": null
+    },
+    "thread_list": [
+      {
+        "threadId": "thread-62",
+        "worktree_path": "/repo/.worktrees/fix-cache",
+        "binding_verified": false
+      }
+    ],
+    "destination": {
+      "write_access": null
+    }
+  }
+}

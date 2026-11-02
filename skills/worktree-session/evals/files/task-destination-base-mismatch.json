@@ -1,0 +1,37 @@
+{
+  "scenario": "task-destination-base-mismatch",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "T3",
+    "parent": {
+      "binding": null,
+      "dirty": {
+        "unstaged": [
+          "src/cache.ts"
+        ]
+      }
+    },
+    "request": {
+      "new_worktree": true,
+      "base_ref": "feature/base"
+    },
+    "git": {
+      "rev-parse feature/base": "cccccccccccccccccccccccccccccccccccccccc"
+    },
+    "capabilities": {
+      "t3_thread_launch": true
+    },
+    "receipt": {
+      "threadId": "thread-90",
+      "accepted": true
+    },
+    "destination": {
+      "path": "/repo/.worktrees/fix-cache",
+      "branch": "worktree/fix-cache",
+      "starting_commit": "dddddddddddddddddddddddddddddddddddddddd",
+      "expected_starting_commit": "cccccccccccccccccccccccccccccccccccccccc",
+      "write_access": "authorized",
+      "parent_changes_preserved": true
+    }
+  }
+}

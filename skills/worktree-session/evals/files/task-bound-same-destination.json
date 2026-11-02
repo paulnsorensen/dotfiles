@@ -1,0 +1,40 @@
+{
+  "scenario": "task-bound-same-destination",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "T3",
+    "parent": {
+      "thread": "thread-a",
+      "binding": {
+        "path": "/repo/task-a",
+        "branch": "feature/a"
+      },
+      "write_roots": [
+        "/repo/task-a"
+      ]
+    },
+    "request": {
+      "resume_same_checkout": "/repo/task-a"
+    },
+    "destination": {
+      "path": "/repo/task-a",
+      "branch": "feature/a",
+      "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "write_access": "authorized",
+      "staged_preserved": [
+        "src/cache.ts"
+      ],
+      "untracked_preserved": [
+        "notes/cache.md"
+      ]
+    },
+    "working_tree": {
+      "staged": [
+        "src/cache.ts"
+      ],
+      "untracked": [
+        "notes/cache.md"
+      ]
+    }
+  }
+}

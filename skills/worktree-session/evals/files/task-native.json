@@ -1,0 +1,20 @@
+{
+  "scenario": "task-native",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "standalone OMP or Pi",
+    "request": {
+      "dependent_task": true,
+      "isolated_session": true
+    },
+    "capabilities": {
+      "catalog_session_launcher": false,
+      "documentation_checked": false,
+      "terminal_session_launcher": "unknown"
+    },
+    "documentation": {
+      "available": true,
+      "verified_launcher": null
+    }
+  }
+}

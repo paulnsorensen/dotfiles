@@ -1,0 +1,32 @@
+{
+  "scenario": "task-claude",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "standalone Claude",
+    "parent": {
+      "checkout": "/repo",
+      "branch": "feature/current"
+    },
+    "request": {
+      "base": "remote default branch",
+      "isolated_session": true
+    },
+    "capabilities": {
+      "wt": true,
+      "ccw": true,
+      "terminal_surface": false
+    },
+    "git": {
+      "rev-parse HEAD": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rev-parse origin/HEAD": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "commands": {
+      "wt_open_base": "wt -o prepares a checkout from a base",
+      "ccw_default": "ccw launches from current branch"
+    },
+    "destination": {
+      "checkout": null,
+      "write_access": null
+    }
+  }
+}

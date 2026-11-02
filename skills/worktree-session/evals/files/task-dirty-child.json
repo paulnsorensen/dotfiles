@@ -1,0 +1,35 @@
+{
+  "scenario": "task-dirty-child",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "T3",
+    "parent": {
+      "binding": {
+        "path": "/repo/task-a",
+        "branch": "feature/a"
+      }
+    },
+    "request": {
+      "child_existing_checkout": "/repo/task-b"
+    },
+    "existing_checkout": {
+      "path": "/repo/task-b",
+      "branch": "feature/b",
+      "staged": [
+        "src/cache.ts"
+      ],
+      "untracked": [
+        "notes/cache.md"
+      ]
+    },
+    "capabilities": {
+      "delegate_task": {
+        "fresh_worktree": true,
+        "existing_checkout": false
+      },
+      "t3_thread_launch": {
+        "existing_worktree": true
+      }
+    }
+  }
+}

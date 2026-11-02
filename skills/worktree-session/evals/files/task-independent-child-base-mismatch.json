@@ -1,0 +1,31 @@
+{
+  "scenario": "task-independent-child-base-mismatch",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "T3",
+    "parent": {
+      "binding": {
+        "path": "/repo/task-a",
+        "branch": "feature/a"
+      }
+    },
+    "request": {
+      "independent_child": true,
+      "base": "origin/main",
+      "new_conversation": false
+    },
+    "capabilities": {
+      "delegate_task": {
+        "fresh_worktree": true,
+        "starting_commit": "parent HEAD"
+      }
+    },
+    "git": {
+      "rev-parse HEAD": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rev-parse origin/main": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "destination": {
+      "child_launched": false
+    }
+  }
+}

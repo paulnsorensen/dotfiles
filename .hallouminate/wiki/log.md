@@ -119,3 +119,5 @@
 2026-11-01 · e9d49180ff821096c · merged · architecture/t3-code-launch.md · Record T3's single model-selection default and same-slug capability limitation.
 
 2026-11-01 · 7c93ca36e0f9e820 · merged · architecture/t3-code-launch.md · Record the approved Sol/high T3 default because per-model effort defaults are unsupported.
+
+2026-11-01 · e3376c641462af92 · merged · architecture/global-agents-doc.md · Worktree session ownership: offline eval cases name case-local synthetic capability and Git observations; explicit observed commits; case-local fixtures; offline scope limits.

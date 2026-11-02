@@ -1,0 +1,35 @@
+{
+  "scenario": "task-dependent-dirty-base",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "T3",
+    "parent": {
+      "binding": {
+        "path": "/repo/task-a",
+        "branch": "feature/a"
+      },
+      "dirty": {
+        "unstaged": [
+          "src/cache.ts"
+        ],
+        "staged": [
+          "tests/cache.test.ts"
+        ]
+      }
+    },
+    "request": {
+      "child": true,
+      "depends_on_uncommitted": true,
+      "commit_or_copy_allowed": false
+    },
+    "capabilities": {
+      "delegate_task": {
+        "fresh_worktree": true,
+        "starting_commit": "parent HEAD"
+      }
+    },
+    "git": {
+      "rev-parse HEAD": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  }
+}
