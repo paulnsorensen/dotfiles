@@ -46,7 +46,7 @@ load_scheme() {
   fi
 
   SCHEME_NAME=$(yq -r '.name' "$SCHEME_FILE")
-  # shellcheck disable=SC2034 # read by the sourced theme/lib-zed.sh
+  # shellcheck disable=SC2034 # theme/lib-zed.sh reads this variable
   SCHEME_AUTHOR=$(yq -r '.author' "$SCHEME_FILE")
   SCHEME_DESC=$(yq -r '.description' "$SCHEME_FILE")
 
@@ -688,7 +688,7 @@ generate_zed_theme() {
 # ---------------------------------------------------------------------------
 # Generate T3 Code theme (chezmoi-managed published theme file)
 # ---------------------------------------------------------------------------
-# Inactive schemes that also publish as selectable T3 themes. Each lands in
+# These inactive schemes also publish as selectable T3 themes. Each lands in
 # <scheme-id>.json next to dotfiles-theme.json (the active scheme).
 T3_EXTRA_SCHEMES="chocolate-donut-2"
 
@@ -703,7 +703,9 @@ generate_t3_theme() {
 
   local id
   for id in $T3_EXTRA_SCHEMES; do
-    # Subshell keeps the extra palette from leaking into later targets.
+    # The active scheme already publishes as dotfiles-theme; skip a duplicate.
+    [[ "$id" == "$ACTIVE" ]] && continue
+    # The subshell keeps the extra palette from leaking into later targets.
     (load_scheme "$id" && write_t3_theme "$out_dir/$id.json")
   done
 

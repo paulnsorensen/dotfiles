@@ -17,14 +17,35 @@ mix_hex() {
 write_t3_theme() {
   local out="$1"
   local canvas surface overlay accent error border input
+  local error_surface warning_surface accent_surface search_match
+  local fg muted strong dark sidebar lift select seed
   canvas="$(pal base00)"
+  fg="$(pal base05)"
+  muted="$(pal base04)"
+  strong="$(pal base07)"
+  dark="$(pal base11)"
+  sidebar="$(pal base10)"
+  lift="$(pal base01)"
+  select="$(pal base02)"
   # Share the Zed panel shades: base00-base02 are too close to separate surfaces.
   surface=$(yq -r '.zed.panel_background // .palette.base01' "$SCHEME_FILE")
   overlay=$(yq -r '.zed.elevated_background // .palette.base01' "$SCHEME_FILE")
   accent=$(yq -r '.zed.ui_accent // .palette.base0D' "$SCHEME_FILE")
   error=$(yq -r '.t3.error // .palette.base08' "$SCHEME_FILE")
-  border=$(mix_hex "$(pal base05)" "$canvas" 14)
-  input=$(mix_hex "$(pal base05)" "$canvas" 20)
+  # T3 skips the whole theme when a seed is not hex, so fail here instead.
+  for seed in "$canvas" "$surface" "$overlay" "$accent" "$error"; do
+    if [[ ! "$seed" =~ ^[0-9a-fA-F]{6}$ ]]; then
+      log_err "T3 theme: '$seed' in $SCHEME_FILE is not a 6-digit hex color without '#'"
+      return 1
+    fi
+  done
+  # Compute blends before the heredoc: errexit ignores failures inside it.
+  border=$(mix_hex "$fg" "$canvas" 14)
+  input=$(mix_hex "$fg" "$canvas" 20)
+  error_surface=$(mix_hex "$error" "$canvas" 15)
+  warning_surface=$(mix_hex "$(pal base0A)" "$canvas" 12)
+  accent_surface=$(mix_hex "$accent" "$canvas" 15)
+  search_match=$(mix_hex "$(pal base0A)" "$canvas" 35)
 
   cat > "$out" <<T3_THEME
 {
@@ -37,61 +58,61 @@ write_t3_theme() {
     "canvas": "#${canvas}",
     "chrome": "#${canvas}",
     "toolbar": "#${canvas}",
-    "toolbarForeground": "#$(pal base05)",
-    "toolbarBorder": "#$(pal base02)",
-    "toolbarControl": "#$(pal base01)",
-    "toolbarControlForeground": "#$(pal base05)",
-    "toolbarControlHover": "#$(pal base02)",
+    "toolbarForeground": "#${fg}",
+    "toolbarBorder": "#${select}",
+    "toolbarControl": "#${lift}",
+    "toolbarControlForeground": "#${fg}",
+    "toolbarControlHover": "#${select}",
     "surface": "#${surface}",
     "surfaceRaised": "#${surface}",
     "surfaceOverlay": "#${overlay}",
-    "text": "#$(pal base05)",
-    "textMuted": "#$(pal base04)",
+    "text": "#${fg}",
+    "textMuted": "#${muted}",
     "border": "#${border}",
     "input": "#${input}",
     "focus": "#${accent}",
     "accent": "#${accent}",
-    "accentForeground": "#$(pal base11)",
+    "accentForeground": "#${dark}",
     "secondary": "#${surface}",
-    "secondaryForeground": "#$(pal base05)",
+    "secondaryForeground": "#${fg}",
     "muted": "#${surface}",
-    "mutedForeground": "#$(pal base04)",
-    "placeholder": "#$(pal base04)",
-    "secondaryLabel": "#$(pal base04)",
-    "iconMuted": "#$(pal base04)",
+    "mutedForeground": "#${muted}",
+    "placeholder": "#${muted}",
+    "secondaryLabel": "#${muted}",
+    "iconMuted": "#${muted}",
     "error": "#${error}",
     "errorForeground": "#$(pal base12)",
-    "errorSurface": "#$(mix_hex "$error" "$canvas" 15)",
+    "errorSurface": "#${error_surface}",
     "warning": "#$(pal base0A)",
     "warningForeground": "#$(pal base13)",
-    "warningSurface": "#$(mix_hex "$(pal base0A)" "$canvas" 12)",
+    "warningSurface": "#${warning_surface}",
     "update": "#${accent}",
     "updateForeground": "#$(pal base16)",
-    "updateSurface": "#$(mix_hex "$accent" "$canvas" 15)",
-    "accentSurface": "#$(mix_hex "$accent" "$canvas" 15)",
-    "accentSurfaceForeground": "#$(pal base05)",
+    "updateSurface": "#${accent_surface}",
+    "accentSurface": "#${accent_surface}",
+    "accentSurfaceForeground": "#${fg}",
     "messageSurface": "#${surface}",
-    "messageForeground": "#$(pal base05)",
+    "messageForeground": "#${fg}",
     "messageAction": "#${accent}",
-    "messageActionForeground": "#$(pal base11)",
+    "messageActionForeground": "#${dark}",
     "messageActionHover": "#$(pal base16)",
-    "codeBackground": "#$(pal base01)",
-    "codeForeground": "#$(pal base05)",
-    "searchMatchBackground": "#$(mix_hex "$(pal base0A)" "$canvas" 35)",
-    "searchMatchForeground": "#$(pal base07)",
+    "codeBackground": "#${lift}",
+    "codeForeground": "#${fg}",
+    "searchMatchBackground": "#${search_match}",
+    "searchMatchForeground": "#${strong}",
     "searchMatchActiveBackground": "#$(pal base0A)",
-    "searchMatchActiveForeground": "#$(pal base11)",
-    "sidebar": "#$(pal base10)",
-    "sidebarForeground": "#$(pal base05)",
-    "sidebarMutedForeground": "#$(pal base04)",
-    "sidebarControlSurface": "#$(pal base01)",
-    "sidebarRowHover": "#$(pal base01)",
+    "searchMatchActiveForeground": "#${dark}",
+    "sidebar": "#${sidebar}",
+    "sidebarForeground": "#${fg}",
+    "sidebarMutedForeground": "#${muted}",
+    "sidebarControlSurface": "#${lift}",
+    "sidebarRowHover": "#${lift}",
     "sidebarRowActive": "#${surface}",
-    "sidebarRowSelected": "#$(pal base02)",
-    "sidebarBorder": "#$(pal base01)",
+    "sidebarRowSelected": "#${select}",
+    "sidebarBorder": "#${lift}",
     "terminalBackground": "#${canvas}",
-    "terminalForeground": "#$(pal base05)",
-    "terminalCursor": "#$(pal base05)",
+    "terminalForeground": "#${fg}",
+    "terminalCursor": "#${fg}",
     "terminalSelection": "#${overlay}",
     "terminalScrollbar": "#${overlay}",
     "terminalScrollbarHover": "#$(pal base03)"
