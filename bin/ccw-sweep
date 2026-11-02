@@ -21,6 +21,8 @@
 #   CCW_SWEEP_SAFE_IDLE_DAYS (1), CCW_SWEEP_ARCHIVE_IDLE_DAYS (30),
 #   CCW_SWEEP_RECLAIM_IDLE_DAYS (7)   idle thresholds in whole days
 #   CCW_SWEEP_PR_LIMIT (3000)         PRs read per repo with one `gh pr list`
+#   CCW_SWEEP_FETCH_PR_HEADS (1)      1 = fetch missing merged-PR head commits (one call per repo)
+#   CCW_SWEEP_CHERRY_MAX (2000)       skip the offline patch check past this many new default commits
 #   CCW_SWEEP_REGENERABLE             ignored basenames (globs) that do not block removal
 #   CCW_SWEEP_T3_DB, CCW_SWEEP_T3_ROOT  T3 Code state DB and worktree root
 #   CCW_SWEEP_NOW                     epoch seconds used as "now" (test seam)
@@ -78,17 +80,24 @@ SAFE_IDLE_DAYS="${CCW_SWEEP_SAFE_IDLE_DAYS:-1}"
 ARCHIVE_IDLE_DAYS="${CCW_SWEEP_ARCHIVE_IDLE_DAYS:-30}"
 RECLAIM_IDLE_DAYS="${CCW_SWEEP_RECLAIM_IDLE_DAYS:-7}"
 PR_LIMIT="${CCW_SWEEP_PR_LIMIT:-3000}"
+CHERRY_MAX="${CCW_SWEEP_CHERRY_MAX:-2000}"
+FETCH_PR_HEADS="${CCW_SWEEP_FETCH_PR_HEADS:-1}"
 NOW="${CCW_SWEEP_NOW:-$(date +%s)}"
 for setting in "CCW_SWEEP_SAFE_IDLE_DAYS=${SAFE_IDLE_DAYS}" \
                "CCW_SWEEP_ARCHIVE_IDLE_DAYS=${ARCHIVE_IDLE_DAYS}" \
                "CCW_SWEEP_RECLAIM_IDLE_DAYS=${RECLAIM_IDLE_DAYS}" \
                "CCW_SWEEP_PR_LIMIT=${PR_LIMIT}" \
+               "CCW_SWEEP_CHERRY_MAX=${CHERRY_MAX}" \
                "CCW_SWEEP_NOW=${NOW}"; do
     if [[ ! "${setting#*=}" =~ ^[0-9]+$ ]]; then
         echo -e "${RED}${setting%%=*} must be a whole number, got: '${setting#*=}'${RESET}" >&2
         exit 1
     fi
 done
+if [[ "$FETCH_PR_HEADS" != 0 && "$FETCH_PR_HEADS" != 1 ]]; then
+    echo -e "${RED}CCW_SWEEP_FETCH_PR_HEADS must be 0 or 1, got: '${FETCH_PR_HEADS}'${RESET}" >&2
+    exit 1
+fi
 
 T3_DB="${CCW_SWEEP_T3_DB:-${HOME}/.t3/userdata/state.sqlite}"
 T3_ROOT="${CCW_SWEEP_T3_ROOT:-${HOME}/.t3/worktrees}"
@@ -181,7 +190,7 @@ is_t3_owned() {
 
 # load_repo_caches <repo-root> <default-branch> — once per repo: the branches
 # merged into origin/<default> (MERGED_BRANCHES) and every PR as
-# `head<TAB>state<TAB>headOid` rows in PR_CACHE. A gh failure leaves PR_CACHE
+# `head<TAB>state<TAB>headOid<TAB>number` rows in PR_CACHE. A gh failure leaves PR_CACHE
 # empty, which means "no PR info" (safe bias), and PR_INFO_OK=false, which
 # blocks --archive: an open PR could hide behind the failure.
 load_repo_caches() {
@@ -197,12 +206,76 @@ load_repo_caches() {
         | sed -E 's#^(git@github\.com:|https?://[^/]+/)##; s#\.git$##')"
     [[ -n "$repo_slug" ]] || return 0
     if gh pr list --repo "$repo_slug" --state all --limit "$PR_LIMIT" \
-        --json headRefName,state,headRefOid \
-        --jq '.[] | [.headRefName,.state,.headRefOid] | @tsv' >"$PR_CACHE" 2>/dev/null; then
+        --json headRefName,state,headRefOid,number \
+        --jq '.[] | [.headRefName,.state,.headRefOid,.number] | @tsv' >"$PR_CACHE" 2>/dev/null; then
         PR_INFO_OK=true
     else
         : >"$PR_CACHE"
     fi
+}
+
+# drop_pr_head_refs <repo-root> — delete the private refs/ccw-sweep/* refs.
+drop_pr_head_refs() {
+    git -C "$1" for-each-ref --format='delete %(refname)' refs/ccw-sweep/ 2>/dev/null \
+        | git -C "$1" update-ref --stdin 2>/dev/null || true
+}
+
+# fetch_missing_pr_heads <repo-root> <worktree>... — the squash check needs
+# each MERGED PR's head commit; GitHub keeps it at refs/pull/<n>/head after the
+# branch is deleted. Fetch the missing ones in ONE call into refs/ccw-sweep/pr/
+# (not refs/remotes, so `git branch -r` stays clean). Runs only when gh listed
+# the repo's PRs, which means a GitHub origin. A failed fetch leaves those
+# worktrees at "commits after squash-merge" (safe bias).
+fetch_missing_pr_heads() {
+    local repo_root="$1" wt branch pr_state pr_oid pr_number seen=$'\n' refspecs=() start
+    shift
+    drop_pr_head_refs "$repo_root"
+    if [[ "$FETCH_PR_HEADS" != 1 ]] || ! $PR_INFO_OK || [[ ! -s "$PR_CACHE" ]]; then
+        return 0
+    fi
+    for wt in "$@"; do
+        branch="$(git -C "$wt" symbolic-ref --short --quiet HEAD 2>/dev/null || true)"
+        [[ -n "$branch" ]] || continue
+        while IFS=$'\t' read -r pr_state pr_oid pr_number; do
+            [[ "$pr_state" == "MERGED" && "$pr_oid" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ && "$pr_number" =~ ^[0-9]+$ ]] || continue
+            [[ "$seen" == *$'\n'"$pr_number"$'\n'* ]] && continue
+            git -C "$repo_root" cat-file -e "${pr_oid}^{commit}" 2>/dev/null && continue
+            seen+="${pr_number}"$'\n'
+            refspecs+=("+refs/pull/${pr_number}/head:refs/ccw-sweep/pr/${pr_number}")
+        done < <(awk -F'\t' -v b="$branch" '$1 == b { print $2 "\t" $3 "\t" $4 }' "$PR_CACHE")
+    done
+    (( ${#refspecs[@]} > 0 )) || return 0
+    start=$SECONDS
+    if git -C "$repo_root" fetch --quiet --no-tags origin "${refspecs[@]}" 2>/dev/null; then
+        echo -e "  ${DIM}fetched ${#refspecs[@]} merged-PR head(s) for the squash check ($((SECONDS - start))s)${RESET}"
+    else
+        echo -e "  ${YELLOW}note: could not fetch ${#refspecs[@]} merged-PR head(s); those worktrees keep \"commits after squash-merge\"${RESET}"
+    fi
+}
+
+# squash_patch_match <wt> <default-remote> <default-branch> — offline squash
+# check for a branch without PR info: squash HEAD onto its merge base, then ask
+# git cherry whether origin/<default> holds an equal patch. Exit 0 = merged.
+# Any error means "not merged". Sets PATCH_NOTE when the check was skipped.
+squash_patch_match() {
+    local wt="$1" default_remote="$2" default_branch="$3" mb behind probe out line match=true
+    PATCH_NOTE=""
+    mb="$(git -C "$wt" merge-base "$default_remote" HEAD 2>/dev/null)" || return 1
+    behind="$(git -C "$wt" rev-list --count "${mb}..${default_remote}" 2>/dev/null)" || return 1
+    if (( behind > CHERRY_MAX )); then
+        PATCH_NOTE="patch check skipped: ${behind} commits on ${default_branch} since fork"
+        return 1
+    fi
+    # The probe is an unreferenced commit object; git gc drops it later.
+    probe="$(GIT_AUTHOR_NAME=ccw-sweep GIT_AUTHOR_EMAIL=ccw-sweep@localhost \
+        GIT_COMMITTER_NAME=ccw-sweep GIT_COMMITTER_EMAIL=ccw-sweep@localhost \
+        git -C "$wt" commit-tree 'HEAD^{tree}' -p "$mb" -m ccw-sweep-probe 2>/dev/null)" || return 1
+    out="$(git -C "$wt" cherry "$default_remote" "$probe" 2>/dev/null)" || return 1
+    [[ -n "$out" ]] || return 1
+    while IFS= read -r line; do
+        [[ "$line" == "- "* ]] || match=false
+    done <<<"$out"
+    $match
 }
 
 # is_regenerable <basename> — exit 0 when the name matches a REGENERABLE glob.
@@ -405,8 +478,10 @@ check_worktree() {
     # when HEAD is its head commit or an ancestor of it: commits added after
     # a squash merge are unique work, even when the remote branch is gone.
     local pr_open=false pr_merged=false pr_stale=false pr_closed=false pr_state pr_oid
+    local pr_any=false
     if $branch_exists && [[ -s "$PR_CACHE" ]]; then
         while IFS=$'\t' read -r pr_state pr_oid; do
+            pr_any=true
             case "$pr_state" in
                 OPEN) pr_open=true ;;
                 MERGED)
@@ -467,6 +542,18 @@ check_worktree() {
         elif [[ "$ahead_default" == "0" ]]; then
             is_merged=true
             reasons+=("0 commits ahead of ${default_remote}")
+        fi
+    fi
+
+    # Step 4: offline squash check for a clean branch with no PR row (gh
+    # failed or missing, no PR, or detached HEAD). A PR result always wins.
+    if ! $is_merged && ! $pr_any && [[ "$status" != "DIRTY" && -z "$untracked" ]] \
+        && (( ahead_rc == 0 )) && [[ "$ahead_default" =~ ^[1-9][0-9]*$ ]]; then
+        if squash_patch_match "$wt_path" "$default_remote" "$default_branch"; then
+            is_merged=true
+            reasons+=("squash-merged (patch match)")
+        elif [[ -n "$PATCH_NOTE" ]]; then
+            reasons+=("$PATCH_NOTE")
         fi
     fi
 
@@ -806,12 +893,14 @@ while IFS= read -r -u3 git_dir; do
 
     FOUND_REPOS=$((FOUND_REPOS + 1))
     echo -e "${CYAN}${repo_name}${RESET} ${DIM}(${#local_wts[@]} worktree(s), default: ${default_branch})${RESET}"
+    fetch_missing_pr_heads "$repo_root" "${local_wts[@]}"
 
     for wt_path in "${local_wts[@]}"; do
         # Gone already: removing its parent earlier in this run deleted it.
         [[ -d "$wt_path" ]] || continue
         check_worktree "$wt_path" "$repo_root" "$default_branch" || true
     done
+    drop_pr_head_refs "$repo_root"
     echo ""
 
 done 3< <(find "$SCAN_ROOT" -maxdepth 3 -type d \( -name node_modules -o -name .worktrees -o -name target \) -prune \

@@ -869,3 +869,137 @@ no_prs() {
   [[ $status -ne 0 ]]
   assert_contains "CCW_SWEEP_ARCHIVE_IDLE_DAYS must be a whole number"
 }
+
+# ── Targeted fetch of merged-PR heads ─────────────────────────────────────────
+
+# add_pr_head_only_on_origin <repo> <slug> <n> — a second clone pushes a child
+# of the worktree HEAD to the bare origin only as refs/pull/<n>/head, and the
+# branch is then deleted, as GitHub does after a merge. Prints the PR head oid.
+add_pr_head_only_on_origin() {
+  local repo="$1" slug="$2" n="$3" clone="$HOME/clone2"
+  git -C "$repo" push --quiet origin "claude/$slug"
+  git clone --quiet "${repo}.origin.git" "$clone"
+  git -C "$clone" config user.email "test@test.com"
+  git -C "$clone" config user.name "Test"
+  git -C "$clone" checkout --quiet "claude/$slug"
+  echo "review fix" > "$clone/review.txt"
+  git -C "$clone" add review.txt
+  git -C "$clone" commit -m "review fix" --quiet
+  git -C "$clone" push --quiet origin "HEAD:refs/pull/$n/head"
+  git -C "$repo" push --quiet origin --delete "claude/$slug" 2>/dev/null
+  git -C "$clone" rev-parse HEAD
+}
+
+@test "auto fetches a missing merged-PR head and removes the worktree behind it" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "sq"
+  local pr_head
+  pr_head="$(add_pr_head_only_on_origin "$SCAN/repo" "sq" 7)"
+  run git -C "$SCAN/repo" cat-file -e "${pr_head}^{commit}"
+  [[ $status -ne 0 ]] || { echo "PR head is already local; the fixture proves nothing"; return 1; }
+  printf 'claude/sq\tMERGED\t%s\t7\n' "$pr_head" > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "fetched 1 merged-PR head(s)"
+  assert_contains "PR squash-merged"
+  assert_contains "Removed: 1"
+  [[ ! -d "$SCAN/repo/.worktrees/sq" ]] || { echo "worktree behind the PR head kept"; return 1; }
+  [[ -z "$(git -C "$SCAN/repo" for-each-ref refs/ccw-sweep/)" ]] || { echo "refs/ccw-sweep/ not cleaned"; return 1; }
+}
+
+@test "CCW_SWEEP_FETCH_PR_HEADS=0 keeps a worktree whose PR head is missing" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "sq"
+  local pr_head
+  pr_head="$(add_pr_head_only_on_origin "$SCAN/repo" "sq" 7)"
+  printf 'claude/sq\tMERGED\t%s\t7\n' "$pr_head" > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+
+  run env CCW_SWEEP_FETCH_PR_HEADS=0 ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "commits after squash-merge"
+  assert_contains "Removed: 0"
+  [[ -d "$SCAN/repo/.worktrees/sq" ]] || { echo "worktree removed without the PR head"; return 1; }
+  [[ -z "$(git -C "$SCAN/repo" for-each-ref refs/ccw-sweep/)" ]]
+}
+
+# ── Offline squash check (git cherry) ───────────────────────────────────────────
+
+# squash_onto_main <repo> <slug> — apply the branch's net diff to origin main
+# as one commit (a squash merge that GitHub did not report).
+squash_onto_main() {
+  local repo="$1" slug="$2"
+  git -C "$repo" checkout --quiet "claude/$slug" -- .
+  git -C "$repo" commit -m "squash: $slug" --quiet
+  git -C "$repo" push --quiet origin main
+}
+
+# add_two_commit_worktree <repo> <slug> — a branch with two commits.
+add_two_commit_worktree() {
+  local repo="$1" slug="$2"
+  add_diverged_worktree "$repo" "$slug"
+  echo "second" > "$repo/.worktrees/$slug/second.txt"
+  git -C "$repo/.worktrees/$slug" add second.txt
+  git -C "$repo/.worktrees/$slug" commit -m "second" --quiet
+}
+
+@test "auto removes a squash-merged branch by patch match when gh fails" {
+  create_repo "$SCAN/repo"
+  add_two_commit_worktree "$SCAN/repo" "sq"
+  squash_onto_main "$SCAN/repo" "sq"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "squash-merged (patch match)"
+  assert_contains "Removed: 1"
+  [[ ! -d "$SCAN/repo/.worktrees/sq" ]] || { echo "patch-equal branch kept"; return 1; }
+}
+
+@test "auto keeps an unmerged branch when gh fails" {
+  create_repo "$SCAN/repo"
+  add_two_commit_worktree "$SCAN/repo" "open-work"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_not_contains "patch match"
+  assert_contains "NOT merged into main"
+  assert_contains "Removed: 0"
+  [[ -d "$SCAN/repo/.worktrees/open-work" ]] || { echo "unmerged branch removed"; return 1; }
+}
+
+@test "CCW_SWEEP_CHERRY_MAX caps the offline patch check" {
+  create_repo "$SCAN/repo"
+  add_two_commit_worktree "$SCAN/repo" "sq"
+  squash_onto_main "$SCAN/repo" "sq"
+
+  run env CCW_SWEEP_CHERRY_MAX=0 ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "patch check skipped: 1 commits on main since fork"
+  assert_contains "Removed: 0"
+  [[ -d "$SCAN/repo/.worktrees/sq" ]] || { echo "worktree removed past the cap"; return 1; }
+}
+
+@test "a CLOSED PR row wins over a patch match" {
+  create_repo "$SCAN/repo"
+  add_two_commit_worktree "$SCAN/repo" "sq"
+  squash_onto_main "$SCAN/repo" "sq"
+  printf 'claude/sq\tCLOSED\t%s\t9\n' "$(git -C "$SCAN/repo/.worktrees/sq" rev-parse HEAD)" > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "PR closed without merge"
+  assert_not_contains "patch match"
+  [[ -d "$SCAN/repo/.worktrees/sq" ]] || { echo "fallback removed a branch with a CLOSED PR"; return 1; }
+}
+
+@test "rejects invalid CCW_SWEEP_CHERRY_MAX and CCW_SWEEP_FETCH_PR_HEADS" {
+  run env CCW_SWEEP_CHERRY_MAX=lots ccw-sweep --dry-run --path "$SCAN"
+  [[ $status -ne 0 ]]
+  assert_contains "CCW_SWEEP_CHERRY_MAX must be a whole number"
+  run env CCW_SWEEP_FETCH_PR_HEADS=yes ccw-sweep --dry-run --path "$SCAN"
+  [[ $status -ne 0 ]]
+  assert_contains "CCW_SWEEP_FETCH_PR_HEADS must be 0 or 1"
+}
