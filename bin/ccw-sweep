@@ -89,8 +89,10 @@ for setting in "CCW_SWEEP_SAFE_IDLE_DAYS=${SAFE_IDLE_DAYS}" \
                "CCW_SWEEP_PR_LIMIT=${PR_LIMIT}" \
                "CCW_SWEEP_CHERRY_MAX=${CHERRY_MAX}" \
                "CCW_SWEEP_NOW=${NOW}"; do
-    if [[ ! "${setting#*=}" =~ ^[0-9]+$ ]]; then
-        echo -e "${RED}${setting%%=*} must be a whole number, got: '${setting#*=}'${RESET}" >&2
+    # Canonical decimals only: bash arithmetic reads a leading 0 as octal, and
+    # a failed (( )) inside an elif silently skips the threshold.
+    if [[ ! "${setting#*=}" =~ ^(0|[1-9][0-9]{0,11})$ ]]; then
+        echo -e "${RED}${setting%%=*} must be a whole number without leading zeros, got: '${setting#*=}'${RESET}" >&2
         exit 1
     fi
 done
@@ -202,8 +204,7 @@ load_repo_caches() {
     origin_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
     # Normalise to OWNER/REPO for gh --repo (handles both git@github.com:o/r.git
     # and https://github.com/o/r forms; strips trailing .git).
-    repo_slug="$(echo "$origin_url" \
-        | sed -E 's#^(git@github\.com:|https?://[^/]+/)##; s#\.git$##')"
+    repo_slug="$(sed -E 's#^(git@github\.com:|https?://[^/]+/)##; s#\.git$##' <<<"$origin_url")"
     [[ -n "$repo_slug" ]] || return 0
     if gh pr list --repo "$repo_slug" --state all --limit "$PR_LIMIT" \
         --json headRefName,state,headRefOid,number \
@@ -353,19 +354,19 @@ idle_days() {
     echo $(( (NOW - last) / 86400 ))
 }
 
-# archive_tag_for <repo-root> <slug> <head-sha> — echo the first archive tag
-# that is free or already points at <head-sha>. Exit 1 when none is usable.
-archive_tag_for() {
-    local repo_root="$1" slug="$2" head="$3" tag
-    for tag in "archive/${slug}" "archive/${slug}-${head:0:8}" "archive/wt-${head:0:12}"; do
-        git check-ref-format "refs/tags/${tag}" || continue
-        if ! git -C "$repo_root" show-ref --verify --quiet "refs/tags/${tag}" \
-            || [[ "$(git -C "$repo_root" rev-parse --verify --quiet "refs/tags/${tag}^{commit}")" == "$head" ]]; then
-            echo "$tag"
-            return 0
-        fi
-    done
-    return 1
+# nested_child_blocks <child> — exit 0 when removing the parent would lose or
+# break a nested child: the shared predicate (dirty, untracked, .cheese,
+# unmerged) plus this script's guards (git lock, live process, active T3
+# thread, non-regenerable ignored files).
+nested_child_blocks() {
+    local child="$1" canon
+    wt_child_blocks_removal "$child" && return 0
+    wt_is_locked "$child" && return 0
+    canon="$(cd -P "$child" 2>/dev/null && pwd)" || canon="$child"
+    has_live_process "$canon" && return 0
+    is_t3_owned "$child" "$canon" && return 0
+    # Subshell: scan_ignored sets globals that the parent's own scan owns.
+    ( scan_ignored "$child"; (( ${#IGNORED_BAD[@]} > 0 )) )
 }
 
 # reclaim_worktree <wt> — delete the IGNORED_RECLAIM entries (dry run: only
@@ -397,7 +398,7 @@ check_worktree() {
     local repo_root="$2"
     local default_branch="$3"
     local slug
-    slug="$(basename "$wt_path")"
+    slug="${wt_path##*/}"
     # The worktree's actual branch, read from its HEAD. Never derive it from
     # the directory name — guessing "claude/<slug>" flagged real branches as
     # "branch not found" whenever the dir name didn't match the branch name.
@@ -595,7 +596,7 @@ check_worktree() {
         live=true
         reasons+=("live process in worktree")
     fi
-    if [[ "$LOCKED_WTS" == *$'\n'"$wt_path"$'\n'* ]]; then
+    if wt_is_locked "$wt_path"; then
         locked=true
         reasons+=("locked (git worktree lock)")
     fi
@@ -639,7 +640,7 @@ check_worktree() {
     local nested_child
     while IFS= read -r nested_child; do
         [[ -z "$nested_child" ]] && continue
-        if wt_child_blocks_removal "$nested_child"; then
+        if nested_child_blocks "$nested_child"; then
             nested_blockers+=("$nested_child")
         fi
     done < <(wt_list_nested "$wt_path")
@@ -647,7 +648,7 @@ check_worktree() {
     local has_blocking_nested=false
     if (( ${#nested_blockers[@]} > 0 )); then
         has_blocking_nested=true
-        echo -e "         ${YELLOW}nests unmerged/dirty worktree(s) — relocate before removing parent:${RESET}"
+        echo -e "         ${YELLOW}nests unmerged/dirty/guarded worktree(s) — relocate before removing parent:${RESET}"
         for nested_child in "${nested_blockers[@]}"; do
             echo -e "           ${DIM}${nested_child}${RESET}"
             # Relocate into the child's OWN repo, not the parent's: a cross-repo
@@ -696,7 +697,7 @@ check_worktree() {
             keep_reason="WARN, idle ${idle}d < ${ARCHIVE_IDLE_DAYS}d archive threshold"
         elif $has_blocking_nested; then
             keep_kind=nested; keep_reason="nests unmerged/dirty worktree(s)"
-        elif [[ -z "$head" ]] || ! tag="$(archive_tag_for "$repo_root" "$slug" "$head")"; then
+        elif [[ -z "$head" ]] || ! tag="$(wt_archive_tag "$repo_root" "$slug" "$head")"; then
             keep_reason="WARN, no usable archive tag name"
         else
             action=archive
@@ -829,7 +830,7 @@ VISITED_REPOS=()
 # Find repo main checkouts: a .git DIRECTORY at depth <= 3. Linked worktrees
 # have a .git FILE, so they never match; pruned dirs keep the walk shallow.
 while IFS= read -r -u3 git_dir; do
-    repo_root="$(dirname "$git_dir")"
+    repo_root="${git_dir%/.git}"
     repo_name="${repo_root#"${SCAN_ROOT}/"}"
 
     # Verify this is actually a git repo
@@ -841,15 +842,9 @@ while IFS= read -r -u3 git_dir; do
     # entry is the main checkout; entries whose dir is missing are skipped
     # (git worktree prune drops them at the end of a real run).
     local_wts=()
-    LOCKED_WTS=$'\n'
     linked_entries=0
     first_entry=true
-    wt_path=""
     while IFS= read -r line; do
-        if [[ "$line" == "locked" || "$line" == "locked "* ]]; then
-            [[ -n "$wt_path" ]] && LOCKED_WTS+="${wt_path}"$'\n'
-            continue
-        fi
         [[ "$line" == "worktree "* ]] || continue
         if $first_entry; then
             first_entry=false

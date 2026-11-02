@@ -185,6 +185,32 @@ STUB
     make_worktree alpha
     run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" shred
     [ "$status" -eq 2 ]
+    assert_contains "$output" "unknown action 'shred'"
+}
+
+@test "commands.sh chains the commands and picks a distinct tag on a basename collision" {
+    make_worktree alpha
+    # Another worktree named alpha was archived earlier, at a different commit.
+    git -C "$REPO" tag archive/alpha main
+    git -C "$REPO/.worktrees/alpha" commit -q --allow-empty -m "own work"
+    local sha8
+    sha8="$(git -C "$REPO/.worktrees/alpha" rev-parse --short=8 HEAD)"
+
+    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" archive
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "tag archive/alpha-${sha8} worktree/alpha && \\"
+    assert_contains "$output" "worktree remove .worktrees/alpha && \\"
+    assert_contains "$output" "branch -D worktree/alpha"
+    assert_not_contains "$output" "tag archive/alpha worktree/alpha"
+}
+
+@test "commands.sh targets the bare repo for a worktree of a bare repo" {
+    git clone -q --bare "$REPO" "$TMPROOT/bare.git"
+    git -C "$TMPROOT/bare.git" worktree add -q "$TMPROOT/bare-wt" -b worktree/bare
+    run "$SKILLS/worktree-triage/scripts/commands.sh" "$TMPROOT/bare-wt" remove
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "git -C $TMPROOT/bare.git worktree remove $TMPROOT/bare-wt"
+    assert_not_contains "$output" "git -C $TMPROOT worktree"
 }
 
 @test "commands.sh takes a worktree outside the repo and uses its absolute path" {

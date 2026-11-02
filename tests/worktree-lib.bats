@@ -245,3 +245,69 @@ add_worktree() {
   [[ "$output" == *"--stale expects a number"* ]]
   [[ "$output" != *"alpha"* ]]
 }
+
+# ── wt_main_checkout / wt_is_locked / wt_archive_tag ─────────────────────────────
+
+@test "wt_main_checkout prints the main checkout for a linked worktree" {
+  create_repo "$SCAN/repo"
+  git -C "$SCAN/repo" worktree add --quiet "$SCAN/far/wt" -b far
+  run wt_main_checkout "$SCAN/far/wt"
+  [[ $status -eq 0 ]]
+  [[ "$output" == "$SCAN/repo" ]]
+}
+
+@test "wt_main_checkout prints the bare repo dir for a worktree of a bare repo" {
+  create_repo "$SCAN/repo"
+  git clone --quiet --bare "$SCAN/repo" "$SCAN/bare.git"
+  git -C "$SCAN/bare.git" worktree add --quiet "$SCAN/bare-wt" -b wt
+  run wt_main_checkout "$SCAN/bare-wt"
+  [[ $status -eq 0 ]]
+  [[ "$output" == "$SCAN/bare.git" ]]
+}
+
+@test "wt_main_checkout fails outside a git repo" {
+  mkdir -p "$SCAN/plain"
+  run wt_main_checkout "$SCAN/plain"
+  [[ $status -eq 1 ]]
+  [[ -z "$output" ]]
+}
+
+@test "wt_is_locked follows git worktree lock and unlock" {
+  create_repo "$SCAN/repo"
+  add_worktree "$SCAN/repo" "wt"
+  run wt_is_locked "$SCAN/repo/.worktrees/wt"
+  [[ $status -eq 1 ]]
+  git -C "$SCAN/repo" worktree lock "$SCAN/repo/.worktrees/wt"
+  run wt_is_locked "$SCAN/repo/.worktrees/wt"
+  [[ $status -eq 0 ]]
+  git -C "$SCAN/repo" worktree unlock "$SCAN/repo/.worktrees/wt"
+  run wt_is_locked "$SCAN/repo/.worktrees/wt"
+  [[ $status -eq 1 ]]
+}
+
+@test "wt_archive_tag picks archive/<slug>, reuses a tag at HEAD, and suffixes on a collision" {
+  create_repo "$SCAN/repo"
+  local first second
+  first="$(git -C "$SCAN/repo" rev-parse HEAD)"
+  run wt_archive_tag "$SCAN/repo" "alpha" "$first"
+  [[ "$output" == "archive/alpha" ]]
+
+  git -C "$SCAN/repo" tag archive/alpha "$first"
+  run wt_archive_tag "$SCAN/repo" "alpha" "$first"
+  [[ "$output" == "archive/alpha" ]]
+
+  git -C "$SCAN/repo" commit --quiet --allow-empty -m second
+  second="$(git -C "$SCAN/repo" rev-parse HEAD)"
+  run wt_archive_tag "$SCAN/repo" "alpha" "$second"
+  [[ $status -eq 0 ]]
+  [[ "$output" == "archive/alpha-${second:0:8}" ]]
+}
+
+@test "wt_archive_tag falls back to archive/wt-<sha12> for an invalid slug" {
+  create_repo "$SCAN/repo"
+  local head
+  head="$(git -C "$SCAN/repo" rev-parse HEAD)"
+  run wt_archive_tag "$SCAN/repo" "bad..slug" "$head"
+  [[ $status -eq 0 ]]
+  [[ "$output" == "archive/wt-${head:0:12}" ]]
+}

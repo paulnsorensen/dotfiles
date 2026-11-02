@@ -1003,3 +1003,44 @@ add_two_commit_worktree() {
   [[ $status -ne 0 ]]
   assert_contains "CCW_SWEEP_FETCH_PR_HEADS must be 0 or 1"
 }
+
+@test "rejects an idle threshold with a leading zero (bash reads it as octal)" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "fresh"
+
+  run env CCW_SWEEP_SAFE_IDLE_DAYS=08 ccw-sweep --auto --path "$SCAN"
+  [[ $status -ne 0 ]]
+  assert_contains "CCW_SWEEP_SAFE_IDLE_DAYS must be a whole number without leading zeros, got: '08'"
+  [[ -d "$SCAN/repo/.worktrees/fresh" ]] || { echo "worktree removed despite a rejected threshold"; return 1; }
+}
+
+# ── Nested-child guards beyond dirty/unmerged ────────────────────────────────────
+
+@test "auto refuses to remove a parent nesting a locked clean child" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "parent"
+  local parent="$SCAN/repo/.worktrees/parent"
+  add_nested_child "$parent" "child"
+  git -C "$SCAN/repo" worktree lock --reason "claude agent child (pid 1)" "$parent/.worktrees/child"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "nests unmerged/dirty/guarded"
+  assert_contains "Skipping removal"
+  assert_contains "Removed: 0"
+  [[ -d "$parent/.worktrees/child" ]] || { echo "locked nested child deleted with its parent"; return 1; }
+}
+
+@test "auto refuses to remove a parent nesting a child with a non-regenerable ignored file" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "parent"
+  local parent="$SCAN/repo/.worktrees/parent"
+  add_nested_child "$parent" "child"
+  exclude_in "$parent" ".env"
+  echo "TOKEN=x" > "$parent/.worktrees/child/.env"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "nests unmerged/dirty/guarded"
+  [[ -f "$parent/.worktrees/child/.env" ]] || { echo "nested .env deleted with its parent"; return 1; }
+}
