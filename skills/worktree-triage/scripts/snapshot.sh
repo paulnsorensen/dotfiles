@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # snapshot.sh [ccw-sweep flags...] — ccw-sweep --dry-run distilled for triage:
 # ANSI stripped, SAFE rows dropped. Survivors: repo headers (only for repos
-# with WARN/DIRTY worktrees), WARN/DIRTY entries with reasons and nested-child
-# relocation warnings, skipped-repo notices, and the summary block.
+# with WARN/DIRTY worktrees), WARN/DIRTY entries with reasons, `path:` and
+# `action:` lines, and nested-child relocation warnings, skipped-repo notices,
+# and the summary block.
 set -euo pipefail
 
 esc="$(printf '\033')"

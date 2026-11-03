@@ -121,9 +121,25 @@ setup() {
   ORIGINAL_HOME="$HOME"
   HOME=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/ccw-home.XXXXXX")" && pwd)
   export HOME
+
+  # Fixture worktrees are seconds old; the existing cases expect --auto to
+  # remove them, so drop the SAFE idle threshold for every test by default.
+  export CCW_SWEEP_SAFE_IDLE_DAYS=0
+  unset CCW_SWEEP_ARCHIVE_IDLE_DAYS CCW_SWEEP_RECLAIM_IDLE_DAYS CCW_SWEEP_NOW \
+    CCW_SWEEP_REGENERABLE CCW_SWEEP_T3_ROOT FAKE_GH_TSV
+  # T3 state DB inside the temp HOME: absent unless a test creates it.
+  export CCW_SWEEP_T3_DB="$HOME/.t3/userdata/state.sqlite"
+  # Stub gh: fails (no PR info) unless FAKE_GH_TSV names a TSV file to print.
+  mkdir -p "$HOME/stub-bin"
+  # shellcheck disable=SC2016  # the stub expands FAKE_GH_TSV when it runs, not now
+  printf '#!/usr/bin/env bash\n[[ -n "${FAKE_GH_TSV:-}" ]] || exit 1\ncat "$FAKE_GH_TSV"\n' > "$HOME/stub-bin/gh"
+  chmod +x "$HOME/stub-bin/gh"
+  export PATH="$HOME/stub-bin:$PATH"
+  BG_PID=""
 }
 
 teardown() {
+  [[ -n "${BG_PID:-}" ]] && kill "$BG_PID" 2>/dev/null || true
   # bats runs teardown even if setup() errored before creating the fixtures.
   # Guard against that: without SCAN/ORIGINAL_HOME set, the rm below would
   # target the real $HOME (SCAN="") and wipe it.
@@ -133,6 +149,16 @@ teardown() {
   rm -rf "$SCAN" "$HOME"
   export HOME="$ORIGINAL_HOME"
 }
+
+# exclude_in <worktree> <pattern>... — gitignore patterns for the whole repo
+# (info/exclude lives in the shared git dir).
+exclude_in() {
+  local wt="$1"; shift
+  printf '%s\n' "$@" >> "$(git -C "$wt" rev-parse --path-format=absolute --git-path info/exclude)"
+}
+
+# days_from_now <n> — epoch seconds n days in the future (for CCW_SWEEP_NOW).
+days_from_now() { echo $(( $(date +%s) + $1 * 86400 )); }
 
 # ── Discovery (dry-run) ──────────────────────────────────────────────
 
@@ -507,4 +533,514 @@ add_nested_child() {
   # Hint targets the child's own repo, not the parent's repo_root.
   assert_contains "childrepo/.worktrees/child"
   assert_not_contains "parentrepo/.worktrees/child"
+}
+
+# ── Discovery beyond <repo>/.worktrees ─────────────────────────────────────
+
+@test "discovers a worktree that lives outside the scan root" {
+  create_repo "$SCAN/repo"
+  git -C "$SCAN/repo" worktree add "$HOME/elsewhere/wt" -b "claude/far" --quiet 2>/dev/null
+
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_contains "repo (1 worktree(s), default: main)"
+  assert_contains "[SAFE] wt"
+  assert_contains "path: $HOME/elsewhere/wt"
+}
+
+# ── Squash-merged PRs (per-repo gh cache) ──────────────────────────────────
+
+# add_squashed_worktree <repo> <slug> — one commit on the branch, and an
+# equivalent (squash) commit pushed to origin main. Prints the branch HEAD.
+add_squashed_worktree() {
+  local repo="$1" slug="$2"
+  add_diverged_worktree "$repo" "$slug"
+  echo "extra" > "$repo/diverged.txt"
+  git -C "$repo" add diverged.txt
+  git -C "$repo" commit -m "squash: diverge" --quiet
+  git -C "$repo" push --quiet origin main
+  git -C "$repo/.worktrees/$slug" rev-parse HEAD
+}
+
+@test "auto removes a worktree squash-merged at the PR head" {
+  create_repo "$SCAN/repo"
+  local head
+  head="$(add_squashed_worktree "$SCAN/repo" "sq")"
+  printf 'claude/sq\tMERGED\t%s\n' "$head" > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "PR squash-merged"
+  assert_contains "Removed: 1"
+  [[ ! -d "$SCAN/repo/.worktrees/sq" ]] || { echo "squash-merged worktree kept"; return 1; }
+}
+
+@test "auto keeps local commits added after a squash merge" {
+  create_repo "$SCAN/repo"
+  local head
+  head="$(add_squashed_worktree "$SCAN/repo" "sq")"
+  printf 'claude/sq\tMERGED\t%s\n' "$head" > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+  echo "later" > "$SCAN/repo/.worktrees/sq/later.txt"
+  git -C "$SCAN/repo/.worktrees/sq" add later.txt
+  git -C "$SCAN/repo/.worktrees/sq" commit -m "after merge" --quiet
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] sq"
+  assert_contains "commits after squash-merge"
+  assert_contains "Removed: 0"
+  [[ -d "$SCAN/repo/.worktrees/sq" ]] || { echo "post-merge commits were removed"; return 1; }
+}
+
+# ── Guards ────────────────────────────────────────────────────────────────
+
+# make_t3_db <worktree-path> <archived_at SQL literal>
+make_t3_db() {
+  mkdir -p "$(dirname "$CCW_SWEEP_T3_DB")"
+  sqlite3 "$CCW_SWEEP_T3_DB" \
+    "create table projection_threads (thread_id text, worktree_path text, archived_at text, deleted_at text);
+     insert into projection_threads values ('t1', '$1', $2, null);"
+}
+
+@test "auto keeps a worktree owned by an active T3 thread" {
+  command -v sqlite3 >/dev/null || skip "sqlite3 CLI not installed"
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "t3-busy"
+  make_t3_db "$SCAN/repo/.worktrees/t3-busy" null
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "active T3 thread"
+  assert_contains "Removed: 0"
+  [[ -d "$SCAN/repo/.worktrees/t3-busy" ]] || { echo "T3-owned worktree removed"; return 1; }
+}
+
+@test "auto removes a worktree whose T3 thread is archived" {
+  command -v sqlite3 >/dev/null || skip "sqlite3 CLI not installed"
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "t3-done"
+  make_t3_db "$SCAN/repo/.worktrees/t3-done" "'2026-10-01T00:00:00Z'"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "Removed: 1"
+  [[ ! -d "$SCAN/repo/.worktrees/t3-done" ]] || { echo "archived-thread worktree kept"; return 1; }
+}
+
+@test "auto treats every T3 worktree as owned when the T3 DB is unreadable" {
+  create_repo "$SCAN/repo"
+  export CCW_SWEEP_T3_ROOT="$HOME/.t3/worktrees"
+  git -C "$SCAN/repo" worktree add "$CCW_SWEEP_T3_ROOT/repo/t3-x" -b "t3/x" --quiet 2>/dev/null
+  mkdir -p "$(dirname "$CCW_SWEEP_T3_DB")"
+  echo "not a database" > "$CCW_SWEEP_T3_DB"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "cannot read T3 state DB"
+  assert_contains "active T3 thread"
+  [[ -d "$CCW_SWEEP_T3_ROOT/repo/t3-x" ]] || { echo "T3 worktree removed on DB failure"; return 1; }
+}
+
+@test "auto keeps a worktree with a live process in it" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "busy"
+  local wt="$SCAN/repo/.worktrees/busy"
+  (cd "$wt" && exec sleep 300) >/dev/null 2>&1 3>&- &
+  BG_PID=$!
+  local _
+  for _ in $(seq 1 50); do
+    [[ -e /proc/self ]] || { sleep 1; break; }
+    [[ "$(readlink "/proc/$BG_PID/cwd" 2>/dev/null)" == "$wt" ]] && break
+    sleep 0.1
+  done
+
+  run ccw-sweep --auto --path "$SCAN"
+  kill "$BG_PID" 2>/dev/null || true
+  assert_success
+  assert_contains "live process in worktree"
+  assert_contains "Removed: 0"
+  [[ -d "$wt" ]] || { echo "worktree with a live process removed"; return 1; }
+}
+
+@test "auto keeps a locked worktree" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "agent-x"
+  git -C "$SCAN/repo" worktree lock --reason "claude agent agent-x (pid 1)" "$SCAN/repo/.worktrees/agent-x"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "keep: locked"
+  assert_contains "skip_live=1"
+  [[ -d "$SCAN/repo/.worktrees/agent-x" ]] || { echo "locked worktree removed"; return 1; }
+}
+
+@test "auto keeps a fresh SAFE worktree under the default idle threshold" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "fresh"
+
+  run env -u CCW_SWEEP_SAFE_IDLE_DAYS ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "keep: recent"
+  assert_contains "Removed: 0"
+  [[ -d "$SCAN/repo/.worktrees/fresh" ]] || { echo "fresh worktree removed"; return 1; }
+}
+
+# ── --archive ─────────────────────────────────────────────────────────────
+
+# no_prs — gh succeeds and lists no PRs (archive needs known PR state).
+no_prs() {
+  : > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+}
+
+@test "auto --archive tags an idle unmerged worktree, then removes it and its branch" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  no_prs
+  local head
+  head="$(git -C "$SCAN/repo/.worktrees/old-work" rev-parse HEAD)"
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "action: archive as archive/old-work"
+  assert_contains "Archived: 1"
+  [[ "$(git -C "$SCAN/repo" rev-parse 'archive/old-work^{commit}')" == "$head" ]] || {
+    echo "archive tag missing or not at the old HEAD"; return 1; }
+  [[ ! -d "$SCAN/repo/.worktrees/old-work" ]] || { echo "worktree dir still exists"; return 1; }
+  ! git -C "$SCAN/repo" rev-parse --verify --quiet "refs/heads/claude/old-work" >/dev/null || {
+    echo "branch still exists"; return 1; }
+}
+
+@test "auto --archive keeps a worktree when the PR list is unavailable" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "keep: WARN, no PR info"
+  assert_contains "Archived: 0"
+  [[ -d "$SCAN/repo/.worktrees/old-work" ]] || { echo "archived without PR info"; return 1; }
+}
+
+@test "auto --archive keeps a worktree with an open PR" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  printf 'claude/old-work\tOPEN\t%s\n' "$(git -C "$SCAN/repo/.worktrees/old-work" rev-parse HEAD)" > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "keep: open PR"
+  assert_contains "Archived: 0"
+  [[ -d "$SCAN/repo/.worktrees/old-work" ]] || { echo "worktree with an open PR archived"; return 1; }
+  ! git -C "$SCAN/repo" rev-parse --verify --quiet "refs/tags/archive/old-work" >/dev/null
+}
+
+@test "auto --archive leaves an idle DIRTY worktree untouched" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "wip"
+  echo "wip" >> "$SCAN/repo/.worktrees/wip/README.md"
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "[DIRTY] wip"
+  assert_contains "Archived: 0"
+  [[ "$(cat "$SCAN/repo/.worktrees/wip/README.md")" == $'init\nwip' ]] || { echo "DIRTY worktree changed"; return 1; }
+  ! git -C "$SCAN/repo" rev-parse --verify --quiet "refs/tags/archive/wip" >/dev/null
+}
+
+# ── Ignored files ─────────────────────────────────────────────────────────
+
+@test "auto keeps a worktree with a non-regenerable ignored file" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "secrets"
+  exclude_in "$SCAN/repo/.worktrees/secrets" ".env"
+  echo "TOKEN=x" > "$SCAN/repo/.worktrees/secrets/.env"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] secrets"
+  assert_contains "ignored files: .env"
+  [[ -f "$SCAN/repo/.worktrees/secrets/.env" ]] || { echo "worktree with .env removed"; return 1; }
+}
+
+@test "regenerable ignored dirs keep a worktree SAFE" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "built"
+  local wt="$SCAN/repo/.worktrees/built"
+  exclude_in "$wt" "target/" ".venv/"
+  mkdir -p "$wt/target/debug" "$wt/.venv/bin"
+  echo bin > "$wt/target/debug/app"
+  echo py > "$wt/.venv/bin/python"
+  # pytest ignores its cache with its own .gitignore, so git lists the files.
+  mkdir -p "$wt/.pytest_cache/v"
+  printf '# Created by pytest automatically.\n*\n' > "$wt/.pytest_cache/.gitignore"
+  echo tag > "$wt/.pytest_cache/CACHEDIR.TAG"
+
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_contains "[SAFE] built"
+  assert_not_contains "ignored files"
+}
+
+# ── --reclaim ─────────────────────────────────────────────────────────────
+
+@test "auto --reclaim deletes target/ in an idle kept worktree and nothing else" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "keepme"
+  local wt="$SCAN/repo/.worktrees/keepme"
+  exclude_in "$wt" "target/" ".env"
+  mkdir -p "$wt/target/debug"
+  head -c 65536 /dev/zero > "$wt/target/debug/app"
+  echo "TOKEN=x" > "$wt/.env"
+  CCW_SWEEP_NOW="$(days_from_now 8)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --reclaim --path "$SCAN"
+  assert_success
+  assert_contains "action: reclaim"
+  assert_not_contains "Reclaimed: 0 KiB"
+  [[ ! -e "$wt/target" ]] || { echo "target/ not reclaimed"; return 1; }
+  [[ -f "$wt/.env" && -f "$wt/diverged.txt" && -f "$wt/README.md" ]] || {
+    echo "reclaim deleted a file it must keep"; return 1; }
+}
+
+@test "dry-run with --archive --reclaim changes nothing on disk" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "archivable"
+  add_diverged_worktree "$SCAN/repo" "dirty-built"
+  no_prs
+  local wt="$SCAN/repo/.worktrees/dirty-built"
+  exclude_in "$wt" "target/"
+  mkdir -p "$wt/target"
+  echo bin > "$wt/target/app"
+  echo "wip" >> "$wt/README.md"
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --dry-run --archive --reclaim --path "$SCAN"
+  assert_success
+  assert_contains "action: archive as archive/archivable"
+  assert_contains "action: reclaim"
+  assert_contains "dry_run=1"
+  [[ -d "$SCAN/repo/.worktrees/archivable" && -f "$wt/target/app" ]] || { echo "dry-run changed files"; return 1; }
+  ! git -C "$SCAN/repo" rev-parse --verify --quiet "refs/tags/archive/archivable" >/dev/null || {
+    echo "dry-run created a tag"; return 1; }
+  git -C "$SCAN/repo" rev-parse --verify --quiet "refs/heads/claude/archivable" >/dev/null
+}
+
+# ── Summary line and flag validation ───────────────────────────────────────
+
+@test "prints a machine-readable SUMMARY line with correct counts" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "clean"
+  add_diverged_worktree "$SCAN/repo" "diverged"
+  add_safe_worktree "$SCAN/repo" "dirty"
+  echo "wip" >> "$SCAN/repo/.worktrees/dirty/README.md"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "SUMMARY ccw-sweep: total=3 safe=1 removed=1 archived=0 reclaimed_kib=0 skipped=2 skip_recent=0 skip_live=0 skip_t3=0 skip_open_pr=0 skip_dirty=1 skip_warn=1 skip_nested=0 dry_run=0"
+  [[ "${lines[${#lines[@]}-1]}" == "SUMMARY ccw-sweep: "* ]] || { echo "SUMMARY is not the last line"; return 1; }
+}
+
+@test "--archive without --auto or --dry-run is an error" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "wt"
+
+  run ccw-sweep --archive --path "$SCAN"
+  [[ $status -ne 0 ]]
+  assert_contains "need --auto or --dry-run"
+  [[ -d "$SCAN/repo/.worktrees/wt" ]]
+}
+
+@test "rejects a non-numeric idle threshold" {
+  run env CCW_SWEEP_ARCHIVE_IDLE_DAYS=soon ccw-sweep --dry-run --path "$SCAN"
+  [[ $status -ne 0 ]]
+  assert_contains "CCW_SWEEP_ARCHIVE_IDLE_DAYS must be a whole number"
+}
+
+# ── Targeted fetch of merged-PR heads ─────────────────────────────────────────
+
+# add_pr_head_only_on_origin <repo> <slug> <n> — a second clone pushes a child
+# of the worktree HEAD to the bare origin only as refs/pull/<n>/head, and the
+# branch is then deleted, as GitHub does after a merge. Prints the PR head oid.
+add_pr_head_only_on_origin() {
+  local repo="$1" slug="$2" n="$3" clone="$HOME/clone2"
+  git -C "$repo" push --quiet origin "claude/$slug"
+  git clone --quiet "${repo}.origin.git" "$clone"
+  git -C "$clone" config user.email "test@test.com"
+  git -C "$clone" config user.name "Test"
+  git -C "$clone" checkout --quiet "claude/$slug"
+  echo "review fix" > "$clone/review.txt"
+  git -C "$clone" add review.txt
+  git -C "$clone" commit -m "review fix" --quiet
+  git -C "$clone" push --quiet origin "HEAD:refs/pull/$n/head"
+  git -C "$repo" push --quiet origin --delete "claude/$slug" 2>/dev/null
+  git -C "$clone" rev-parse HEAD
+}
+
+@test "auto fetches a missing merged-PR head and removes the worktree behind it" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "sq"
+  local pr_head
+  pr_head="$(add_pr_head_only_on_origin "$SCAN/repo" "sq" 7)"
+  run git -C "$SCAN/repo" cat-file -e "${pr_head}^{commit}"
+  [[ $status -ne 0 ]] || { echo "PR head is already local; the fixture proves nothing"; return 1; }
+  printf 'claude/sq\tMERGED\t%s\t7\n' "$pr_head" > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "fetched 1 merged-PR head(s)"
+  assert_contains "PR squash-merged"
+  assert_contains "Removed: 1"
+  [[ ! -d "$SCAN/repo/.worktrees/sq" ]] || { echo "worktree behind the PR head kept"; return 1; }
+  [[ -z "$(git -C "$SCAN/repo" for-each-ref refs/ccw-sweep/)" ]] || { echo "refs/ccw-sweep/ not cleaned"; return 1; }
+}
+
+@test "CCW_SWEEP_FETCH_PR_HEADS=0 keeps a worktree whose PR head is missing" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "sq"
+  local pr_head
+  pr_head="$(add_pr_head_only_on_origin "$SCAN/repo" "sq" 7)"
+  printf 'claude/sq\tMERGED\t%s\t7\n' "$pr_head" > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+
+  run env CCW_SWEEP_FETCH_PR_HEADS=0 ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "commits after squash-merge"
+  assert_contains "Removed: 0"
+  [[ -d "$SCAN/repo/.worktrees/sq" ]] || { echo "worktree removed without the PR head"; return 1; }
+  [[ -z "$(git -C "$SCAN/repo" for-each-ref refs/ccw-sweep/)" ]]
+}
+
+# ── Offline squash check (git cherry) ───────────────────────────────────────────
+
+# squash_onto_main <repo> <slug> — apply the branch's net diff to origin main
+# as one commit (a squash merge that GitHub did not report).
+squash_onto_main() {
+  local repo="$1" slug="$2"
+  git -C "$repo" checkout --quiet "claude/$slug" -- .
+  git -C "$repo" commit -m "squash: $slug" --quiet
+  git -C "$repo" push --quiet origin main
+}
+
+# add_two_commit_worktree <repo> <slug> — a branch with two commits.
+add_two_commit_worktree() {
+  local repo="$1" slug="$2"
+  add_diverged_worktree "$repo" "$slug"
+  echo "second" > "$repo/.worktrees/$slug/second.txt"
+  git -C "$repo/.worktrees/$slug" add second.txt
+  git -C "$repo/.worktrees/$slug" commit -m "second" --quiet
+}
+
+@test "auto removes a squash-merged branch by patch match when gh fails" {
+  create_repo "$SCAN/repo"
+  add_two_commit_worktree "$SCAN/repo" "sq"
+  squash_onto_main "$SCAN/repo" "sq"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "squash-merged (patch match)"
+  assert_contains "Removed: 1"
+  [[ ! -d "$SCAN/repo/.worktrees/sq" ]] || { echo "patch-equal branch kept"; return 1; }
+}
+
+@test "auto keeps an unmerged branch when gh fails" {
+  create_repo "$SCAN/repo"
+  add_two_commit_worktree "$SCAN/repo" "open-work"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_not_contains "patch match"
+  assert_contains "NOT merged into main"
+  assert_contains "Removed: 0"
+  [[ -d "$SCAN/repo/.worktrees/open-work" ]] || { echo "unmerged branch removed"; return 1; }
+}
+
+@test "CCW_SWEEP_CHERRY_MAX caps the offline patch check" {
+  create_repo "$SCAN/repo"
+  add_two_commit_worktree "$SCAN/repo" "sq"
+  squash_onto_main "$SCAN/repo" "sq"
+
+  run env CCW_SWEEP_CHERRY_MAX=0 ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "patch check skipped: 1 commits on main since fork"
+  assert_contains "Removed: 0"
+  [[ -d "$SCAN/repo/.worktrees/sq" ]] || { echo "worktree removed past the cap"; return 1; }
+}
+
+@test "a CLOSED PR row wins over a patch match" {
+  create_repo "$SCAN/repo"
+  add_two_commit_worktree "$SCAN/repo" "sq"
+  squash_onto_main "$SCAN/repo" "sq"
+  printf 'claude/sq\tCLOSED\t%s\t9\n' "$(git -C "$SCAN/repo/.worktrees/sq" rev-parse HEAD)" > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "PR closed without merge"
+  assert_not_contains "patch match"
+  [[ -d "$SCAN/repo/.worktrees/sq" ]] || { echo "fallback removed a branch with a CLOSED PR"; return 1; }
+}
+
+@test "rejects invalid CCW_SWEEP_CHERRY_MAX and CCW_SWEEP_FETCH_PR_HEADS" {
+  run env CCW_SWEEP_CHERRY_MAX=lots ccw-sweep --dry-run --path "$SCAN"
+  [[ $status -ne 0 ]]
+  assert_contains "CCW_SWEEP_CHERRY_MAX must be a whole number"
+  run env CCW_SWEEP_FETCH_PR_HEADS=yes ccw-sweep --dry-run --path "$SCAN"
+  [[ $status -ne 0 ]]
+  assert_contains "CCW_SWEEP_FETCH_PR_HEADS must be 0 or 1"
+}
+
+@test "rejects an idle threshold with a leading zero (bash reads it as octal)" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "fresh"
+
+  run env CCW_SWEEP_SAFE_IDLE_DAYS=08 ccw-sweep --auto --path "$SCAN"
+  [[ $status -ne 0 ]]
+  assert_contains "CCW_SWEEP_SAFE_IDLE_DAYS must be a whole number without leading zeros, got: '08'"
+  [[ -d "$SCAN/repo/.worktrees/fresh" ]] || { echo "worktree removed despite a rejected threshold"; return 1; }
+}
+
+# ── Nested-child guards beyond dirty/unmerged ────────────────────────────────────
+
+@test "auto refuses to remove a parent nesting a locked clean child" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "parent"
+  local parent="$SCAN/repo/.worktrees/parent"
+  add_nested_child "$parent" "child"
+  git -C "$SCAN/repo" worktree lock --reason "claude agent child (pid 1)" "$parent/.worktrees/child"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "nests unmerged/dirty/guarded"
+  assert_contains "Skipping removal"
+  assert_contains "Removed: 0"
+  [[ -d "$parent/.worktrees/child" ]] || { echo "locked nested child deleted with its parent"; return 1; }
+}
+
+@test "auto refuses to remove a parent nesting a child with a non-regenerable ignored file" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "parent"
+  local parent="$SCAN/repo/.worktrees/parent"
+  add_nested_child "$parent" "child"
+  exclude_in "$parent" ".env"
+  echo "TOKEN=x" > "$parent/.worktrees/child/.env"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "nests unmerged/dirty/guarded"
+  [[ -f "$parent/.worktrees/child/.env" ]] || { echo "nested .env deleted with its parent"; return 1; }
 }

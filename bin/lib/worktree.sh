@@ -98,6 +98,43 @@ wt_child_blocks_removal() {
     return 1
 }
 
+# wt_main_checkout <worktree> — print the main worktree of <worktree>'s repo:
+# the first `git worktree list --porcelain` entry. That is the checkout for a
+# normal or separate-gitdir repo and the repo dir for a bare repo; never derive
+# it with `dirname` of the common dir. Exit 1 outside a git repo.
+wt_main_checkout() {
+    local line=""
+    IFS= read -r line < <(git -C "$1" worktree list --porcelain 2>/dev/null) || true
+    [[ "$line" == "worktree "* ]] || return 1
+    printf '%s\n' "${line#worktree }"
+}
+
+# wt_is_locked <worktree> — exit 0 when `git worktree lock` holds it (git keeps
+# a `locked` file in the worktree's own admin dir).
+wt_is_locked() {
+    local git_dir
+    git_dir="$(git -C "$1" rev-parse --path-format=absolute --git-dir 2>/dev/null)" || return 1
+    [[ -e "${git_dir}/locked" ]]
+}
+
+# wt_archive_tag <repo> <slug> <head-sha> — echo the first archive tag that is
+# free or already points at <head-sha>: archive/<slug>, then
+# archive/<slug>-<sha8>, then archive/wt-<sha12> (when <slug> is not a valid
+# ref name). Two worktrees with one basename so get distinct tags. Exit 1 when
+# none is usable.
+wt_archive_tag() {
+    local repo="$1" slug="$2" head="$3" tag
+    for tag in "archive/${slug}" "archive/${slug}-${head:0:8}" "archive/wt-${head:0:12}"; do
+        git check-ref-format "refs/tags/${tag}" || continue
+        if ! git -C "$repo" show-ref --verify --quiet "refs/tags/${tag}" \
+            || [[ "$(git -C "$repo" rev-parse --verify --quiet "refs/tags/${tag}^{commit}")" == "$head" ]]; then
+            echo "$tag"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # wt_find [--root DIR] [--branch S] [--slug S] [--repo NAME] [--stale DAYS]
 # Mechanical cross-repo worktree search under DIR (default ~/Dev), discovered via
 # the <repo>/.worktrees/<slug>/ convention (same glob basis as ccw()). Emits one
