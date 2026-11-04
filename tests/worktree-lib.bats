@@ -228,6 +228,29 @@ add_worktree() {
   [[ "$output" == "$base/repo/feat-01234567-2" ]] || { echo "got: $output"; return 1; }
 }
 
+@test "wt_cheese_tracked_changed: counts changed and staged files, not clean or deleted ones" {
+  create_repo "$SCAN/repo"
+  local r="$SCAN/repo"
+  mkdir -p "$r/.cheese/specs"
+  echo v1 > "$r/.cheese/specs/a.md"
+  echo v1 > "$r/.cheese/specs/b.md"
+  git -C "$r" add .cheese
+  git -C "$r" commit -m cheese --quiet
+  run wt_cheese_tracked_changed "$r"
+  [[ $status -eq 1 ]] || { echo "clean tracked files counted"; return 1; }
+  rm "$r/.cheese/specs/b.md"
+  run wt_cheese_tracked_changed "$r"
+  [[ $status -eq 1 ]] || { echo "a deleted file counted"; return 1; }
+  echo v2 >> "$r/.cheese/specs/a.md"
+  run wt_cheese_tracked_changed "$r"
+  [[ $status -eq 0 ]] || { echo "a modified file missed"; return 1; }
+  git -C "$r" checkout --quiet -- .cheese/specs/a.md
+  echo new > "$r/.cheese/specs/c.md"
+  git -C "$r" add .cheese/specs/c.md
+  run wt_cheese_tracked_changed "$r"
+  [[ $status -eq 0 ]] || { echo "a staged new file missed"; return 1; }
+}
+
 @test "wt_child_blocks_removal: unmerged commits block" {
   create_repo "$SCAN/repo"
   add_worktree "$SCAN/repo" "ahead"

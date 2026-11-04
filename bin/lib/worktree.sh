@@ -142,6 +142,13 @@ wt_cheese_archive_dir() {
     printf '%s\n' "$dest"
 }
 
+# wt_cheese_tracked_changed <worktree> — exit 0 when a tracked or staged file
+# under .cheese/ differs from HEAD and is still on disk. Deleted files have
+# nothing to copy, so they do not count.
+wt_cheese_tracked_changed() {
+    [[ -n "$(git -C "$1" diff --name-only --diff-filter=d HEAD -- .cheese 2>/dev/null)" ]]
+}
+
 # wt_child_blocks_removal <child_path> — exit 0 (blocks) when the nested child
 # has work that must not be lost: uncommitted changes, staged changes, untracked
 # files, or commits not yet on its remote default branch. Exit 1 when the child

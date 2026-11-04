@@ -886,9 +886,21 @@ assert_cache_safe() {
   assert_cache_safe godot
 }
 
-@test "ignored .claude/workflows keeps a worktree SAFE" {
+@test "ignored .claude/workflows keeps an easy-cheese worktree SAFE" {
+  create_repo "$SCAN/repo"
+  name_origin "$SCAN/repo" easy-cheese
   add_ignored_cache flows ".claude/workflows/" .claude/workflows/node-runner.js
   assert_cache_safe flows
+}
+
+@test "ignored .claude/workflows in another repo still WARNs" {
+  add_ignored_cache flows ".claude/" .claude/workflows/release.js
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] flows"
+  assert_contains "ignored files: .claude"
+  [[ -f "$SCAN/repo/.worktrees/flows/.claude/workflows/release.js" ]] || { echo "workflow script removed"; return 1; }
 }
 
 # name_origin <repo> <name> — point origin at a bare repo named <name>.git, so
@@ -1059,6 +1071,28 @@ CHEESE_DEFAULT_REL=".local/share/ccw-sweep/cheese"
     echo "collision copy missing"; return 1; }
   [[ -z "$(ls -A "$HOME/arch/repo/old-work")" ]] || { echo "wrote into the existing dir"; return 1; }
   [[ ! -d "$wt" ]] || { echo "worktree dir still exists"; return 1; }
+}
+
+@test "auto --archive copies no .cheese/ when the archive tag fails" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  local wt="$SCAN/repo/.worktrees/old-work"
+  add_cheese "$wt" reviews/r1.md
+  # The tag refs/tags/archive blocks every refs/tags/archive/<slug>.
+  git -C "$SCAN/repo" tag archive
+  no_prs
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "could not create tag archive/old-work"
+  assert_contains "action: keep: WARN, archive tag failed"
+  assert_contains " archived=0 "
+  assert_contains "skip_warn=1 "
+  assert_contains "cheese_archived=0 skip_cheese=0"
+  [[ ! -e "$HOME/$CHEESE_DEFAULT_REL" ]] || { echo "copied .cheese/ for a failed archive"; return 1; }
+  [[ -f "$wt/.cheese/reviews/r1.md" ]] || { echo "worktree removed after a failed tag"; return 1; }
 }
 
 @test "cook/, press/, and cut/ reports of a merged branch are throwaway" {
@@ -1391,4 +1425,23 @@ add_two_commit_worktree() {
   assert_success
   assert_contains "nests unmerged/dirty/guarded"
   [[ -f "$parent/.worktrees/child/.env" ]] || { echo "nested .env deleted with its parent"; return 1; }
+}
+
+@test "a nested child from another repo is checked against its own repo's regenerable list" {
+  create_repo "$SCAN/parentrepo"
+  name_origin "$SCAN/parentrepo" easy-cheese
+  create_repo "$SCAN/childrepo"
+  add_safe_worktree "$SCAN/parentrepo" "parent"
+  local parent="$SCAN/parentrepo/.worktrees/parent"
+  printf '.worktrees/\n.claude/\n' > "$(git -C "$parent" rev-parse --git-path info/exclude)"
+  git -C "$SCAN/childrepo" worktree add "$parent/.worktrees/child" -b "claude/child" --quiet 2>/dev/null
+  # easy-cheese:/vendor is regenerable in the parent's repo, not in the child's.
+  exclude_in "$parent/.worktrees/child" "vendor/"
+  mkdir -p "$parent/.worktrees/child/vendor"
+  echo lib > "$parent/.worktrees/child/vendor/lib.js"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "nests unmerged/dirty"
+  [[ -f "$parent/.worktrees/child/vendor/lib.js" ]] || { echo "child's vendor/ deleted with its parent"; return 1; }
 }

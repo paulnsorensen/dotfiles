@@ -118,14 +118,15 @@ CHEESE_ARCHIVE="${CCW_SWEEP_CHEESE_ARCHIVE:-${HOME}/.local/share/ccw-sweep/chees
 # "/" matches from the worktree root. "<repo>:" limits an entry to the repo whose
 # origin has that name; each one cites that repo's .gitignore:
 #   *.pyz                 built zipapps (easy-cheese ignores skills/*/scripts/*.pyz)
-#   .claude/workflows     milknado copies it in at session start (easy-cheese, hallouminate)
+#   <repo>:/.claude/workflows  milknado copies it in at session start (easy-cheese,
+#                         hallouminate); other repos can keep their own scripts there
 #   easy-cheese:...       generated Starlight docs and sidebar (src/ before the
 #                         website/ move), browser test output, `just vendor` output
 #   tdbr:...              GodotEnv-managed addons and cache, gdUnit4 reports
 REGENERABLE_DEFAULT="target .venv .venv-typing node_modules __pycache__ .mypy_cache
 .pytest_cache .ruff_cache .hypothesis .import_linter_cache .astro .godot .tmp-tests
 dist build htmlcov .DS_Store .coverage .coverage.* coverage.xml *.log *.pyz
-.claude/workflows
+easy-cheese:/.claude/workflows hallouminate:/.claude/workflows
 easy-cheese:website/content/docs easy-cheese:website/sidebar.mjs
 easy-cheese:src/content/docs easy-cheese:src/sidebar.mjs
 easy-cheese:frontend/mold-review/test-results easy-cheese:frontend/mold-review/playwright-report
@@ -443,8 +444,9 @@ nested_child_blocks() {
     canon="$(cd -P "$child" 2>/dev/null && pwd)" || canon="$child"
     has_live_process "$canon" && return 0
     is_t3_owned "$child" "$canon" && return 0
-    # Subshell: scan_ignored sets globals that the parent's own scan owns.
-    ( scan_ignored "$child"; (( ${#IGNORED_BAD[@]} > 0 )) )
+    # Subshell: scan_ignored sets globals that the parent's own scan owns. The
+    # child can belong to another repo, so it gets its own repo's entries.
+    ( select_regenerable "$child"; scan_ignored "$child"; (( ${#IGNORED_BAD[@]} > 0 )) )
 }
 
 # reclaim_worktree <wt> — delete the IGNORED_RECLAIM entries (dry run: only
@@ -765,7 +767,9 @@ check_worktree() {
     # ── Action ──────────────────────────────────────────────────────
     if ! $DRY_RUN && ! $AUTO_CLEAN; then
         local has_cheese=false
-        (( cheese_throwaway + ${#cheese_keep[@]} > 0 )) && has_cheese=true
+        if (( cheese_throwaway + ${#cheese_keep[@]} > 0 )) || wt_cheese_tracked_changed "$wt_path"; then
+            has_cheese=true
+        fi
         interactive_action "$wt_path" "$repo_root" "$status" "$has_cheese"
         return 0
     fi
@@ -811,6 +815,14 @@ check_worktree() {
         action=remove
     fi
 
+    # Archive tags HEAD before the .cheese/ copy, so a failed tag leaves no copy.
+    if [[ "$action" == "archive" ]]; then
+        echo "         action: archive as ${tag} (idle ${idle}d)"
+        if ! $DRY_RUN && ! tag_archive "$repo_root" "$head" "$tag"; then
+            action=keep; keep_kind=warn; keep_reason="WARN, archive tag failed"
+        fi
+    fi
+
     # A throwaway .cheese/ leaves the machine only after a verified copy.
     if [[ "$action" != "keep" ]] && (( cheese_throwaway > 0 )); then
         if $DRY_RUN; then
@@ -824,12 +836,8 @@ check_worktree() {
     fi
 
     if [[ "$action" == "archive" ]]; then
-        echo "         action: archive as ${tag} (idle ${idle}d)"
-        if $DRY_RUN || archive_worktree "$wt_path" "$repo_root" "$branch" "$head" "$tag"; then
-            ARCHIVED=$((ARCHIVED + 1))
-        else
-            action=keep; keep_kind=warn; keep_reason="WARN, archive tag failed"
-        fi
+        $DRY_RUN || remove_worktree "$wt_path" "$repo_root" "$branch"
+        ARCHIVED=$((ARCHIVED + 1))
     elif [[ "$action" == "remove" ]]; then
         echo "         action: remove (idle ${idle}d)"
         $DRY_RUN || remove_worktree "$wt_path" "$repo_root" "$branch"
@@ -860,7 +868,7 @@ check_worktree() {
 
 # interactive_action <wt> <repo-root> <status> <has-cheese> — prompt on
 # /dev/tty, never on stdin (the discovery loop reads fd 3). <has-cheese> is
-# true when check_worktree found files under .cheese/.
+# true when .cheese/ holds untracked files or tracked changes.
 interactive_action() {
     local wt_path="$1" repo_root="$2" status="$3" has_cheese="$4"
     local should_remove=false answer branch head
@@ -896,17 +904,16 @@ interactive_action() {
     fi
 }
 
-# archive_worktree <wt> <repo-root> <branch> <head-sha> <tag> — tag HEAD (or
-# reuse a tag that already points at it), then remove the worktree and branch.
-archive_worktree() {
-    local wt_path="$1" repo_root="$2" branch="$3" head="$4" tag="$5"
+# tag_archive <repo-root> <head-sha> <tag> — tag <head-sha>, or reuse a tag that
+# already points at it. Exit 1 when git cannot create the tag.
+tag_archive() {
+    local repo_root="$1" head="$2" tag="$3"
     if ! git -C "$repo_root" show-ref --verify --quiet "refs/tags/${tag}" \
         && ! git -C "$repo_root" tag "$tag" "$head"; then
         echo -e "         ${RED}could not create tag ${tag}; keeping the worktree${RESET}"
         return 1
     fi
     echo -e "         ${GREEN}Tagged ${tag} -> ${head:0:12}${RESET}"
-    remove_worktree "$wt_path" "$repo_root" "$branch"
 }
 
 # save_cheese <wt> <repo-root> <head-sha> — copy <wt>/.cheese to a free dir
