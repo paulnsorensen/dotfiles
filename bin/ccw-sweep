@@ -29,7 +29,8 @@
 #   CCW_SWEEP_PR_LIMIT (3000)         PRs read per repo with one `gh pr list`
 #   CCW_SWEEP_FETCH_PR_HEADS (1)      1 = fetch missing merged-PR head commits (one call per repo)
 #   CCW_SWEEP_CHERRY_MAX (2000)       skip the offline patch check past this many new default commits
-#   CCW_SWEEP_REGENERABLE             ignored basenames (globs) that do not block removal
+#   CCW_SWEEP_REGENERABLE             ignored entries that do not block removal (replaces
+#                                     the default list; see REGENERABLE_DEFAULT)
 #   CCW_SWEEP_CHEESE_ARCHIVE          where a throwaway .cheese/ goes before removal
 #                                     (~/.local/share/ccw-sweep/cheese/<repo>/<slug>)
 #   CCW_SWEEP_T3_DB, CCW_SWEEP_T3_ROOT  T3 Code state DB and worktree root
@@ -112,9 +113,29 @@ fi
 T3_DB="${CCW_SWEEP_T3_DB:-${HOME}/.t3/userdata/state.sqlite}"
 T3_ROOT="${CCW_SWEEP_T3_ROOT:-${HOME}/.t3/worktrees}"
 CHEESE_ARCHIVE="${CCW_SWEEP_CHEESE_ARCHIVE:-${HOME}/.local/share/ccw-sweep/cheese}"
+# Ignored entries that a rebuild recreates: build output, caches, and installed
+# deps, never source. A bare name matches any path component. An entry with a
+# "/" matches from the worktree root. "<repo>:" limits an entry to the repo whose
+# origin has that name; each one cites that repo's .gitignore:
+#   *.pyz                 built zipapps (easy-cheese ignores skills/*/scripts/*.pyz)
+#   .claude/workflows     milknado copies it in at session start (easy-cheese, hallouminate)
+#   easy-cheese:...       generated Starlight docs and sidebar (src/ before the
+#                         website/ move), browser test output, `just vendor` output
+#   tdbr:...              GodotEnv-managed addons and cache, gdUnit4 reports
+REGENERABLE_DEFAULT="target .venv .venv-typing node_modules __pycache__ .mypy_cache
+.pytest_cache .ruff_cache .hypothesis .import_linter_cache .astro .godot .tmp-tests
+dist build htmlcov .DS_Store .coverage .coverage.* coverage.xml *.log *.pyz
+.claude/workflows
+easy-cheese:website/content/docs easy-cheese:website/sidebar.mjs
+easy-cheese:src/content/docs easy-cheese:src/sidebar.mjs
+easy-cheese:frontend/mold-review/test-results easy-cheese:frontend/mold-review/playwright-report
+easy-cheese:/vendor tdbr:/addons tdbr:/.addons tdbr:/reports"
+REGENERABLE_DEFAULT="${REGENERABLE_DEFAULT//$'\n'/ }"
 # Split on whitespace into globs; read -a never expands them against files.
-# *.pyz is a built zipapp (easy-cheese ignores skills/*/scripts/*.pyz), never source.
-read -r -a REGENERABLE <<<"${CCW_SWEEP_REGENERABLE:-target .venv .venv-typing node_modules __pycache__ .mypy_cache .pytest_cache .ruff_cache .hypothesis .import_linter_cache .astro dist build htmlcov .DS_Store .coverage *.log *.pyz}"
+read -r -a REGENERABLE <<<"${CCW_SWEEP_REGENERABLE:-$REGENERABLE_DEFAULT}"
+# The entries for the repo in progress (see select_regenerable).
+REGEN_NAMES=()
+REGEN_PATHS=()
 
 if [[ ! -d "$SCAN_ROOT" ]]; then
     echo -e "${RED}Directory not found: ${SCAN_ROOT}${RESET}" >&2
@@ -291,21 +312,40 @@ squash_patch_match() {
     $match
 }
 
-# is_regenerable <basename> — exit 0 when the name matches a REGENERABLE glob.
+# select_regenerable <repo-root> — load REGEN_NAMES and REGEN_PATHS with the
+# REGENERABLE entries that apply to this repo.
+select_regenerable() {
+    local kind pat
+    REGEN_NAMES=()
+    REGEN_PATHS=()
+    while IFS=$'\t' read -r kind pat; do
+        if [[ "$kind" == path ]]; then
+            REGEN_PATHS+=("$pat")
+        else
+            REGEN_NAMES+=("$pat")
+        fi
+    done < <(wt_regen_select "$(wt_repo_name "$1")" ${REGENERABLE[@]+"${REGENERABLE[@]}"})
+}
+
+# is_regenerable <basename> — exit 0 when the name matches a REGEN_NAMES glob.
 is_regenerable() {
     local pat
-    for pat in ${REGENERABLE[@]+"${REGENERABLE[@]}"}; do
+    for pat in ${REGEN_NAMES[@]+"${REGEN_NAMES[@]}"}; do
         # shellcheck disable=SC2053  # $pat is a glob on purpose; [[ ]] never expands it to files
         [[ "$1" == $pat ]] && return 0
     done
     return 1
 }
 
-# in_regenerable_dir <relative-path> — exit 0 when any path component matches a
-# REGENERABLE glob. Some caches (.pytest_cache, .ruff_cache) hold their own
-# .gitignore, so git lists their files (.pytest_cache/README.md), not the dir.
+# in_regenerable_dir <relative-path> — exit 0 when the path lies under a
+# REGEN_PATHS glob, or any path component matches a REGEN_NAMES glob. Some
+# caches (.pytest_cache, .ruff_cache) hold their own .gitignore, so git lists
+# their files (.pytest_cache/README.md), not the dir.
 in_regenerable_dir() {
-    local rest="$1"
+    local rest="$1" pat
+    for pat in ${REGEN_PATHS[@]+"${REGEN_PATHS[@]}"}; do
+        wt_path_under "$1" "$pat" && return 0
+    done
     while [[ -n "$rest" ]]; do
         is_regenerable "${rest%%/*}" && return 0
         [[ "$rest" == */* ]] || return 1
@@ -984,6 +1024,7 @@ while IFS= read -r -u3 git_dir; do
     fi
 
     load_repo_caches "$repo_root" "$default_branch"
+    select_regenerable "$repo_root"
 
     FOUND_REPOS=$((FOUND_REPOS + 1))
     echo -e "${CYAN}${repo_name}${RESET} ${DIM}(${#local_wts[@]} worktree(s), default: ${default_branch})${RESET}"

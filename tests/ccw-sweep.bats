@@ -874,6 +874,72 @@ assert_cache_safe() {
   [[ -f "$SCAN/repo/.worktrees/unlisted/.tool-cache/state.json" ]] || { echo "unlisted ignored file removed"; return 1; }
 }
 
+@test "ignored coverage reports keep a worktree SAFE" {
+  add_ignored_cache cov "coverage.xml" coverage.xml
+  exclude_in "$SCAN/repo/.worktrees/cov" ".coverage.*"
+  echo data > "$SCAN/repo/.worktrees/cov/.coverage.host.pid42.Xab"
+  assert_cache_safe cov
+}
+
+@test "ignored .godot editor cache keeps a worktree SAFE" {
+  add_ignored_cache godot ".godot/*" .godot/editor/state.cfg .godot/imported/a.ctex .godot/uid_cache.bin
+  assert_cache_safe godot
+}
+
+@test "ignored .claude/workflows keeps a worktree SAFE" {
+  add_ignored_cache flows ".claude/workflows/" .claude/workflows/node-runner.js
+  assert_cache_safe flows
+}
+
+# name_origin <repo> <name> — point origin at a bare repo named <name>.git, so
+# repo-scoped regenerable entries ("<name>:...") apply to <repo>.
+name_origin() {
+  mv "$1.origin.git" "$SCAN/$2.git"
+  git -C "$1" remote set-url origin "$SCAN/$2.git"
+}
+
+@test "repo-scoped entries apply in their repo: tdbr reports and addons" {
+  create_repo "$SCAN/repo"
+  name_origin "$SCAN/repo" tdbr
+  add_ignored_cache game "reports/" reports/index.html
+  local wt="$SCAN/repo/.worktrees/game"
+  exclude_in "$wt" "/addons" "addons/*" ".addons/"
+  mkdir -p "$wt/addons/gdUnit4" "$wt/.addons/netfox"
+  echo plugin > "$wt/addons/gdUnit4/plugin.cfg"
+  echo cache > "$wt/.addons/netfox/plugin.cfg"
+  assert_cache_safe game
+}
+
+@test "repo-scoped entries do not apply in another repo" {
+  create_repo "$SCAN/repo"
+  name_origin "$SCAN/repo" other
+  add_ignored_cache notes "reports/" reports/q3-findings.md
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] notes"
+  assert_contains "ignored files: reports"
+  [[ -f "$SCAN/repo/.worktrees/notes/reports/q3-findings.md" ]] || { echo "hand-written report removed"; return 1; }
+}
+
+@test "anchored entries match from the root only: generated easy-cheese docs" {
+  create_repo "$SCAN/repo"
+  name_origin "$SCAN/repo" easy-cheese
+  add_ignored_cache site "website/content/docs/**" website/content/docs/skills/cook.md website/content/docs/readme.md
+  exclude_in "$SCAN/repo/.worktrees/site" "website/sidebar.mjs" "sub/website/"
+  echo gen > "$SCAN/repo/.worktrees/site/website/sidebar.mjs"
+  assert_cache_safe site
+
+  mkdir -p "$SCAN/repo/.worktrees/site/sub/website/content/docs"
+  echo mine > "$SCAN/repo/.worktrees/site/sub/website/content/docs/draft.md"
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] site"
+  assert_contains "ignored files: "
+  assert_contains "sub/website"
+  [[ -f "$SCAN/repo/.worktrees/site/sub/website/content/docs/draft.md" ]] || { echo "nested docs removed"; return 1; }
+}
+
 @test "auto --archive archives an idle unmerged worktree whose ignored files are regenerable" {
   create_repo "$SCAN/repo"
   add_diverged_worktree "$SCAN/repo" "old-work"

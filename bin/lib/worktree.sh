@@ -57,6 +57,54 @@ wt_list_nested() {
     done
 }
 
+# wt_repo_name <repo-root> — the repository name from the origin URL
+# (git@github.com:o/easy-cheese.git -> easy-cheese), else the checkout dir name.
+wt_repo_name() {
+    local url name=""
+    url="$(git -C "$1" remote get-url origin 2>/dev/null || true)"
+    if [[ -n "$url" ]]; then
+        name="${url%/}"
+        name="${name%.git}"
+        name="${name##*/}"
+        name="${name##*:}"
+    fi
+    if [[ -z "$name" ]]; then
+        name="${1%/}"
+        name="${name##*/}"
+    fi
+    printf '%s\n' "$name"
+}
+
+# wt_regen_select <repo-name> <entry>... — print the regenerable entries that
+# apply to <repo-name>, one per line. "name<TAB><glob>" matches any path
+# component. "path<TAB><glob>" matches from the worktree root: the entry has a
+# "/", and a leading "/" is dropped. "<repo>:<pattern>" applies to that repo only.
+wt_regen_select() {
+    local repo="$1" entry pat
+    shift
+    for entry in "$@"; do
+        pat="$entry"
+        if [[ "$entry" == *:* ]]; then
+            [[ "${entry%%:*}" == "$repo" ]] || continue
+            pat="${entry#*:}"
+        fi
+        if [[ "$pat" == */* ]]; then
+            pat="${pat#/}"
+            [[ -n "$pat" ]] && printf 'path\t%s\n' "$pat"
+        elif [[ -n "$pat" ]]; then
+            printf 'name\t%s\n' "$pat"
+        fi
+    done
+    return 0
+}
+
+# wt_path_under <relative-path> <glob> — exit 0 when the path matches the glob
+# or lies under a match (website/content/docs/x.md is under website/content/docs).
+wt_path_under() {
+    # shellcheck disable=SC2053  # $2 is a glob on purpose; [[ ]] never expands it to files
+    [[ "$1" == $2 || "$1" == $2/* ]]
+}
+
 # wt_cheese_class <path> — classify one file under .cheese/ (<path> is relative
 # to .cheese/). Exit 1 for throwaway: a file under cut/ or a review or scratch
 # dir, or a loose top-level file other than a wheypoint record. Exit 2 for a
