@@ -17,8 +17,9 @@
 # a DIRTY worktree, a worktree with a live process in it, a worktree of an active
 # T3 Code thread, or a branch with an open PR.
 #
-# A .cheese/ dir that holds only throwaway files (review sidecars, scratch,
-# loose top-level files) does not make a worktree DIRTY. ccw-sweep copies it to
+# A .cheese/ dir that holds only throwaway files (review sidecars, cut/,
+# scratch, loose top-level files, and cook/ or press/ reports of a merged
+# branch) does not make a worktree DIRTY. ccw-sweep copies it to
 # CCW_SWEEP_CHEESE_ARCHIVE before it removes or archives the worktree, and keeps
 # the worktree when the copy fails. Other .cheese/ files keep the worktree DIRTY.
 #
@@ -484,33 +485,6 @@ check_worktree() {
         reasons+=("${count} untracked file(s)")
     fi
 
-    # Check for .cheese/ notes — gitignored, so ls-files --exclude-standard
-    # above never sees them. Throwaway files do not block removal (they are
-    # copied out first); keep-worthy work keeps the worktree DIRTY.
-    local cheese_throwaway=0 cheese_keep=() cheese_only_dirty=false rel top
-    if [[ -L "${wt_path}/.cheese" || ( -e "${wt_path}/.cheese" && ! -d "${wt_path}/.cheese" ) ]]; then
-        cheese_keep=("(not a plain dir)")
-    else
-        while IFS= read -r -d '' rel; do
-            rel="${rel#.cheese/}"
-            if wt_cheese_keep_worthy "$rel"; then
-                top="${rel%%/*}"
-                [[ " ${cheese_keep[*]-} " == *" ${top} "* ]] || cheese_keep+=("$top")
-            else
-                cheese_throwaway=$((cheese_throwaway + 1))
-            fi
-        done < <(git -C "$wt_path" ls-files -z --others -- .cheese 2>/dev/null)
-    fi
-    if (( ${#cheese_keep[@]} > 0 )); then
-        [[ "$status" == "DIRTY" ]] || cheese_only_dirty=true
-        status="DIRTY"
-        local cheese_more=""
-        (( ${#cheese_keep[@]} > 3 )) && cheese_more=" (+$(( ${#cheese_keep[@]} - 3 )) more)"
-        reasons+=("uncommitted .cheese/ notes: $(IFS=' '; echo "${cheese_keep[*]:0:3}")${cheese_more}")
-    elif (( cheese_throwaway > 0 )); then
-        reasons+=("throwaway .cheese/ (${cheese_throwaway} file(s))")
-    fi
-
     # Ignored files that a rebuild cannot recreate (.env, local settings, …).
     scan_ignored "$wt_path"
     if (( ${#IGNORED_BAD[@]} > 0 )); then
@@ -618,6 +592,37 @@ check_worktree() {
             status="WARN"
         fi
         reasons+=("NOT merged into ${default_branch}")
+    fi
+
+    # Check for .cheese/ notes — gitignored, so ls-files --exclude-standard
+    # above never sees them. Throwaway files do not block removal (they are
+    # copied out first); keep-worthy work keeps the worktree DIRTY. cook/ and
+    # press/ reports are throwaway only on a merged branch: on an unmerged one
+    # they may be the only record of where the work stopped. This runs after
+    # the merge checks so that the offline patch check sees only git state.
+    local cheese_throwaway=0 cheese_keep=() cheese_only_dirty=false rel top class
+    if [[ -L "${wt_path}/.cheese" || ( -e "${wt_path}/.cheese" && ! -d "${wt_path}/.cheese" ) ]]; then
+        cheese_keep=("(not a plain dir)")
+    else
+        while IFS= read -r -d '' rel; do
+            rel="${rel#.cheese/}"
+            wt_cheese_class "$rel" && class=0 || class=$?
+            if (( class == 1 )) || { (( class == 2 )) && $is_merged; }; then
+                cheese_throwaway=$((cheese_throwaway + 1))
+            else
+                top="${rel%%/*}"
+                [[ " ${cheese_keep[*]-} " == *" ${top} "* ]] || cheese_keep+=("$top")
+            fi
+        done < <(git -C "$wt_path" ls-files -z --others -- .cheese 2>/dev/null)
+    fi
+    if (( ${#cheese_keep[@]} > 0 )); then
+        [[ "$status" == "DIRTY" ]] || cheese_only_dirty=true
+        status="DIRTY"
+        local cheese_more=""
+        (( ${#cheese_keep[@]} > 3 )) && cheese_more=" (+$(( ${#cheese_keep[@]} - 3 )) more)"
+        reasons+=("uncommitted .cheese/ notes: $(IFS=' '; echo "${cheese_keep[*]:0:3}")${cheese_more}")
+    elif (( cheese_throwaway > 0 )); then
+        reasons+=("throwaway .cheese/ (${cheese_throwaway} file(s))")
     fi
 
     # Check for unpushed commits (only if branch ref exists)

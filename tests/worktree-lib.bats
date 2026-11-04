@@ -146,26 +146,34 @@ add_worktree() {
   [[ $status -eq 0 ]]
 }
 
-# ── wt_cheese_keep_worthy / wt_cheese_archive_dir ─────────────────────────
+# ── wt_cheese_class / wt_cheese_archive_dir ────────────────────────────────
 
-@test "wt_cheese_keep_worthy: review and scratch dirs and loose files are throwaway" {
+@test "wt_cheese_class: review, cut, and scratch dirs and loose files are throwaway" {
   local rel
-  for rel in age/r.md plate/state.json affinage/x cure/y.md reviews/a/b.md \
-             press-history/1.json press-decisions/d.md scratch/probe.sh tmp/t \
-             notes.md state.json; do
-    run wt_cheese_keep_worthy "$rel"
-    [[ $status -eq 1 ]] || { echo "keep-worthy: $rel"; return 1; }
+  for rel in age/r.md plate/state.json affinage/x cure/y.md reviews/a/b.md cut/c.json \
+             cut/deep/c.json press-history/1.json press-decisions/d.md scratch/probe.sh \
+             tmp/t notes.md state.json; do
+    run wt_cheese_class "$rel"
+    [[ $status -eq 1 ]] || { echo "not throwaway ($status): $rel"; return 1; }
   done
 }
 
-@test "wt_cheese_keep_worthy: work dirs, wheypoint records, and unknown dirs are keep-worthy" {
+@test "wt_cheese_class: cook and press reports depend on the merge state" {
+  local rel
+  for rel in cook/c.md cook/slug/receipt.json press/p.json press/run/p.md; do
+    run wt_cheese_class "$rel"
+    [[ $status -eq 2 ]] || { echo "not merge-dependent ($status): $rel"; return 1; }
+  done
+}
+
+@test "wt_cheese_class: work dirs, wheypoint records, and unknown dirs are keep-worthy" {
   local rel
   for rel in specs/s.md plans/p.md research/r.md notes/n.md issues/i.md glossary/g.md \
-             mold/m.json durable/d.md cook/c.md press/p.md cut/c.md build-optimize/b.md \
+             mold/m.json durable/d.md build-optimize/b.md \
              wheypoint.json wheypoint-slug.md wp-intent.json unknown-dir/x \
-             age-notes/x scratchpad/x; do
-    run wt_cheese_keep_worthy "$rel"
-    [[ $status -eq 0 ]] || { echo "throwaway: $rel"; return 1; }
+             age-notes/x scratchpad/x cooking/x cut-notes/x; do
+    run wt_cheese_class "$rel"
+    [[ $status -eq 0 ]] || { echo "not keep-worthy ($status): $rel"; return 1; }
   done
 }
 

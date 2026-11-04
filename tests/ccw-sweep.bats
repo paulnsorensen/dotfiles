@@ -995,6 +995,86 @@ CHEESE_DEFAULT_REL=".local/share/ccw-sweep/cheese"
   [[ ! -d "$wt" ]] || { echo "worktree dir still exists"; return 1; }
 }
 
+@test "cook/, press/, and cut/ reports of a merged branch are throwaway" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "done"
+  add_cheese "$SCAN/repo/.worktrees/done" cook/slug.md cook/slug/receipt.json press/p.json cut/c.json
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[SAFE] done"
+  assert_contains "throwaway .cheese/ (4 file(s))"
+  assert_contains "cheese_archived=1 skip_cheese=0"
+  [[ "$(cat "$HOME/$CHEESE_DEFAULT_REL/repo/done/cook/slug/receipt.json")" == "cook/slug/receipt.json" ]] || {
+    echo "cook receipt not copied"; return 1; }
+  [[ ! -d "$SCAN/repo/.worktrees/done" ]] || { echo "worktree dir still exists"; return 1; }
+}
+
+@test "a cook/ report keeps an unmerged branch DIRTY under --archive" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  add_cheese "$SCAN/repo/.worktrees/old-work" cook/slug.md cut/c.json
+  no_prs
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "[DIRTY] old-work"
+  assert_contains "uncommitted .cheese/ notes: cook"
+  assert_contains "Archived: 0"
+  assert_contains "cheese_archived=0 skip_cheese=1"
+  [[ -f "$SCAN/repo/.worktrees/old-work/.cheese/cook/slug.md" ]] || { echo "unmerged cook report removed"; return 1; }
+}
+
+@test "a press/ report keeps a branch with commits after its squash-merge DIRTY" {
+  create_repo "$SCAN/repo"
+  local wt="$SCAN/repo/.worktrees/more" head
+  head="$(add_squashed_worktree "$SCAN/repo" "more")"
+  printf 'claude/more\tMERGED\t%s\n' "$head" > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+  echo extra > "$wt/extra.txt"
+  git -C "$wt" add extra.txt
+  git -C "$wt" commit -q -m extra
+  add_cheese "$wt" press/p.json
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "commits after squash-merge"
+  assert_contains "uncommitted .cheese/ notes: press"
+  [[ -f "$wt/.cheese/press/p.json" ]] || { echo "press report removed"; return 1; }
+}
+
+@test "auto --archive archives an unmerged branch whose .cheese/ holds only cut/" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  add_cheese "$SCAN/repo/.worktrees/old-work" cut/c.json
+  no_prs
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "action: archive as archive/old-work"
+  assert_contains "cheese_archived=1 skip_cheese=0"
+  [[ "$(cat "$HOME/$CHEESE_DEFAULT_REL/repo/old-work/cut/c.json")" == "cut/c.json" ]] || {
+    echo "cut file not copied"; return 1; }
+}
+
+@test "a cook/ report does not hide a squash-merge found by patch match" {
+  create_repo "$SCAN/repo"
+  add_two_commit_worktree "$SCAN/repo" "sq"
+  squash_onto_main "$SCAN/repo" "sq"
+  add_cheese "$SCAN/repo/.worktrees/sq" cook/slug.md
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "squash-merged (patch match)"
+  assert_contains "Removed: 1"
+  [[ "$(cat "$HOME/$CHEESE_DEFAULT_REL/repo/sq/cook/slug.md")" == "cook/slug.md" ]] || {
+    echo "cook report not copied"; return 1; }
+}
+
 # ── --reclaim ─────────────────────────────────────────────────────────────
 
 @test "auto --reclaim deletes target/ in an idle kept worktree and nothing else" {

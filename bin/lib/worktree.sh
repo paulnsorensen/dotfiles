@@ -57,11 +57,13 @@ wt_list_nested() {
     done
 }
 
-# wt_cheese_keep_worthy <path> — classify one file under .cheese/ (<path> is
-# relative to .cheese/). Exit 1 for throwaway: a file under a review or scratch
-# dir, or a loose top-level file other than a wheypoint record. Exit 0 for
-# keep-worthy: wheypoint*/wp-intent* records and every other dir, known or not.
-wt_cheese_keep_worthy() {
+# wt_cheese_class <path> — classify one file under .cheese/ (<path> is relative
+# to .cheese/). Exit 1 for throwaway: a file under cut/ or a review or scratch
+# dir, or a loose top-level file other than a wheypoint record. Exit 2 for a
+# cook/ or press/ report: throwaway once the branch is merged, keep-worthy
+# before. Exit 0 for keep-worthy: wheypoint*/wp-intent* records and every other
+# dir, known or not.
+wt_cheese_class() {
     local rel="$1"
     if [[ "$rel" != */* ]]; then
         case "$rel" in
@@ -70,7 +72,8 @@ wt_cheese_keep_worthy() {
         esac
     fi
     case "${rel%%/*}" in
-        age|plate|affinage|cure|reviews|press-history|press-decisions|scratch|tmp) return 1 ;;
+        age|plate|affinage|cure|cut|reviews|press-history|press-decisions|scratch|tmp) return 1 ;;
+        cook|press) return 2 ;;
     esac
     return 0
 }
