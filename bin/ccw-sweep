@@ -380,6 +380,17 @@ idle_days() {
     echo $(( (NOW - last) / 86400 ))
 }
 
+# list_nested_blockers <wt> — print each nested worktree under <wt> that
+# blocks removal of <wt> (see nested_child_blocks), one per line.
+list_nested_blockers() {
+    local child
+    while IFS= read -r child; do
+        if [[ -n "$child" ]] && nested_child_blocks "$child"; then
+            printf '%s\n' "$child"
+        fi
+    done < <(wt_list_nested "$1")
+}
+
 # nested_child_blocks <child> — exit 0 when removing the parent would lose or
 # break a nested child: the shared predicate (dirty, untracked, .cheese,
 # unmerged) plus this script's guards (git lock, live process, active T3
@@ -683,11 +694,8 @@ check_worktree() {
     local nested_blockers=()
     local nested_child
     while IFS= read -r nested_child; do
-        [[ -z "$nested_child" ]] && continue
-        if nested_child_blocks "$nested_child"; then
-            nested_blockers+=("$nested_child")
-        fi
-    done < <(wt_list_nested "$wt_path")
+        nested_blockers+=("$nested_child")
+    done < <(list_nested_blockers "$wt_path")
 
     local has_blocking_nested=false
     if (( ${#nested_blockers[@]} > 0 )); then
@@ -713,7 +721,7 @@ check_worktree() {
     if ! $DRY_RUN && ! $AUTO_CLEAN; then
         local has_cheese=false
         (( cheese_throwaway + ${#cheese_keep[@]} > 0 )) && has_cheese=true
-        interactive_action "$wt_path" "$repo_root" "$branch" "$status" "$has_blocking_nested" "$has_cheese" "$head"
+        interactive_action "$wt_path" "$repo_root" "$status" "$has_cheese"
         return 0
     fi
 
@@ -805,13 +813,14 @@ check_worktree() {
     fi
 }
 
-# interactive_action <wt> <repo-root> <branch> <status> <has-blocking-nested>
-# <has-cheese> <head-sha> — prompt on /dev/tty, never on stdin (the discovery
-# loop reads fd 3).
+# interactive_action <wt> <repo-root> <status> <has-cheese> — prompt on
+# /dev/tty, never on stdin (the discovery loop reads fd 3). <has-cheese> is
+# true when check_worktree found files under .cheese/.
 interactive_action() {
-    local wt_path="$1" repo_root="$2" branch="$3" status="$4" has_blocking_nested="$5"
-    local has_cheese="$6" head="$7"
-    local should_remove=false answer
+    local wt_path="$1" repo_root="$2" status="$3" has_cheese="$4"
+    local should_remove=false answer branch head
+    branch="$(git -C "$wt_path" symbolic-ref --short --quiet HEAD 2>/dev/null || true)"
+    head="$(git -C "$wt_path" rev-parse --verify --quiet HEAD 2>/dev/null || true)"
 
     if [[ "$status" == "SAFE" ]]; then
         read -rp "         Remove? [y/N] " answer </dev/tty
@@ -824,7 +833,7 @@ interactive_action() {
 
     # Nested-worktree safety gate: require explicit confirmation before
     # removing a parent that nests unmerged/dirty work.
-    if $should_remove && $has_blocking_nested; then
+    if $should_remove && [[ -n "$(list_nested_blockers "$wt_path")" ]]; then
         read -rp "         Parent nests unmerged/dirty worktree(s) — remove anyway? [y/N] " answer </dev/tty
         [[ "$answer" =~ ^[Yy] ]] || should_remove=false
     fi
