@@ -126,7 +126,7 @@ setup() {
   # remove them, so drop the SAFE idle threshold for every test by default.
   export CCW_SWEEP_SAFE_IDLE_DAYS=0
   unset CCW_SWEEP_ARCHIVE_IDLE_DAYS CCW_SWEEP_RECLAIM_IDLE_DAYS CCW_SWEEP_NOW \
-    CCW_SWEEP_REGENERABLE CCW_SWEEP_T3_ROOT FAKE_GH_TSV
+    CCW_SWEEP_REGENERABLE CCW_SWEEP_T3_ROOT CCW_SWEEP_CHEESE_ARCHIVE FAKE_GH_TSV
   # T3 state DB inside the temp HOME: absent unless a test creates it.
   export CCW_SWEEP_T3_DB="$HOME/.t3/userdata/state.sqlite"
   # Stub gh: fails (no PR info) unless FAKE_GH_TSV names a TSV file to print.
@@ -893,6 +893,108 @@ assert_cache_safe() {
   [[ ! -d "$wt" ]] || { echo "worktree dir still exists"; return 1; }
 }
 
+# ── .cheese/ ─────────────────────────────────────────────────────────────────
+
+# add_cheese <worktree> <relative-path>... — gitignore .cheese/ and write each
+# file under <worktree>/.cheese with its own path as content.
+add_cheese() {
+  local wt="$1" rel
+  shift
+  exclude_in "$wt" ".cheese/"
+  for rel in "$@"; do
+    mkdir -p "$(dirname "$wt/.cheese/$rel")"
+    echo "$rel" > "$wt/.cheese/$rel"
+  done
+}
+
+CHEESE_DEFAULT_REL=".local/share/ccw-sweep/cheese"
+
+@test "auto copies a throwaway-only .cheese/ out, then removes the merged worktree" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "tidy"
+  add_cheese "$SCAN/repo/.worktrees/tidy" age/review.md scratch/probe.sh plate/state.json loose.md
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[SAFE] tidy"
+  assert_contains "throwaway .cheese/ (4 file(s))"
+  assert_contains "Cheese archived: 1"
+  assert_contains "removed=1 "
+  assert_contains "cheese_archived=1 skip_cheese=0"
+  local copy="$HOME/$CHEESE_DEFAULT_REL/repo/tidy" rel
+  for rel in age/review.md scratch/probe.sh plate/state.json loose.md; do
+    [[ "$(cat "$copy/$rel")" == "$rel" ]] || { echo "copy of $rel missing or wrong"; return 1; }
+  done
+  [[ ! -d "$SCAN/repo/.worktrees/tidy" ]] || { echo "worktree dir still exists"; return 1; }
+}
+
+@test "a keep-worthy .cheese/ file keeps the worktree DIRTY and lists its dirs" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "spec"
+  add_cheese "$SCAN/repo/.worktrees/spec" age/review.md specs/plan.md wheypoint.json
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "[DIRTY] spec"
+  assert_contains "uncommitted .cheese/ notes: specs wheypoint.json"
+  assert_contains "action: keep: DIRTY, keep-worthy .cheese/ notes"
+  assert_contains "skip_dirty=0 "
+  assert_contains "cheese_archived=0 skip_cheese=1"
+  [[ -f "$SCAN/repo/.worktrees/spec/.cheese/specs/plan.md" ]] || { echo "keep-worthy note removed"; return 1; }
+  [[ ! -e "$HOME/$CHEESE_DEFAULT_REL" ]] || { echo "copied a kept worktree"; return 1; }
+}
+
+@test "a failed .cheese/ copy keeps the worktree" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "tidy"
+  add_cheese "$SCAN/repo/.worktrees/tidy" age/review.md
+  echo file > "$HOME/blocker"   # a file where the archive dir must go
+  export CCW_SWEEP_CHEESE_ARCHIVE="$HOME/blocker/cheese"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "could not copy .cheese/"
+  assert_contains "action: keep: .cheese/ copy failed"
+  assert_contains "removed=0 "
+  assert_contains "cheese_archived=0 skip_cheese=1"
+  [[ -f "$SCAN/repo/.worktrees/tidy/.cheese/age/review.md" ]] || { echo "worktree removed after a failed copy"; return 1; }
+}
+
+@test "dry run reports the .cheese/ copy but copies nothing" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "tidy"
+  add_cheese "$SCAN/repo/.worktrees/tidy" age/review.md
+
+  run ccw-sweep --dry-run --auto --path "$SCAN"
+  assert_success
+  assert_contains "action: copy .cheese/ to $HOME/$CHEESE_DEFAULT_REL/repo/tidy"
+  assert_contains "cheese_archived=1 skip_cheese=0 dry_run=1"
+  [[ ! -e "$HOME/$CHEESE_DEFAULT_REL" ]] || { echo "dry run copied .cheese/"; return 1; }
+  [[ -f "$SCAN/repo/.worktrees/tidy/.cheese/age/review.md" ]] || { echo "dry run removed the worktree"; return 1; }
+}
+
+@test "auto --archive copies a throwaway .cheese/ to a short-sha dir on a slug collision" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  local wt="$SCAN/repo/.worktrees/old-work" head
+  add_cheese "$wt" reviews/r1.md tmp/t
+  head="$(git -C "$wt" rev-parse HEAD)"
+  export CCW_SWEEP_CHEESE_ARCHIVE="$HOME/arch"
+  mkdir -p "$HOME/arch/repo/old-work"
+  no_prs
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "action: archive as archive/old-work"
+  assert_contains "Archived: 1"
+  [[ "$(cat "$HOME/arch/repo/old-work-${head:0:8}/reviews/r1.md")" == "reviews/r1.md" ]] || {
+    echo "collision copy missing"; return 1; }
+  [[ -z "$(ls -A "$HOME/arch/repo/old-work")" ]] || { echo "wrote into the existing dir"; return 1; }
+  [[ ! -d "$wt" ]] || { echo "worktree dir still exists"; return 1; }
+}
+
 # ── --reclaim ─────────────────────────────────────────────────────────────
 
 @test "auto --reclaim deletes target/ in an idle kept worktree and nothing else" {
@@ -950,7 +1052,7 @@ assert_cache_safe() {
 
   run ccw-sweep --auto --path "$SCAN"
   assert_success
-  assert_contains "SUMMARY ccw-sweep: total=3 safe=1 removed=1 archived=0 reclaimed_kib=0 skipped=2 skip_recent=0 skip_live=0 skip_t3=0 skip_open_pr=0 skip_dirty=1 skip_warn=1 skip_nested=0 dry_run=0"
+  assert_contains "SUMMARY ccw-sweep: total=3 safe=1 removed=1 archived=0 reclaimed_kib=0 skipped=2 skip_recent=0 skip_live=0 skip_t3=0 skip_open_pr=0 skip_dirty=1 skip_warn=1 skip_nested=0 cheese_archived=0 skip_cheese=0 dry_run=0"
   [[ "${lines[${#lines[@]}-1]}" == "SUMMARY ccw-sweep: "* ]] || { echo "SUMMARY is not the last line"; return 1; }
 }
 

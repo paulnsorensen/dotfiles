@@ -146,6 +146,41 @@ add_worktree() {
   [[ $status -eq 0 ]]
 }
 
+# ── wt_cheese_keep_worthy / wt_cheese_archive_dir ─────────────────────────
+
+@test "wt_cheese_keep_worthy: review and scratch dirs and loose files are throwaway" {
+  local rel
+  for rel in age/r.md plate/state.json affinage/x cure/y.md reviews/a/b.md \
+             press-history/1.json press-decisions/d.md scratch/probe.sh tmp/t \
+             notes.md state.json; do
+    run wt_cheese_keep_worthy "$rel"
+    [[ $status -eq 1 ]] || { echo "keep-worthy: $rel"; return 1; }
+  done
+}
+
+@test "wt_cheese_keep_worthy: work dirs, wheypoint records, and unknown dirs are keep-worthy" {
+  local rel
+  for rel in specs/s.md plans/p.md research/r.md notes/n.md issues/i.md glossary/g.md \
+             mold/m.json durable/d.md cook/c.md press/p.md cut/c.md build-optimize/b.md \
+             wheypoint.json wheypoint-slug.md wp-intent.json unknown-dir/x \
+             age-notes/x scratchpad/x; do
+    run wt_cheese_keep_worthy "$rel"
+    [[ $status -eq 0 ]] || { echo "throwaway: $rel"; return 1; }
+  done
+}
+
+@test "wt_cheese_archive_dir: uses the slug, then the short sha, then a counter" {
+  local base="$SCAN/arch" sha=0123456789abcdef0123456789abcdef01234567
+  run wt_cheese_archive_dir "$base" repo feat "$sha"
+  [[ "$output" == "$base/repo/feat" ]] || { echo "got: $output"; return 1; }
+  mkdir -p "$base/repo/feat"
+  run wt_cheese_archive_dir "$base" repo feat "$sha"
+  [[ "$output" == "$base/repo/feat-01234567" ]] || { echo "got: $output"; return 1; }
+  mkdir -p "$base/repo/feat-01234567"
+  run wt_cheese_archive_dir "$base" repo feat "$sha"
+  [[ "$output" == "$base/repo/feat-01234567-2" ]] || { echo "got: $output"; return 1; }
+}
+
 @test "wt_child_blocks_removal: unmerged commits block" {
   create_repo "$SCAN/repo"
   add_worktree "$SCAN/repo" "ahead"

@@ -57,6 +57,40 @@ wt_list_nested() {
     done
 }
 
+# wt_cheese_keep_worthy <path> — classify one file under .cheese/ (<path> is
+# relative to .cheese/). Exit 1 for throwaway: a file under a review or scratch
+# dir, or a loose top-level file other than a wheypoint record. Exit 0 for
+# keep-worthy: wheypoint*/wp-intent* records and every other dir, known or not.
+wt_cheese_keep_worthy() {
+    local rel="$1"
+    if [[ "$rel" != */* ]]; then
+        case "$rel" in
+            wheypoint*|wp-intent*) return 0 ;;
+            *) return 1 ;;
+        esac
+    fi
+    case "${rel%%/*}" in
+        age|plate|affinage|cure|reviews|press-history|press-decisions|scratch|tmp) return 1 ;;
+    esac
+    return 0
+}
+
+# wt_cheese_archive_dir <base> <repo> <slug> <head-sha> — echo the first free
+# copy destination: <base>/<repo>/<slug>, then <slug>-<sha8>, then
+# <slug>-<sha8>-<n> from n=2.
+wt_cheese_archive_dir() {
+    local dest="$1/$2/$3" base n=2
+    if [[ -e "$dest" || -L "$dest" ]]; then
+        base="${dest}-${4:0:8}"
+        dest="$base"
+        while [[ -e "$dest" || -L "$dest" ]]; do
+            dest="${base}-${n}"
+            n=$((n + 1))
+        done
+    fi
+    printf '%s\n' "$dest"
+}
+
 # wt_child_blocks_removal <child_path> — exit 0 (blocks) when the nested child
 # has work that must not be lost: uncommitted changes, staged changes, untracked
 # files, or commits not yet on its remote default branch. Exit 1 when the child
