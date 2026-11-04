@@ -104,7 +104,8 @@ fi
 T3_DB="${CCW_SWEEP_T3_DB:-${HOME}/.t3/userdata/state.sqlite}"
 T3_ROOT="${CCW_SWEEP_T3_ROOT:-${HOME}/.t3/worktrees}"
 # Split on whitespace into globs; read -a never expands them against files.
-read -r -a REGENERABLE <<<"${CCW_SWEEP_REGENERABLE:-target .venv node_modules __pycache__ .mypy_cache .pytest_cache .ruff_cache dist build htmlcov .DS_Store .coverage *.log}"
+# *.pyz is a built zipapp (easy-cheese ignores skills/*/scripts/*.pyz), never source.
+read -r -a REGENERABLE <<<"${CCW_SWEEP_REGENERABLE:-target .venv .venv-typing node_modules __pycache__ .mypy_cache .pytest_cache .ruff_cache .hypothesis .import_linter_cache .astro dist build htmlcov .DS_Store .coverage *.log *.pyz}"
 
 if [[ ! -d "$SCAN_ROOT" ]]; then
     echo -e "${RED}Directory not found: ${SCAN_ROOT}${RESET}" >&2
@@ -302,7 +303,22 @@ in_regenerable_dir() {
     return 1
 }
 
-# scan_ignored <wt> — classify the worktree's ignored entries (one git call).
+# ignored_dir_regenerable <wt> <entry> — exit 0 when <entry> is a whole ignored
+# dir (trailing /) and every file in it matches REGENERABLE, such as a
+# skills/x/scripts/ dir that holds only its built x.pyz. Stops at the first
+# other file; a nested repo (listed as dir/) or a quoted name fails.
+ignored_dir_regenerable() {
+    local wt="$1" entry="$2" file found=false
+    case "$entry" in ''|\"*|*[!/]) return 1 ;; esac
+    while IFS= read -r file; do
+        [[ "$file" != \"* && "$file" != */ ]] && in_regenerable_dir "$file" || return 1
+        found=true
+    done < <(git -C "$wt" ls-files --others --ignored --exclude-standard -- ":(literal)${entry}" 2>/dev/null)
+    $found
+}
+
+# scan_ignored <wt> — classify the worktree's ignored entries (one git call, plus
+# one per whole ignored dir whose name is not in REGENERABLE).
 # Sets IGNORED_BAD (not regenerable: blocks automatic removal) and
 # IGNORED_RECLAIM (whole ignored target/.venv/node_modules dirs that --reclaim
 # may delete). Skips .cheese (DIRTY already covers it) and nested-worktree
@@ -321,7 +337,7 @@ scan_ignored() {
             ''|.claude/|.cheese|.cheese/*|.worktrees|.worktrees/*|.claude/worktrees|.claude/worktrees/*) continue ;;
         esac
         name="${entry%/}"
-        if ! in_regenerable_dir "$name"; then
+        if ! in_regenerable_dir "$name" && ! ignored_dir_regenerable "$wt" "$entry"; then
             IGNORED_BAD+=("$name")
             continue
         fi

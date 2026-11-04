@@ -793,6 +793,106 @@ no_prs() {
   assert_not_contains "ignored files"
 }
 
+# add_ignored_cache <name> <ignore-pattern> <file>... — a SAFE worktree whose
+# only ignored content is <file>s matched by <ignore-pattern>.
+add_ignored_cache() {
+  local name="$1" pattern="$2" file wt="$SCAN/repo/.worktrees/$1"
+  shift 2
+  [[ -d "$SCAN/repo/.git" ]] || create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "$name"
+  exclude_in "$wt" "$pattern"
+  for file in "$@"; do
+    mkdir -p "$(dirname "$wt/$file")"
+    echo generated > "$wt/$file"
+  done
+}
+
+# assert_cache_safe <name> — the dry-run marks <name> SAFE with no ignored files.
+assert_cache_safe() {
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_contains "[SAFE] $1"
+  assert_not_contains "ignored files"
+}
+
+@test "ignored .astro keeps a worktree SAFE" {
+  add_ignored_cache astro ".astro/" .astro/types.d.ts .astro/data-store.json
+  assert_cache_safe astro
+}
+
+@test "ignored .venv-typing keeps a worktree SAFE" {
+  add_ignored_cache typing ".venv-typing/" .venv-typing/bin/python .venv-typing/pyvenv.cfg
+  assert_cache_safe typing
+}
+
+@test "ignored .import_linter_cache keeps a worktree SAFE" {
+  add_ignored_cache linter ".import_linter_cache/" .import_linter_cache/pkg.meta.json
+  assert_cache_safe linter
+}
+
+@test "ignored .hypothesis keeps a worktree SAFE" {
+  add_ignored_cache hypo ".hypothesis/" .hypothesis/examples/ab12/cd34 .hypothesis/unicode_data/14.0.0/charmap.json.gz
+  assert_cache_safe hypo
+}
+
+@test "ignored built .pyz next to a tracked file keeps a worktree SAFE" {
+  # A tracked file in the dir makes git list the .pyz itself, not the dir.
+  create_repo "$SCAN/repo"
+  mkdir -p "$SCAN/repo/skills/mold/scripts"
+  echo graph > "$SCAN/repo/skills/mold/scripts/mold.dot"
+  git -C "$SCAN/repo" add skills/mold/scripts/mold.dot
+  git -C "$SCAN/repo" commit -q -m "track mold.dot"
+  git -C "$SCAN/repo" push -q origin main
+  add_ignored_cache zipapp "skills/*/scripts/*.pyz" skills/mold/scripts/mold.pyz
+  assert_cache_safe zipapp
+}
+
+@test "a whole ignored dir that holds only built .pyz files keeps a worktree SAFE" {
+  # git lists skills/affinage/scripts/ as one dir entry, not the .pyz inside.
+  add_ignored_cache zipdir "skills/*/scripts/*.pyz" skills/affinage/scripts/affinage.pyz skills/age/scripts/age.pyz
+  assert_cache_safe zipdir
+}
+
+@test "a whole ignored dir with a source file next to a .pyz still WARNs" {
+  add_ignored_cache mixed "skills/*/scripts/*" skills/affinage/scripts/affinage.pyz skills/affinage/scripts/helper.py
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] mixed"
+  assert_contains "ignored files: "
+  assert_contains "skills/affinage/scripts"
+  [[ -f "$SCAN/repo/.worktrees/mixed/skills/affinage/scripts/helper.py" ]] || { echo "ignored source removed"; return 1; }
+}
+
+@test "an ignored file outside the regenerable list still WARNs" {
+  add_ignored_cache unlisted ".tool-cache/" .tool-cache/state.json
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] unlisted"
+  assert_contains "ignored files: .tool-cache"
+  [[ -f "$SCAN/repo/.worktrees/unlisted/.tool-cache/state.json" ]] || { echo "unlisted ignored file removed"; return 1; }
+}
+
+@test "auto --archive archives an idle unmerged worktree whose ignored files are regenerable" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  local wt="$SCAN/repo/.worktrees/old-work"
+  exclude_in "$wt" ".hypothesis/" "skills/*/scripts/*.pyz"
+  mkdir -p "$wt/.hypothesis/examples" "$wt/skills/cook/scripts"
+  echo ex > "$wt/.hypothesis/examples/one"
+  echo zip > "$wt/skills/cook/scripts/cook.pyz"
+  no_prs
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "action: archive as archive/old-work"
+  assert_contains "Archived: 1"
+  [[ ! -d "$wt" ]] || { echo "worktree dir still exists"; return 1; }
+}
+
 # ── --reclaim ─────────────────────────────────────────────────────────────
 
 @test "auto --reclaim deletes target/ in an idle kept worktree and nothing else" {
