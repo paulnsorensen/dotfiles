@@ -126,7 +126,7 @@ setup() {
   # remove them, so drop the SAFE idle threshold for every test by default.
   export CCW_SWEEP_SAFE_IDLE_DAYS=0
   unset CCW_SWEEP_ARCHIVE_IDLE_DAYS CCW_SWEEP_RECLAIM_IDLE_DAYS CCW_SWEEP_NOW \
-    CCW_SWEEP_REGENERABLE CCW_SWEEP_T3_ROOT FAKE_GH_TSV
+    CCW_SWEEP_REGENERABLE CCW_SWEEP_T3_ROOT CCW_SWEEP_CHEESE_ARCHIVE FAKE_GH_TSV
   # T3 state DB inside the temp HOME: absent unless a test creates it.
   export CCW_SWEEP_T3_DB="$HOME/.t3/userdata/state.sqlite"
   # Stub gh: fails (no PR info) unless FAKE_GH_TSV names a TSV file to print.
@@ -793,6 +793,409 @@ no_prs() {
   assert_not_contains "ignored files"
 }
 
+# add_ignored_cache <name> <ignore-pattern> <file>... — a SAFE worktree whose
+# only ignored content is <file>s matched by <ignore-pattern>.
+add_ignored_cache() {
+  local name="$1" pattern="$2" file wt="$SCAN/repo/.worktrees/$1"
+  shift 2
+  [[ -d "$SCAN/repo/.git" ]] || create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "$name"
+  exclude_in "$wt" "$pattern"
+  for file in "$@"; do
+    mkdir -p "$(dirname "$wt/$file")"
+    echo generated > "$wt/$file"
+  done
+}
+
+# assert_cache_safe <name> — the dry-run marks <name> SAFE with no ignored files.
+assert_cache_safe() {
+  run ccw-sweep --dry-run --path "$SCAN"
+  assert_success
+  assert_contains "[SAFE] $1"
+  assert_not_contains "ignored files"
+}
+
+@test "ignored .astro keeps a worktree SAFE" {
+  add_ignored_cache astro ".astro/" .astro/types.d.ts .astro/data-store.json
+  assert_cache_safe astro
+}
+
+@test "ignored .venv-typing keeps a worktree SAFE" {
+  add_ignored_cache typing ".venv-typing/" .venv-typing/bin/python .venv-typing/pyvenv.cfg
+  assert_cache_safe typing
+}
+
+@test "ignored .import_linter_cache keeps a worktree SAFE" {
+  add_ignored_cache linter ".import_linter_cache/" .import_linter_cache/pkg.meta.json
+  assert_cache_safe linter
+}
+
+@test "ignored .hypothesis keeps a worktree SAFE" {
+  add_ignored_cache hypo ".hypothesis/" .hypothesis/examples/ab12/cd34 .hypothesis/unicode_data/14.0.0/charmap.json.gz
+  assert_cache_safe hypo
+}
+
+@test "ignored built .pyz next to a tracked file keeps a worktree SAFE" {
+  # A tracked file in the dir makes git list the .pyz itself, not the dir.
+  create_repo "$SCAN/repo"
+  mkdir -p "$SCAN/repo/skills/mold/scripts"
+  echo graph > "$SCAN/repo/skills/mold/scripts/mold.dot"
+  git -C "$SCAN/repo" add skills/mold/scripts/mold.dot
+  git -C "$SCAN/repo" commit -q -m "track mold.dot"
+  git -C "$SCAN/repo" push -q origin main
+  add_ignored_cache zipapp "skills/*/scripts/*.pyz" skills/mold/scripts/mold.pyz
+  assert_cache_safe zipapp
+}
+
+@test "a whole ignored dir that holds only built .pyz files keeps a worktree SAFE" {
+  # git lists skills/affinage/scripts/ as one dir entry, not the .pyz inside.
+  add_ignored_cache zipdir "skills/*/scripts/*.pyz" skills/affinage/scripts/affinage.pyz skills/age/scripts/age.pyz
+  assert_cache_safe zipdir
+}
+
+@test "a whole ignored dir with a source file next to a .pyz still WARNs" {
+  add_ignored_cache mixed "skills/*/scripts/*" skills/affinage/scripts/affinage.pyz skills/affinage/scripts/helper.py
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] mixed"
+  assert_contains "ignored files: "
+  assert_contains "skills/affinage/scripts"
+  [[ -f "$SCAN/repo/.worktrees/mixed/skills/affinage/scripts/helper.py" ]] || { echo "ignored source removed"; return 1; }
+}
+
+@test "an ignored file outside the regenerable list still WARNs" {
+  add_ignored_cache unlisted ".tool-cache/" .tool-cache/state.json
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] unlisted"
+  assert_contains "ignored files: .tool-cache"
+  [[ -f "$SCAN/repo/.worktrees/unlisted/.tool-cache/state.json" ]] || { echo "unlisted ignored file removed"; return 1; }
+}
+
+@test "ignored coverage reports keep a worktree SAFE" {
+  add_ignored_cache cov "coverage.xml" coverage.xml
+  exclude_in "$SCAN/repo/.worktrees/cov" ".coverage.*"
+  echo data > "$SCAN/repo/.worktrees/cov/.coverage.host.pid42.Xab"
+  assert_cache_safe cov
+}
+
+@test "ignored .godot editor cache keeps a worktree SAFE" {
+  add_ignored_cache godot ".godot/*" .godot/editor/state.cfg .godot/imported/a.ctex .godot/uid_cache.bin
+  assert_cache_safe godot
+}
+
+@test "ignored .claude/workflows keeps an easy-cheese worktree SAFE" {
+  create_repo "$SCAN/repo"
+  name_origin "$SCAN/repo" easy-cheese
+  add_ignored_cache flows ".claude/workflows/" .claude/workflows/node-runner.js
+  assert_cache_safe flows
+}
+
+@test "ignored .claude/workflows in another repo still WARNs" {
+  add_ignored_cache flows ".claude/" .claude/workflows/release.js
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] flows"
+  assert_contains "ignored files: .claude"
+  [[ -f "$SCAN/repo/.worktrees/flows/.claude/workflows/release.js" ]] || { echo "workflow script removed"; return 1; }
+}
+
+# name_origin <repo> <name> — point origin at a bare repo named <name>.git, so
+# repo-scoped regenerable entries ("<name>:...") apply to <repo>.
+name_origin() {
+  mv "$1.origin.git" "$SCAN/$2.git"
+  git -C "$1" remote set-url origin "$SCAN/$2.git"
+}
+
+@test "repo-scoped entries apply in their repo: tdbr reports and addons" {
+  create_repo "$SCAN/repo"
+  name_origin "$SCAN/repo" tdbr
+  add_ignored_cache game "reports/" reports/index.html
+  local wt="$SCAN/repo/.worktrees/game"
+  exclude_in "$wt" "/addons" "addons/*" ".addons/"
+  mkdir -p "$wt/addons/gdUnit4" "$wt/.addons/netfox"
+  echo plugin > "$wt/addons/gdUnit4/plugin.cfg"
+  echo cache > "$wt/.addons/netfox/plugin.cfg"
+  assert_cache_safe game
+}
+
+@test "repo-scoped entries do not apply in another repo" {
+  create_repo "$SCAN/repo"
+  name_origin "$SCAN/repo" other
+  add_ignored_cache notes "reports/" reports/q3-findings.md
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] notes"
+  assert_contains "ignored files: reports"
+  [[ -f "$SCAN/repo/.worktrees/notes/reports/q3-findings.md" ]] || { echo "hand-written report removed"; return 1; }
+}
+
+@test "anchored entries match from the root only: generated easy-cheese docs" {
+  create_repo "$SCAN/repo"
+  name_origin "$SCAN/repo" easy-cheese
+  add_ignored_cache site "website/content/docs/**" website/content/docs/skills/cook.md website/content/docs/readme.md
+  exclude_in "$SCAN/repo/.worktrees/site" "website/sidebar.mjs" "sub/website/"
+  echo gen > "$SCAN/repo/.worktrees/site/website/sidebar.mjs"
+  assert_cache_safe site
+
+  mkdir -p "$SCAN/repo/.worktrees/site/sub/website/content/docs"
+  echo mine > "$SCAN/repo/.worktrees/site/sub/website/content/docs/draft.md"
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] site"
+  assert_contains "ignored files: "
+  assert_contains "sub/website"
+  [[ -f "$SCAN/repo/.worktrees/site/sub/website/content/docs/draft.md" ]] || { echo "nested docs removed"; return 1; }
+}
+
+@test "auto --archive archives an idle unmerged worktree whose ignored files are regenerable" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  local wt="$SCAN/repo/.worktrees/old-work"
+  exclude_in "$wt" ".hypothesis/" "skills/*/scripts/*.pyz"
+  mkdir -p "$wt/.hypothesis/examples" "$wt/skills/cook/scripts"
+  echo ex > "$wt/.hypothesis/examples/one"
+  echo zip > "$wt/skills/cook/scripts/cook.pyz"
+  no_prs
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "action: archive as archive/old-work"
+  assert_contains "Archived: 1"
+  [[ ! -d "$wt" ]] || { echo "worktree dir still exists"; return 1; }
+}
+
+# ── .cheese/ ─────────────────────────────────────────────────────────────────
+
+# add_cheese <worktree> <relative-path>... — gitignore .cheese/ and write each
+# file under <worktree>/.cheese with its own path as content.
+add_cheese() {
+  local wt="$1" rel
+  shift
+  exclude_in "$wt" ".cheese/"
+  for rel in "$@"; do
+    mkdir -p "$(dirname "$wt/.cheese/$rel")"
+    echo "$rel" > "$wt/.cheese/$rel"
+  done
+}
+
+CHEESE_DEFAULT_REL=".local/share/ccw-sweep/cheese"
+
+@test "auto copies a throwaway-only .cheese/ out, then removes the merged worktree" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "tidy"
+  add_cheese "$SCAN/repo/.worktrees/tidy" age/review.md scratch/probe.sh plate/state.json loose.md
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[SAFE] tidy"
+  assert_contains "throwaway .cheese/ (4 file(s))"
+  assert_contains "Cheese archived: 1"
+  assert_contains "removed=1 "
+  assert_contains "cheese_archived=1 skip_cheese=0"
+  local copy="$HOME/$CHEESE_DEFAULT_REL/repo/tidy" rel
+  for rel in age/review.md scratch/probe.sh plate/state.json loose.md; do
+    [[ "$(cat "$copy/$rel")" == "$rel" ]] || { echo "copy of $rel missing or wrong"; return 1; }
+  done
+  [[ ! -d "$SCAN/repo/.worktrees/tidy" ]] || { echo "worktree dir still exists"; return 1; }
+}
+
+@test "a keep-worthy .cheese/ file keeps the worktree DIRTY and lists its dirs" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "spec"
+  add_cheese "$SCAN/repo/.worktrees/spec" age/review.md specs/plan.md wheypoint.json
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "[DIRTY] spec"
+  assert_contains "uncommitted .cheese/ notes: specs wheypoint.json"
+  assert_contains "action: keep: DIRTY, keep-worthy .cheese/ notes"
+  assert_contains "skip_dirty=0 "
+  assert_contains "cheese_archived=0 skip_cheese=1"
+  [[ -f "$SCAN/repo/.worktrees/spec/.cheese/specs/plan.md" ]] || { echo "keep-worthy note removed"; return 1; }
+  [[ ! -e "$HOME/$CHEESE_DEFAULT_REL" ]] || { echo "copied a kept worktree"; return 1; }
+}
+
+@test "a failed .cheese/ copy keeps the worktree" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "tidy"
+  add_cheese "$SCAN/repo/.worktrees/tidy" age/review.md
+  echo file > "$HOME/blocker"   # a file where the archive dir must go
+  export CCW_SWEEP_CHEESE_ARCHIVE="$HOME/blocker/cheese"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "could not copy .cheese/"
+  assert_contains "action: keep: .cheese/ copy failed"
+  assert_contains "removed=0 "
+  assert_contains "cheese_archived=0 skip_cheese=1"
+  [[ -f "$SCAN/repo/.worktrees/tidy/.cheese/age/review.md" ]] || { echo "worktree removed after a failed copy"; return 1; }
+}
+
+@test "a .cheese/ archive inside the worktree keeps the worktree" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "tidy"
+  local wt="$SCAN/repo/.worktrees/tidy"
+  add_cheese "$wt" age/review.md
+  export CCW_SWEEP_CHEESE_ARCHIVE="$wt/arch"
+
+  run ccw-sweep --dry-run --auto --path "$SCAN"
+  assert_success
+  assert_contains "action: keep: .cheese/ archive is inside the worktree"
+  assert_contains "cheese_archived=0 skip_cheese=1 dry_run=1"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "is inside the worktree; keeping the worktree"
+  assert_contains "action: keep: .cheese/ copy failed"
+  assert_contains "removed=0 "
+  [[ -f "$wt/.cheese/age/review.md" ]] || { echo "worktree removed with its archive inside"; return 1; }
+  [[ ! -e "$wt/arch" ]] || { echo "archive dir created inside the worktree"; return 1; }
+}
+
+@test "dry run reports the .cheese/ copy but copies nothing" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "tidy"
+  add_cheese "$SCAN/repo/.worktrees/tidy" age/review.md
+
+  run ccw-sweep --dry-run --auto --path "$SCAN"
+  assert_success
+  assert_contains "action: copy .cheese/ to $HOME/$CHEESE_DEFAULT_REL/repo/tidy"
+  assert_contains "cheese_archived=1 skip_cheese=0 dry_run=1"
+  [[ ! -e "$HOME/$CHEESE_DEFAULT_REL" ]] || { echo "dry run copied .cheese/"; return 1; }
+  [[ -f "$SCAN/repo/.worktrees/tidy/.cheese/age/review.md" ]] || { echo "dry run removed the worktree"; return 1; }
+}
+
+@test "auto --archive copies a throwaway .cheese/ to a short-sha dir on a slug collision" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  local wt="$SCAN/repo/.worktrees/old-work" head
+  add_cheese "$wt" reviews/r1.md tmp/t
+  head="$(git -C "$wt" rev-parse HEAD)"
+  export CCW_SWEEP_CHEESE_ARCHIVE="$HOME/arch"
+  mkdir -p "$HOME/arch/repo/old-work"
+  no_prs
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "action: archive as archive/old-work"
+  assert_contains "Archived: 1"
+  [[ "$(cat "$HOME/arch/repo/old-work-${head:0:8}/reviews/r1.md")" == "reviews/r1.md" ]] || {
+    echo "collision copy missing"; return 1; }
+  [[ -z "$(ls -A "$HOME/arch/repo/old-work")" ]] || { echo "wrote into the existing dir"; return 1; }
+  [[ ! -d "$wt" ]] || { echo "worktree dir still exists"; return 1; }
+}
+
+@test "auto --archive copies no .cheese/ when the archive tag fails" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  local wt="$SCAN/repo/.worktrees/old-work"
+  add_cheese "$wt" reviews/r1.md
+  # The tag refs/tags/archive blocks every refs/tags/archive/<slug>.
+  git -C "$SCAN/repo" tag archive
+  no_prs
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "could not create tag archive/old-work"
+  assert_contains "action: keep: WARN, archive tag failed"
+  assert_contains " archived=0 "
+  assert_contains "skip_warn=1 "
+  assert_contains "cheese_archived=0 skip_cheese=0"
+  [[ ! -e "$HOME/$CHEESE_DEFAULT_REL" ]] || { echo "copied .cheese/ for a failed archive"; return 1; }
+  [[ -f "$wt/.cheese/reviews/r1.md" ]] || { echo "worktree removed after a failed tag"; return 1; }
+}
+
+@test "cook/, press/, and cut/ reports of a merged branch are throwaway" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "done"
+  add_cheese "$SCAN/repo/.worktrees/done" cook/slug.md cook/slug/receipt.json press/p.json cut/c.json
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[SAFE] done"
+  assert_contains "throwaway .cheese/ (4 file(s))"
+  assert_contains "cheese_archived=1 skip_cheese=0"
+  [[ "$(cat "$HOME/$CHEESE_DEFAULT_REL/repo/done/cook/slug/receipt.json")" == "cook/slug/receipt.json" ]] || {
+    echo "cook receipt not copied"; return 1; }
+  [[ ! -d "$SCAN/repo/.worktrees/done" ]] || { echo "worktree dir still exists"; return 1; }
+}
+
+@test "a cook/ report keeps an unmerged branch DIRTY under --archive" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  add_cheese "$SCAN/repo/.worktrees/old-work" cook/slug.md cut/c.json
+  no_prs
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "[DIRTY] old-work"
+  assert_contains "uncommitted .cheese/ notes: cook"
+  assert_contains "Archived: 0"
+  assert_contains "cheese_archived=0 skip_cheese=1"
+  [[ -f "$SCAN/repo/.worktrees/old-work/.cheese/cook/slug.md" ]] || { echo "unmerged cook report removed"; return 1; }
+}
+
+@test "a press/ report keeps a branch with commits after its squash-merge DIRTY" {
+  create_repo "$SCAN/repo"
+  local wt="$SCAN/repo/.worktrees/more" head
+  head="$(add_squashed_worktree "$SCAN/repo" "more")"
+  printf 'claude/more\tMERGED\t%s\n' "$head" > "$HOME/prs.tsv"
+  export FAKE_GH_TSV="$HOME/prs.tsv"
+  echo extra > "$wt/extra.txt"
+  git -C "$wt" add extra.txt
+  git -C "$wt" commit -q -m extra
+  add_cheese "$wt" press/p.json
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "commits after squash-merge"
+  assert_contains "uncommitted .cheese/ notes: press"
+  [[ -f "$wt/.cheese/press/p.json" ]] || { echo "press report removed"; return 1; }
+}
+
+@test "auto --archive archives an unmerged branch whose .cheese/ holds only cut/" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-work"
+  add_cheese "$SCAN/repo/.worktrees/old-work" cut/c.json
+  no_prs
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "action: archive as archive/old-work"
+  assert_contains "cheese_archived=1 skip_cheese=0"
+  [[ "$(cat "$HOME/$CHEESE_DEFAULT_REL/repo/old-work/cut/c.json")" == "cut/c.json" ]] || {
+    echo "cut file not copied"; return 1; }
+}
+
+@test "a cook/ report does not hide a squash-merge found by patch match" {
+  create_repo "$SCAN/repo"
+  add_two_commit_worktree "$SCAN/repo" "sq"
+  squash_onto_main "$SCAN/repo" "sq"
+  add_cheese "$SCAN/repo/.worktrees/sq" cook/slug.md
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "squash-merged (patch match)"
+  assert_contains "Removed: 1"
+  [[ "$(cat "$HOME/$CHEESE_DEFAULT_REL/repo/sq/cook/slug.md")" == "cook/slug.md" ]] || {
+    echo "cook report not copied"; return 1; }
+}
+
 # ── --reclaim ─────────────────────────────────────────────────────────────
 
 @test "auto --reclaim deletes target/ in an idle kept worktree and nothing else" {
@@ -850,7 +1253,7 @@ no_prs() {
 
   run ccw-sweep --auto --path "$SCAN"
   assert_success
-  assert_contains "SUMMARY ccw-sweep: total=3 safe=1 removed=1 archived=0 reclaimed_kib=0 skipped=2 skip_recent=0 skip_live=0 skip_t3=0 skip_open_pr=0 skip_dirty=1 skip_warn=1 skip_nested=0 dry_run=0"
+  assert_contains "SUMMARY ccw-sweep: total=3 safe=1 removed=1 archived=0 reclaimed_kib=0 skipped=2 skip_recent=0 skip_live=0 skip_t3=0 skip_open_pr=0 skip_dirty=1 skip_warn=1 skip_nested=0 cheese_archived=0 skip_cheese=0 dry_run=0"
   [[ "${lines[${#lines[@]}-1]}" == "SUMMARY ccw-sweep: "* ]] || { echo "SUMMARY is not the last line"; return 1; }
 }
 
@@ -1043,4 +1446,23 @@ add_two_commit_worktree() {
   assert_success
   assert_contains "nests unmerged/dirty/guarded"
   [[ -f "$parent/.worktrees/child/.env" ]] || { echo "nested .env deleted with its parent"; return 1; }
+}
+
+@test "a nested child from another repo is checked against its own repo's regenerable list" {
+  create_repo "$SCAN/parentrepo"
+  name_origin "$SCAN/parentrepo" easy-cheese
+  create_repo "$SCAN/childrepo"
+  add_safe_worktree "$SCAN/parentrepo" "parent"
+  local parent="$SCAN/parentrepo/.worktrees/parent"
+  printf '.worktrees/\n.claude/\n' > "$(git -C "$parent" rev-parse --git-path info/exclude)"
+  git -C "$SCAN/childrepo" worktree add "$parent/.worktrees/child" -b "claude/child" --quiet 2>/dev/null
+  # easy-cheese:/vendor is regenerable in the parent's repo, not in the child's.
+  exclude_in "$parent/.worktrees/child" "vendor/"
+  mkdir -p "$parent/.worktrees/child/vendor"
+  echo lib > "$parent/.worktrees/child/vendor/lib.js"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "nests unmerged/dirty"
+  [[ -f "$parent/.worktrees/child/vendor/lib.js" ]] || { echo "child's vendor/ deleted with its parent"; return 1; }
 }

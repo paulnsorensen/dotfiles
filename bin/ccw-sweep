@@ -17,13 +17,22 @@
 # a DIRTY worktree, a worktree with a live process in it, a worktree of an active
 # T3 Code thread, or a branch with an open PR.
 #
+# A .cheese/ dir that holds only throwaway files (review sidecars, cut/,
+# scratch, loose top-level files, and cook/ or press/ reports of a merged
+# branch) does not make a worktree DIRTY. ccw-sweep copies it to
+# CCW_SWEEP_CHEESE_ARCHIVE before it removes or archives the worktree, and keeps
+# the worktree when the copy fails. Other .cheese/ files keep the worktree DIRTY.
+#
 # Environment:
 #   CCW_SWEEP_SAFE_IDLE_DAYS (1), CCW_SWEEP_ARCHIVE_IDLE_DAYS (30),
 #   CCW_SWEEP_RECLAIM_IDLE_DAYS (7)   idle thresholds in whole days
 #   CCW_SWEEP_PR_LIMIT (3000)         PRs read per repo with one `gh pr list`
 #   CCW_SWEEP_FETCH_PR_HEADS (1)      1 = fetch missing merged-PR head commits (one call per repo)
 #   CCW_SWEEP_CHERRY_MAX (2000)       skip the offline patch check past this many new default commits
-#   CCW_SWEEP_REGENERABLE             ignored basenames (globs) that do not block removal
+#   CCW_SWEEP_REGENERABLE             ignored entries that do not block removal (replaces
+#                                     the default list; see REGENERABLE_DEFAULT)
+#   CCW_SWEEP_CHEESE_ARCHIVE          where a throwaway .cheese/ goes before removal
+#                                     (~/.local/share/ccw-sweep/cheese/<repo>/<slug>)
 #   CCW_SWEEP_T3_DB, CCW_SWEEP_T3_ROOT  T3 Code state DB and worktree root
 #   CCW_SWEEP_NOW                     epoch seconds used as "now" (test seam)
 #
@@ -103,8 +112,31 @@ fi
 
 T3_DB="${CCW_SWEEP_T3_DB:-${HOME}/.t3/userdata/state.sqlite}"
 T3_ROOT="${CCW_SWEEP_T3_ROOT:-${HOME}/.t3/worktrees}"
+CHEESE_ARCHIVE="${CCW_SWEEP_CHEESE_ARCHIVE:-${HOME}/.local/share/ccw-sweep/cheese}"
+# Ignored entries that a rebuild recreates: build output, caches, and installed
+# deps, never source. A bare name matches any path component. An entry with a
+# "/" matches from the worktree root. "<repo>:" limits an entry to the repo whose
+# origin has that name; each one cites that repo's .gitignore:
+#   *.pyz                 built zipapps (easy-cheese ignores skills/*/scripts/*.pyz)
+#   <repo>:/.claude/workflows  milknado copies it in at session start (easy-cheese,
+#                         hallouminate); other repos can keep their own scripts there
+#   easy-cheese:...       generated Starlight docs and sidebar (src/ before the
+#                         website/ move), browser test output, `just vendor` output
+#   tdbr:...              GodotEnv-managed addons and cache, gdUnit4 reports
+REGENERABLE_DEFAULT="target .venv .venv-typing node_modules __pycache__ .mypy_cache
+.pytest_cache .ruff_cache .hypothesis .import_linter_cache .astro .godot .tmp-tests
+dist build htmlcov .DS_Store .coverage .coverage.* coverage.xml *.log *.pyz
+easy-cheese:/.claude/workflows hallouminate:/.claude/workflows
+easy-cheese:website/content/docs easy-cheese:website/sidebar.mjs
+easy-cheese:src/content/docs easy-cheese:src/sidebar.mjs
+easy-cheese:frontend/mold-review/test-results easy-cheese:frontend/mold-review/playwright-report
+easy-cheese:/vendor tdbr:/addons tdbr:/.addons tdbr:/reports"
+REGENERABLE_DEFAULT="${REGENERABLE_DEFAULT//$'\n'/ }"
 # Split on whitespace into globs; read -a never expands them against files.
-read -r -a REGENERABLE <<<"${CCW_SWEEP_REGENERABLE:-target .venv node_modules __pycache__ .mypy_cache .pytest_cache .ruff_cache dist build htmlcov .DS_Store .coverage *.log}"
+read -r -a REGENERABLE <<<"${CCW_SWEEP_REGENERABLE:-$REGENERABLE_DEFAULT}"
+# The entries for the repo in progress (see select_regenerable).
+REGEN_NAMES=()
+REGEN_PATHS=()
 
 if [[ ! -d "$SCAN_ROOT" ]]; then
     echo -e "${RED}Directory not found: ${SCAN_ROOT}${RESET}" >&2
@@ -129,6 +161,8 @@ SKIP_OPEN_PR=0
 SKIP_DIRTY=0
 SKIP_WARN=0
 SKIP_NESTED=0
+SKIP_CHEESE=0
+CHEESE_ARCHIVED=0
 
 # ── Helpers ─────────────────────────────────────────────────────────
 # resolve_default_branch, wt_list_nested, and wt_child_blocks_removal live
@@ -279,21 +313,40 @@ squash_patch_match() {
     $match
 }
 
-# is_regenerable <basename> — exit 0 when the name matches a REGENERABLE glob.
+# select_regenerable <repo-root> — load REGEN_NAMES and REGEN_PATHS with the
+# REGENERABLE entries that apply to this repo.
+select_regenerable() {
+    local kind pat
+    REGEN_NAMES=()
+    REGEN_PATHS=()
+    while IFS=$'\t' read -r kind pat; do
+        if [[ "$kind" == path ]]; then
+            REGEN_PATHS+=("$pat")
+        else
+            REGEN_NAMES+=("$pat")
+        fi
+    done < <(wt_regen_select "$(wt_repo_name "$1")" ${REGENERABLE[@]+"${REGENERABLE[@]}"})
+}
+
+# is_regenerable <basename> — exit 0 when the name matches a REGEN_NAMES glob.
 is_regenerable() {
     local pat
-    for pat in ${REGENERABLE[@]+"${REGENERABLE[@]}"}; do
+    for pat in ${REGEN_NAMES[@]+"${REGEN_NAMES[@]}"}; do
         # shellcheck disable=SC2053  # $pat is a glob on purpose; [[ ]] never expands it to files
         [[ "$1" == $pat ]] && return 0
     done
     return 1
 }
 
-# in_regenerable_dir <relative-path> — exit 0 when any path component matches a
-# REGENERABLE glob. Some caches (.pytest_cache, .ruff_cache) hold their own
-# .gitignore, so git lists their files (.pytest_cache/README.md), not the dir.
+# in_regenerable_dir <relative-path> — exit 0 when the path lies under a
+# REGEN_PATHS glob, or any path component matches a REGEN_NAMES glob. Some
+# caches (.pytest_cache, .ruff_cache) hold their own .gitignore, so git lists
+# their files (.pytest_cache/README.md), not the dir.
 in_regenerable_dir() {
-    local rest="$1"
+    local rest="$1" pat
+    for pat in ${REGEN_PATHS[@]+"${REGEN_PATHS[@]}"}; do
+        wt_path_under "$1" "$pat" && return 0
+    done
     while [[ -n "$rest" ]]; do
         is_regenerable "${rest%%/*}" && return 0
         [[ "$rest" == */* ]] || return 1
@@ -302,7 +355,22 @@ in_regenerable_dir() {
     return 1
 }
 
-# scan_ignored <wt> — classify the worktree's ignored entries (one git call).
+# ignored_dir_regenerable <wt> <entry> — exit 0 when <entry> is a whole ignored
+# dir (trailing /) and every file in it matches REGENERABLE, such as a
+# skills/x/scripts/ dir that holds only its built x.pyz. Stops at the first
+# other file; a nested repo (listed as dir/) or a quoted name fails.
+ignored_dir_regenerable() {
+    local wt="$1" entry="$2" file found=false
+    case "$entry" in ''|\"*|*[!/]) return 1 ;; esac
+    while IFS= read -r file; do
+        [[ "$file" != \"* && "$file" != */ ]] && in_regenerable_dir "$file" || return 1
+        found=true
+    done < <(git -C "$wt" ls-files --others --ignored --exclude-standard -- ":(literal)${entry}" 2>/dev/null)
+    $found
+}
+
+# scan_ignored <wt> — classify the worktree's ignored entries (one git call, plus
+# one per whole ignored dir whose name is not in REGENERABLE).
 # Sets IGNORED_BAD (not regenerable: blocks automatic removal) and
 # IGNORED_RECLAIM (whole ignored target/.venv/node_modules dirs that --reclaim
 # may delete). Skips .cheese (DIRTY already covers it) and nested-worktree
@@ -321,7 +389,7 @@ scan_ignored() {
             ''|.claude/|.cheese|.cheese/*|.worktrees|.worktrees/*|.claude/worktrees|.claude/worktrees/*) continue ;;
         esac
         name="${entry%/}"
-        if ! in_regenerable_dir "$name"; then
+        if ! in_regenerable_dir "$name" && ! ignored_dir_regenerable "$wt" "$entry"; then
             IGNORED_BAD+=("$name")
             continue
         fi
@@ -354,6 +422,17 @@ idle_days() {
     echo $(( (NOW - last) / 86400 ))
 }
 
+# list_nested_blockers <wt> — print each nested worktree under <wt> that
+# blocks removal of <wt> (see nested_child_blocks), one per line.
+list_nested_blockers() {
+    local child
+    while IFS= read -r child; do
+        if [[ -n "$child" ]] && nested_child_blocks "$child"; then
+            printf '%s\n' "$child"
+        fi
+    done < <(wt_list_nested "$1")
+}
+
 # nested_child_blocks <child> — exit 0 when removing the parent would lose or
 # break a nested child: the shared predicate (dirty, untracked, .cheese,
 # unmerged) plus this script's guards (git lock, live process, active T3
@@ -365,8 +444,9 @@ nested_child_blocks() {
     canon="$(cd -P "$child" 2>/dev/null && pwd)" || canon="$child"
     has_live_process "$canon" && return 0
     is_t3_owned "$child" "$canon" && return 0
-    # Subshell: scan_ignored sets globals that the parent's own scan owns.
-    ( scan_ignored "$child"; (( ${#IGNORED_BAD[@]} > 0 )) )
+    # Subshell: scan_ignored sets globals that the parent's own scan owns. The
+    # child can belong to another repo, so it gets its own repo's entries.
+    ( select_regenerable "$child"; scan_ignored "$child"; (( ${#IGNORED_BAD[@]} > 0 )) )
 }
 
 # reclaim_worktree <wt> — delete the IGNORED_RECLAIM entries (dry run: only
@@ -445,15 +525,6 @@ check_worktree() {
         fi
         local_files=true
         reasons+=("${count} untracked file(s)")
-    fi
-
-    # Check for .cheese/ notes — gitignored, so ls-files --exclude-standard
-    # above never sees them, but a handoff note there is still work to lose.
-    local cheese_files
-    cheese_files="$(git -C "$wt_path" ls-files --others -- .cheese 2>/dev/null)"
-    if [[ -n "$cheese_files" ]]; then
-        status="DIRTY"
-        reasons+=("uncommitted .cheese/ notes")
     fi
 
     # Ignored files that a rebuild cannot recreate (.env, local settings, …).
@@ -565,6 +636,37 @@ check_worktree() {
         reasons+=("NOT merged into ${default_branch}")
     fi
 
+    # Check for .cheese/ notes — gitignored, so ls-files --exclude-standard
+    # above never sees them. Throwaway files do not block removal (they are
+    # copied out first); keep-worthy work keeps the worktree DIRTY. cook/ and
+    # press/ reports are throwaway only on a merged branch: on an unmerged one
+    # they may be the only record of where the work stopped. This runs after
+    # the merge checks so that the offline patch check sees only git state.
+    local cheese_throwaway=0 cheese_keep=() cheese_only_dirty=false rel top class
+    if [[ -L "${wt_path}/.cheese" || ( -e "${wt_path}/.cheese" && ! -d "${wt_path}/.cheese" ) ]]; then
+        cheese_keep=("(not a plain dir)")
+    else
+        while IFS= read -r -d '' rel; do
+            rel="${rel#.cheese/}"
+            wt_cheese_class "$rel" && class=0 || class=$?
+            if (( class == 1 )) || { (( class == 2 )) && $is_merged; }; then
+                cheese_throwaway=$((cheese_throwaway + 1))
+            else
+                top="${rel%%/*}"
+                [[ " ${cheese_keep[*]-} " == *" ${top} "* ]] || cheese_keep+=("$top")
+            fi
+        done < <(git -C "$wt_path" ls-files -z --others -- .cheese 2>/dev/null)
+    fi
+    if (( ${#cheese_keep[@]} > 0 )); then
+        [[ "$status" == "DIRTY" ]] || cheese_only_dirty=true
+        status="DIRTY"
+        local cheese_more=""
+        (( ${#cheese_keep[@]} > 3 )) && cheese_more=" (+$(( ${#cheese_keep[@]} - 3 )) more)"
+        reasons+=("uncommitted .cheese/ notes: $(IFS=' '; echo "${cheese_keep[*]:0:3}")${cheese_more}")
+    elif (( cheese_throwaway > 0 )); then
+        reasons+=("throwaway .cheese/ (${cheese_throwaway} file(s))")
+    fi
+
     # Check for unpushed commits (only if branch ref exists)
     if $branch_exists; then
         local upstream
@@ -639,11 +741,8 @@ check_worktree() {
     local nested_blockers=()
     local nested_child
     while IFS= read -r nested_child; do
-        [[ -z "$nested_child" ]] && continue
-        if nested_child_blocks "$nested_child"; then
-            nested_blockers+=("$nested_child")
-        fi
-    done < <(wt_list_nested "$wt_path")
+        nested_blockers+=("$nested_child")
+    done < <(list_nested_blockers "$wt_path")
 
     local has_blocking_nested=false
     if (( ${#nested_blockers[@]} > 0 )); then
@@ -667,13 +766,19 @@ check_worktree() {
 
     # ── Action ──────────────────────────────────────────────────────
     if ! $DRY_RUN && ! $AUTO_CLEAN; then
-        interactive_action "$wt_path" "$repo_root" "$branch" "$status" "$has_blocking_nested"
+        local has_cheese=false
+        if (( cheese_throwaway + ${#cheese_keep[@]} > 0 )) || wt_cheese_tracked_changed "$wt_path"; then
+            has_cheese=true
+        fi
+        interactive_action "$wt_path" "$repo_root" "$status" "$has_cheese"
         return 0
     fi
 
     # --auto, or the --dry-run preview of --auto: decide one action.
     local action="keep" keep_kind="" keep_reason="" tag=""
-    if [[ "$status" == "DIRTY" ]]; then
+    if [[ "$status" == "DIRTY" ]] && $cheese_only_dirty; then
+        keep_kind=cheese; keep_reason="DIRTY, keep-worthy .cheese/ notes"
+    elif [[ "$status" == "DIRTY" ]]; then
         keep_kind=dirty; keep_reason="DIRTY"
     elif $live; then
         keep_kind=live; keep_reason="live process in worktree"
@@ -710,13 +815,33 @@ check_worktree() {
         action=remove
     fi
 
+    # Archive tags HEAD before the .cheese/ copy, so a failed tag leaves no copy.
     if [[ "$action" == "archive" ]]; then
         echo "         action: archive as ${tag} (idle ${idle}d)"
-        if $DRY_RUN || archive_worktree "$wt_path" "$repo_root" "$branch" "$head" "$tag"; then
-            ARCHIVED=$((ARCHIVED + 1))
-        else
+        if ! $DRY_RUN && ! tag_archive "$repo_root" "$head" "$tag"; then
             action=keep; keep_kind=warn; keep_reason="WARN, archive tag failed"
         fi
+    fi
+
+    # A throwaway .cheese/ leaves the machine only after a verified copy.
+    if [[ "$action" != "keep" ]] && (( cheese_throwaway > 0 )); then
+        local cheese_dest
+        cheese_dest="$(wt_cheese_archive_dir "$CHEESE_ARCHIVE" "${repo_root##*/}" "$slug" "${head:-nohead}")"
+        if $DRY_RUN && wt_path_inside "$cheese_dest" "$wt_path"; then
+            action=keep; keep_kind=cheese; keep_reason=".cheese/ archive is inside the worktree"
+        elif $DRY_RUN; then
+            echo "         action: copy .cheese/ to ${cheese_dest}"
+            CHEESE_ARCHIVED=$((CHEESE_ARCHIVED + 1))
+        elif save_cheese "$wt_path" "$repo_root" "$head"; then
+            CHEESE_ARCHIVED=$((CHEESE_ARCHIVED + 1))
+        else
+            action=keep; keep_kind=cheese; keep_reason=".cheese/ copy failed"
+        fi
+    fi
+
+    if [[ "$action" == "archive" ]]; then
+        $DRY_RUN || remove_worktree "$wt_path" "$repo_root" "$branch"
+        ARCHIVED=$((ARCHIVED + 1))
     elif [[ "$action" == "remove" ]]; then
         echo "         action: remove (idle ${idle}d)"
         $DRY_RUN || remove_worktree "$wt_path" "$repo_root" "$branch"
@@ -737,6 +862,7 @@ check_worktree() {
             warn)    SKIP_WARN=$((SKIP_WARN + 1)) ;;
             nested)  SKIP_NESTED=$((SKIP_NESTED + 1)) ;;
             recent)  SKIP_RECENT=$((SKIP_RECENT + 1)) ;;
+            cheese)  SKIP_CHEESE=$((SKIP_CHEESE + 1)) ;;
         esac
         if $RECLAIM && ! $live && ! $locked && (( idle >= RECLAIM_IDLE_DAYS && ${#IGNORED_RECLAIM[@]} > 0 )); then
             reclaim_worktree "$wt_path"
@@ -744,11 +870,14 @@ check_worktree() {
     fi
 }
 
-# interactive_action <wt> <repo-root> <branch> <status> <has-blocking-nested>
-# — prompt on /dev/tty, never on stdin (the discovery loop reads fd 3).
+# interactive_action <wt> <repo-root> <status> <has-cheese> — prompt on
+# /dev/tty, never on stdin (the discovery loop reads fd 3). <has-cheese> is
+# true when .cheese/ holds untracked files or tracked changes.
 interactive_action() {
-    local wt_path="$1" repo_root="$2" branch="$3" status="$4" has_blocking_nested="$5"
-    local should_remove=false answer
+    local wt_path="$1" repo_root="$2" status="$3" has_cheese="$4"
+    local should_remove=false answer branch head
+    branch="$(git -C "$wt_path" symbolic-ref --short --quiet HEAD 2>/dev/null || true)"
+    head="$(git -C "$wt_path" rev-parse --verify --quiet HEAD 2>/dev/null || true)"
 
     if [[ "$status" == "SAFE" ]]; then
         read -rp "         Remove? [y/N] " answer </dev/tty
@@ -761,9 +890,18 @@ interactive_action() {
 
     # Nested-worktree safety gate: require explicit confirmation before
     # removing a parent that nests unmerged/dirty work.
-    if $should_remove && $has_blocking_nested; then
+    if $should_remove && [[ -n "$(list_nested_blockers "$wt_path")" ]]; then
         read -rp "         Parent nests unmerged/dirty worktree(s) — remove anyway? [y/N] " answer </dev/tty
         [[ "$answer" =~ ^[Yy] ]] || should_remove=false
+    fi
+
+    # Copy any .cheese/ out first, whatever it holds; keep the worktree on failure.
+    if $should_remove && $has_cheese; then
+        if save_cheese "$wt_path" "$repo_root" "$head"; then
+            CHEESE_ARCHIVED=$((CHEESE_ARCHIVED + 1))
+        else
+            should_remove=false
+        fi
     fi
 
     if $should_remove; then
@@ -774,17 +912,37 @@ interactive_action() {
     fi
 }
 
-# archive_worktree <wt> <repo-root> <branch> <head-sha> <tag> — tag HEAD (or
-# reuse a tag that already points at it), then remove the worktree and branch.
-archive_worktree() {
-    local wt_path="$1" repo_root="$2" branch="$3" head="$4" tag="$5"
+# tag_archive <repo-root> <head-sha> <tag> — tag <head-sha>, or reuse a tag that
+# already points at it. Exit 1 when git cannot create the tag.
+tag_archive() {
+    local repo_root="$1" head="$2" tag="$3"
     if ! git -C "$repo_root" show-ref --verify --quiet "refs/tags/${tag}" \
         && ! git -C "$repo_root" tag "$tag" "$head"; then
         echo -e "         ${RED}could not create tag ${tag}; keeping the worktree${RESET}"
         return 1
     fi
     echo -e "         ${GREEN}Tagged ${tag} -> ${head:0:12}${RESET}"
-    remove_worktree "$wt_path" "$repo_root" "$branch"
+}
+
+# save_cheese <wt> <repo-root> <head-sha> — copy <wt>/.cheese to a free dir
+# under CHEESE_ARCHIVE (see wt_cheese_archive_dir). Exit 1, with no partial
+# copy left behind, when any step fails or the copy would land inside <wt>.
+save_cheese() {
+    local wt="$1" repo_root="$2" head="$3" dest tmp
+    dest="$(wt_cheese_archive_dir "$CHEESE_ARCHIVE" "${repo_root##*/}" "${wt##*/}" "${head:-nohead}")"
+    if wt_path_inside "$dest" "$wt"; then
+        echo -e "         ${RED}.cheese/ archive ${dest} is inside the worktree; keeping the worktree${RESET}"
+        return 1
+    fi
+    tmp="${dest}.partial.$$"
+    if mkdir -p "${dest%/*}" 2>/dev/null && cp -a "${wt}/.cheese" "$tmp" 2>/dev/null \
+        && mv "$tmp" "$dest" 2>/dev/null; then
+        echo -e "         ${GREEN}Copied .cheese/ to ${dest}${RESET}"
+        return 0
+    fi
+    rm -rf "$tmp" 2>/dev/null || true
+    echo -e "         ${RED}could not copy .cheese/ to ${dest}; keeping the worktree${RESET}"
+    return 1
 }
 
 remove_worktree() {
@@ -885,6 +1043,7 @@ while IFS= read -r -u3 git_dir; do
     fi
 
     load_repo_caches "$repo_root" "$default_branch"
+    select_regenerable "$repo_root"
 
     FOUND_REPOS=$((FOUND_REPOS + 1))
     echo -e "${CYAN}${repo_name}${RESET} ${DIM}(${#local_wts[@]} worktree(s), default: ${default_branch})${RESET}"
@@ -912,6 +1071,7 @@ else
     echo -e "  Removed: ${GREEN}${REMOVED}${RESET}"
     echo -e "  Archived: ${GREEN}${ARCHIVED}${RESET}"
     echo -e "  Reclaimed: ${GREEN}${RECLAIMED_KIB} KiB${RESET}"
+    echo -e "  Cheese archived: ${GREEN}${CHEESE_ARCHIVED}${RESET}"
     echo -e "  Skipped: ${YELLOW}${SKIPPED}${RESET}"
 fi
 
@@ -928,4 +1088,5 @@ echo ""
 echo "SUMMARY ccw-sweep: total=${TOTAL} safe=${SAFE} removed=${REMOVED} archived=${ARCHIVED}" \
     "reclaimed_kib=${RECLAIMED_KIB} skipped=${SKIPPED} skip_recent=${SKIP_RECENT} skip_live=${SKIP_LIVE}" \
     "skip_t3=${SKIP_T3} skip_open_pr=${SKIP_OPEN_PR} skip_dirty=${SKIP_DIRTY} skip_warn=${SKIP_WARN}" \
-    "skip_nested=${SKIP_NESTED} dry_run=$($DRY_RUN && echo 1 || echo 0)"
+    "skip_nested=${SKIP_NESTED} cheese_archived=${CHEESE_ARCHIVED} skip_cheese=${SKIP_CHEESE}" \
+    "dry_run=$($DRY_RUN && echo 1 || echo 0)"

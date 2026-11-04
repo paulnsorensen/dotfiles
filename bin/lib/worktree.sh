@@ -57,6 +57,111 @@ wt_list_nested() {
     done
 }
 
+# wt_repo_name <repo-root> — the repository name from the origin URL
+# (git@github.com:o/easy-cheese.git -> easy-cheese), else the checkout dir name.
+wt_repo_name() {
+    local url name=""
+    url="$(git -C "$1" remote get-url origin 2>/dev/null || true)"
+    if [[ -n "$url" ]]; then
+        name="${url%/}"
+        name="${name%.git}"
+        name="${name##*/}"
+        name="${name##*:}"
+    fi
+    if [[ -z "$name" ]]; then
+        name="${1%/}"
+        name="${name##*/}"
+    fi
+    printf '%s\n' "$name"
+}
+
+# wt_regen_select <repo-name> <entry>... — print the regenerable entries that
+# apply to <repo-name>, one per line. "name<TAB><glob>" matches any path
+# component. "path<TAB><glob>" matches from the worktree root: the entry has a
+# "/", and a leading "/" is dropped. "<repo>:<pattern>" applies to that repo only.
+wt_regen_select() {
+    local repo="$1" entry pat
+    shift
+    for entry in "$@"; do
+        pat="$entry"
+        if [[ "$entry" == *:* ]]; then
+            [[ "${entry%%:*}" == "$repo" ]] || continue
+            pat="${entry#*:}"
+        fi
+        if [[ "$pat" == */* ]]; then
+            pat="${pat#/}"
+            [[ -n "$pat" ]] && printf 'path\t%s\n' "$pat"
+        elif [[ -n "$pat" ]]; then
+            printf 'name\t%s\n' "$pat"
+        fi
+    done
+    return 0
+}
+
+# wt_path_under <relative-path> <glob> — exit 0 when the path matches the glob
+# or lies under a match (website/content/docs/x.md is under website/content/docs).
+wt_path_under() {
+    # shellcheck disable=SC2053  # $2 is a glob on purpose; [[ ]] never expands it to files
+    [[ "$1" == $2 || "$1" == $2/* ]]
+}
+
+# wt_path_inside <path> <dir> — exit 0 when <path> is <dir> or lies below it.
+# <path> need not exist: its nearest existing ancestor resolves symlinks.
+wt_path_inside() {
+    local p="$1" rest="" d
+    while [[ ! -d "$p" ]]; do
+        rest="/${p##*/}${rest}"
+        p="$(dirname "$p")"
+    done
+    p="$(cd -P "$p" && pwd)${rest}" || return 1
+    d="$(cd -P "$2" 2>/dev/null && pwd)" || return 1
+    [[ "$p" == "$d" || "$p" == "$d"/* ]]
+}
+
+# wt_cheese_class <path> — classify one file under .cheese/ (<path> is relative
+# to .cheese/). Exit 1 for throwaway: a file under cut/ or a review or scratch
+# dir, or a loose top-level file other than a wheypoint record. Exit 2 for a
+# cook/ or press/ report: throwaway once the branch is merged, keep-worthy
+# before. Exit 0 for keep-worthy: wheypoint*/wp-intent* records and every other
+# dir, known or not.
+wt_cheese_class() {
+    local rel="$1"
+    if [[ "$rel" != */* ]]; then
+        case "$rel" in
+            wheypoint*|wp-intent*) return 0 ;;
+            *) return 1 ;;
+        esac
+    fi
+    case "${rel%%/*}" in
+        age|plate|affinage|cure|cut|reviews|press-history|press-decisions|scratch|tmp) return 1 ;;
+        cook|press) return 2 ;;
+    esac
+    return 0
+}
+
+# wt_cheese_archive_dir <base> <repo> <slug> <head-sha> — echo the first free
+# copy destination: <base>/<repo>/<slug>, then <slug>-<sha8>, then
+# <slug>-<sha8>-<n> from n=2.
+wt_cheese_archive_dir() {
+    local dest="$1/$2/$3" base n=2
+    if [[ -e "$dest" || -L "$dest" ]]; then
+        base="${dest}-${4:0:8}"
+        dest="$base"
+        while [[ -e "$dest" || -L "$dest" ]]; do
+            dest="${base}-${n}"
+            n=$((n + 1))
+        done
+    fi
+    printf '%s\n' "$dest"
+}
+
+# wt_cheese_tracked_changed <worktree> — exit 0 when a tracked or staged file
+# under .cheese/ differs from HEAD and is still on disk. Deleted files have
+# nothing to copy, so they do not count.
+wt_cheese_tracked_changed() {
+    [[ -n "$(git -C "$1" diff --name-only --diff-filter=d HEAD -- .cheese 2>/dev/null)" ]]
+}
+
 # wt_child_blocks_removal <child_path> — exit 0 (blocks) when the nested child
 # has work that must not be lost: uncommitted changes, staged changes, untracked
 # files, or commits not yet on its remote default branch. Exit 1 when the child

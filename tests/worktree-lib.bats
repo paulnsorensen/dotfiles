@@ -44,6 +44,57 @@ add_worktree() {
   git -C "$repo" worktree add "$repo/.worktrees/$slug" -b "$branch" --quiet 2>/dev/null
 }
 
+# ── wt_repo_name / wt_regen_select / wt_path_under ──────────────────────────
+
+@test "wt_repo_name: reads the name from ssh, https, and path origins" {
+  local url
+  mkdir -p "$SCAN/clone"
+  git -C "$SCAN/clone" init -q
+  for url in git@github.com:o/easy-cheese.git https://github.com/o/easy-cheese \
+             https://github.com/o/easy-cheese.git/ /srv/git/easy-cheese.git; do
+    git -C "$SCAN/clone" remote remove origin 2>/dev/null || true
+    git -C "$SCAN/clone" remote add origin "$url"
+    run wt_repo_name "$SCAN/clone"
+    [[ "$output" == "easy-cheese" ]] || { echo "$url -> $output"; return 1; }
+  done
+}
+
+@test "wt_repo_name: falls back to the checkout dir name without an origin" {
+  mkdir -p "$SCAN/local-only"
+  git -C "$SCAN/local-only" init -q
+  run wt_repo_name "$SCAN/local-only"
+  [[ "$output" == "local-only" ]] || { echo "got: $output"; return 1; }
+}
+
+@test "wt_regen_select: splits names and anchored paths and keeps only this repo's entries" {
+  run wt_regen_select tdbr target '*.pyz' .claude/workflows tdbr:/reports tdbr:.godot \
+    easy-cheese:/vendor easy-cheese:website/content/docs /
+  [[ "$output" == $'name\ttarget\nname\t*.pyz\npath\t.claude/workflows\npath\treports\nname\t.godot' ]] || {
+    echo "got: $output"; return 1; }
+}
+
+@test "wt_path_under: matches the glob and paths below it, not name prefixes" {
+  wt_path_under website/content/docs website/content/docs
+  wt_path_under website/content/docs/skills/cook.md website/content/docs
+  wt_path_under frontend/mold-review/test-results/r.json 'frontend/*/test-results'
+  run wt_path_under website/content/docsx website/content/docs
+  [[ $status -eq 1 ]] || { echo "name prefix matched"; return 1; }
+  run wt_path_under sub/reports/x reports
+  [[ $status -eq 1 ]] || { echo "nested path matched an anchored glob"; return 1; }
+}
+
+@test "wt_path_inside: resolves the nearest existing ancestor, not name prefixes" {
+  mkdir -p "$SCAN/wt/sub" "$SCAN/wtx"
+  ln -s "$SCAN/wt/sub" "$SCAN/link"
+  wt_path_inside "$SCAN/wt" "$SCAN/wt"
+  wt_path_inside "$SCAN/wt/new/deeper" "$SCAN/wt"
+  wt_path_inside "$SCAN/link/new" "$SCAN/wt"
+  run wt_path_inside "$SCAN/wtx/new" "$SCAN/wt"
+  [[ $status -eq 1 ]] || { echo "name prefix matched"; return 1; }
+  run wt_path_inside "$SCAN/other/new" "$SCAN/wt"
+  [[ $status -eq 1 ]] || { echo "outside path matched"; return 1; }
+}
+
 # ── resolve_default_branch ───────────────────────────────────────────
 
 @test "resolve_default_branch reads origin/HEAD" {
@@ -144,6 +195,72 @@ add_worktree() {
   echo "handoff" > "$SCAN/repo/.worktrees/noted/.cheese/notes/slug.md"
   run wt_child_blocks_removal "$SCAN/repo/.worktrees/noted"
   [[ $status -eq 0 ]]
+}
+
+# ── wt_cheese_class / wt_cheese_archive_dir ────────────────────────────────
+
+@test "wt_cheese_class: review, cut, and scratch dirs and loose files are throwaway" {
+  local rel
+  for rel in age/r.md plate/state.json affinage/x cure/y.md reviews/a/b.md cut/c.json \
+             cut/deep/c.json press-history/1.json press-decisions/d.md scratch/probe.sh \
+             tmp/t notes.md state.json; do
+    run wt_cheese_class "$rel"
+    [[ $status -eq 1 ]] || { echo "not throwaway ($status): $rel"; return 1; }
+  done
+}
+
+@test "wt_cheese_class: cook and press reports depend on the merge state" {
+  local rel
+  for rel in cook/c.md cook/slug/receipt.json press/p.json press/run/p.md; do
+    run wt_cheese_class "$rel"
+    [[ $status -eq 2 ]] || { echo "not merge-dependent ($status): $rel"; return 1; }
+  done
+}
+
+@test "wt_cheese_class: work dirs, wheypoint records, and unknown dirs are keep-worthy" {
+  local rel
+  for rel in specs/s.md plans/p.md research/r.md notes/n.md issues/i.md glossary/g.md \
+             mold/m.json durable/d.md build-optimize/b.md \
+             wheypoint.json wheypoint-slug.md wp-intent.json unknown-dir/x \
+             age-notes/x scratchpad/x cooking/x cut-notes/x; do
+    run wt_cheese_class "$rel"
+    [[ $status -eq 0 ]] || { echo "not keep-worthy ($status): $rel"; return 1; }
+  done
+}
+
+@test "wt_cheese_archive_dir: uses the slug, then the short sha, then a counter" {
+  local base="$SCAN/arch" sha=0123456789abcdef0123456789abcdef01234567
+  run wt_cheese_archive_dir "$base" repo feat "$sha"
+  [[ "$output" == "$base/repo/feat" ]] || { echo "got: $output"; return 1; }
+  mkdir -p "$base/repo/feat"
+  run wt_cheese_archive_dir "$base" repo feat "$sha"
+  [[ "$output" == "$base/repo/feat-01234567" ]] || { echo "got: $output"; return 1; }
+  mkdir -p "$base/repo/feat-01234567"
+  run wt_cheese_archive_dir "$base" repo feat "$sha"
+  [[ "$output" == "$base/repo/feat-01234567-2" ]] || { echo "got: $output"; return 1; }
+}
+
+@test "wt_cheese_tracked_changed: counts changed and staged files, not clean or deleted ones" {
+  create_repo "$SCAN/repo"
+  local r="$SCAN/repo"
+  mkdir -p "$r/.cheese/specs"
+  echo v1 > "$r/.cheese/specs/a.md"
+  echo v1 > "$r/.cheese/specs/b.md"
+  git -C "$r" add .cheese
+  git -C "$r" commit -m cheese --quiet
+  run wt_cheese_tracked_changed "$r"
+  [[ $status -eq 1 ]] || { echo "clean tracked files counted"; return 1; }
+  rm "$r/.cheese/specs/b.md"
+  run wt_cheese_tracked_changed "$r"
+  [[ $status -eq 1 ]] || { echo "a deleted file counted"; return 1; }
+  echo v2 >> "$r/.cheese/specs/a.md"
+  run wt_cheese_tracked_changed "$r"
+  [[ $status -eq 0 ]] || { echo "a modified file missed"; return 1; }
+  git -C "$r" checkout --quiet -- .cheese/specs/a.md
+  echo new > "$r/.cheese/specs/c.md"
+  git -C "$r" add .cheese/specs/c.md
+  run wt_cheese_tracked_changed "$r"
+  [[ $status -eq 0 ]] || { echo "a staged new file missed"; return 1; }
 }
 
 @test "wt_child_blocks_removal: unmerged commits block" {
