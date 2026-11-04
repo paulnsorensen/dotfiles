@@ -74,7 +74,7 @@
 "aqua:chmln/sd" = "v1.1.0"
 "aqua:charmbracelet/vhs" = "v0.12.1"
 "aqua:sharkdp/hyperfine" = "v2.0.0"
-"aqua:jdx/usage" = "v7.1.5"
+"aqua:jdx/usage" = "v7.2.0"
 
 "aqua:mozilla/sccache" = "v0.19.0"
 "aqua:nextest-rs/nextest/cargo-nextest" = "cargo-nextest-0.9.140"
