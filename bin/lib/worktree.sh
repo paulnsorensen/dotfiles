@@ -105,6 +105,19 @@ wt_path_under() {
     [[ "$1" == $2 || "$1" == $2/* ]]
 }
 
+# wt_path_inside <path> <dir> — exit 0 when <path> is <dir> or lies below it.
+# <path> need not exist: its nearest existing ancestor resolves symlinks.
+wt_path_inside() {
+    local p="$1" rest="" d
+    while [[ ! -d "$p" ]]; do
+        rest="/${p##*/}${rest}"
+        p="$(dirname "$p")"
+    done
+    p="$(cd -P "$p" && pwd)${rest}" || return 1
+    d="$(cd -P "$2" 2>/dev/null && pwd)" || return 1
+    [[ "$p" == "$d" || "$p" == "$d"/* ]]
+}
+
 # wt_cheese_class <path> — classify one file under .cheese/ (<path> is relative
 # to .cheese/). Exit 1 for throwaway: a file under cut/ or a review or scratch
 # dir, or a loose top-level file other than a wheypoint record. Exit 2 for a

@@ -83,6 +83,18 @@ add_worktree() {
   [[ $status -eq 1 ]] || { echo "nested path matched an anchored glob"; return 1; }
 }
 
+@test "wt_path_inside: resolves the nearest existing ancestor, not name prefixes" {
+  mkdir -p "$SCAN/wt/sub" "$SCAN/wtx"
+  ln -s "$SCAN/wt/sub" "$SCAN/link"
+  wt_path_inside "$SCAN/wt" "$SCAN/wt"
+  wt_path_inside "$SCAN/wt/new/deeper" "$SCAN/wt"
+  wt_path_inside "$SCAN/link/new" "$SCAN/wt"
+  run wt_path_inside "$SCAN/wtx/new" "$SCAN/wt"
+  [[ $status -eq 1 ]] || { echo "name prefix matched"; return 1; }
+  run wt_path_inside "$SCAN/other/new" "$SCAN/wt"
+  [[ $status -eq 1 ]] || { echo "outside path matched"; return 1; }
+}
+
 # ── resolve_default_branch ───────────────────────────────────────────
 
 @test "resolve_default_branch reads origin/HEAD" {

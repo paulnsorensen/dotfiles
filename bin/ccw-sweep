@@ -825,8 +825,12 @@ check_worktree() {
 
     # A throwaway .cheese/ leaves the machine only after a verified copy.
     if [[ "$action" != "keep" ]] && (( cheese_throwaway > 0 )); then
-        if $DRY_RUN; then
-            echo "         action: copy .cheese/ to $(wt_cheese_archive_dir "$CHEESE_ARCHIVE" "${repo_root##*/}" "$slug" "${head:-nohead}")"
+        local cheese_dest
+        cheese_dest="$(wt_cheese_archive_dir "$CHEESE_ARCHIVE" "${repo_root##*/}" "$slug" "${head:-nohead}")"
+        if $DRY_RUN && wt_path_inside "$cheese_dest" "$wt_path"; then
+            action=keep; keep_kind=cheese; keep_reason=".cheese/ archive is inside the worktree"
+        elif $DRY_RUN; then
+            echo "         action: copy .cheese/ to ${cheese_dest}"
             CHEESE_ARCHIVED=$((CHEESE_ARCHIVED + 1))
         elif save_cheese "$wt_path" "$repo_root" "$head"; then
             CHEESE_ARCHIVED=$((CHEESE_ARCHIVED + 1))
@@ -892,8 +896,12 @@ interactive_action() {
     fi
 
     # Copy any .cheese/ out first, whatever it holds; keep the worktree on failure.
-    if $should_remove && $has_cheese && ! save_cheese "$wt_path" "$repo_root" "$head"; then
-        should_remove=false
+    if $should_remove && $has_cheese; then
+        if save_cheese "$wt_path" "$repo_root" "$head"; then
+            CHEESE_ARCHIVED=$((CHEESE_ARCHIVED + 1))
+        else
+            should_remove=false
+        fi
     fi
 
     if $should_remove; then
@@ -918,10 +926,14 @@ tag_archive() {
 
 # save_cheese <wt> <repo-root> <head-sha> — copy <wt>/.cheese to a free dir
 # under CHEESE_ARCHIVE (see wt_cheese_archive_dir). Exit 1, with no partial
-# copy left behind, when any step fails.
+# copy left behind, when any step fails or the copy would land inside <wt>.
 save_cheese() {
     local wt="$1" repo_root="$2" head="$3" dest tmp
     dest="$(wt_cheese_archive_dir "$CHEESE_ARCHIVE" "${repo_root##*/}" "${wt##*/}" "${head:-nohead}")"
+    if wt_path_inside "$dest" "$wt"; then
+        echo -e "         ${RED}.cheese/ archive ${dest} is inside the worktree; keeping the worktree${RESET}"
+        return 1
+    fi
     tmp="${dest}.partial.$$"
     if mkdir -p "${dest%/*}" 2>/dev/null && cp -a "${wt}/.cheese" "$tmp" 2>/dev/null \
         && mv "$tmp" "$dest" 2>/dev/null; then

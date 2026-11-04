@@ -1038,6 +1038,27 @@ CHEESE_DEFAULT_REL=".local/share/ccw-sweep/cheese"
   [[ -f "$SCAN/repo/.worktrees/tidy/.cheese/age/review.md" ]] || { echo "worktree removed after a failed copy"; return 1; }
 }
 
+@test "a .cheese/ archive inside the worktree keeps the worktree" {
+  create_repo "$SCAN/repo"
+  add_safe_worktree "$SCAN/repo" "tidy"
+  local wt="$SCAN/repo/.worktrees/tidy"
+  add_cheese "$wt" age/review.md
+  export CCW_SWEEP_CHEESE_ARCHIVE="$wt/arch"
+
+  run ccw-sweep --dry-run --auto --path "$SCAN"
+  assert_success
+  assert_contains "action: keep: .cheese/ archive is inside the worktree"
+  assert_contains "cheese_archived=0 skip_cheese=1 dry_run=1"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "is inside the worktree; keeping the worktree"
+  assert_contains "action: keep: .cheese/ copy failed"
+  assert_contains "removed=0 "
+  [[ -f "$wt/.cheese/age/review.md" ]] || { echo "worktree removed with its archive inside"; return 1; }
+  [[ ! -e "$wt/arch" ]] || { echo "archive dir created inside the worktree"; return 1; }
+}
+
 @test "dry run reports the .cheese/ copy but copies nothing" {
   create_repo "$SCAN/repo"
   add_safe_worktree "$SCAN/repo" "tidy"
