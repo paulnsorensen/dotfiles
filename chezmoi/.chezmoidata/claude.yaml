@@ -378,6 +378,17 @@ claude:
     - rennet
     - session-analytics
     - steel-thread
+    - t3-affinage
+    - t3-age
+    - t3-briesearch
+    - t3-cook
+    - t3-core
+    - t3-cure
+    - t3-factory
+    - t3-hard-cheese
+    - t3-land
+    - t3-mold
+    - t3-research
     - term-theme
     - test-sandbox
     - tool-efficiency

@@ -1,0 +1,23 @@
+[
+  {"agentType": "judge", "mode": "advise", "role": "advisor"},
+  {"agentType": "judge", "tier": "opus", "role": "advisor"},
+  {"agentType": "judge", "mode": "verify", "role": "gate-runner"},
+  {"agentType": "judge", "role": "gate-runner"},
+  {"agentType": "explorer", "tier": "opus", "role": "planner"},
+  {"agentType": "explorer", "role": "explorer"},
+  {"agentType": "Plan", "role": "planner"},
+  {"agentType": "coder", "role": "coder"},
+  {"agentType": "reviewer", "role": "reviewer"},
+  {"agentType": "taste-tester", "role": "taste-test"},
+  {"agentType": "runner", "role": "runner"},
+  {"agentType": "formatter", "role": "formatter"},
+  {"agentType": "researcher", "role": "researcher"},
+  {"agentType": "gate-runner", "role": "gate-runner"},
+  {"agentType": "whey-drainer", "role": "gate-runner"},
+  {"agentType": "worktree-content-digest", "role": "worktree-digest"},
+  {"agentType": "verifier", "role": "verifier"},
+  {"agentType": "planner", "role": "planner"},
+  {"agentType": "general-purpose", "role": "explorer"},
+  {"agentType": "generalist", "role": "explorer"},
+  {"agentType": "general", "role": "explorer"}
+]
