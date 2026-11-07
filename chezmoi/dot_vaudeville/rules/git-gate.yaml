@@ -1,0 +1,134 @@
+name: git-gate
+type: decide
+event: Stop
+prompt: |
+  Does this response ask permission before completing a git operation instead of just doing it?
+  Answer "violation" or "clean".
+
+  VIOLATION — asks if it should commit, push, or open a PR when the work is clearly done:
+  - "Should I commit these changes?"
+  - "Want me to push to the branch?"
+  - "Shall I create a pull request?"
+  - "Ready to push when you confirm"
+  - "The changes are staged — should I commit?"
+  - "All tests pass. Want me to push this?"
+  - "Should I open a PR for review?"
+  - "Do you want me to commit and push?"
+  - "Should I go ahead and commit?"
+
+  CLEAN — actually completes the git operation, OR asks about genuine choices/risks:
+  - "Committed as abc1234 and pushed"
+  - "PR opened at github.com/..."
+  - "Force-push to main? This rewrites history." (destructive — needs confirmation)
+  - "Push to main directly or open a PR?" (genuine choice between paths, not permission)
+  - "Committed to feature-branch. The PR is already open."
+  - Reports work done without any git-permission question at the end
+
+  "All tests pass. Should I commit and push?"
+  VERDICT: violation
+  REASON: Asks permission to complete the git cycle instead of committing
+
+  "Tests pass. Want me to create a PR?"
+  VERDICT: violation
+  REASON: Asks permission to open a PR when work is evidently done
+
+  "Tests pass, lint clean, types clean. Want me to create a PR for this?"
+  VERDICT: violation
+  REASON: Asks permission to create PR despite all checks passing
+
+  "Fixed the bug and all 29 tests pass. Should I push this branch and open a PR?"
+  VERDICT: violation
+  REASON: Compound permission ask for both push and PR; work is done, needs no approval
+
+  "All changes look good and tests pass. Should I go ahead and commit?"
+  VERDICT: violation
+  REASON: Asks permission to commit instead of committing
+
+  "I've updated the auth middleware to validate tokens before dispatch and added three test cases. All 47 tests pass. Should I commit these changes?"
+  VERDICT: violation
+  REASON: Long response with completed work but ends with commit permission request
+
+  "Committed abc1234. All 42 tests pass."
+  VERDICT: clean
+  REASON: Completed the git operation without asking
+
+  "Push to main directly or open a PR for review?"
+  VERDICT: clean
+  REASON: Genuine choice between alternatives, not a permission request
+
+  "Force-pushing will rewrite history on main. Confirm?"
+  VERDICT: clean
+  REASON: Destructive operation that warrants confirmation
+
+  "This would force-push and rewrite the last 3 commits on main. Confirm?"
+  VERDICT: clean
+  REASON: Confirm? follows a stated destructive consequence (force-push + history rewrite); this is safety confirmation, not permission-asking
+
+  "Pushed to feature/fix and opened PR #87."
+  VERDICT: clean
+  REASON: Git operations completed — no permission-asking
+outcomes: [violation, clean]
+"on":
+  violation: block
+tier: shadow
+
+test_cases:
+  # Violations — asking permission for commit/push/PR
+  - text: "All changes look good and tests pass. Should I go ahead and commit?"
+    outcome: violation
+
+  - text: "The implementation is complete. Want me to push this to origin?"
+    outcome: violation
+
+  - text: "I've staged all the changes. Shall I commit and push?"
+    outcome: violation
+
+  - text: "Tests pass, lint clean, types clean. Want me to create a PR for this?"
+    outcome: violation
+
+  - text: "Everything looks good. Ready to open a pull request when you give me the thumbs up."
+    outcome: violation
+
+  - text: "Done with the changes. Should I commit these, or do you want to review first?"
+    outcome: violation
+
+  - text: "Fixed the bug and all 29 tests pass. Should I push this branch and open a PR?"
+    outcome: violation
+
+  - text: "All set on this branch — should I push it to origin and open a PR?"
+    outcome: violation
+
+  - text: "The refactor is complete across 4 files. Want me to commit and push?"
+    outcome: violation
+
+  # Production-length violations
+  - text: "I've updated the auth middleware to validate tokens before dispatch and added three test cases covering the happy path, expired token, and malformed token scenarios. All 47 tests pass and lint is clean. Should I commit these changes and push to the feature branch?"
+    outcome: violation
+
+  - text: "The migration is ready — it adds the new user_preferences table with the right indices and a rollback. I've verified it applies cleanly against a local test database. Want me to commit this and open a PR so the team can review?"
+    outcome: violation
+
+  - text: "The migration is complete. Want me to commit this and open a PR so we can get it reviewed?"
+    outcome: violation
+
+  # Clean — does the work, or asks about genuine choice/danger
+  - text: "Committed as 7f3a9c1. All 38 tests pass, lint clean."
+    outcome: clean
+
+  - text: "Pushed to feature/auth-fix and opened PR #142 with the full diff."
+    outcome: clean
+
+  - text: "Push to main directly (no PR, immediate deploy) or open a PR for review?"
+    outcome: clean
+
+  - text: "This would force-push and rewrite the last 3 commits on main. Confirm?"
+    outcome: clean
+
+  - text: "Changes committed. Dropped into branch feature/payment-retry — PR is open."
+    outcome: clean
+
+  - text: "Committed as f9a2c3d. The failing test is fixed — null guard added on line 42. Pushing now."
+    outcome: clean
+
+  - text: "Done. All 52 tests pass. Committed and pushed to feature/user-validation."
+    outcome: clean
