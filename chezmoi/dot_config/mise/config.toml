@@ -43,7 +43,7 @@
 
 [tools]
 "aqua:jqlang/jq" = "jq-1.8.2"
-"aqua:mikefarah/yq" = "v4.54.1"
+"aqua:mikefarah/yq" = "v4.54.2"
 "aqua:junegunn/fzf" = "v0.74.5"
 "aqua:cli/cli" = "v2.103.3"
 "aqua:koalaman/shellcheck" = "v0.11.0"
@@ -74,7 +74,7 @@
 "aqua:chmln/sd" = "v1.1.0"
 "aqua:charmbracelet/vhs" = "v0.12.1"
 "aqua:sharkdp/hyperfine" = "v2.0.0"
-"aqua:jdx/usage" = "v7.2.0"
+"aqua:jdx/usage" = "v7.3.0"
 
 "aqua:mozilla/sccache" = "v0.19.0"
 "aqua:nextest-rs/nextest/cargo-nextest" = "cargo-nextest-0.9.140"
