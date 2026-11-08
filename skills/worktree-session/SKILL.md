@@ -42,7 +42,9 @@ Explicitly authorize that agent to use its own sub-agents in the destination che
    For other tasks that depend on untransferred changes, ask before proceeding.
 3. Check for T3 session tools before selecting a launcher, regardless of the active harness.
    If catalog discovery omits them, make one bounded direct `orchestrator_capabilities` attempt.
-   Prefer a supported T3 session mechanism when available.
+   If direct discovery fails, try any advertised same-server ACP transport before declaring T3 unavailable.
+   Do not try another transport after a permission denial.
+   Prefer a supported T3 session mechanism when available to the caller's credential scope.
    Read [T3 routing](references/t3.md) when T3 tools are available or the session runs inside T3.
    Use [native and CLI routing](references/native-cli.md) only when T3 tools are unavailable outside T3.
    An unsupported T3 transition does not authorize a native or CLI substitute.
