@@ -46,13 +46,14 @@ Start or select a session whose initial checkout is the existing target.
 Verify the exact branch and dirty state before destination edits.
 Do not reuse the parent's sandbox metadata as evidence of destination access.
 Do not request broader parent write roots or a parent restart.
-When no supported session launcher exists, report blocked.
-Do not create another checkout as a substitute.
+When existing-checkout resumption fails, use the recovery procedure in SKILL.md if a supported new-worktree session route exists.
+When no supported destination session launcher exists, report blocked without creating another checkout.
 
 ## Example
 
 Request: "Resume edits in /repo/task-b from Codex; only /repo/task-a is writable here."
 
 Inspect available Codex session-launch capabilities.
-If none can bind a destination session to /repo/task-b, report blocked with the missing capability.
-Leave both checkouts and the parent's permissions unchanged.
+If only a new-worktree session is supported, recover the work through that route.
+If neither route exists, report blocked with the missing capability.
+Leave the source checkout and the parent's permissions unchanged.
