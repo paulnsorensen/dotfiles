@@ -37,10 +37,12 @@ Derive a short task slug when the request identifies the task.
    Report blocked when the mechanism cannot use the requested base.
    Uncommitted changes do not transfer to a new checkout.
    Ask before proceeding when the task depends on changes that the selected mechanism cannot transfer.
-3. Read the matching reference before selecting a launcher.
-   In T3, read [T3 routing](references/t3.md).
-   Outside T3, read [native and CLI routing](references/native-cli.md).
-   Prefer a supported harness-native session mechanism.
+3. Check for T3 session tools before selecting a launcher, regardless of the active harness.
+   If catalog discovery omits them, make one bounded direct `orchestrator_capabilities` attempt.
+   Prefer a supported T3 session mechanism when available.
+   Read [T3 routing](references/t3.md) when T3 tools are available or the session runs inside T3.
+   Use [native and CLI routing](references/native-cli.md) only when T3 tools are unavailable outside T3.
+   An unsupported T3 transition does not authorize a native or CLI substitute.
    Use a CLI launcher only when it starts a separate session in the selected checkout.
    If neither exists, report the missing capability without creating an unused checkout.
 4. Start or select the destination through that mechanism.
@@ -85,5 +87,5 @@ Stop and report the unsupported transition.
 
 ## References
 
-- [T3 routing](references/t3.md) — read when the active session runs inside T3.
-- [Native and CLI routing](references/native-cli.md) — read when the active session runs outside T3.
+- [T3 routing](references/t3.md) — read when T3 tools are available or the active session runs inside T3.
+- [Native and CLI routing](references/native-cli.md) — read when T3 tools are unavailable outside T3.

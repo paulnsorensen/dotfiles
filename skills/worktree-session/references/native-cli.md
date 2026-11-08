@@ -1,7 +1,7 @@
 # Native and CLI routing
 
-This branch covers standalone Claude Code, Codex, OMP, and Pi.
-Tools exposed inside T3 use the T3 reference instead.
+Use this branch for standalone Claude Code, Codex, OMP, and Pi only when T3 session tools are unavailable.
+Available T3 session tools take priority, even outside T3.
 Do not infer session capabilities from the model's name.
 
 ## Discover before launch
