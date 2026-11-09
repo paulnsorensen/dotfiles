@@ -91,7 +91,7 @@ jobs:
     # (group "ast-grep") when both are due at the same time.
     - name: Install ast-grep
       run: |
-        uv tool install ast-grep-cli==0.51.0
+        uv tool install ast-grep-cli==0.51.1
         uv tool dir --bin >> "$GITHUB_PATH"
 
     - name: Install chezmoi
