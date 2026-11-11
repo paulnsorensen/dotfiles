@@ -4,9 +4,12 @@ Read the matching skill before its workflow. Skills own phase procedures; agent 
 
 ## Tools
 
-Use Tilth for workspace operations and shell for tests, builds, or unsupported operations.
+Use Tilth for workspace operations, including text reads of installed skills and their reference files.
+Use shell for tests, builds, or unsupported operations.
 Use the working-directory option.
-Batch independent calls in one turn. Follow schemas.
+Batch independent calls in one turn.
+Load a deferred tool's current schema before its first call.
+Reuse the schema until a schema error requires a refresh.
 Do not invent fields or anchors.
 Read affected sections before edits.
 Take each `tilth_write` TAG and `replace_text` `old` from lines its read displayed.
