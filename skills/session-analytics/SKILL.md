@@ -23,7 +23,9 @@ Run `<skill-dir>/scripts/query.sh <report> [harness]`. Reports: `tools`,
 round-trips, batching, and quota stops per model). The script uses the package's
 one-hour freshness check and reports a missing database as a failure.
 Use `uvx agent-session-analytics==0.2.1 ingest --force` to rebuild explicitly.
-The `latency` report is not a Codex inference-speed measurement. Codex timing and user records stay omitted. The ingest keeps `token_count` events and `cli_version`. Codex `tool_calls` and `stop_reason` are NULL.
+The `latency` report is not a Codex inference-speed measurement.
+Codex native inference timing stays omitted. Canonical `user_turns` includes real Codex prompts.
+The ingest keeps `token_count` events and `cli_version`. Codex `tool_calls` and `stop_reason` are NULL.
 
 Anything not covered: `scripts/query.sh sql "SELECT ..."` with the canonical
 schema. Chain queries; aim to answer within 5-8, then present intermediate

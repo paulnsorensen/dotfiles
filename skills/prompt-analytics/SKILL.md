@@ -21,6 +21,7 @@ relevant domain: `prompt-analysis`, `routing-accuracy`, `knowledge-gaps`, or
 
 The script calls the public `agent-session-analytics` package for SQL and
 Markdown tables. Its default database follows package freshness rules.
+Prompt text comes from canonical `user_turns`. The table excludes injected context and tool results.
 An explicit `SESSIONS_DB` must name a package-compatible database.
 A package failure is an error, not insufficient signal.
 
