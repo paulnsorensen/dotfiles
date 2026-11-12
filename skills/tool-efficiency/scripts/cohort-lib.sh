@@ -73,11 +73,13 @@ cohort_init() {
     )"
 }
 cohort_query() {
+    # DuckDB 1.x rejects a comma between the CTE list and a main SELECT.
     local sql="$1"
     if [[ "$sql" == WITH\ * ]]; then
-        sql="${sql#WITH }"
+        sessions_package_sql_markdown "$COHORT_SQL, ${sql#WITH }"
+    else
+        sessions_package_sql_markdown "$COHORT_SQL $sql"
     fi
-    sessions_package_sql_markdown "$COHORT_SQL, $sql"
 }
 cohort_audit() {
     echo "### Cohort audit (harness=$HARNESS; UTC [$SESSIONS_SINCE, $SESSIONS_UNTIL); selected=$SESSIONS_COHORT)"

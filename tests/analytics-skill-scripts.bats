@@ -234,12 +234,15 @@ make_cohort_fixture() {
     export SESSIONS_COHORT=bogus
     run "$SKILLS/tool-efficiency/scripts/analyze.sh" tool-usage Read
     [ "$status" -eq 2 ]
+    assert_contains "$output" 'Invalid SESSIONS_COHORT: bogus'
     export SESSIONS_COHORT=retained SESSIONS_SINCE=not-a-date
     run "$SKILLS/tool-efficiency/scripts/analyze.sh" tool-usage Read
     [ "$status" -eq 2 ]
+    assert_contains "$output" 'Invalid UTC window bound: not-a-date'
     export SESSIONS_SINCE=2026-08-02T00:00:00Z
     run "$SKILLS/tool-efficiency/scripts/analyze.sh" tool-usage Read
     [ "$status" -eq 2 ]
+    assert_contains "$output" 'Invalid UTC window:'
 }
 
 @test "artifact payloads and inferred Codex errors respect the UTC window" {
