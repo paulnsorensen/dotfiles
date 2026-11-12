@@ -1,6 +1,6 @@
 # Session-analytics gotchas
 
-Facts measured on 2026-09-04 that a future analysis would otherwise rederive.
+Measurement traps from coding-agent sessions. Each dated section records the evidence available at that date.
 
 ## `tool_uses.bash_cmd` records the pre-hook command
 
@@ -79,7 +79,11 @@ A Codex sub-agent rollout keeps its own session id. Its first `session_meta` nam
 
 ## Published package owns the engine (2026-10-11)
 
-The package now owns discovery, ingestion, database placement, and the canonical schema. Dotfiles keeps report SQL and consumer tests, not a second engine. This removes drift between local adapters and the published CLI. Use `uvx agent-session-analytics==0.2.1 schema` for the current schema and `uvx agent-session-analytics==0.2.1 db-path` for the database path.[^package-ownership]
+Skillz maintains the published `agent-session-analytics` package under `skillz-that-grillz/packages/agent-session-analytics`.[^skillz-package]
+The package owns discovery, ingestion, database placement, and the canonical schema.
+Dotfiles keeps report SQL and consumer tests, not a second engine.
+Both prompt-analytics and tool-efficiency already use this package; report fixes do not require an engine migration.[^package-ownership]
+Use `uvx agent-session-analytics==0.2.1 schema` for the schema and `uvx agent-session-analytics==0.2.1 db-path` for the database path.
 
 A package test that uses native OMP or Pi logs must set an isolated `HOME`. The package discovers those roots below `HOME`; Claude, Codex, and Cursor overrides alone do not isolate them. Keep `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `CURSOR_HOME` in the same fixture environment. This prevents a test from ingesting personal sessions.[^fixture-isolation]
 
@@ -105,22 +109,29 @@ Recheck the warm marker after lock acquisition: another caller can publish it be
 
 [^cache-warm]: `tests/lib/session-analytics-package.bash:18-38`; `tests/session-analytics-cache.bats:18-35`; PR #1425.
 
-## Prompt-report coverage and benchmark cohorts (2026-11-11)
+## Canonical prompts and benchmark session cohorts (2026-11-11)
 
-Session analytics reports must use canonical `user_turns` for real prompts.
-The published schema includes Codex prompts in this table.
-The prompt-analysis pack still selects plain-string user rows from `raw_entries`, which misses those Codex prompts.[^prompt-consumer]
+Prompt reports include Codex prompts through canonical `user_turns.text`.
+Use `turn_index = 0` for openers and `(harness, sessionId)` for session counts and joins.
+Legacy plain-string filters on `raw_entries` miss Codex prompts and Claude text blocks.
+The package excludes injected context, tool results, and agent-run Codex prompts.[^report-prompts]
 
-A zero-row prompt report therefore does not prove that the harness records no user prompts.
-The package schema takes precedence over the older skill statement that Codex user records stay omitted.[^prompt-consumer]
+Tool reports separate benchmark sessions through a shared path-marker heuristic.
+The default `retained` cohort excludes benchmark-marked sessions but retains unknown provenance.
+Use `SESSIONS_COHORT=all` or `benchmark` to inspect other cohorts.
+The audit table keeps all, retained, and benchmark counts visible; no log or database row is deleted.
+Path markers can misclassify ordinary sessions that discuss benchmark artifacts.[^report-cohorts]
 
 Benchmark sessions can distort harness-climb error rankings.
-Separate sessions with benchmark or evaluation provenance before proposing global instructions.
-Path markers provide a conservative proxy, not proof that a session is synthetic.
-Report excluded counts and retain the unfiltered comparison.
-An analysis of 2026-10-28 through 2026-11-10 finds 55 batch-limit failures before this proxy filter and none afterward.[^benchmark-cohort]
+Separate them before proposing global instructions, and keep the unfiltered comparison.
+An analysis of 2026-10-28 through 2026-11-10 finds 55 batch-limit failures before the path-marker filter and none afterward.[^benchmark-cohort]
 
-_Source: pinned package schema and session queries · Updated: 2026-11-11_
+`SESSIONS_SINCE` and `SESSIONS_UNTIL` define one UTC half-open window for every tool-efficiency report domain.
+Result joins use `(harness, sessionId, tool_use_id)` and aggregate duplicate results before joining.
+A canonical error wins over duplicate success results, including adapter-derived Codex errors.
+Reports keep calls without results and show result coverage instead of counting missing results as success.[^report-cohorts]
 
-[^prompt-consumer]: `uvx agent-session-analytics==0.2.1 schema`, `user_turns` contract; `skills/prompt-analytics/scripts/analyze.sh:29-62`; stale statement: `skills/session-analytics/SKILL.md:26`.
+[^skillz-package]: `skillz-that-grillz/packages/agent-session-analytics/pyproject.toml:1-29`, verified at `3117aa00ef67a112ef36d1190b0d046cb4efc586`; `skills/session-analytics/scripts/report-lib.sh:4-6`.
+[^report-prompts]: `skills/prompt-analytics/scripts/analyze.sh`; `tests/analytics-skill-scripts.bats`; package `references/canonical-schema.md:123-139`.
+[^report-cohorts]: `skills/tool-efficiency/scripts/cohort-lib.sh`; `skills/tool-efficiency/scripts/analyze.sh`; `tests/analytics-skill-scripts.bats`.
 [^benchmark-cohort]: Local analysis evidence: `.harness-climb/session-analytics-2026-11-11/queries.json`, query `q7`; matching `results.json`. Database snapshot: 2026-11-11 05:16:51 UTC. These local artifacts are not committed.

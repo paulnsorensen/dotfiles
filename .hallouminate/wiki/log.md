@@ -123,3 +123,5 @@
 2026-11-01 · e3376c641462af92 · merged · architecture/global-agents-doc.md · Worktree session ownership: offline eval cases name case-local synthetic capability and Git observations; explicit observed commits; case-local fixtures; offline scope limits.
 
 2026-11-11 · b2fc27b0f72f067e · merged · operations/session-analytics-gotchas.md · Recorded canonical prompt coverage and conservative benchmark cohorts. Exact retrieval rank: 1. Natural-query ranks: 1 and 2.
+
+2026-11-11 · d12f60ced848c892 · merged · operations/session-analytics-gotchas.md · Record Skillz package ownership, canonical prompt selection, benchmark cohort limits, and composite result joins. All three frozen retrieval probes return this page at rank 1.

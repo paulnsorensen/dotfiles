@@ -26,39 +26,25 @@ hf() { [[ "$HARNESS" == all ]] || printf "AND %sharness = '%s'" "${1:-}" "${HARN
 
 run() { sessions_package_sql_markdown "$1"; }
 
-# User text prompts: raw_entries rows whose message.content is a plain string.
-PROMPT_WHERE="type = 'user' AND message IS NOT NULL
-      AND json_type(json_extract(message, '\$.content')) = 'VARCHAR'"
-
 d_prompt_analysis() {
     echo "## Prompt Analysis: $TARGET  (harness=$HARNESS)"
     echo
     echo "### Shape: slash-command vs freeform (matching the keyword)"
-    run "WITH prompts AS (
-             SELECT json_extract_string(message, '\$.content') AS txt
-             FROM raw_entries WHERE $PROMPT_WHERE $(hf)
-         )
-         SELECT CASE WHEN txt LIKE '/%' THEN 'slash-command' ELSE 'freeform' END AS shape,
+    run "SELECT CASE WHEN text LIKE '/%' THEN 'slash-command' ELSE 'freeform' END AS shape,
                 count(*) AS n
-         FROM prompts WHERE txt LIKE '%$T%' GROUP BY shape;"
+         FROM user_turns WHERE text LIKE '%$T%' $(hf)
+         GROUP BY shape;"
     echo
     echo "### Top slash commands"
-    run "SELECT lower(split_part(trim(json_extract_string(message, '\$.content')), ' ', 1)) AS cmd,
+    run "SELECT lower(split_part(trim(text), ' ', 1)) AS cmd,
                 count(*) AS uses
-         FROM raw_entries
-         WHERE $PROMPT_WHERE $(hf)
-           AND trim(json_extract_string(message, '\$.content')) LIKE '/%'
+         FROM user_turns
+         WHERE trim(text) LIKE '/%' $(hf)
          GROUP BY cmd ORDER BY uses DESC LIMIT 20;"
     echo
     echo "### Common session openers"
-    run "WITH prompts AS (
-             SELECT sessionId, timestamp,
-                    json_extract_string(message, '\$.content') AS txt,
-                    row_number() OVER (PARTITION BY sessionId ORDER BY timestamp) AS rn
-             FROM raw_entries WHERE $PROMPT_WHERE $(hf)
-         )
-         SELECT substr(txt, 1, 80) AS opener, count(*) AS n
-         FROM prompts WHERE rn = 1
+    run "SELECT substr(text, 1, 80) AS opener, count(*) AS n
+         FROM user_turns WHERE turn_index = 0 $(hf)
          GROUP BY opener ORDER BY n DESC LIMIT 15;"
     echo
     echo "Low prompt volume = insufficient signal."
@@ -69,37 +55,37 @@ d_routing_accuracy() {
     echo
     echo "### Downstream skills within 5 min of $TARGET"
     run "WITH r AS (
-             SELECT sessionId, timestamp::TIMESTAMP AS t0,
+             SELECT harness, sessionId, timestamp::TIMESTAMP AS t0,
                     timestamp::TIMESTAMP + INTERVAL '5' MINUTE AS t1
              FROM skill_invocations WHERE skill_name = '$T' $(hf)
          )
          SELECT si.skill_name AS downstream, count(*) AS n
-         FROM skill_invocations si JOIN r ON si.sessionId = r.sessionId
+         FROM skill_invocations si JOIN r ON si.harness = r.harness AND si.sessionId = r.sessionId
              AND si.timestamp::TIMESTAMP > r.t0 AND si.timestamp::TIMESTAMP <= r.t1
          WHERE si.skill_name <> '$T'
          GROUP BY downstream ORDER BY n DESC LIMIT 15;"
     echo
     echo "### Dead-ends (routings with no downstream skill)"
     run "WITH r AS (
-             SELECT sessionId, timestamp, timestamp::TIMESTAMP AS t0,
+             SELECT harness, sessionId, timestamp, timestamp::TIMESTAMP AS t0,
                     timestamp::TIMESTAMP + INTERVAL '5' MINUTE AS t1
              FROM skill_invocations WHERE skill_name = '$T' $(hf)
          )
          SELECT count(*) AS routings_with_no_downstream
          FROM r WHERE NOT EXISTS (
              SELECT 1 FROM skill_invocations si
-             WHERE si.sessionId = r.sessionId AND si.skill_name <> '$T'
+             WHERE si.harness = r.harness AND si.sessionId = r.sessionId AND si.skill_name <> '$T'
                AND si.timestamp::TIMESTAMP > r.t0 AND si.timestamp::TIMESTAMP <= r.t1
          );"
     echo
     echo "### Immediate re-fires of $TARGET within 5 min"
     run "WITH r AS (
-             SELECT sessionId, timestamp::TIMESTAMP AS t0,
+             SELECT harness, sessionId, timestamp::TIMESTAMP AS t0,
                     timestamp::TIMESTAMP + INTERVAL '5' MINUTE AS t1
              FROM skill_invocations WHERE skill_name = '$T' $(hf)
          )
          SELECT count(*) AS immediate_refires
-         FROM skill_invocations si JOIN r ON si.sessionId = r.sessionId
+         FROM skill_invocations si JOIN r ON si.harness = r.harness AND si.sessionId = r.sessionId
              AND si.timestamp::TIMESTAMP > r.t0 AND si.timestamp::TIMESTAMP <= r.t1
          WHERE si.skill_name = '$T';"
     echo
@@ -110,33 +96,24 @@ d_knowledge_gaps() {
     echo "## Knowledge Gaps: $TARGET  (harness=$HARNESS; medium signal — inference, not proof)"
     echo
     echo "### Topic recurrence in freeform prompts"
-    run "WITH prompts AS (
-             SELECT sessionId, json_extract_string(message, '\$.content') AS txt
-             FROM raw_entries WHERE $PROMPT_WHERE $(hf)
-         )
-         SELECT count(*) AS mentions, count(DISTINCT sessionId) AS sessions
-         FROM prompts
-         WHERE txt NOT LIKE '/%' AND lower(txt) LIKE lower('%$T%');"
+    run "SELECT count(*) AS mentions, count(DISTINCT (harness, sessionId)) AS sessions
+         FROM user_turns
+         WHERE text NOT LIKE '/%' AND lower(text) LIKE lower('%$T%') $(hf);"
     echo
     echo "### Skills that fired in sessions mentioning the topic"
     run "WITH topic_sessions AS (
-             SELECT DISTINCT sessionId
-             FROM raw_entries
-             WHERE $PROMPT_WHERE $(hf)
-               AND lower(json_extract_string(message, '\$.content')) LIKE lower('%$T%')
+             SELECT DISTINCT harness, sessionId
+             FROM user_turns
+             WHERE lower(text) LIKE lower('%$T%') $(hf)
          )
          SELECT si.skill_name, count(*) AS fired
-         FROM skill_invocations si JOIN topic_sessions t ON si.sessionId = t.sessionId
+         FROM skill_invocations si JOIN topic_sessions t
+           ON si.harness = t.harness AND si.sessionId = t.sessionId
          GROUP BY si.skill_name ORDER BY fired DESC LIMIT 15;"
     echo
     echo "### Repeated openers across sessions (>=3)"
-    run "WITH openers AS (
-             SELECT json_extract_string(message, '\$.content') AS txt,
-                    row_number() OVER (PARTITION BY sessionId ORDER BY timestamp) AS rn
-             FROM raw_entries WHERE $PROMPT_WHERE $(hf)
-         )
-         SELECT substr(lower(txt), 1, 50) AS opener_prefix, count(*) AS sessions
-         FROM openers WHERE rn = 1 AND txt NOT LIKE '/%'
+    run "SELECT substr(lower(text), 1, 50) AS opener_prefix, count(*) AS sessions
+         FROM user_turns WHERE turn_index = 0 AND text NOT LIKE '/%' $(hf)
          GROUP BY opener_prefix HAVING count(*) >= 3
          ORDER BY sessions DESC LIMIT 15;"
     echo

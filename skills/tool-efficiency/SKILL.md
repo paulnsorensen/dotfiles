@@ -28,6 +28,17 @@ Markdown tables. Its default database follows package freshness rules.
 An explicit `SESSIONS_DB` must name a package-compatible database.
 A package failure is an error, not insufficient signal.
 
+`SESSIONS_COHORT=retained|benchmark|all` selects the report cohort.
+The default `retained` excludes sessions with benchmark path markers.
+It keeps sessions with unknown provenance and does not exclude child sessions.
+Path markers are heuristic, not verified provenance.
+The report prints all three cohort counts before the report.
+`SESSIONS_SINCE` and `SESSIONS_UNTIL` set one half-open UTC window.
+Use `YYYY-MM-DDTHH:MM:SSZ` for each bound.
+The default covers all history through one captured current UTC end.
+The same window applies to target, baseline, and audit counts.
+Error rates use calls with results; missing results remain visible.
+
 Then calibrate each finding with
 `../session-analytics/references/calibration.md` — confidence
 (`<certain>`/`<speculative>`/`<don't know>`) × severity

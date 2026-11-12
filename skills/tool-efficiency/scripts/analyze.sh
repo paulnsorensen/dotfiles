@@ -11,6 +11,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=skills/session-analytics/scripts/report-lib.sh
 source "$SCRIPT_DIR/../../session-analytics/scripts/report-lib.sh"
+# shellcheck source=skills/tool-efficiency/scripts/cohort-lib.sh
+source "$SCRIPT_DIR/cohort-lib.sh"
 
 usage() {
     sed -n '2,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -26,7 +28,14 @@ T="${TARGET//\'/\'\'}" # SQL-quote the target
 # hf [alias.] — harness predicate fragment; empty when harness=all
 hf() { [[ "$HARNESS" == all ]] || printf "AND %sharness = '%s'" "${1:-}" "${HARNESS//\'/\'\'}"; }
 
-run() { sessions_package_sql_markdown "$1"; }
+case "$DOMAIN" in
+    tool-usage|error-forensics|fix-recommendations|permission-friction|mcp-health|token-economics|all) ;;
+    *) echo "Unknown domain: $DOMAIN" >&2; usage ;;
+esac
+
+cohort_init || exit $?
+cohort_audit
+run() { cohort_query "$1"; }
 
 d_tool_usage() {
     echo "## Tool Usage: $TARGET  (harness=$HARNESS)"
@@ -61,36 +70,42 @@ d_error_forensics() {
     echo "### Error rate: target vs baseline"
     run "WITH target AS (
              SELECT count(*) AS total,
-                    sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END) AS errors
-             FROM tool_uses tu JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+                    count(tr.tool_use_id) AS calls_with_results,
+                    count(*) - count(tr.tool_use_id) AS missing_results,
+                    coalesce(sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END), 0) AS errors
+             FROM tool_uses tu LEFT JOIN tool_results tr ON tu.harness = tr.harness AND tu.sessionId = tr.sessionId AND tu.tool_use_id = tr.tool_use_id
              WHERE tu.tool_name LIKE '$T' $(hf tu.)
          ),
          baseline AS (
              SELECT count(*) AS total,
-                    sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END) AS errors
-             FROM tool_uses tu JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+                    count(tr.tool_use_id) AS calls_with_results,
+                    count(*) - count(tr.tool_use_id) AS missing_results,
+                    coalesce(sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END), 0) AS errors
+             FROM tool_uses tu LEFT JOIN tool_results tr ON tu.harness = tr.harness AND tu.sessionId = tr.sessionId AND tu.tool_use_id = tr.tool_use_id
              WHERE 1=1 $(hf tu.)
          )
-         SELECT 'target' AS scope, total, errors,
-                round(errors*100.0/nullif(total,0),1) AS error_pct FROM target
+         SELECT 'target' AS scope, total, calls_with_results, missing_results, errors,
+                round(errors*100.0/nullif(calls_with_results,0),1) AS error_pct FROM target
          UNION ALL
-         SELECT 'baseline', total, errors,
-                round(errors*100.0/nullif(total,0),1) FROM baseline;"
+         SELECT 'baseline', total, calls_with_results, missing_results, errors,
+                round(errors*100.0/nullif(calls_with_results,0),1) FROM baseline;"
     echo
     echo "### Recurring error signatures"
     run "SELECT substr(tr.content, 1, 150) AS error, count(*) AS occ
-         FROM tool_uses tu JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+         FROM tool_uses tu LEFT JOIN tool_results tr ON tu.harness = tr.harness AND tu.sessionId = tr.sessionId AND tu.tool_use_id = tr.tool_use_id
          WHERE tu.tool_name LIKE '$T' AND tr.is_error = 'true' $(hf tu.)
          GROUP BY error ORDER BY occ DESC LIMIT 15;"
     if [[ "$TARGET" == "%" ]]; then
         echo
         echo "### Error rate by tool (>=5 calls)"
         run "SELECT tu.tool_name, count(*) AS total,
+                    count(tr.tool_use_id) AS calls_with_results,
+                    count(*) - count(tr.tool_use_id) AS missing_results,
                     sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END) AS errors,
-                    round(sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END)*100.0/count(*),1) AS error_pct
-             FROM tool_uses tu JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+                    round(sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END)*100.0/nullif(count(tr.tool_use_id),0),1) AS error_pct
+             FROM tool_uses tu LEFT JOIN tool_results tr ON tu.harness = tr.harness AND tu.sessionId = tr.sessionId AND tu.tool_use_id = tr.tool_use_id
              WHERE 1=1 $(hf tu.)
-             GROUP BY tu.tool_name HAVING count(*) >= 5
+             GROUP BY tu.tool_name HAVING count(tr.tool_use_id) >= 5
              ORDER BY errors DESC LIMIT 20;"
     fi
     echo
@@ -102,19 +117,23 @@ d_fix_recommendations() {
     echo
     echo "### High-error tools (>=40% errors, >=3 calls) — swap or fix call shape"
     run "SELECT tu.tool_name, count(*) AS calls,
+                count(tr.tool_use_id) AS calls_with_results,
+                count(*) - count(tr.tool_use_id) AS missing_results,
                 sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END) AS errors,
-                round(sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END)*100.0/count(*),1) AS error_pct
-         FROM tool_uses tu JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+                round(sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END)*100.0/nullif(count(tr.tool_use_id),0),1) AS error_pct
+         FROM tool_uses tu LEFT JOIN tool_results tr ON tu.harness = tr.harness AND tu.sessionId = tr.sessionId AND tu.tool_use_id = tr.tool_use_id
          WHERE tu.tool_name LIKE '$T' $(hf tu.)
          GROUP BY tu.tool_name
-         HAVING count(*) >= 3
-            AND sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END)*100.0/count(*) >= 40
+         HAVING count(tr.tool_use_id) >= 3
+            AND sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END)*100.0/count(tr.tool_use_id) >= 40
          ORDER BY error_pct DESC, calls DESC LIMIT 15;"
     echo
     echo "### Allowlist adds (prefixes denied >=2 times; claude-dominant signal)"
     run "SELECT split_part(bash_cmd, ' ', 1) AS cmd_prefix, count(*) AS uses,
+                count(tr.tool_use_id) AS calls_with_results,
+                count(*) - count(tr.tool_use_id) AS missing_results,
                 sum(CASE WHEN tr.is_error='true' AND tr.content LIKE 'Permission%' THEN 1 ELSE 0 END) AS denied
-         FROM tool_uses tu JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+         FROM tool_uses tu LEFT JOIN tool_results tr ON tu.harness = tr.harness AND tu.sessionId = tr.sessionId AND tu.tool_use_id = tr.tool_use_id
          WHERE tu.tool_name = 'Bash' AND tu.bash_cmd IS NOT NULL $(hf tu.)
          GROUP BY cmd_prefix
          HAVING sum(CASE WHEN tr.is_error='true' AND tr.content LIKE 'Permission%' THEN 1 ELSE 0 END) >= 2
@@ -140,9 +159,11 @@ d_fix_recommendations() {
     echo "### MCP servers — repair (high error) or retire (idle)"
     run "SELECT split_part(mc.tool_name, '__', 2) AS server,
                 count(*) AS calls,
+                count(tr.tool_use_id) AS calls_with_results,
+                count(*) - count(tr.tool_use_id) AS missing_results,
                 sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END) AS errors,
-                round(sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END)*100.0/count(*),1) AS error_pct
-         FROM mcp_calls mc JOIN tool_results tr ON mc.tool_use_id = tr.tool_use_id
+                round(sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END)*100.0/nullif(count(tr.tool_use_id),0),1) AS error_pct
+         FROM mcp_calls mc LEFT JOIN tool_results tr ON mc.harness = tr.harness AND mc.sessionId = tr.sessionId AND mc.tool_use_id = tr.tool_use_id
          WHERE 1=1 $(hf mc.)
          GROUP BY server ORDER BY error_pct DESC, calls ASC LIMIT 20;"
     echo
@@ -151,6 +172,13 @@ d_fix_recommendations() {
 
 d_permission_friction() {
     echo "## Permission Friction: $TARGET  (harness=$HARNESS; claude-dominant signal)"
+    echo
+    echo "### Bash result coverage"
+    run "SELECT count(*) AS calls, count(tr.tool_use_id) AS calls_with_results,
+                count(*) - count(tr.tool_use_id) AS missing_results
+         FROM tool_uses tu LEFT JOIN tool_results tr
+           ON tu.harness = tr.harness AND tu.sessionId = tr.sessionId AND tu.tool_use_id = tr.tool_use_id
+         WHERE tu.tool_name = 'Bash' $(hf tu.);"
     echo
     echo "### Denial categories"
     run "SELECT
@@ -164,22 +192,24 @@ d_permission_friction() {
                  ELSE 'other: ' || substr(bash_cmd, 1, 40)
              END AS category,
              count(*) AS denials
-         FROM tool_uses tu JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+         FROM tool_uses tu LEFT JOIN tool_results tr ON tu.harness = tr.harness AND tu.sessionId = tr.sessionId AND tu.tool_use_id = tr.tool_use_id
          WHERE tu.tool_name = 'Bash' AND tr.is_error = 'true'
            AND tr.content LIKE 'Permission to use Bash%' $(hf tu.)
          GROUP BY category ORDER BY denials DESC;"
     echo
     echo "### Allowlist gaps (>=5 uses, ordered by denials)"
     run "SELECT split_part(bash_cmd, ' ', 1) AS cmd_prefix, count(*) AS uses,
+                count(tr.tool_use_id) AS calls_with_results,
+                count(*) - count(tr.tool_use_id) AS missing_results,
                 sum(CASE WHEN tr.is_error='true' AND tr.content LIKE 'Permission%' THEN 1 ELSE 0 END) AS denied
-         FROM tool_uses tu JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+         FROM tool_uses tu LEFT JOIN tool_results tr ON tu.harness = tr.harness AND tu.sessionId = tr.sessionId AND tu.tool_use_id = tr.tool_use_id
          WHERE tu.tool_name = 'Bash' AND tu.bash_cmd IS NOT NULL $(hf tu.)
-         GROUP BY cmd_prefix HAVING count(*) >= 5
+         GROUP BY cmd_prefix HAVING count(tr.tool_use_id) >= 5
          ORDER BY denied DESC LIMIT 20;"
     echo
     echo "### Compound-command friction (pipes / && that get denied)"
     run "SELECT substr(bash_cmd, 1, 120) AS cmd, count(*) AS denials
-         FROM tool_uses tu JOIN tool_results tr ON tu.tool_use_id = tr.tool_use_id
+         FROM tool_uses tu LEFT JOIN tool_results tr ON tu.harness = tr.harness AND tu.sessionId = tr.sessionId AND tu.tool_use_id = tr.tool_use_id
          WHERE tu.tool_name = 'Bash' AND tr.is_error = 'true'
            AND tr.content LIKE 'Permission to use Bash%'
            AND (bash_cmd LIKE '%|%' OR bash_cmd LIKE '%&&%') $(hf tu.)
@@ -194,10 +224,12 @@ d_mcp_health() {
     echo "### Volume & errors for the target server"
     run "SELECT split_part(mc.tool_name, '__', 2) AS server,
                 count(*) AS calls,
+                count(tr.tool_use_id) AS calls_with_results,
+                count(*) - count(tr.tool_use_id) AS missing_results,
                 sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END) AS errors,
-                round(sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END)*100.0/count(*),1) AS error_pct
+                round(sum(CASE WHEN tr.is_error='true' THEN 1 ELSE 0 END)*100.0/nullif(count(tr.tool_use_id),0),1) AS error_pct
          FROM mcp_calls mc
-         LEFT JOIN tool_results tr ON mc.tool_use_id = tr.tool_use_id
+         LEFT JOIN tool_results tr ON mc.harness = tr.harness AND mc.sessionId = tr.sessionId AND mc.tool_use_id = tr.tool_use_id
          WHERE split_part(mc.tool_name, '__', 2) LIKE '$T' $(hf mc.)
          GROUP BY server ORDER BY calls DESC;"
     echo
@@ -210,7 +242,7 @@ d_mcp_health() {
     echo "### Server leaderboard (idle detection)"
     run "SELECT split_part(tool_name, '__', 2) AS server,
                 count(*) AS calls,
-                count(DISTINCT sessionId) AS sessions,
+                count(DISTINCT (harness, sessionId)) AS sessions,
                 max(timestamp)::DATE AS last_used
          FROM mcp_calls WHERE 1=1 $(hf)
          GROUP BY server ORDER BY calls DESC;"
