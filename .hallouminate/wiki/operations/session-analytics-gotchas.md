@@ -122,7 +122,11 @@ Use `SESSIONS_COHORT=all` or `benchmark` to inspect other cohorts.
 The audit table keeps all, retained, and benchmark counts visible; no log or database row is deleted.
 Path markers can misclassify ordinary sessions that discuss benchmark artifacts.[^report-cohorts]
 
-`SESSIONS_SINCE` and `SESSIONS_UNTIL` define one UTC half-open window for every report domain.
+Benchmark sessions can distort harness-climb error rankings.
+Separate them before proposing global instructions, and keep the unfiltered comparison.
+An analysis of 2026-10-28 through 2026-11-10 finds 55 batch-limit failures before the path-marker filter and none afterward.[^benchmark-cohort]
+
+`SESSIONS_SINCE` and `SESSIONS_UNTIL` define one UTC half-open window for every tool-efficiency report domain.
 Result joins use `(harness, sessionId, tool_use_id)` and aggregate duplicate results before joining.
 A canonical error wins over duplicate success results, including adapter-derived Codex errors.
 Reports keep calls without results and show result coverage instead of counting missing results as success.[^report-cohorts]
@@ -130,3 +134,4 @@ Reports keep calls without results and show result coverage instead of counting 
 [^skillz-package]: `skillz-that-grillz/packages/agent-session-analytics/pyproject.toml:1-29`, verified at `3117aa00ef67a112ef36d1190b0d046cb4efc586`; `skills/session-analytics/scripts/report-lib.sh:4-6`.
 [^report-prompts]: `skills/prompt-analytics/scripts/analyze.sh`; `tests/analytics-skill-scripts.bats`; package `references/canonical-schema.md:123-139`.
 [^report-cohorts]: `skills/tool-efficiency/scripts/cohort-lib.sh`; `skills/tool-efficiency/scripts/analyze.sh`; `tests/analytics-skill-scripts.bats`.
+[^benchmark-cohort]: Local analysis evidence: `.harness-climb/session-analytics-2026-11-11/queries.json`, query `q7`; matching `results.json`. Database snapshot: 2026-11-11 05:16:51 UTC. These local artifacts are not committed.
