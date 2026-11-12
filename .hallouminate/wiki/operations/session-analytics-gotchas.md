@@ -104,3 +104,23 @@ Per-test homes still isolate session discovery.
 Recheck the warm marker after lock acquisition: another caller can publish it between the initial check and acquisition.[^cache-warm]
 
 [^cache-warm]: `tests/lib/session-analytics-package.bash:18-38`; `tests/session-analytics-cache.bats:18-35`; PR #1425.
+
+## Prompt-report coverage and benchmark cohorts (2026-11-11)
+
+Session analytics reports must use canonical `user_turns` for real prompts.
+The published schema includes Codex prompts in this table.
+The prompt-analysis pack still selects plain-string user rows from `raw_entries`, which misses those Codex prompts.[^prompt-consumer]
+
+A zero-row prompt report therefore does not prove that the harness records no user prompts.
+The package schema takes precedence over the older skill statement that Codex user records stay omitted.[^prompt-consumer]
+
+Benchmark sessions can distort harness-climb error rankings.
+Separate sessions with benchmark or evaluation provenance before proposing global instructions.
+Path markers provide a conservative proxy, not proof that a session is synthetic.
+Report excluded counts and retain the unfiltered comparison.
+An analysis of 2026-10-28 through 2026-11-10 finds 55 batch-limit failures before this proxy filter and none afterward.[^benchmark-cohort]
+
+_Source: pinned package schema and session queries · Updated: 2026-11-11_
+
+[^prompt-consumer]: `uvx agent-session-analytics==0.2.1 schema`, `user_turns` contract; `skills/prompt-analytics/scripts/analyze.sh:29-62`; stale statement: `skills/session-analytics/SKILL.md:26`.
+[^benchmark-cohort]: Local analysis evidence: `.harness-climb/session-analytics-2026-11-11/queries.json`, query `q7`; matching `results.json`. Database snapshot: 2026-11-11 05:16:51 UTC. These local artifacts are not committed.
