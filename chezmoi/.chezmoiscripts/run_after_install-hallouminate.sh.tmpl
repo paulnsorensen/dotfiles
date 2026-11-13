@@ -43,13 +43,23 @@ elif [[ -z "$latest" ]]; then
     echo "⚠ Could not resolve latest $PKG from npm (offline?) — keeping installed ${current:-none}" >&2
 else
     echo "Installing $PKG@$latest (was ${current:-none})..."
-    npm install -g "$PKG@$latest" --prefer-online --allow-scripts="$PKG"
-    current="$(installed_version)"
-    if [[ "$current" != "$latest" ]]; then
-        echo "✗ hallouminate nightly install failed: expected $latest, got ${current:-none}" >&2
-        exit 1
+    # A fresh nightly can 404 for minutes after `npm view` lists it, while the
+    # registry CDN catches up. Keep a working install; the next sync retries.
+    if ! npm install -g "$PKG@$latest" --prefer-online --allow-scripts="$PKG"; then
+        if [[ -n "$current" ]]; then
+            echo "⚠ npm could not install $PKG@$latest (registry lag?) — keeping installed $current; the next 'dots sync' retries" >&2
+        else
+            echo "✗ hallouminate nightly install failed: npm could not install $PKG@$latest and none is installed" >&2
+            exit 1
+        fi
+    else
+        current="$(installed_version)"
+        if [[ "$current" != "$latest" ]]; then
+            echo "✗ hallouminate nightly install failed: expected $latest, got ${current:-none}" >&2
+            exit 1
+        fi
+        echo "✓ hallouminate (nightly) $current installed"
     fi
-    echo "✓ hallouminate (nightly) $current installed"
 fi
 
 # Keep the fork's nightly the single source of truth for the `hallouminate` bin.
