@@ -102,3 +102,24 @@ teardown() {
     [ "$status" -eq 0 ]
     [ "$(sort "$STUB_LOG")" = "$(printf '%s\n' lint-js lint-markdown lint-python lint-shell smoke test test-python)" ]
 }
+
+@test "smoke selects the t3-run tests when a t3-run input changes" {
+    run python3 - "$REPO_ROOT" <<'EOF'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, f"{sys.argv[1]}/tests/lib")
+import affected
+
+root = Path(sys.argv[1])
+for changed in (
+    "bin/t3-run",
+    "claude/t3-run/ledger.mjs",
+    "claude/workflow-prelude/gates.js",
+    "skills/t3-core/role-map.json",
+):
+    files = affected.build_plan(root, [changed]).files.get("smoke") or set()
+    assert any(f.startswith("tests/t3-run/") for f in files), (changed, files)
+EOF
+    [ "$status" -eq 0 ] || { echo "$output" >&2; false; }
+}
