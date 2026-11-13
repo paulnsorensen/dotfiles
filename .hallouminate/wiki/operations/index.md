@@ -32,6 +32,7 @@ The repo's operational plumbing — the machinery that deploys config and the lo
 
 ## Packaging and machine state
 
+- [[alfred-workflows]] — Alfred workflows install by importing a package from `alfred/workflows/<name>/` (`alfred-wt install`), never by committing a partial `Alfred.alfredpreferences` that could replace live settings. Covers the `wt` worktree workflow, Alfred's `/bin/bash` 3.2 and minimal `PATH`, and the bash 5.2 `&` replacement trap.
 - [[basedpyright]] — the global Python type checker: mise-pinned basedpyright replacing stock pyright (compat shims keep `pyright-langserver` resolving), its stricter `recommended` default with `failOnWarnings`, the based-only rules, the `--writebaseline` adoption workflow, and zero-config GitHub Actions annotations.
 - [[bin-doctor]] — `bin/bin-doctor` finds commands with two or more installed copies, strays outside the manifests, and stale cargo metadata; `bin-doctor clean` runs weekly from a systemd timer or launchd agent. Read before adding a tool outside mise or packages.yaml.
 - [[brew-machine-prune]] — the machine-side half of [[../adr/manifest-pinned-packages]]: `sync_brew` never uninstalls, so strays accumulate until pruned by hand. Read before pruning — `rustup` and `mise` must stay in brew (mise's `rust` is a symlink into rustup's tree; mise itself is the bootstrap trust root).
