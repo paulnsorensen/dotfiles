@@ -12,6 +12,15 @@
 - Each record has a `<pid>.<hash>.key` sidecar. cc-salvage does not touch it.
 - `sdk-cli` records with a `bridgeSessionId` are Remote Control spawns. Other `sdk-cli` records are headless runs.
 
+## Remote Control worktree transcripts
+
+- `claude remote-control` in worktree spawn mode puts each session in `<repo>/.claude/worktrees/bridge-<cse id>`. The name passes the cloud session id through `replace(/[^a-zA-Z0-9_-]/g, "_")`, so the directory is `bridge-cse_<id>` (checked in the v2.1.325 binary).
+- A clean exit removes the record, so after a graceful stop the registry alone misses these sessions. `salvage_bridge_rows` scans `~/.claude/projects/*-claude-worktrees-bridge-cse-*/*.jsonl` instead.
+- Claude names a project directory after the cwd with each non-alphanumeric character as `-`, so `bridge-cse_x` becomes `bridge-cse-x`. Names over 200 characters get a hash suffix, and the glob misses them.
+- The first transcript records have `"cwd": null`. cc-salvage takes the first string `cwd` in the first 50 lines and requires a `.claude/worktrees/bridge-cse_*` directory that still exists.
+- A live record of any entrypoint blocks a resume, because any live process writes the transcript.
+- A bridge session has no record to archive. After a resume exits 0, cc-salvage touches `salvaged/<sessionId>.bridge`. A transcript that is not newer than its marker is not offered again.
+
 ## Why liveness compares procStart
 
 A reboot can give an old pid to a new process. `kill -0` alone then reports a dead session as live, and cc-salvage skips it without a message. The start-time compare rejects the reused pid.

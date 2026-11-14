@@ -516,3 +516,111 @@ stub_ps() {
     assert_output_contains "claude --resume plain-session --remote-control"
     assert_output_not_contains "dotsclaude"
 }
+
+# add_bridge_transcript <session-id> <minutes-before-NOW> <worktree> — write a
+# Remote Control transcript the way Claude stores it: the project directory is
+# the cwd with every non-alphanumeric character as "-", and the first record
+# has a null cwd.
+add_bridge_transcript() {
+    local sid="$1" wt="$3" dir epoch=$(( CC_SALVAGE_NOW - $2 * 60 )) stamp
+    dir="$HOME/.claude/projects/$(printf '%s' "$wt" | tr -c 'a-zA-Z0-9' -)"
+    mkdir -p "$dir"
+    jq -nc --arg sid "$sid" --arg cwd "$wt" \
+        '{type: "queue-operation", cwd: null, sessionId: $sid}, {type: "user", cwd: $cwd, sessionId: $sid}' \
+        > "$dir/$sid.jsonl"
+    stamp="$(date -u -r "$epoch" +%Y%m%d%H%M 2>/dev/null || date -u -d "@$epoch" +%Y%m%d%H%M)"
+    touch -t "$stamp" "$dir/$sid.jsonl"
+}
+
+@test "a bridge worktree transcript without a record resumes in its worktree" {
+    capture_resume
+    local bwt="$TEST_HOME/repo/.claude/worktrees/bridge-cse_01AbC"
+    mkdir -p "$bwt"
+    add_bridge_transcript bridge00-0000-0000-0000-000000000001 30 "$bwt"
+
+    run cc-salvage --since 2h
+    assert_success
+    assert_output_contains "bridge00-0000-0000-0000-000000000001"
+    assert_output_contains "resumed"
+    run grep -F "new-window -d -t main: -n bridge00 -c $bwt" "$TMUX_LOG"
+    assert_success
+
+    run bash "$TMUX_COMMAND_FILE" < /dev/null
+    assert_success
+    run cc-salvage --since 2h --dry-run
+    assert_success
+    assert_output_not_contains "bridge00"
+
+    # Activity after the marker makes the session a candidate again.
+    touch -t 202001010000 "$HOME/.claude/sessions/salvaged/bridge00-0000-0000-0000-000000000001.bridge"
+    run cc-salvage --since 2h --dry-run
+    assert_output_contains "bridge00"
+}
+
+@test "a failed bridge resume leaves the session a candidate" {
+    capture_resume
+    export CLAUDE_EXIT_CODE=3
+    local bwt="$TEST_HOME/repo/.claude/worktrees/bridge-cse_08"
+    mkdir -p "$bwt"
+    add_bridge_transcript bridge00-0000-0000-0000-000000000008 5 "$bwt"
+
+    run cc-salvage --since 2h
+    assert_success
+    run bash "$TMUX_COMMAND_FILE" <<< ''
+    assert_output_contains "resume exited 3"
+    run cc-salvage --since 2h --dry-run
+    assert_output_contains "bridge00"
+}
+
+@test "a bridge transcript whose session has a live record is not resumed" {
+    local bwt="$TEST_HOME/repo/.claude/worktrees/bridge-cse_02"
+    mkdir -p "$bwt"
+    add_session 520 bridge00-0000-0000-0000-000000000002 "$bwt" sdk-cli 222
+    mark_live 520 222
+    add_bridge_transcript bridge00-0000-0000-0000-000000000002 5 "$bwt"
+
+    run cc-salvage --since 2h --dry-run
+    assert_success
+    assert_output_not_contains "bridge00"
+}
+
+@test "a bridge transcript with a dead record is listed once" {
+    local bwt="$TEST_HOME/repo/.claude/worktrees/bridge-cse_03"
+    mkdir -p "$bwt"
+    add_session 521 bridge00-0000-0000-0000-000000000003 "$bwt" cli
+    add_bridge_transcript bridge00-0000-0000-0000-000000000003 5 "$bwt"
+
+    run cc-salvage --since 2h --dry-run
+    assert_success
+    [ "$(grep -c bridge00 <<< "$output")" -eq 1 ]
+    assert_output_contains "win-521"
+}
+
+@test "a bridge transcript whose worktree is gone is ignored" {
+    add_bridge_transcript bridge00-0000-0000-0000-000000000004 5 "$TEST_HOME/repo/.claude/worktrees/bridge-cse_04"
+
+    run cc-salvage --since 2h --dry-run
+    assert_success
+    assert_output_not_contains "bridge00"
+}
+
+@test "a transcript without a record outside a bridge worktree is ignored" {
+    local other="$TEST_HOME/repo/.claude/worktrees/bridge-cse_05/nested"
+    mkdir -p "$other" "$TEST_HOME/repo/.claude/worktrees/plain"
+    add_bridge_transcript bridge00-0000-0000-0000-000000000005 5 "$other"
+    add_bridge_transcript bridge00-0000-0000-0000-000000000006 5 "$TEST_HOME/repo/.claude/worktrees/plain"
+
+    run cc-salvage --since 2h --dry-run
+    assert_success
+    assert_output_not_contains "bridge00"
+}
+
+@test "bridge transcripts outside the time window are ignored" {
+    local bwt="$TEST_HOME/repo/.claude/worktrees/bridge-cse_07"
+    mkdir -p "$bwt"
+    add_bridge_transcript bridge00-0000-0000-0000-000000000007 300 "$bwt"
+
+    run cc-salvage --since 2h --dry-run
+    assert_success
+    assert_output_not_contains "bridge00"
+}
