@@ -59,4 +59,23 @@ These resources do not depend on OMP runtime state.
 
 `.sync` checks the installed Pi version before and after the final chezmoi apply. `tests/pi-config.bats` covers settings ownership, package pins, MCP configuration, path protection, and shared-skill discovery. Session analytics reads Pi's native JSONL alongside OMP through one Pi-family normalizer.
 
+## Package bump gotchas
+
+Renovate bumps the Pi packages often. Two traps recur in the `green-harvest` issues. Read them before you merge a bump.
+
+### The pin test repeats the pins
+
+`tests/pi-config.bats` has the test "pi registry pins the selected mainstream packages". It compares the whole `packages` array to a literal string. A Renovate PR edits only `chezmoi/.chezmoidata/pi.yaml`, so the test fails in CI. Update the literal in the same change as the registry pin. Do not weaken the test.
+
+### Children may lose the Pi addendum
+
+The `green-harvest` issues report a change in `pi-subagents` 0.79.2. Children that start with `systemPromptMode: replace` no longer receive `APPEND_SYSTEM.md`. This covers every builtin agent except `delegate`. Children also skip the global `~/.pi/agent/AGENTS.md`, unless the settings key `subagents.defaultInheritGlobalContext` is on (added in 0.87.0, per the same issues). The repo pins 0.77.0, so the change takes effect only after a bump merges.
+
+The addendum file in `chezmoi/dot_pi/private_agent/` holds two kinds of rules:
+
+- Tool routing (Tilth direct tools, `codemode`, `web_search`): children need these.
+- Delegation advice: only the parent needs this.
+
+Before a bump, choose one option. Put the routing in the agent prompts. Or set the inheritance key in `pi.yaml`. Or accept that the addendum applies only to the parent. <speculative>The repo has not chosen yet.</speculative>
+
 Related: [[index]], [[../architecture/agents-dir]], [[../operations/sync-and-chezmoi]].
