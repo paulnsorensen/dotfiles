@@ -1150,6 +1150,61 @@ EOF
     done
 }
 
+# The hallouminate daemon is a long-lived singleton, so a nightly install does
+# not reach it. The installer restarts a running daemon only when this run
+# installed a new version; an up-to-date sync leaves it alone.
+@test "hallouminate nightly installer restarts the running daemon only after a new install" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+
+    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl"
+    local script="$TEST_HOME/install-hallouminate.sh"
+    chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$script"
+
+    local npm_bin="$TEST_HOME/restart-npm-bin"
+    local npm_state="$TEST_HOME/restart-npm.state"
+    local active_prefix="$TEST_HOME/active-prefix"
+    mkdir -p "$npm_bin" "$active_prefix"
+    cat > "$npm_bin/npm" <<EOF
+#!/bin/bash
+case "\$1 \$2" in
+    "view @paulnsorensen/hallouminate-nightly") echo "0.0.0-experimental.345.1" ;;
+    "install -g") printf '%s\n' "\$3" > "$npm_state" ;;
+    "ls -g")
+        [[ -f "$npm_state" ]] || exit 1
+        case "\$(cat "$npm_state")" in
+            "\$3"@*) echo "└── \$(cat "$npm_state")" ;;
+            *) exit 1 ;;
+        esac
+        ;;
+    "prefix -g") echo "$active_prefix" ;;
+esac
+EOF
+    local hal_bin="$TEST_HOME/restart-hallouminate-bin"
+    local hal_log="$TEST_HOME/hallouminate.log"
+    mkdir -p "$hal_bin"
+    cat > "$hal_bin/hallouminate" <<EOF
+#!/bin/bash
+echo "\$*" >> "$hal_log"
+[[ "\$1 \$2" == "daemon status" ]] && echo running
+exit 0
+EOF
+    chmod +x "$npm_bin/npm" "$hal_bin/hallouminate"
+
+    # A new version installs, so the running daemon restarts.
+    printf '%s\n' "@paulnsorensen/hallouminate-nightly@0.0.0-experimental.321.1" > "$npm_state"
+    run env HOME="$TEST_HOME" PATH="$npm_bin:$hal_bin:/usr/bin:/bin" /bin/bash "$script"
+    assert_success
+    assert_output_contains "hallouminate (nightly) 0.0.0-experimental.345.1 installed"
+    grep -qx "daemon restart" "$hal_log"
+
+    # current == latest: nothing installs, so the daemon is not touched.
+    rm -f "$hal_log"
+    run env HOME="$TEST_HOME" PATH="$npm_bin:$hal_bin:/usr/bin:/bin" /bin/bash "$script"
+    assert_success
+    assert_output_contains "already latest"
+    [[ ! -e "$hal_log" ]]
+}
+
 @test "nightly installer fails when npm leaves the old package installed" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 

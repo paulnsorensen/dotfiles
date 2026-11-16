@@ -10,6 +10,8 @@
 # happens to expose the same bin, and nothing at all when the active prefix
 # cannot be trusted as a reference point.
 
+bats_require_minimum_version 1.5.0
+
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
 setup() {
@@ -160,4 +162,68 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"failed"* ]]
   [[ "$output" == *"remove that copy by hand"* ]]
+}
+
+# ── npm_nightly_restart_hallouminate_daemon ───────────────────────────────
+#
+# WHY: the hallouminate daemon is a long-lived singleton. A nightly install
+# does not replace the build it runs, so every MCP `serve` keeps the old
+# build (2026-11-14: build 321 at 177% CPU and 2.5 GB RSS after build 345,
+# with the memory fixes, was installed). The helper restarts a running
+# daemon, never starts one, and never fails the sync.
+
+# A stub `hallouminate` in its own bin dir. It logs its arguments, prints
+# <status> for `daemon status`, and exits <restart_rc> for `daemon restart`.
+stub_hallouminate() {
+  local status="$1" restart_rc="${2:-0}" bin_dir="$SCAN/hallouminate-bin"
+  mkdir -p "$bin_dir"
+  cat > "$bin_dir/hallouminate" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "$SCAN/hallouminate.log"
+case "\$1 \$2" in
+  "daemon status") echo "$status"; exit 0 ;;
+  "daemon restart") exit $restart_rc ;;
+esac
+exit 0
+EOF
+  chmod +x "$bin_dir/hallouminate"
+  echo "$bin_dir"
+}
+
+@test "restarts a running hallouminate daemon" {
+  local bin_dir
+  bin_dir=$(stub_hallouminate running)
+
+  PATH="$bin_dir:/usr/bin:/bin" run npm_nightly_restart_hallouminate_daemon
+  [ "$status" -eq 0 ]
+  grep -qx "daemon restart" "$SCAN/hallouminate.log"
+}
+
+@test "does not start a hallouminate daemon when none runs" {
+  local bin_dir
+  bin_dir=$(stub_hallouminate "not running")
+
+  PATH="$bin_dir:/usr/bin:/bin" run npm_nightly_restart_hallouminate_daemon
+  [ "$status" -eq 0 ]
+  # The status probe is the only call: no restart and no start.
+  [ "$(cat "$SCAN/hallouminate.log")" = "daemon status" ]
+}
+
+@test "warns but succeeds when the hallouminate daemon restart fails" {
+  local bin_dir
+  bin_dir=$(stub_hallouminate running 1)
+
+  PATH="$bin_dir:/usr/bin:/bin" run --separate-stderr npm_nightly_restart_hallouminate_daemon
+  [ "$status" -eq 0 ]
+  grep -qx "daemon restart" "$SCAN/hallouminate.log"
+  [[ "$stderr" == *"hallouminate daemon restart"* ]]
+}
+
+@test "does nothing when hallouminate is not on PATH" {
+  local empty_bin="$SCAN/empty-bin"
+  mkdir -p "$empty_bin"
+
+  PATH="$empty_bin" run npm_nightly_restart_hallouminate_daemon
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
