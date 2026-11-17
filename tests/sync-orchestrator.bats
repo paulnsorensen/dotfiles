@@ -118,6 +118,8 @@ setup() {
     # Mock chezmoi/.chezmoidata/omp.yaml registry — empty plugin set
     mkdir -p "$FAKE_DOTFILES/chezmoi/.chezmoidata"
     printf 'omp:\n  plugins: {}\n' > "$FAKE_DOTFILES/chezmoi/.chezmoidata/omp.yaml"
+    mkdir -p "$FAKE_DOTFILES/chezmoi/lib"
+    cp "$REAL_DOTFILES_DIR/chezmoi/lib/env-gate.sh" "$FAKE_DOTFILES/chezmoi/lib/env-gate.sh"
 
     export PATH="$MOCK_BIN:$PATH"
 }

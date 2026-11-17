@@ -27,7 +27,7 @@ sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
 email = "test@example.com"
 TOML
     local tmpl="$REAL_DOTFILES_DIR/chezmoi/dot_config/zed/settings.json.tmpl"
-    run chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl"
+    run env -u MILKNADO_ENABLED chezmoi --config "$cfg" --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl"
     [ "$status" -eq 0 ]
 
     local rendered="$TEST_HOME/settings.json"
@@ -59,7 +59,7 @@ TOML
     # MCP context servers wire the full roster to Zed's native Agent Panel.
     [ "$(jq -r '.context_servers | has("tilth")' "$stripped")" = "true" ]
     [ "$(jq -r '.context_servers | has("hallouminate")' "$stripped")" = "true" ]
-    [ "$(jq -r '.context_servers | has("milknado")' "$stripped")" = "true" ]
+    [ "$(jq -r '.context_servers | has("milknado")' "$stripped")" = "false" ]
     [ "$(jq -r '.context_servers.tilth.source' "$stripped")" = "custom" ]
     # Secret-bearing servers reuse the shared broker sockets — empty env, no envFile.
     [ "$(jq -r '.context_servers.context7.command' "$stripped")" = "/usr/local/libexec/dotfiles/agent-secret-proxy" ]
@@ -85,6 +85,27 @@ TOML
     [ "$(jq -r '.terminal.font_size' "$stripped")" = "14" ]
 }
 
+@test "zed-settings: Milknado context server requires exact true" {
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/dot_config/zed/settings.json.tmpl"
+    local rendered="$TEST_HOME/zed-gate.json"
+    local stripped="$TEST_HOME/zed-gate.stripped.json"
+    local value
+    for value in unset '' false 1 true; do
+        if [ "$value" = unset ]; then
+            env -u MILKNADO_ENABLED chezmoi execute-template --source "$REAL_DOTFILES_DIR/chezmoi" --file "$tmpl" > "$rendered"
+        else
+            MILKNADO_ENABLED="$value" chezmoi execute-template --source "$REAL_DOTFILES_DIR/chezmoi" --file "$tmpl" > "$rendered"
+        fi
+        strip_comments "$rendered" > "$stripped"
+        jq empty "$stripped"
+        [ "$(jq -r '.context_servers.hallouminate.command' "$stripped")" = "hallouminate" ]
+        if [ "$value" = true ]; then
+            [ "$(jq -r '.context_servers.milknado.command' "$stripped")" = "milknado-mcp" ]
+        else
+            [ "$(jq -r '.context_servers | has("milknado")' "$stripped")" = false ]
+        fi
+    done
+}
 @test "zed-keymap: parses after comment-strip and toggles the bottom dock" {
     local keymap="$REAL_DOTFILES_DIR/chezmoi/dot_config/zed/keymap.json"
     local stripped="$TEST_HOME/keymap.stripped.json"

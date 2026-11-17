@@ -124,23 +124,12 @@ def includes_harness(
 
 
 def gate_blocks(item: dict[str, Any], harness: str) -> bool:
-    """True iff ``item``'s ``gate_unless`` gate suppresses it for ``harness``.
-
-    Ports the claude-only bash filter::
-
-        map(select((.value.gate_unless // "") as $g | $g == "" or (env[$g] // "false") != "true"))
-
-    The gate is Claude-scoped; other harnesses ignore it because a
-    plugin-provided MCP is a Claude concern. An item is blocked when it
-    carries a ``gate_unless`` var that is exactly ``"true"`` in the process
-    environment (the cheese-flow plugin seeds ``CHEESE_FLOW``), matching the
-    bash ``env[$g]`` read — not the ``.env`` file."""
-    if harness != "claude":
-        return False
-    gate = item.get("gate_unless")
-    if not gate:
-        return False
-    return os.environ.get(gate, "false") == "true"
+    """Apply positive gates everywhere and gate_unless only to Claude."""
+    gate = item.get("gate")
+    if gate and os.environ.get(gate) != "true":
+        return True
+    unless = item.get("gate_unless")
+    return harness == "claude" and bool(unless) and os.environ.get(unless) == "true"
 
 
 def mcps_for(
@@ -155,15 +144,19 @@ def mcps_for(
         [.mcps[] | select((.harnesses // <default>) | index("<h>") != null)]
 
     The renderer curd passes the ``default`` its bash counterpart used.
-    Claude additionally drops ``gate_unless`` MCPs whose gate var is set
-    (see :func:`gate_blocks`) — parity with ``mcp_filter_for_harness``.
+    Positive ``gate`` values apply to every harness. Claude also drops
+    ``gate_unless`` MCPs when their env var is set.
 
     Returned entries are rendered through :func:`render_mcp_for_harness`
     so per-harness Go templates (``{{ $h }}``, ``{{ if eq $h "claude" }}``)
     in ``args``/``env`` resolve to the harness's value — the render the
     retired ``agents/mcp/sync.sh`` used to do once per harness."""
     return [
-        render_mcp_for_harness(mcp, harness)
+        {
+            k: v
+            for k, v in render_mcp_for_harness(mcp, harness).items()
+            if k != "gate"
+        }
         for mcp in manifest.mcps
         if includes_harness(mcp, harness, default)
         and not gate_blocks(mcp, harness)

@@ -1,0 +1,27 @@
+#!/bin/sh
+# Manage only Cursor's Milknado MCP entry from .chezmoidata/cursor.yaml.
+set -eu
+
+source_dir=${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}
+registry=$source_dir/.chezmoidata/cursor.yaml
+live=$(cat)
+for tool in yq jq; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "modify_mcp.json: $tool missing; Cursor config is unchanged" >&2
+        exit 1
+    fi
+done
+if [ ! -f "$registry" ]; then
+    echo "modify_mcp.json: registry missing: $registry" >&2
+    exit 1
+fi
+
+# shellcheck source=chezmoi/lib/env-gate.sh
+. "$source_dir/lib/env-gate.sh"
+. "$source_dir/lib/cursor-config.sh"
+desired=$(yq -o=json '.cursor.mcpServers' "$registry" | jq "$env_gate_jq gate_filter")
+if ! printf '%s' "$desired" | jq -e 'type == "object" and (keys == ["milknado"] or keys == [])' >/dev/null 2>&1; then
+    echo 'modify_mcp.json: Cursor registry must contain only milknado' >&2
+    exit 1
+fi
+cursor_config_merge "$live" "$desired"

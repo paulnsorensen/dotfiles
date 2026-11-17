@@ -373,3 +373,26 @@ for n in sel:
     [ "$status" -ne 0 ]
     [[ "$output" == *"unknown agent"* ]]
 }
+
+
+@test "modify_config.toml gates Milknado and evicts a previously enabled server" {
+    local live="$TEST_HOME/live-milknado.toml"
+    run --separate-stderr env MILKNADO_ENABLED=true sh "$MERGE" </dev/null
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" > "$live"
+    [ "$(yq -p=toml -r '.mcp_servers.milknado.command' "$live")" = "uvx" ]
+    [ "$(yq -p=toml -r '.mcp_servers.milknado.gate // "ABSENT"' "$live")" = "ABSENT" ]
+
+    local value
+    for value in unset '' false 1; do
+        if [ "$value" = unset ]; then
+            run --separate-stderr env -u MILKNADO_ENABLED sh "$MERGE" <"$live"
+        else
+            run --separate-stderr env MILKNADO_ENABLED="$value" sh "$MERGE" <"$live"
+        fi
+        [ "$status" -eq 0 ]
+        printf '%s' "$output" > "$TEST_HOME/off.toml"
+        [ "$(yq -p=toml -r '.mcp_servers.milknado // "ABSENT"' "$TEST_HOME/off.toml")" = "ABSENT" ]
+        [ "$(yq -p=toml -r '.mcp_servers.hallouminate.command' "$TEST_HOME/off.toml")" = "hallouminate" ]
+    done
+}

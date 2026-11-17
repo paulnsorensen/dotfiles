@@ -124,7 +124,8 @@ plugins:
     harnesses: [claude, codex, cursor, copilot]
     native: true              # native install on every drivable harness here
                               # ({claude, codex, copilot}); or false / [list]
-    gate_unless: MY_ENV_VAR   # optional gate
+    gate: MY_OPT_IN_VAR       # enable only when exactly true
+    gate_unless: MY_ENV_VAR   # optional Claude-only inverse gate
     description: Human-readable description
 ```
 
@@ -199,6 +200,11 @@ servers keyed by bare name; a native plugin's server is never in `[mcp_servers]`
 `mcp__hallouminate__*` reference becomes
 `mcp__plugin_hallouminate_hallouminate__*` there and stays bare on Cursor,
 without changing canonical permission or skill sources.
+
+**`gate`** enables a plugin only when its process environment variable equals `true`.
+Expansion checks this value before fetching the source.
+A disabled plugin emits no MCPs, skills, agents, commands, hooks, or native descriptors.
+Native Claude reconciliation uses the same filter.[^milknado-gate]
 
 **`gate_unless`** — propagates to the decomposed MCP's `gate_unless` field,
 using the same semantics as the MCP registry gate (see [[agents-dir]]). It
@@ -414,6 +420,51 @@ loading interacts with secret passthrough.
 
 ## Worked example: milknado
 
+### Temporary opt-in and startup diagnosis
+
+Milknado defaults to off across managed harnesses.
+Set `MILKNADO_ENABLED=true` during `dots sync` to register it.
+Unset the variable and run `dots sync` to remove its registrations.
+Restart each harness after sync.
+Only the exact value `true` enables Milknado; empty, `false`, and `1` keep it off.
+The gate preserves the installed binary and project data.[^milknado-gate]
+
+Retained `_install-internal` reconciliation compares current effective MCP membership with the prior manifest.
+A reused isolated Codex target removes previously owned Milknado when its gate turns off.
+Cleanup uses prior ownership rather than the current gate, so unrelated MCP tables and model settings remain.
+Normal isolated launches create fresh targets; this retained-target correction does not change that path.[^milknado-codex-retirement]
+
+[^milknado-codex-retirement]: `agent-profile/agent_profile/cli.py:434-485`; `agent-profile/agent_profile/renderers/codex.py:117-121,620-650`; `agent-profile/tests/test_mcp_reconcile.py:322-359`; `agent-profile/agent_profile/overlay.py:538-539`.
+
+The retained Copilot compile path carries separate retirement metadata for disabled native plugins.
+It reads the exact plugin identity from cached marketplace metadata without fetching.
+Cleanup uninstalls only that plugin and preserves its marketplace and unrelated plugins.
+Missing metadata or a failed CLI call reports unresolved cleanup instead of guessing an identity.
+This machine has no Copilot CLI during verification; regression tests cover the subprocess boundary.[^milknado-copilot]
+
+Copilot MCP pruning remains separate from explicit native plugin cleanup.
+A gate transition removes only previously owned isolated MCP entries, even when the current gate blocks them.
+This separation prevents unrelated native plugin removal when reconciliation retains native descriptors.
+Non-isolated MCP files remain unchanged, and explicit `clean` retains its existing behavior.[^milknado-copilot-prune]
+
+[^milknado-copilot-prune]: `agent-profile/agent_profile/renderers/copilot.py:416-457`; `agent-profile/agent_profile/cli.py:470-478`; `agent-profile/tests/test_mcp_reconcile.py:363-456`.
+
+[^milknado-copilot]: `agent-profile/agent_profile/ingest.py:650-694,732-740`; `agent-profile/agent_profile/parse.py:311-314,415`; `agent-profile/agent_profile/renderers/copilot.py:364-386`; `agent-profile/tests/test_copilot_native_plugins.py:269-366`.
+
+On 2026-11-17, the Git-based `uvx` launcher exits before MCP initialization.
+It selects Python 3.15, but `ortools==9.15.6755` has no compatible wheel.
+The same launcher with `--python 3.13` initializes and lists 40 tools.
+The installed Python 3.13 binary also passes this check.
+This identifies a dependency-resolution failure, not an MCP protocol failure.[^milknado-probe]
+
+For diagnosis, run `uvx --python 3.13 --from git+https://github.com/paulnsorensen/milknado@main milknado-mcp`.
+The gate does not change the upstream plugin launcher.
+A re-enabled Git launcher still needs a compatible Python interpreter.
+`UV_PYTHON=3.13` supplies that interpreter when inherited by the harness process.[^milknado-probe]
+
+[^milknado-gate]: `agents/plugins/registry.yaml`; `agent-profile/agent_profile/ingest.py:_expand_plugins`; `agent-profile/agent_profile/renderers/base.py:gate_blocks`; `chezmoi/lib/env-gate.sh`; `tests/omp-plugins.bats`; `tests/claude-settings.bats`; `agent-profile/tests/test_mcp_gate_unless.py`.
+[^milknado-probe]: Live stdio initialize and tools/list comparison, 2026-11-17. Git revision `c9250b8f039e4c06b38df728c3aade180a489614`. Unpinned Python exits with OR-Tools ABI resolution failure. Python 3.13 initializes in 3.18 seconds and lists 40 tools in 3.21 seconds. `uvx --help` documents `UV_PYTHON` for `--python`.
+
 **Marketplace root** (git-cloned cache): `~/.cache/ap/plugins/milknado/`
 (cloned from `https://github.com/paulnsorensen/milknado`, branch `main`)
 
@@ -441,8 +492,9 @@ loading interacts with secret passthrough.
 milknado:
   git: https://github.com/paulnsorensen/milknado
   branch: main
+  gate: MILKNADO_ENABLED
   harnesses: [claude, codex, cursor, copilot]
-  claude_native: true
+  native: [claude, copilot]
   # codex_native: DISABLED on main. milknado's upstream
   # .agents/plugins/marketplace.json (the manifest codex's `plugin marketplace
   # add` parses) has only interface.displayName, no top-level `name`, so
@@ -458,14 +510,10 @@ milknado:
 - 1 MCP item: `{name: milknado, command: uvx, args: [milknado-mcp], harnesses: [...], _source_dir: <payload>}`
 - 3 skill items: `harvest`, `load-roadmap`, `milknado-config` each with `_source_dir: <payload>`, `path: skills/<name>`, and effective non-native harnesses
 - no agent or hook items today because the milknado payload currently has no `agents/*.md` or `.claude-plugin/plugin.json` hooks to decompose
-- 1 native_plugins descriptor carrying `claude_native: true` + `codex_native: false`
-  (the claude renderer registers the marketplace; the codex renderer ignores the
-  descriptor since its flag is off). With only `claude_native`, DEDUP strips
-  `claude` from MCP/skill/agent/hook harnesses; `codex` stays, so decomposed
-  primitives still reach Codex, Cursor, and Copilot where supported. When
-  `codex_native` is re-enabled upstream, DEDUP would
-  additionally strip `codex` and the codex renderer would install via the codex
-  CLI instead.
+- 1 native_plugins descriptor carries `claude_native: true`, `copilot_native: true`, and `codex_native: false`.
+  Native renderers install for Claude and Copilot.
+  Decomposed primitives remain available to Codex and Cursor.
+  Disabled Copilot entries instead carry separate retirement metadata.[^milknado-copilot]
 
 **PyPI dependency:** `uvx milknado-mcp` requires milknado to be published to
 PyPI. Until then, the rendered config references the portable form but the MCP

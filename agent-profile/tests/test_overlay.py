@@ -14,10 +14,10 @@ contents, monkeypatching ``os.execvp`` so nothing actually launches.
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
-import tomllib
 from agent_profile import cli, overlay
 from agent_profile import fetch as overlay_fetch
 from agent_profile.discover import find_profile_dir
@@ -864,6 +864,36 @@ def _claude_manifest(tmp_path, **over):
     }
     base.update(over)
     return Manifest(**base)
+
+
+@pytest.mark.parametrize("harness", ["claude", "codex"])
+@pytest.mark.parametrize("value", [None, "", "false", "1", "true"])
+def test_isolated_launch_positive_mcp_gate_is_exact_true(tmp_path, monkeypatch, harness, value):
+    monkeypatch.setenv("DOTFILES_DIR", str(tmp_path))
+    monkeypatch.setenv("LEGACY_ENABLED", "true")
+    if value is None:
+        monkeypatch.delenv("MILKNADO_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("MILKNADO_ENABLED", value)
+    m = _claude_manifest(tmp_path, mcps=[
+        {"name": "tilth", "command": "tilth"},
+        {"name": "milknado", "command": "milknado-mcp", "gate": "MILKNADO_ENABLED"},
+        {"name": "legacy", "command": "legacy-mcp", "gate_unless": "LEGACY_ENABLED"},
+    ])
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    flags, launch_env = overlay.build_isolated_launch(m, tmp_path, harness, scratch)
+    if harness == "claude":
+        config = json.loads(Path(flags[flags.index("--mcp-config") + 1]).read_text())
+        names = set(config["mcpServers"])
+    else:
+        config = _codex_config(launch_env)
+        names = set(config["mcp_servers"])
+    expected = {"tilth", "legacy"}
+    if value == "true":
+        expected.add("milknado")
+    assert names == expected
 
 
 @pytest.mark.parametrize("harness", ["cursor", "copilot", "bogus"])

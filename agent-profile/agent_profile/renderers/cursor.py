@@ -56,10 +56,10 @@ from agent_profile.renderers.base import (
     agents_for,
     body_abs,
     includes_harness,
+    mcps_for,
     read_json_object,
     skills_for,
 )
-from agent_profile.templating import render_mcp_for_harness
 
 # Cursor opts itself into the shared Claude/Codex MCP default.
 _CURSOR_MCP_DEFAULT = ("claude", "codex", "cursor")
@@ -92,7 +92,7 @@ class CursorRenderer:
         cfg = Path(str(target).rstrip("/")) / ".cursor" / "mcp.json"
         if not cfg.is_file():
             return
-        names = {mcp["name"] for mcp in _cursor_mcps(manifest)}
+        names = _cursor_owned_mcp_names(manifest)
         data = read_json_object(cfg, ".cursor/mcp.json")
         servers = data.get("mcpServers")
         if isinstance(servers, dict):
@@ -245,31 +245,32 @@ class CursorRenderer:
     # ── mcp.json ──────────────────────────────────────────────────────
 
     def _write_mcp_json(self, manifest: Manifest, target: Path) -> None:
-        """Merge cursor MCPs into ``.cursor/mcp.json`` (``{mcpServers: {...}}``),
-        preserving any pre-existing user entries and unknown top-level keys."""
+        """Reconcile profile-owned Cursor MCPs without changing user entries."""
         mcps = _cursor_mcps(manifest)
-        if not mcps:
+        owned_names = _cursor_owned_mcp_names(manifest)
+        if not owned_names:
             return
 
-        cursor_dir = Path(str(target).rstrip("/")) / ".cursor"
-        cursor_dir.mkdir(parents=True, exist_ok=True)
-        out_path = cursor_dir / "mcp.json"
-
-        data = (
-            read_json_object(out_path, ".cursor/mcp.json")
-            if out_path.is_file()
-            else {}
-        )
+        out_path = Path(str(target).rstrip("/")) / ".cursor" / "mcp.json"
+        if not mcps and not out_path.is_file():
+            return
+        data = read_json_object(out_path, ".cursor/mcp.json") if out_path.is_file() else {}
         servers = data.get("mcpServers")
         if not isinstance(servers, dict):
+            if not mcps:
+                return
             servers = {}
-        data["mcpServers"] = servers
+            data["mcpServers"] = servers
 
+        enabled_names = {mcp["name"] for mcp in mcps}
+        for name in owned_names - enabled_names:
+            servers.pop(name, None)
         for mcp in mcps:
             servers[mcp["name"]] = _cursor_mcp_entry(mcp)
-
+        if not servers:
+            data.pop("mcpServers", None)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(data, indent=2) + "\n")
-        # Merged file — uninstall handled by clean().
 
 
 def _cursor_model(item: dict[str, Any]) -> str:
@@ -362,18 +363,17 @@ def _cursor_mcp_entry(mcp: dict[str, Any]) -> dict[str, Any]:
     return entry
 
 
-def _cursor_mcps(manifest: Manifest) -> list[dict[str, Any]]:
-    """The MCPs whose membership includes ``cursor`` (default
-    ``[claude, codex, cursor]``).
-
-    Entries are rendered through :func:`render_mcp_for_harness` so
-    per-harness Go templates in ``args``/``env`` resolve for cursor —
-    matches the render every other harness gets via :func:`mcps_for`."""
-    return [
-        render_mcp_for_harness(mcp, "cursor")
-        for mcp in manifest.mcps
+def _cursor_owned_mcp_names(manifest: Manifest) -> set[str]:
+    """Return Cursor profile keys, including entries disabled by a gate."""
+    return {
+        mcp["name"] for mcp in manifest.mcps
         if includes_harness(mcp, "cursor", _CURSOR_MCP_DEFAULT)
-    ]
+    }
+
+
+def _cursor_mcps(manifest: Manifest) -> list[dict[str, Any]]:
+    """Render enabled Cursor MCPs with shared gate and template rules."""
+    return mcps_for(manifest, "cursor", _CURSOR_MCP_DEFAULT)
 
 
 def _cursor_hook_projection(manifest: Manifest) -> list[dict[str, Any]]:

@@ -31,7 +31,9 @@ if [ ! -f "$registry" ]; then
     exit 1
 fi
 
-desired=$(yq -o=json '.opencode.config' "$registry" | jq '.')
+# shellcheck source=chezmoi/lib/env-gate.sh
+. "$CHEZMOI_SOURCE_DIR/lib/env-gate.sh"
+desired=$(yq -o=json '.opencode.config' "$registry" | jq "$env_gate_jq .mcp |= gate_filter")
 if ! printf '%s' "$desired" | jq -e 'type == "object"' >/dev/null 2>&1; then
     echo "modify_opencode.json: opencode.config must be a map" >&2
     exit 1

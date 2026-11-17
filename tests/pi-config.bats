@@ -115,12 +115,14 @@ JSON
 }
 
 @test "pi native config exposes MCP and protects sensitive paths" {
-    local mcp="$CZ_SRC/dot_pi/private_agent/mcp.json"
+    local mcp="$CZ_SRC/dot_pi/private_agent/mcp.json.tmpl"
+    local rendered
+    rendered=$(chezmoi execute-template --source "$CZ_SRC" --file "$mcp")
     local permissions="$CZ_SRC/dot_pi/private_agent/extensions/pi-permission-system/config.json"
 
-    [ "$(jq -r '.mcpServers.tilth.command' "$mcp")" = "tilth" ]
-    [ "$(jq -r '.mcpServers.hallouminate.command' "$mcp")" = "hallouminate" ]
-    [ "$(jq -r '.mcpServers.tilth.toolExposure.tilth_write' "$mcp")" = "direct" ]
+    [ "$(jq -r '.mcpServers.tilth.command' <<<"$rendered")" = "tilth" ]
+    [ "$(jq -r '.mcpServers.hallouminate.command' <<<"$rendered")" = "hallouminate" ]
+    [ "$(jq -r '.mcpServers.tilth.toolExposure.tilth_write' <<<"$rendered")" = "direct" ]
     [ "$(yq -o=json -I=0 '.pi.settings.extensions' "$REGISTRY")" = '[]' ]
     [ "$(jq -r '.yoloMode' "$permissions")" = "true" ]
     [ "$(jq -r '.permission.mcp["mcp__tilth__tilth_write"]' "$permissions")" = "allow" ]
@@ -159,7 +161,7 @@ TOML
     [ -f "$destination/.pi/agent/extensions/cheese-flair.ts" ]
     [ "$(cat "$destination/.pi/agent/auth.json")" = "runtime state" ]
     [ "$(jq -S . "$destination/.pi/agent/settings.json")" = "$(yq -o=json '.pi.settings' "$REGISTRY" | jq -S .)" ]
-    cmp -s "$CZ_SRC/dot_pi/private_agent/mcp.json" "$destination/.pi/agent/mcp.json"
+    chezmoi execute-template --source "$CZ_SRC" --file "$CZ_SRC/dot_pi/private_agent/mcp.json.tmpl" | cmp -s - "$destination/.pi/agent/mcp.json"
     cmp -s "$CZ_SRC/dot_pi/private_agent/APPEND_SYSTEM.md" "$destination/.pi/agent/APPEND_SYSTEM.md"
     cmp -s "$CZ_SRC/dot_pi/private_agent/themes/chocolate-donut.json" "$destination/.pi/agent/themes/chocolate-donut.json"
     cmp -s "$CZ_SRC/dot_pi/private_agent/extensions/cheese-flair.ts" "$destination/.pi/agent/extensions/cheese-flair.ts"
@@ -170,4 +172,22 @@ TOML
     [ "$(yq -r '.packages[] | select(has("pi")) | .pi.pkg' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "@earendil-works/pi-coding-agent" ]
     [ "$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "1.5.0" ]
     [ "$(yq -o=json -I=0 '.packages[] | select(has("pi")) | .pi.flags' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = '["--ignore-scripts"]' ]
+}
+
+
+@test "pi MCP template gates Milknado with exact true" {
+    local source="$CZ_SRC/dot_pi/private_agent/mcp.json.tmpl"
+    local value
+    for value in unset '' false 1; do
+        if [ "$value" = unset ]; then
+            run env -u MILKNADO_ENABLED chezmoi execute-template --source "$CZ_SRC" --file "$source"
+        else
+            run env MILKNADO_ENABLED="$value" chezmoi execute-template --source "$CZ_SRC" --file "$source"
+        fi
+        [ "$status" -eq 0 ]
+        jq -e '.mcpServers.milknado == null and .mcpServers.hallouminate.command == "hallouminate"' <<<"$output"
+    done
+    run env MILKNADO_ENABLED=true chezmoi execute-template --source "$CZ_SRC" --file "$source"
+    [ "$status" -eq 0 ]
+    jq -e '.mcpServers.milknado.command == "uvx" and .mcpServers.hallouminate.command == "hallouminate"' <<<"$output"
 }

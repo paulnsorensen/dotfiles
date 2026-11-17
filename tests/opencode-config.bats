@@ -10,13 +10,15 @@ setup() {
     export CZ_SRC="$REAL_DOTFILES_DIR/chezmoi"
     export REGISTRY="$CZ_SRC/.chezmoidata/opencode.yaml"
     export SCRIPT="$CZ_SRC/dot_config/opencode/modify_opencode.json"
+    # shellcheck source=chezmoi/lib/env-gate.sh
+    . "$CZ_SRC/lib/env-gate.sh"
 }
 
 @test "opencode config renders from the authoritative registry" {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
 
-    expected=$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S .)
+    expected=$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S "$env_gate_jq .mcp |= gate_filter")
     actual=$(jq -S 'del(.agent)' <<<"$output")
     [ "$actual" = "$expected" ]
     [ "$(jq '.agent | length' <<<"$output")" -eq 20 ]
@@ -60,7 +62,7 @@ JSON
 {"mcp":{"todoist":{"enabled":true},"code-review-graph":{"enabled":true},"serena":{"enabled":true},"extra":{},"context7":{"environment":{"TOKEN":"synthetic"}},"servers":{"serena":{"enabled":true},"extra":{},"tilth":{"codemode":true,"stale":"removed"}}}}
 JSON
     [ "$status" -eq 0 ]
-    [ "$(jq -S '.mcp' <<<"$output")" = "$(yq -o=json '.opencode.config.mcp' "$REGISTRY" | jq -S .)" ]
+    [ "$(jq -S '.mcp' <<<"$output")" = "$(yq -o=json '.opencode.config.mcp' "$REGISTRY" | jq -S "$env_gate_jq gate_filter")" ]
     [ -z "$stderr" ]
 }
 
@@ -227,7 +229,7 @@ TOML
 
     run env HOME="$TEST_HOME" chezmoi --config "$cfg" --source "$CZ_SRC" apply --force --exclude=scripts
     [ "$status" -eq 0 ]
-    [ "$(jq -S 'del(.agent)' "$destination/.config/opencode/opencode.json")" = "$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S .)" ]
+    [ "$(jq -S 'del(.agent)' "$destination/.config/opencode/opencode.json")" = "$(yq -o=json '.opencode.config | del(.agent)' "$REGISTRY" | jq -S "$env_gate_jq .mcp |= gate_filter")" ]
     [ "$(jq '.agent | length' "$destination/.config/opencode/opencode.json")" -eq 20 ]
     [ "$(jq -cS . "$destination/opencode.json")" = '{"custom":{"nested":[1,false]},"model":"kept"}' ]
     cmp -s "$CZ_SRC/dot_config/opencode/cli.json" "$destination/.config/opencode/cli.json"
@@ -257,4 +259,21 @@ TOML
     grep -Eq '^"npm:@opencode/cli" = \{ version = "[0-9]+\.[0-9]+\.[0-9]+", allow_builds = \["@opencode/cli"\] \}$' "$CZ_SRC/dot_config/mise/config.toml"
     run grep -F 'aqua:anomalyco/opencode' "$CZ_SRC/dot_config/mise/config.toml"
     [ "$status" -ne 0 ]
+}
+
+
+@test "opencode Milknado gate is exact and removes an enabled live MCP" {
+    run env MILKNADO_ENABLED=true CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null
+    [ "$status" -eq 0 ]
+    jq -e '.mcp.milknado.type == "local" and (.mcp.milknado | has("gate") | not)' <<<"$output"
+    local enabled="$output" value
+    for value in unset '' false 1; do
+        if [ "$value" = unset ]; then
+            run env -u MILKNADO_ENABLED CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<<"$enabled"
+        else
+            run env MILKNADO_ENABLED="$value" CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<<"$enabled"
+        fi
+        [ "$status" -eq 0 ]
+        jq -e '.mcp.milknado == null and .mcp.hallouminate.command[0] == "hallouminate"' <<<"$output"
+    done
 }

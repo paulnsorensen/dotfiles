@@ -97,18 +97,24 @@ def _server_record(mcp: dict) -> dict:
     return mcp_server_entry(mcp)
 
 
+def _positive_gate_blocks(mcp: dict) -> bool:
+    gate = mcp.get("gate")
+    return bool(gate) and os.environ.get(gate) != "true"
+
+
 def _write_mcp_config(manifest: Manifest, scratch: Path) -> Path:
     """Write the profile's MCPs to an ephemeral strict ``.mcp.json``.
 
-    Includes every MCP the profile declares (membership defaulted to all
-    harnesses); ``gate_unless`` is *not* applied — an isolated launch is a
-    deliberate closed world, not the auto-render path. Inline ``${VAR}`` env
+    Includes every MCP without a blocked positive gate. Harness membership
+    and ``gate_unless`` are *not* applied in an isolated closed world.
+    Inline ``${VAR}`` env
     refs resolve at render time from ``.env`` (D4), failing loud when unset —
     parity with the retired ``gen-profile-mcp.sh``."""
     dotenv = _dotenv()
     servers = {
         mcp["name"]: _server_record(resolve_item_env(mcp, dotenv))
         for mcp in manifest.mcps
+        if not _positive_gate_blocks(mcp)
     }
     path = scratch / "mcp.json"
     path.write_text(json.dumps({"mcpServers": servers}, indent=2) + "\n")
@@ -345,6 +351,8 @@ def _codex_mcp_tables(manifest: Manifest) -> str:
     scopes = _collect_mcp_tool_scopes(manifest)
     lines: list[str] = []
     for raw in manifest.mcps:
+        if _positive_gate_blocks(raw):
+            continue
         mcp = resolve_item_env(raw, dotenv)
         name = _codex_toml_key(mcp["name"])
         lines.append(f"[mcp_servers.{name}]")

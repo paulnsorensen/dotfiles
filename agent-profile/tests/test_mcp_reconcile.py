@@ -12,13 +12,15 @@ Claude CLI unregistration while preserving unrelated user configuration.
 from __future__ import annotations
 
 import json
+import tomllib
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 import agent_profile.renderers.claude as cl
-import pytest
 from agent_profile import cli
 from agent_profile.parse import Manifest
 from agent_profile.renderers.registry import build_registry
-
 from tests.conftest import install_profile, write_profile
 
 
@@ -316,3 +318,139 @@ def test_nonisolated_codex_mcp_tool_scope_install_writes_no_config(
     capsys.readouterr()
 
     assert not cfg.exists()
+
+
+def test_isolated_codex_reinstall_prunes_disabled_owned_mcp(
+    env, monkeypatch, prod_renderers
+):
+    write_profile(
+        env.profiles,
+        "p",
+        "name: p\n"
+        "description: gated reconcile probe\n"
+        "isolated: true\n"
+        "mcps:\n"
+        "  - name: milknado\n"
+        "    command: /bin/true\n"
+        "    harnesses: [codex]\n"
+        "    gate: MILKNADO_ENABLED\n",
+    )
+    cfg = env.target / ".codex/config.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        'model = "sentinel-model"\n[mcp_servers.unrelated]\ncommand = "/bin/false"\n'
+    )
+    args = ["_install-internal", "p", "--harness", "codex", "--target", str(env.target)]
+
+    monkeypatch.setenv("MILKNADO_ENABLED", "true")
+    assert cli.main(args) == 0
+    assert "milknado" in tomllib.loads(cfg.read_text())["mcp_servers"]
+
+    monkeypatch.delenv("MILKNADO_ENABLED")
+    assert cli.main(args) == 0
+    disabled = tomllib.loads(cfg.read_text())
+    assert disabled["model"] == "sentinel-model"
+    assert disabled["mcp_servers"] == {"unrelated": {"command": "/bin/false"}}
+
+    monkeypatch.setenv("MILKNADO_ENABLED", "true")
+    assert cli.main(args) == 0
+    enabled = tomllib.loads(cfg.read_text())
+    assert enabled["model"] == "sentinel-model"
+    assert enabled["mcp_servers"]["unrelated"] == {"command": "/bin/false"}
+    assert enabled["mcp_servers"]["milknado"]["command"] == "/bin/true"
+
+
+@pytest.mark.parametrize("isolated", [True, False])
+def test_copilot_gate_transition_prunes_only_owned_mcp(
+    env, monkeypatch, prod_renderers, isolated
+):
+    repo = env.tmp / "repo"
+    registry = repo / "agents" / "plugins" / "registry.yaml"
+    registry.parent.mkdir(parents=True)
+    marketplace = env.tmp / "marketplace"
+    plugin = marketplace / "plugins" / "other"
+    plugin.mkdir(parents=True)
+    metadata = marketplace / ".claude-plugin" / "marketplace.json"
+    metadata.parent.mkdir()
+    metadata.write_text(json.dumps({
+        "name": "other-market",
+        "plugins": [{"name": "other", "source": "./plugins/other"}],
+    }))
+    registry.write_text(
+        "plugins:\n"
+        "  other:\n"
+        f"    path: {marketplace}\n"
+        "    harnesses: [copilot]\n"
+        "    native: [copilot]\n"
+    )
+    monkeypatch.setenv("DOTFILES_DIR", str(repo))
+    write_profile(
+        env.profiles,
+        "p",
+        "name: p\n"
+        "description: gated Copilot reconcile\n"
+        f"isolated: {str(isolated).lower()}\n"
+        "registries:\n"
+        "  plugins: agents/plugins/registry.yaml\n"
+        "mcps:\n"
+        "  - name: gated\n"
+        "    command: /bin/true\n"
+        "    harnesses: [copilot]\n"
+        "    gate: GATED_COPILOT_MCP\n",
+    )
+    cfg = env.target / ".copilot" / "mcp-config.json"
+    cfg.parent.mkdir(parents=True)
+    original = {
+        "mcpServers": {"sentinel": {"command": "/bin/false"}},
+        "otherKey": {"keep": True},
+    }
+    if not isolated:
+        original["mcpServers"]["gated"] = {"command": "/bin/user-owned"}
+    cfg.write_text(json.dumps(original))
+    args = ["_install-internal", "p", "--harness", "copilot", "--target", str(env.target)]
+
+    monkeypatch.setenv("GATED_COPILOT_MCP", "true")
+    with patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")):
+        assert cli.main(args) == 0
+    if isolated:
+        assert "gated" in json.loads(cfg.read_text())["mcpServers"]
+    else:
+        assert json.loads(cfg.read_text()) == original
+
+    monkeypatch.delenv("GATED_COPILOT_MCP")
+    with patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")) as copilot_cli:
+        assert cli.main(args) == 0
+    calls = [call.args[0] for call in copilot_cli.call_args_list]
+    assert not [call for call in calls if "uninstall" in call or "remove" in call]
+    result = json.loads(cfg.read_text())
+    assert result["otherKey"] == original["otherKey"]
+    assert result["mcpServers"]["sentinel"] == original["mcpServers"]["sentinel"]
+    assert ("gated" in result["mcpServers"]) is not isolated
+
+
+def test_copilot_prune_removes_prior_mcp_despite_disabled_gate(tmp_path, monkeypatch):
+    from agent_profile.renderers.copilot import CopilotRenderer
+
+    cfg = tmp_path / ".copilot" / "mcp-config.json"
+    cfg.parent.mkdir()
+    cfg.write_text(json.dumps({
+        "mcpServers": {
+            "gated": {"command": "/bin/true"},
+            "sentinel": {"command": "/bin/false"},
+        },
+        "otherKey": {"keep": True},
+    }))
+    monkeypatch.delenv("GATED_COPILOT_MCP", raising=False)
+    manifest = Manifest(
+        name="p",
+        isolated=True,
+        mcps=[{"name": "gated", "harnesses": ["copilot"], "gate": "GATED_COPILOT_MCP"}],
+        native_plugins=[{"name": "other", "marketplace_name": "other-market", "copilot_native": True}],
+    )
+    with patch("subprocess.run") as native_cli:
+        CopilotRenderer().prune_mcps(manifest, tmp_path)
+    native_cli.assert_not_called()
+    assert json.loads(cfg.read_text()) == {
+        "mcpServers": {"sentinel": {"command": "/bin/false"}},
+        "otherKey": {"keep": True},
+    }

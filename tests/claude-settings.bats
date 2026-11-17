@@ -13,6 +13,7 @@
 # chezmoi dir.
 
 load test_helper
+bats_require_minimum_version 1.5.0
 
 setup() {
     setup_test_env
@@ -171,6 +172,7 @@ STDIN"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$tmpsrc/.chezmoidata/claude.yaml"
     cp "$AUTH" "$tmpsrc/lib/claude-settings-authoritative.json"
     cp "$CZ_SRC/lib/drift-gate.sh" "$tmpsrc/lib/drift-gate.sh"
+    cp "$CZ_SRC/lib/env-gate.sh" "$tmpsrc/lib/env-gate.sh"
     printf 'retiredKey\n' > "$tmpsrc/lib/claude-settings-retired.txt"
     run bash -c "CHEZMOI_SOURCE_DIR='$tmpsrc' sh '$SCRIPT' <<'STDIN' >'$OUT'
 {\"retiredKey\":\"old\"}
@@ -233,6 +235,7 @@ STDIN"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$tmpsrc/.chezmoidata/claude.yaml"
     jq '. + {someNewClaudeKey:"default"}' "$AUTH" > "$tmpsrc/lib/claude-settings-authoritative.json"
     cp "$CZ_SRC/lib/drift-gate.sh" "$tmpsrc/lib/drift-gate.sh"
+    cp "$CZ_SRC/lib/env-gate.sh" "$tmpsrc/lib/env-gate.sh"
     run bash -c "CHEZMOI_SOURCE_DIR='$tmpsrc' sh '$SCRIPT' <<'STDIN' >'$OUT'
 {\"someNewClaudeKey\":\"x\"}
 STDIN"
@@ -278,6 +281,7 @@ setup_chezmoi_apply_env() {
     cp "$SCRIPT" "$CZ_INT_SRC/dot_claude/modify_settings.json"
     cp "$AUTH"   "$CZ_INT_SRC/lib/claude-settings-authoritative.json"
     cp "$CZ_SRC/lib/drift-gate.sh" "$CZ_INT_SRC/lib/drift-gate.sh"
+    cp "$CZ_SRC/lib/env-gate.sh" "$CZ_INT_SRC/lib/env-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$CZ_INT_SRC/.chezmoidata/claude.yaml"
     printf 'lib/\n' > "$CZ_INT_SRC/.chezmoiignore"
     cat > "$TEST_HOME/int-cfg/chezmoi.toml" <<TOML
@@ -396,6 +400,7 @@ setup_custom_registry() {
     mkdir -p "$CUSTOM_SRC/lib" "$CUSTOM_SRC/.chezmoidata" "$root/claude/plugins"
     cp "$AUTH" "$CUSTOM_SRC/lib/claude-settings-authoritative.json"
     cp "$CZ_SRC/lib/drift-gate.sh" "$CUSTOM_SRC/lib/drift-gate.sh"
+    cp "$CZ_SRC/lib/env-gate.sh" "$CUSTOM_SRC/lib/env-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$CUSTOM_SRC/.chezmoidata/claude.yaml"
     printf 'plugins:\n%s\n' "$1" > "$root/claude/plugins/registry.yaml"
 }
@@ -459,6 +464,7 @@ setup_custom_registry() {
     mkdir -p "$src/lib" "$src/.chezmoidata"
     cp "$AUTH" "$src/lib/claude-settings-authoritative.json"
     cp "$CZ_SRC/lib/drift-gate.sh" "$src/lib/drift-gate.sh"
+    cp "$CZ_SRC/lib/env-gate.sh" "$src/lib/env-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$src/.chezmoidata/claude.yaml"
     # No $root/claude/plugins/registry.yaml.
     run bash -c "env -u TODOIST CHEZMOI_SOURCE_DIR='$src' sh '$SCRIPT' </dev/null >'$OUT'"
@@ -498,6 +504,7 @@ setup_native_registry() {
     mkdir -p "$NSRC/lib" "$NSRC/.chezmoidata" "$root/agents/plugins"
     cp "$AUTH" "$NSRC/lib/claude-settings-authoritative.json"
     cp "$CZ_SRC/lib/drift-gate.sh" "$NSRC/lib/drift-gate.sh"
+    cp "$CZ_SRC/lib/env-gate.sh" "$NSRC/lib/env-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$NSRC/.chezmoidata/claude.yaml"
     printf 'plugins:\n%s\n' "$1" > "$root/agents/plugins/registry.yaml"
 }
@@ -588,6 +595,7 @@ run_native() {
     mkdir -p "$src/lib" "$src/.chezmoidata"
     cp "$AUTH" "$src/lib/claude-settings-authoritative.json"
     cp "$CZ_SRC/lib/drift-gate.sh" "$src/lib/drift-gate.sh"
+    cp "$CZ_SRC/lib/env-gate.sh" "$src/lib/env-gate.sh"
     # shellcheck disable=SC2016  # literal ${HOME} token, expanded by modify_settings, not the shell
     yq '.claude.extraKnownMarketplaces.tok.source.source = "directory"
         | .claude.extraKnownMarketplaces.tok.source.path = "${HOME}/tok"' \
@@ -626,6 +634,7 @@ setup_ignore_registry() {
     mkdir -p "$IGN_SRC/lib" "$IGN_SRC/.chezmoidata"
     cp "$AUTH" "$IGN_SRC/lib/claude-settings-authoritative.json"
     cp "$CZ_SRC/lib/drift-gate.sh" "$IGN_SRC/lib/drift-gate.sh"
+    cp "$CZ_SRC/lib/env-gate.sh" "$IGN_SRC/lib/env-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$IGN_SRC/.chezmoidata/claude.yaml"
     printf '%s\n' "$1" > "$IGN_SRC/lib/claude-settings-ignore.txt"
 }
@@ -678,6 +687,7 @@ env.SSL_CERT_FILE'
     mkdir -p "$src/lib" "$src/.chezmoidata"
     cp "$AUTH" "$src/lib/claude-settings-authoritative.json"
     cp "$CZ_SRC/lib/drift-gate.sh" "$src/lib/drift-gate.sh"
+    cp "$CZ_SRC/lib/env-gate.sh" "$src/lib/env-gate.sh"
     cp "$CZ_SRC/.chezmoidata/claude.yaml" "$src/.chezmoidata/claude.yaml"
     # No lib/claude-settings-ignore.txt written.
     run bash -c "env -u TODOIST CHEZMOI_SOURCE_DIR='$src' sh '$SCRIPT' <<'STDIN' >'$OUT'
@@ -796,4 +806,27 @@ JSON
     # The live-only event vanished with its last hook; the devbox group ends Stop.
     jq -e '.hooks | has("SubagentStart") | not' "$OUT" >/dev/null
     jq -e --arg cmd "$DEVBOX_CMD" '.hooks.Stop[-1].hooks[0].command == $cmd' "$OUT" >/dev/null
+}
+
+
+@test "modify_settings gates native Milknado and removes enabled settings when disabled" {
+    mk_git_cache milknado milknado
+    mk_git_cache hallouminate hallouminate
+    run --separate-stderr env MILKNADO_ENABLED=true CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" </dev/null
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" > "$OUT"
+    jq -e '.enabledPlugins["milknado@milknado"] == true and .enabledPlugins["hallouminate@hallouminate"] == true' "$OUT" >/dev/null
+    local enabled
+    enabled=$(cat "$OUT")
+    local value
+    for value in unset '' false 1; do
+        if [ "$value" = unset ]; then
+            run --separate-stderr env -u MILKNADO_ENABLED CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<<"$enabled"
+        else
+            run --separate-stderr env MILKNADO_ENABLED="$value" CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$SCRIPT" <<<"$enabled"
+        fi
+        [ "$status" -eq 0 ]
+        printf '%s' "$output" > "$OUT"
+        jq -e '.enabledPlugins["milknado@milknado"] == null and .extraKnownMarketplaces.milknado == null and .enabledPlugins["hallouminate@hallouminate"] == true' "$OUT" >/dev/null
+    done
 }

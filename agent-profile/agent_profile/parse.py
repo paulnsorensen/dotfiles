@@ -113,6 +113,7 @@ class Manifest:
     # marketplace_root, marketplace_name, and description so the renderer can
     # register the marketplace.
     native_plugins: list[dict[str, Any]] = field(default_factory=list)
+    retired_copilot_plugins: list[dict[str, str | None]] = field(default_factory=list)
     compile_targets: tuple[CompileTarget, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
@@ -241,6 +242,7 @@ def parse_one(profile_dir: Path) -> dict[str, Any]:
         "commands": _decorate(raw.get("commands") or []),
         "hooks": reg["hooks"] + _decorate(raw.get("hooks") or []),
         "native_plugins": reg.get("native_plugins", []),
+        "retired_copilot_plugins": reg.get("retired_copilot_plugins", []),
         "settings": raw.get("settings") or {},
     }
 
@@ -264,7 +266,10 @@ def _expand_registries_directive(
     as their ``_source_dir`` (not the profile dir) since their payload files
     live under the repo, not the profile."""
     if not directive:
-        return {"mcps": [], "agents": [], "skills": [], "hooks": [], "native_plugins": []}
+        return {
+            "mcps": [], "agents": [], "skills": [], "hooks": [],
+            "native_plugins": [], "retired_copilot_plugins": [],
+        }
     if not isinstance(directive, dict):
         raise ParseError(
             "ap_parse_one: 'registries' must be a mapping of "
@@ -303,6 +308,10 @@ def _merge_two(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
         "commands": a.get("commands", []) + b.get("commands", []),
         "hooks": a.get("hooks", []) + b.get("hooks", []),
         "native_plugins": a.get("native_plugins", []) + b.get("native_plugins", []),
+        "retired_copilot_plugins": (
+            a.get("retired_copilot_plugins", [])
+            + b.get("retired_copilot_plugins", [])
+        ),
         "settings": settings,
     }
 
@@ -403,5 +412,6 @@ def parse_manifest(profile_dir: Path, find_profile_dir: Any = None) -> Manifest:
         marketplaces=merged["marketplaces"],
         mcp_scope=merged["mcp_scope"],
         native_plugins=merged.get("native_plugins", []),
+        retired_copilot_plugins=merged.get("retired_copilot_plugins", []),
         compile_targets=merged["compile_targets"],
     )

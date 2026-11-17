@@ -34,6 +34,13 @@ Plugin-owned MCP servers must NOT also appear in `dot_omp/private_agent/mcp.json
 
 ## Scope decisions
 
+Milknado uses the positive `MILKNADO_ENABLED` gate and defaults to off.
+Only `MILKNADO_ENABLED=true` during `dots sync` includes its marketplace plugin.
+A later sync without that value removes the managed registration, not Milknado project data.
+Hallouminate and npm plugins keep their existing behavior.[^milknado-gate]
+
+[^milknado-gate]: `chezmoi/.chezmoidata/omp.yaml`; `.sync-lib.sh:sync_omp_plugins`; `chezmoi/lib/env-gate.sh`; `tests/omp-plugins.bats`.
+
 The registry manages the milknado and hallouminate marketplaces plus the pinned `@sysid/pi-vim` npm extension. Other npm plugins remain user-owned. cheese-flow's skills reach OMP through the easy-cheese vendor leg in `skills/_registry.yaml`; a native cheese-flow install would duplicate them. todoist-flow and vaudeville remain excluded.
 
 Related: [[omp]] (Todo→Milknado cutover, extensions), [[operations/sync-and-chezmoi]] (deploy mechanics).

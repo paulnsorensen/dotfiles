@@ -1049,3 +1049,42 @@ def test_native_plugins_inherit_through_includes(tmp_path, monkeypatch):
         "outer profile including base must inherit base's native_plugins; "
         f"got {outer_names} (outermost-override clobbered the inherited value)"
     )
+
+
+@pytest.mark.parametrize(
+    "value, enabled",
+    [(None, False), ("", False), ("false", False), ("1", False), ("true", True)],
+)
+def test_positive_plugin_gate_prevents_expansion_and_fetch(
+    tmp_path, monkeypatch, value, enabled
+):
+    repo, market_root, _ = _make_standard_milknado(tmp_path, with_skill=True)
+    _make_plugins_registry(
+        repo,
+        {
+            "milknado": {
+                "path": str(market_root),
+                "harnesses": ["claude", "codex", "cursor"],
+                "native": ["claude"],
+                "gate": "MILKNADO_ENABLED",
+            }
+        },
+    )
+    if value is None:
+        monkeypatch.delenv("MILKNADO_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("MILKNADO_ENABLED", value)
+    out = expand_registries({"plugins": "agents/plugins/registry.yaml"}, repo, {})
+    assert bool(out["mcps"]) is enabled
+    assert bool(out["skills"]) is enabled
+    assert bool(out["native_plugins"]) is enabled
+    assert not any("gate" in item for items in out.values() for item in items)
+
+    if not enabled:
+        _make_plugins_registry(
+            repo,
+            {"milknado": {"git": "https://example.invalid/milknado", "gate": "MILKNADO_ENABLED"}},
+        )
+        assert not any(
+            expand_registries({"plugins": "agents/plugins/registry.yaml"}, repo, {}).values()
+        )

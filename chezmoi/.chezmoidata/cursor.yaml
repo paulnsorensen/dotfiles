@@ -1,0 +1,6 @@
+cursor:
+  mcpServers:
+    milknado:
+      gate: MILKNADO_ENABLED
+      command: uvx
+      args: ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]
