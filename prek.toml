@@ -14,7 +14,7 @@ hooks = [
   # Chezmoi `modify_` scripts use their managed target extension but contain shell.
   { id = "check-toml", exclude = "^chezmoi/private_dot_codex/modify_private_config\\.toml$" },
   # Zed's keymap.json is JSONC (full-line // comments); Zed parses it, strict JSON doesn't.
-  { id = "check-json", exclude = "^(chezmoi/dot_claude/modify_settings\\.json|chezmoi/dot_pi/private_agent/modify_settings\\.json|chezmoi/dot_t3/userdata/modify_settings\\.json|chezmoi/dot_config/opencode/modify_opencode\\.json|chezmoi/dot_config/zed/keymap\\.json)$" },
+  { id = "check-json", exclude = "^(chezmoi/dot_claude/modify_settings\\.json|chezmoi/dot_pi/private_agent/modify_settings\\.json|chezmoi/dot_t3/userdata/modify_settings\\.json|chezmoi/dot_config/opencode/modify_opencode\\.json|chezmoi/dot_cursor/modify_mcp\\.json|chezmoi/dot_config/zed/keymap\\.json)$" },
   { id = "check-merge-conflict" },
   { id = "detect-private-key", exclude = "tests/" },
   { id = "check-added-large-files", args = ["--maxkb=1024"] },
@@ -25,7 +25,7 @@ hooks = [
 [[repos]]
 repo = "local"
 hooks = [
-  { id = "shellcheck", name = "shellcheck", entry = "shellcheck -e SC1091,SC2148,SC2030,SC2031,SC2155,SC2314,SC2329", language = "system", types = ["shell"], exclude = "zsh/|^skills/[^/]+/evals/files/" },
+  { id = "shellcheck", name = "shellcheck", entry = "shellcheck -x -e SC1091,SC2148,SC2030,SC2031,SC2155,SC2314,SC2329", language = "system", types = ["shell"], exclude = "zsh/|^skills/[^/]+/evals/files/" },
 ]
 
 # Local hooks

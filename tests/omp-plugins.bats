@@ -18,6 +18,7 @@ setup() {
     command -v yq >/dev/null 2>&1 || skip "yq not installed"
 
     export LIB="$REAL_DOTFILES_DIR/.sync-lib.sh"
+    export MILKNADO_ENABLED=true
     export CALLS="$TEST_HOME/omp-calls.log"
     export MP_JSON="$TEST_HOME/.omp/marketplaces.json"
     export INSTALLED="$TEST_HOME/omp-installed.txt"
@@ -82,10 +83,13 @@ SH
     # function owns.
     export FIX="$TEST_HOME/fixture-dotfiles"
     mkdir -p "$FIX/chezmoi/.chezmoidata"
+    mkdir -p "$FIX/chezmoi/lib"
+    cp "$REAL_DOTFILES_DIR/chezmoi/lib/env-gate.sh" "$FIX/chezmoi/lib/env-gate.sh"
     cat > "$FIX/chezmoi/.chezmoidata/omp.yaml" <<'YAML'
 omp:
   plugins:
     milknado:
+      gate: MILKNADO_ENABLED
       marketplace: milknado
       source: paulnsorensen/milknado
     hallouminate:
@@ -219,4 +223,18 @@ YAML
     run bash -c "PATH='$minimal' source '$LIB'; PATH='$minimal' sync_omp_plugins '$FIX'"
     [ "$status" -eq 0 ]
     [ ! -s "$CALLS" ]
+}
+
+
+@test "sync_omp_plugins disables only gated marketplace plugins after enable" {
+    seed_marketplaces "$(mp_entry milknado),$(mp_entry hallouminate)"
+    printf 'milknado@milknado\nhallouminate@hallouminate\n' > "$INSTALLED"
+    run env MILKNADO_ENABLED=false bash -c "source '$LIB'; sync_omp_plugins '$FIX'"
+    [ "$status" -eq 0 ]
+    grep -qxF 'plugin uninstall milknado@milknado' "$CALLS"
+    grep -qxF 'plugin marketplace remove milknado' "$CALLS"
+    ! grep -qF 'hallouminate@hallouminate' "$CALLS"
+    grep -qxF 'hallouminate@hallouminate' "$INSTALLED"
+    jq -e '.marketplaces[] | select(.name == "hallouminate")' "$MP_JSON" >/dev/null
+    ! grep -qxF 'plugin install @sysid/pi-vim@1.0.3' "$CALLS"
 }

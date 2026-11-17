@@ -83,6 +83,7 @@ opencode:
         type: local
         command: [/usr/local/libexec/dotfiles/agent-secret-proxy, --socket, /var/run/dotfiles-agent-secrets/tavily.sock]
       milknado:
+        gate: MILKNADO_ENABLED
         type: local
         command: [uvx, --from, "git+https://github.com/paulnsorensen/milknado@main", milknado-mcp]
       hallouminate:

@@ -18,6 +18,23 @@ Two deploy paths feed Cursor:
 | Settings / config | [cli permissions](https://cursor.com/docs/cli/reference/permissions) · [cli configuration](https://cursor.com/docs/cli/reference/configuration) | **Permissions are split** — see [[../architecture/harness-permissions]]. The **IDE** allowlist (Run Mode + command/MCP approval) is UI-only (Settings → Agents). The **`cursor-agent` CLI** is declarative: `~/.cursor/cli-config.json` (global: `version`, `editor.vimMode`, `permissions.allow`/`deny`) and project `<project>/.cursor/cli.json` (only `permissions`, precedence over global). Tokens: `Shell()`/`Read()`/`Write()`/`WebFetch()`/`Mcp()`; **deny wins**. `~/.cursor/sandbox.json` is a separate sandbox network/fs policy. `ap` does **not** render any of these today (warn-and-drop) — planned via `.cheese/specs/ap-cursor-cli-permissions.md`. |
 | Skills / commands | [skills](https://cursor.com/docs/skills) · [slash commands](https://cursor.com/docs/cli/reference/slash-commands) | `cursor/plugins/local/<plugin>/skills/<name>/SKILL.md` → `~/.cursor/skills/<name>/` (frontmatter `name` + `description`, optional `paths`). `commands/*.md` → `~/.cursor/commands/*.md` — **Cursor commands carry NO frontmatter**, unlike Claude. |
 
+## Milknado opt-in and cleanup
+
+Cursor global MCP configuration remains user-owned except for the managed Milknado key.
+The Cursor chezmoi modifier removes disabled Milknado without deleting user servers or other configuration keys.
+Set `MILKNADO_ENABLED=true` during `dots sync` to restore its existing launcher.
+Unset the variable and sync again to remove Milknado.
+Only the exact value `true` enables it.
+Restart Cursor after sync.[^milknado-cursor]
+
+A plugin-ingest gate alone cannot clean a disconnected global MCP file.
+The chezmoi modifier owns that cleanup because non-isolated `ap` rendering does not own the live Cursor MCP file.
+The modifier rejects malformed live JSON rather than replacing it with an empty configuration.[^milknado-cursor]
+
+[^milknado-cursor]: `chezmoi/.chezmoidata/cursor.yaml:1-6`; `chezmoi/dot_cursor/modify_mcp.json:1-27`; `chezmoi/lib/cursor-config.sh:4-23`; `tests/cursor-config.bats:14-44`; `agent-profile/agent_profile/renderers/cursor.py:77-95,245-273`; `agent-profile/tests/test_renderer_cursor.py:478-548`.
+
+*Source: Cursor ownership trace and live sync verification · Updated: 2026-11-17 · Supersedes: no Milknado-specific cleanup source.*
+
 ## Isolated settings
 
 Not available for Cursor. Cursor's IDE is not a launchable closed-world CLI. (The separate `cursor-agent` CLI has headless flags — `-p`/`--print`, `--force`, `--approve-mcps` — but `ap` doesn't drive it.)

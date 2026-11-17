@@ -647,11 +647,59 @@ def _resolve_git_plugin(url: str, branch: str, cache_dir: Path) -> Path:
     return cache_dir
 
 
+def _disabled_copilot_retirement(
+    name: str, body: dict[str, Any], cache_root: Path, repo_root: Path
+) -> dict[str, str | None]:
+    """Resolve the exact plugin ID from available marketplace metadata."""
+    import json
+    import re
+
+    if body.get("git") and not body.get("path"):
+        root = cache_root / name
+        subdir = body.get("subdir") or ""
+    elif body.get("path") and not body.get("git"):
+        root = _resolve_plugin_path(str(body["path"]), repo_root)
+        subdir = ""
+    else:
+        return {"name": name, "plugin_id": None}
+    if (
+        not isinstance(subdir, str)
+        or PurePosixPath(subdir).is_absolute()
+        or ".." in PurePosixPath(subdir).parts
+    ):
+        return {"name": name, "plugin_id": None}
+    marketplace_json = (
+        root.joinpath(*PurePosixPath(subdir).parts)
+        / ".claude-plugin"
+        / "marketplace.json"
+    )
+    try:
+        metadata = json.loads(marketplace_json.read_text())
+    except (OSError, ValueError):
+        return {"name": name, "plugin_id": None}
+    if not isinstance(metadata, dict):
+        return {"name": name, "plugin_id": None}
+    marketplace = metadata.get("name")
+    plugins = metadata.get("plugins")
+    if (
+        not isinstance(marketplace, str)
+        or re.fullmatch(r"[A-Za-z0-9._-]+", marketplace) is None
+        or not isinstance(plugins, list)
+    ):
+        return {"name": name, "plugin_id": None}
+    if not any(
+        isinstance(plugin, dict) and plugin.get("name") == name for plugin in plugins
+    ):
+        return {"name": name, "plugin_id": None}
+    return {"name": name, "plugin_id": f"{name}@{marketplace}"}
+
+
 def _expand_plugins(
     path: Path,
     repo_root: Path,
     dotenv: dict[str, str],
     cache_root: Path | None = None,
+    retirements: list[dict[str, str | None]] | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -665,6 +713,7 @@ def _expand_plugins(
     still provide command behavior inside the native harness.
     """
     import json as _json
+    import os
 
     from agent_profile._validate import ParseError
 
@@ -679,6 +728,15 @@ def _expand_plugins(
 
     for name, body in plugins.items():
         if not isinstance(body, dict):
+            continue
+        gate = body.get("gate")
+        if gate and os.environ.get(gate) != "true":
+            if retirements is not None and "copilot" in resolved_native_harnesses(
+                body, plugin=name
+            ):
+                retirements.append(
+                    _disabled_copilot_retirement(name, body, _cache_root, repo_root)
+                )
             continue
         if "harnesses" in body:
             harnesses = _validate_explicit_harnesses(
@@ -890,6 +948,7 @@ def expand_registries(
         "skills": [],
         "hooks": [],
         "native_plugins": [],
+        "retired_copilot_plugins": [],
     }
 
     mcps_path = directive.get("mcps")
@@ -911,7 +970,8 @@ def expand_registries(
     plugins_path = directive.get("plugins")
     if plugins_path:
         plugin_mcps, plugin_skills, plugin_agents, plugin_hooks, native = _expand_plugins(
-            repo_root / plugins_path, repo_root, dotenv
+            repo_root / plugins_path, repo_root, dotenv,
+            retirements=out["retired_copilot_plugins"],
         )
         from agent_profile._validate import ParseError
 

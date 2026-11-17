@@ -475,6 +475,47 @@ def test_mcp_merge_preserves_user_entries(tmp_path):
     assert "extraKey" in content
 
 
+def test_gated_mcp_transition_preserves_unrelated_entries(tmp_path, monkeypatch):
+    import json
+
+    m, target, _ = _manifest(
+        tmp_path,
+        mcps=[{
+            "name": "milknado", "command": "uvx",
+            "args": ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"],
+            "gate": "MILKNADO_ENABLED", "harnesses": ["cursor"],
+        }],
+    )
+    cfg = target / ".cursor" / "mcp.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(json.dumps({"mcpServers": {"sentinel": {"command": "keep"}}, "extraKey": 7}))
+    renderer = CursorRenderer()
+
+    monkeypatch.setenv("MILKNADO_ENABLED", "true")
+    renderer.render(m, target)
+    on = json.loads(cfg.read_text())
+    assert on["mcpServers"]["milknado"] == {
+        "command": "uvx", "args": ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]
+    }
+
+    for value in ("false", "1", None):
+        if value is None:
+            monkeypatch.delenv("MILKNADO_ENABLED", raising=False)
+        else:
+            monkeypatch.setenv("MILKNADO_ENABLED", value)
+        renderer.render(m, target)
+        assert json.loads(cfg.read_text()) == {
+            "mcpServers": {"sentinel": {"command": "keep"}}, "extraKey": 7
+        }
+
+    # Clean uses manifest ownership, even when the gate blocks rendering.
+    cfg.write_text(json.dumps(on))
+    renderer.clean(m, target)
+    assert json.loads(cfg.read_text()) == {
+        "mcpServers": {"sentinel": {"command": "keep"}}, "extraKey": 7
+    }
+
+
 def test_cursor_clean_removes_only_profile_entries(tmp_path):
     m, target, _ = _manifest(
         tmp_path,

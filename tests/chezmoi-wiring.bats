@@ -757,6 +757,24 @@ YAML
     grep -qF 'present-nonempty' "$plugin_tmpl"
 }
 
+@test "plugin reconcile run_onchange trigger tracks effective Milknado gate" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local plugin_tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_sync-claude-plugins.sh.tmpl"
+    local value
+    for value in unset '' false 1; do
+        if [ "$value" = unset ]; then
+            run env -u MILKNADO_ENABLED chezmoi execute-template --source "$REAL_DOTFILES_DIR/chezmoi" --file "$plugin_tmpl"
+        else
+            run env MILKNADO_ENABLED="$value" chezmoi execute-template --source "$REAL_DOTFILES_DIR/chezmoi" --file "$plugin_tmpl"
+        fi
+        [ "$status" -eq 0 ]
+        [[ "$output" == *"# effective Milknado gate: false"* ]]
+    done
+    run env MILKNADO_ENABLED=true chezmoi execute-template --source "$REAL_DOTFILES_DIR/chezmoi" --file "$plugin_tmpl"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"# effective Milknado gate: true"* ]]
+}
+
 @test "MCP reconcile run_onchange renders and fails loud without jq/yq" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
     local script="$TEST_HOME/mcp-onchange.sh"

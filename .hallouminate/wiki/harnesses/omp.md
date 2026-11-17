@@ -22,16 +22,25 @@ sources:
 ---
 # OMP
 
-OMP 18.1.14 uses Milknado as its sole work tracker. Native Todo and its reminders are disabled in the repo-authoritative chezmoi data, the system prompt assigns planning to Milknado MCP, and a directly discovered input extension consumes `/todo` before OMP can create a disconnected native list.
+Milknado defaults to off while its Git launcher has a Python dependency-resolution failure.
+Set `MILKNADO_ENABLED=true` during `dots sync` to enable its native plugin.
+See [[architecture/cross-harness-plugins]] for the diagnosis and interpreter workaround.[^milknado-opt-in]
+
+Native Todo and its reminders remain disabled.
+The `/todo` guard remains active; this change does not restore native tracking.
+Its warning can still name Milknado while Milknado is unavailable.[^milknado-opt-in]
+
+[^milknado-opt-in]: `chezmoi/.chezmoidata/omp.yaml`; `.sync-lib.sh:sync_omp_plugins`; `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md`; `chezmoi/dot_omp/private_agent/extensions/milknado-todo-guard.ts`.
 
 ## Ownership contract
 
-- Create one Milknado goal for each user request that needs a plan.
-- Add executable work as child task nodes, claim a task before starting it, and mark it done only after verification.
-- Address updates by Milknado node ID. Never mirror the same work in native Todo or another tracker.
-- Milknado is project-scoped and durable; native OMP Todo is session-scoped and reconstructed from session state. The durability difference is why two active trackers would diverge.
+When enabled, use Milknado only for useful persistent coordination, dependencies, or resume state.
+Do not use it as a duplicate TODO list.
+The system prompt defines this limit.[^milknado-opt-in]
 
-The policy is injected through `chezmoi/dot_omp/private_agent/APPEND_SYSTEM.md:31-35`. Milknado itself was already registered as an OMP MCP server, so the cutover required no second server definition (`chezmoi/dot_omp/private_agent/mcp.json:18-20`).
+The earlier cutover assigns all planning to Milknado.
+That historical policy no longer describes the current prompt.
+Disabling Milknado does not enable another tracker or change existing project data.
 
 ## Repo-authoritative configuration
 

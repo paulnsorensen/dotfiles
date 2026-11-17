@@ -25,7 +25,7 @@
 #     marketplace.json `.name` (may differ from the YAML key). git: entries
 #     root at ~/.cache/ap/plugins/<key>; path: entries at the expanded path. A
 #     missing plugin cache warns and skips (the sync clones it later; the next
-#     apply converges). This native path is never gated.
+#     apply converges). Positive env gates also filter this native path.
 #   * $CHEZMOI_SOURCE_DIR/lib/claude-settings-ignore.txt — dot-paths (one per
 #     line, "#" comments and blank lines allowed) exempt from the unknown-key
 #     gate below (prefix semantics) whose live values are overlaid back onto
@@ -77,6 +77,8 @@ IGNORE="$CHEZMOI_SOURCE_DIR/lib/claude-settings-ignore.txt"
 SENSITIVE="$CHEZMOI_SOURCE_DIR/lib/claude-settings-sensitive.txt"
 RETIRED="$CHEZMOI_SOURCE_DIR/lib/claude-settings-retired.txt"
 GATE="$CHEZMOI_SOURCE_DIR/lib/drift-gate.sh"
+# shellcheck source=chezmoi/lib/env-gate.sh
+. "$CHEZMOI_SOURCE_DIR/lib/env-gate.sh"
 
 live=$(cat)
 
@@ -176,6 +178,7 @@ native_plugin_overlays() {
     local repo_root key kind rawpath root mp_json name
     repo_root=$(cd "$CHEZMOI_SOURCE_DIR/.." && pwd)
     yq -o=json '.plugins' "$NATIVE_REG" \
+        | jq "$env_gate_jq gate_filter" \
         | jq -r '
             ["claude","codex","copilot"] as $drivable
             | to_entries[] | .key as $key | .value as $v

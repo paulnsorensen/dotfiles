@@ -137,3 +137,26 @@ def test_claude_mcp_json_includes_gated_server_when_flow_inactive(gated_manifest
         (target / ".claude/plugins/local/gated/.mcp.json").read_text()
     )["mcpServers"]
     assert set(servers) == {"tilth", "hallouminate"}
+
+
+@pytest.mark.parametrize(
+    "value, blocked",
+    [(None, True), ("", True), ("false", True), ("1", True), ("true", False)],
+)
+def test_positive_gate_is_exact_true_for_every_harness(monkeypatch, value, blocked):
+    if value is None:
+        monkeypatch.delenv("MILKNADO_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("MILKNADO_ENABLED", value)
+    item = {"name": "milknado", "command": "milknado-mcp", "gate": "MILKNADO_ENABLED"}
+    for harness in _ALL:
+        assert gate_blocks(item, harness) is blocked
+        manifest = Manifest(
+            name="gate",
+            mcps=[item, {"name": "hallouminate", "command": "hallouminate"}],
+        )
+        projected = mcps_for(manifest, harness, _ALL)
+        assert [m["name"] for m in projected] == (
+            ["hallouminate"] if blocked else ["milknado", "hallouminate"]
+        )
+        assert all("gate" not in m for m in projected)

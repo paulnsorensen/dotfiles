@@ -47,6 +47,7 @@ mcps:
     command: hallouminate
     args: ["serve"]
   - name: milknado
+    gate: MILKNADO_ENABLED
     # Launch the binary that `packages.yaml` installs with `uv tool install`.
     # The old `uvx --from git+...@main` form did a live GitHub fetch on each
     # cold start; a fetch failure killed the MCP connection.

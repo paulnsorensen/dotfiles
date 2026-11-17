@@ -1194,7 +1194,9 @@ sync_omp_plugins() {
 
     # Desired marketplace plugins: name\tmarketplace\tsource.
     local desired
-    desired=$(yq -r '.omp.plugins // {} | to_entries | .[] | select(.value.marketplace and .value.source) | [.key, .value.marketplace, .value.source] | @tsv' "$reg")
+    # shellcheck source=chezmoi/lib/env-gate.sh
+    source "$root/chezmoi/lib/env-gate.sh"
+    desired=$(yq -o=json '.omp.plugins // {}' "$reg" | jq -r "$env_gate_jq gate_filter | to_entries[] | select(.value.marketplace and .value.source) | [.key, .value.marketplace, .value.source] | @tsv")
 
     # Desired npm plugins: package\tversion.
     local desired_npm

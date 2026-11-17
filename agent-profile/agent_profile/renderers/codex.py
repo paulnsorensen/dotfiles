@@ -116,9 +116,9 @@ class CodexRenderer:
 
     def prune_mcps(self, manifest: Manifest, target: Path) -> None:
         """Evict dropped MCP servers from config.toml's [mcp_servers]
-        (install reconcile). Codex's clean is MCP-only, so this is the same
-        operation; ``manifest`` holds only the dropped servers."""
-        self._clean_mcps(manifest, Path(target))
+        (install reconcile). ``manifest`` holds previously owned servers,
+        even when their current gates disable them."""
+        self._clean_mcps(manifest, Path(target), ignore_gates=True)
 
     # ─── subagents ──────────────────────────────────────────────────────
     # Each agent lands at .codex/agents/<name>.toml with TOML fields:
@@ -617,7 +617,9 @@ class CodexRenderer:
     # ─── clean ──────────────────────────────────────────────────────────
     # Remove our [mcp_servers] entries by name. Drop the empty table, and
     # delete the file entirely when nothing else remains.
-    def _clean_mcps(self, manifest: Manifest, target: Path) -> None:
+    def _clean_mcps(
+        self, manifest: Manifest, target: Path, *, ignore_gates: bool = False
+    ) -> None:
         if not manifest.isolated:
             return
         cfg = Path(str(target).rstrip("/")) / ".codex" / "config.toml"
@@ -626,7 +628,9 @@ class CodexRenderer:
 
         names = [
             mcp["name"]
-            for mcp in base.mcps_for(manifest, "codex", _CODEX_MCP_DEFAULT)
+            for mcp in manifest.mcps
+            if base.includes_harness(mcp, "codex", _CODEX_MCP_DEFAULT)
+            and (ignore_gates or not base.gate_blocks(mcp, "codex"))
         ]
         if not names:
             return

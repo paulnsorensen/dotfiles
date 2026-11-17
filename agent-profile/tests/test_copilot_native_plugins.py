@@ -220,3 +220,146 @@ def test_copilot_clean_uninstalls_native_plugin(tmp_path):
     calls = _argv_calls(mock_run)
     assert ["copilot", "plugin", "uninstall", "milknado@milknado"] in calls, calls
     assert ["copilot", "plugin", "marketplace", "remove", "milknado", "--force"] in calls, calls
+
+
+def _profile_with_cached_plugin(tmp_path, monkeypatch, metadata, *, local=False):
+    import json
+
+    import yaml
+    from agent_profile.parse import parse_manifest
+
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    registry = repo / "agents" / "plugins" / "registry.yaml"
+    registry.parent.mkdir(parents=True)
+    source = {"path": str(tmp_path / "marketplace")} if local else {
+        "git": "https://example.invalid/milknado.git"
+    }
+    registry.write_text(yaml.safe_dump({"plugins": {"milknado": {
+        **source,
+        "gate": "MILKNADO_ENABLED",
+        "harnesses": ["copilot"],
+        "native": ["copilot"],
+    }}}))
+    root = tmp_path / "marketplace" if local else tmp_path / ".cache" / "ap" / "plugins" / "milknado"
+    cache = root / ".claude-plugin"
+    if metadata is not None:
+        cache.mkdir(parents=True)
+        (cache / "marketplace.json").write_text(
+            json.dumps(metadata) if isinstance(metadata, dict) else metadata
+        )
+    profiles = repo / "profiles"
+    base = profiles / "base"
+    base.mkdir(parents=True)
+    (base / "profile.yaml").write_text(
+        "name: base\nregistries:\n  plugins: agents/plugins/registry.yaml\n"
+    )
+    outer = profiles / "outer"
+    outer.mkdir()
+    (outer / "profile.yaml").write_text("name: outer\ninclude: [base]\n")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("DOTFILES_DIR", str(repo))
+
+    def parse():
+        return parse_manifest(outer, lambda name: profiles / name)
+
+    return parse
+
+
+def test_disabled_cached_plugin_retires_exact_id_through_include(tmp_path, monkeypatch):
+    metadata = {"name": "cached-market", "plugins": [
+        {"name": "milknado", "source": "./plugins/milknado"},
+        {"name": "other", "source": "./plugins/other"},
+    ]}
+    parse = _profile_with_cached_plugin(tmp_path, monkeypatch, metadata)
+    monkeypatch.delenv("MILKNADO_ENABLED", raising=False)
+    installed = {"milknado@cached-market", "other@cached-market"}
+
+    def fake_cli(argv, **kwargs):
+        assert argv[:2] == ["copilot", "plugin"]
+        assert argv[2] == "uninstall"
+        installed.discard(argv[3])
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch("agent_profile.ingest._resolve_git_plugin") as fetch, patch(
+        "subprocess.run", side_effect=fake_cli
+    ) as cli:
+        manifest = parse()
+        assert manifest.native_plugins == []
+        CopilotRenderer().render(manifest, tmp_path / "home")
+    fetch.assert_not_called()
+    assert _argv_calls(cli) == [["copilot", "plugin", "uninstall", "milknado@cached-market"]]
+    assert installed == {"other@cached-market"}
+
+
+def test_disabled_plugin_without_valid_metadata_does_not_guess(tmp_path, monkeypatch, capsys):
+    for metadata in (
+        None,
+        "not json",
+        {"plugins": [{"name": "milknado"}]},
+        {"name": "bad@market", "plugins": [{"name": "milknado"}]},
+        {"name": "cached-market", "plugins": []},
+    ):
+        parse = _profile_with_cached_plugin(tmp_path / str(metadata is None) / str(len(str(metadata))), monkeypatch, metadata)
+        monkeypatch.delenv("MILKNADO_ENABLED", raising=False)
+        with patch("agent_profile.ingest._resolve_git_plugin") as fetch, patch("subprocess.run") as cli:
+            manifest = parse()
+            CopilotRenderer().render(manifest, tmp_path / "home")
+        fetch.assert_not_called()
+        cli.assert_not_called()
+        assert "unresolved cleanup" in capsys.readouterr().err
+
+
+def test_disabled_plugin_missing_cli_reports_unresolved(tmp_path, monkeypatch, capsys):
+    parse = _profile_with_cached_plugin(tmp_path, monkeypatch, {
+        "name": "cached-market", "plugins": [{"name": "milknado"}]
+    })
+    monkeypatch.delenv("MILKNADO_ENABLED", raising=False)
+    with patch("subprocess.run", side_effect=FileNotFoundError()):
+        CopilotRenderer().render(parse(), tmp_path / "home")
+    assert "unresolved cleanup" in capsys.readouterr().err
+
+
+def test_enabled_cached_plugin_still_installs(tmp_path, monkeypatch):
+    parse = _profile_with_cached_plugin(tmp_path, monkeypatch, {
+        "name": "cached-market",
+        "plugins": [{"name": "milknado", "source": "./plugins/milknado"}],
+    })
+    monkeypatch.setenv("MILKNADO_ENABLED", "true")
+    cache_root = tmp_path / ".cache" / "ap" / "plugins" / "milknado"
+    with patch("agent_profile.ingest._resolve_git_plugin", return_value=cache_root) as fetch, patch(
+        "subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")
+    ) as cli:
+        manifest = parse()
+        assert manifest.retired_copilot_plugins == []
+        CopilotRenderer().render(manifest, tmp_path / "home")
+    fetch.assert_called_once()
+    assert _argv_calls(cli) == [
+        ["copilot", "plugin", "marketplace", "add", str(cache_root)],
+        ["copilot", "plugin", "install", "milknado@cached-market"],
+    ]
+
+
+def test_disabled_local_marketplace_retires_exact_id(tmp_path, monkeypatch):
+    parse = _profile_with_cached_plugin(tmp_path, monkeypatch, {
+        "name": "local-market", "plugins": [{"name": "milknado"}]
+    }, local=True)
+    monkeypatch.delenv("MILKNADO_ENABLED", raising=False)
+    with patch("agent_profile.ingest._resolve_git_plugin") as fetch, patch(
+        "subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")
+    ) as cli:
+        CopilotRenderer().render(parse(), tmp_path / "home")
+    fetch.assert_not_called()
+    assert _argv_calls(cli) == [
+        ["copilot", "plugin", "uninstall", "milknado@local-market"]
+    ]
+
+
+def test_disabled_plugin_uninstall_failure_reports_unresolved(tmp_path, monkeypatch, capsys):
+    parse = _profile_with_cached_plugin(tmp_path, monkeypatch, {
+        "name": "cached-market", "plugins": [{"name": "milknado"}]
+    })
+    monkeypatch.delenv("MILKNADO_ENABLED", raising=False)
+    with patch("subprocess.run", return_value=MagicMock(returncode=1, stderr="busy", stdout="")):
+        CopilotRenderer().render(parse(), tmp_path / "home")
+    assert "unresolved cleanup for milknado@cached-market" in capsys.readouterr().err

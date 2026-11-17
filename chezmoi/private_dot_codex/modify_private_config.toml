@@ -62,7 +62,9 @@ elif ! live_json=$(printf '%s' "$live" | yq -p=toml -o=json '.' 2>/dev/null); th
 fi
 [ -n "$live_json" ] && [ "$live_json" != "null" ] || live_json='{}'
 
-repo_json=$(yq -o=json '.codex' "$registry")
+# shellcheck source=chezmoi/lib/env-gate.sh
+. "${CHEZMOI_SOURCE_DIR:-}/lib/env-gate.sh"
+repo_json=$(yq -o=json '.codex' "$registry" | jq "$env_gate_jq .mcps |= gate_filter")
 hooks_registry="${CHEZMOI_SOURCE_DIR:-}/../agents/hooks/registry.yaml"
 hooks_json=$(yq -o=json '.' "$hooks_registry" 2>/dev/null || printf '{"hooks":{}}')
 

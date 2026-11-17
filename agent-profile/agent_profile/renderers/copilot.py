@@ -173,6 +173,7 @@ class CopilotRenderer:
         # merged config file. Copilot is not chezmoi-migrated yet, so ap still
         # owns this surface for live installs — revisit when it migrates.
         self._render_native_plugins(manifest)
+        self._retire_disabled_native_plugins(manifest)
         return out_files
 
     def _warn_unsupported(self, manifest: Manifest) -> None:
@@ -360,6 +361,30 @@ class CopilotRenderer:
             f"plugin install {name}@{marketplace_name}",
         )
 
+    def _retire_disabled_native_plugins(self, manifest: Manifest) -> None:
+        for entry in manifest.retired_copilot_plugins:
+            plugin_id = entry.get("plugin_id")
+            if not plugin_id:
+                _warn(
+                    f"    ap: unresolved cleanup for {entry['name']}: "
+                    "marketplace metadata is missing or invalid"
+                )
+                continue
+            try:
+                result = subprocess.run(
+                    ["copilot", "plugin", "uninstall", plugin_id],
+                    check=False, capture_output=True, text=True,
+                )
+            except FileNotFoundError:
+                _warn(f"    ap: unresolved cleanup for {plugin_id}: Copilot CLI is unavailable")
+                continue
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or "").strip()
+                _warn(
+                    f"    ap: unresolved cleanup for {plugin_id}: "
+                    f"uninstall exited {result.returncode}. {detail}"
+                )
+
     def _clean_native_plugins(self, manifest: Manifest) -> None:
         for entry in manifest.native_plugins:
             if not entry.get("copilot_native"):
@@ -392,16 +417,18 @@ class CopilotRenderer:
         self._clean_native_plugins(manifest)
         if not manifest.isolated:
             return
-        base = Path(str(target).rstrip("/"))
-        cfg = base / ".copilot" / "mcp-config.json"
-        if not cfg.is_file():
-            return
-
         names = {
             mcp["name"]
             for mcp in mcps_for(manifest, "copilot", _COPILOT_MCP_DEFAULT)
         }
+        self._remove_mcps(target, names)
 
+    @staticmethod
+    def _remove_mcps(target: Path, names: set[str]) -> None:
+        base = Path(str(target).rstrip("/"))
+        cfg = base / ".copilot" / "mcp-config.json"
+        if not cfg.is_file():
+            return
         data = read_json_object(cfg, ".copilot/mcp-config.json")
         servers = data.get("mcpServers") or {}
         for name in names:
@@ -419,7 +446,12 @@ class CopilotRenderer:
             cfg.write_text(_dumps(data))
 
     def prune_mcps(self, manifest: Manifest, target: Path) -> None:
-        """Evict dropped MCP servers from .copilot/mcp-config.json's
-        ``mcpServers`` (install reconcile). Copilot's clean is MCP-only, so
-        this delegates to it; ``manifest`` holds only the dropped servers."""
-        self.clean(manifest, target)
+        """Evict previously owned MCP servers without changing native plugins."""
+        if not manifest.isolated:
+            return
+        names = {
+            mcp["name"]
+            for mcp in manifest.mcps
+            if includes_harness(mcp, "copilot", _COPILOT_MCP_DEFAULT)
+        }
+        self._remove_mcps(target, names)

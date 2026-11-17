@@ -47,6 +47,8 @@
 #                  harnesses where the plugin is native.
 #   claude_native / codex_native: DEPRECATED aliases — true OR's the harness
 #                  into the resolved `native:` set.
+#   gate:          optional positive env gate for every plugin primitive and
+#                  native descriptor. Only the exact value "true" enables it.
 #   gate_unless:   optional env var gate on the decomposed MCP items (same
 #                  semantics as the MCP registry gate). Does NOT gate the
 #                  Claude-native install path — that descriptor carries no gate.
@@ -77,6 +79,7 @@ plugins:
     branch: main
     harnesses: [claude, codex, cursor, copilot]
     native: [claude, copilot]
+    gate: MILKNADO_ENABLED
     # codex omitted from native: — milknado's upstream .agents/plugins/marketplace.json
     # (the manifest codex reads) lacks a top-level `name`, so
     # `codex plugin marketplace add` exits 1 and codex would get NEITHER the

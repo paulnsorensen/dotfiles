@@ -42,6 +42,7 @@ from agent_profile.permissions import parse_mcp_rule
 from agent_profile.renderers.base import (
     MergedConfigError,
     Renderer,
+    gate_blocks,
     includes_harness,
 )
 
@@ -443,15 +444,10 @@ def _reconcile_dropped_mcps(
     Renderers MERGE MCPs into persistent/user-owned files (codex config.toml,
     cursor/copilot JSON, claude user-scope ~/.claude.json), so a
     server that stops rendering into a harness lingers — render only writes
-    the current set. A server is "dropped" from a harness either by leaving
-    the registry entirely OR by losing that harness from its membership (e.g.
-    ``harnesses: []`` scopes it out of every harness while it stays in the
-    manifest). Both must be reconciled, so the diff is computed per-harness
-    using the same membership projection render uses (:func:`includes_harness`
-    with each renderer's MCP default) rather than against the global manifest —
-    otherwise a server still present in ``manifest.mcps`` but scoped out of a
-    harness would never be pruned from it. No prior install, or nothing dropped
-    → no-op (keeps fresh renders byte-identical)."""
+    the current set. A server is dropped when its name leaves the registry,
+    its harness membership ends, or its gate blocks it. Compare prior
+    membership with current effective membership for each harness. No prior
+    install, or nothing dropped, means no-op."""
     if not prior_merged:
         return
     prior_mcps = prior_merged.get("mcps") or []
@@ -469,6 +465,7 @@ def _reconcile_dropped_mcps(
             name
             for name, m in current_by_name.items()
             if includes_harness(m, h, default)
+            and not gate_blocks(m, h)
         }
         dropped_h = [
             m

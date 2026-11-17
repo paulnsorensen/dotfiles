@@ -345,7 +345,7 @@ def test_expand_registries_absent_sections_yield_empty_lists(repo):
     # An empty directive returns every section key, each an empty list — not a
     # KeyError downstream, not a missing section.
     out = expand_registries({}, root, _dotenv())
-    assert out == {"mcps": [], "agents": [], "skills": [], "hooks": [], "native_plugins": []}
+    assert out == {"mcps": [], "agents": [], "skills": [], "hooks": [], "native_plugins": [], "retired_copilot_plugins": []}
 
 
 def test_expand_mcps_skip_non_mapping_entries(repo):

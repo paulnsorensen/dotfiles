@@ -14,6 +14,7 @@
 # apply.
 #
 # registry plugins hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/plugins/registry.yaml 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
+# effective Milknado gate: {{ if eq (env "MILKNADO_ENABLED") "true" }}true{{ else }}false{{ end }}
 #
 # Also embed projections (not whole-file hashes) of live runtime state.
 # installed_plugins.json carries lastUpdated/gitCommitSha fields that churn on
@@ -47,6 +48,7 @@ fi
 
 # shellcheck source=../lib/claude-plugin-reconcile.sh
 source "$SOURCE_DIR/lib/claude-plugin-reconcile.sh"
+source "$SOURCE_DIR/lib/env-gate.sh"
 
 # Resolve the desired native-claude entries to a JSON array of
 # {key, marketplace_root} (duplicates the modify_settings.json native-set
@@ -54,6 +56,7 @@ source "$SOURCE_DIR/lib/claude-plugin-reconcile.sh"
 repo_root=$(cd "$SOURCE_DIR/.." && pwd)
 desired_json=$(
     yq -o=json '.plugins' "$REG_FILE" \
+        | jq "$env_gate_jq gate_filter" \
         | jq -r '
             ["claude","codex","copilot"] as $drivable
             | to_entries[] | .key as $key | .value as $v

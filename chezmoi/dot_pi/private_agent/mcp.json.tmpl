@@ -18,10 +18,11 @@
       "command": "/usr/local/libexec/dotfiles/agent-secret-proxy",
       "args": ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
     },
-    "milknado": {
+{{ if eq (env "MILKNADO_ENABLED") "true" }}    "milknado": {
       "command": "uvx",
       "args": ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]
     },
+{{ end }}
     "hallouminate": {
       "command": "hallouminate",
       "args": ["serve"]

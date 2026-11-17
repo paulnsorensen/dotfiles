@@ -69,6 +69,12 @@ NODE
     [[ "$(yq -p=toml '.milknado.quality_gates | join(",")' "$config")" == "just check" ]]
 }
 
+@test "fe profile gates Milknado without gating hallouminate" {
+    local profile="$DOTFILES_DIR/profiles/fe/profile.yaml"
+    run yq -o=json '.mcps' "$profile"
+    [[ $status -eq 0 ]]
+    jq -e 'map(select(.name == "milknado"))[0].gate == "MILKNADO_ENABLED" and map(select(.name == "hallouminate"))[0].gate == null' <<<"$output"
+}
 # ── Atuin ─────────────────────────────────────────────────────────────────────
 
 @test "atuin config is valid TOML" {

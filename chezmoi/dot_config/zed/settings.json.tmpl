@@ -89,13 +89,13 @@
       "command": "hallouminate",
       "args": ["serve"],
       "env": {}
-    },
+    }{{ if eq (env "MILKNADO_ENABLED") "true" }},
     "milknado": {
       "source": "custom",
       "command": "milknado-mcp",
       "args": [],
       "env": {}
-    }
+    }{{ end }}
   },
   "agent_servers": {
     "codex-acp": {

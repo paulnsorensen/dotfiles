@@ -233,6 +233,7 @@ omp:
   # (dual server / plugin:server namespaces).
   plugins:
     milknado:
+      gate: MILKNADO_ENABLED
       marketplace: milknado
       source: paulnsorensen/milknado
     hallouminate:
