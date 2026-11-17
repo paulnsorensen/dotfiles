@@ -17,6 +17,10 @@ setup() {
   SCAN=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/npmnightly.XXXXXX")" && pwd)
   PKG="@paulnsorensen/tilth-nightly"
   RM_LOG="$SCAN/rm.log"
+  # The prune also scans mise's node installs. Point it at a sandbox so no
+  # test can reach the real ~/.local/share/mise.
+  export MISE_DATA_DIR="$SCAN/mise"
+  MISE_NODE="$MISE_DATA_DIR/installs/node"
 }
 
 teardown() {
@@ -41,8 +45,8 @@ give_prefix_an_npm() {
   cat > "$prefix/bin/npm" <<EOF
 #!/usr/bin/env bash
 echo "\$*" >> "$RM_LOG"
-[[ "\$1" == "rm" ]] && rm -rf "$prefix/lib/node_modules/\$3" "$prefix/bin/tilth"
-exit 0
+[[ "\$1" == "rm" && "\$2" == "-g" && "\$3" == "--prefix" && "\$4" == "$prefix" ]] || exit 1
+rm -rf "\$4/lib/node_modules/\$5" "\$4/bin/tilth"
 EOF
   chmod +x "$prefix/bin/npm"
 }
@@ -71,8 +75,32 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"removed the shadow copy"* ]]
   # The prune must call that prefix's own npm, not the active one.
-  grep -qx "rm -g $PKG" "$RM_LOG"
+  grep -qx "rm -g --prefix $second $PKG" "$RM_LOG"
   [ ! -e "$second/lib/node_modules/$PKG" ]
+}
+
+@test "real npm removes only the inactive prefix despite inherited active prefix" {
+  local active="$SCAN/active" second="$SCAN/second" npm_bin node_bin
+  node_bin=$(dirname "$(MISE_DATA_DIR='' node -p 'process.execPath')")
+  mkdir -p "$SCAN/runtime-bin"
+  ln -s "$node_bin/node" "$SCAN/runtime-bin/node"
+  make_prefix "$active" "$PKG"
+  make_prefix "$second" "$PKG"
+  printf '{"name":"%s","version":"1.0.0","bin":{"tilth":"bin/tilth"}}\n' "$PKG" > "$second/lib/node_modules/$PKG/package.json"
+  ln -s "$node_bin/npm" "$second/bin/npm"
+  ln -s "$node_bin/node" "$second/bin/node"
+  ln -s "$node_bin/../lib/node_modules/npm" "$second/lib/node_modules/npm"
+  npm_bin=$(stub_active_npm "$active")
+
+  PATH="$npm_bin:$second/bin:$SCAN/runtime-bin:/usr/bin:/bin" NPM_CONFIG_PREFIX="$active" \
+    NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_GLOBALCONFIG="$SCAN/global.npmrc" \
+    NPM_CONFIG_CACHE="$SCAN/cache" NPM_CONFIG_OFFLINE=true \
+    NPM_CONFIG_AUDIT=false NPM_CONFIG_FUND=false \
+    NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_IGNORE_SCRIPTS=true \
+    run npm_nightly_prune_shadows "$PKG" tilth
+  [ "$status" -eq 0 ]
+  [ ! -e "$second/lib/node_modules/$PKG" ]
+  [ -e "$active/lib/node_modules/$PKG" ]
 }
 
 @test "leaves the active prefix's own copy alone" {
@@ -160,4 +188,66 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"failed"* ]]
   [[ "$output" == *"remove that copy by hand"* ]]
+}
+
+# 2026-11-14: mise moved node 26.13.0 -> 26.13.1. The 26.13.0 prefix kept an old
+# nightly that no longer sat on PATH, so the PATH scan never saw it, yet an older
+# session still ran it and restarted the daemon from that build.
+@test "removes a nightly copy from a non-active mise node prefix" {
+  local old="$MISE_NODE/26.13.0" active="$MISE_NODE/26.13.1" npm_bin
+  make_prefix "$old" "$PKG"
+  give_prefix_an_npm "$old"
+  make_prefix "$active" "$PKG"
+  give_prefix_an_npm "$active"
+  npm_bin=$(stub_active_npm "$active")
+
+  # The old prefix is off PATH, as it is after a mise node switch.
+  PATH="$npm_bin:$active/bin:/usr/bin:/bin" run npm_nightly_prune_shadows "$PKG" tilth
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"removed the shadow copy"* ]]
+  # Each fake npm deletes only its own prefix, so this proves the old
+  # prefix's npm ran and the active one's did not.
+  [ "$(grep -c . "$RM_LOG")" -eq 1 ]
+  grep -qx "rm -g --prefix $old $PKG" "$RM_LOG"
+  [ ! -e "$old/lib/node_modules/$PKG" ]
+  [ -e "$active/lib/node_modules/$PKG" ]
+}
+
+@test "leaves the active mise prefix alone when a partial-version link points at it" {
+  local active="$MISE_NODE/26.13.1" npm_bin
+  make_prefix "$active" "$PKG"
+  give_prefix_an_npm "$active"
+  # mise links partial versions to the full install (node/26 -> 26.13.1).
+  ln -s 26.13.1 "$MISE_NODE/26"
+  npm_bin=$(stub_active_npm "$MISE_NODE/26")
+
+  PATH="$npm_bin:/usr/bin:/bin" run npm_nightly_prune_shadows "$PKG" tilth
+  [ "$status" -eq 0 ]
+  [ ! -e "$RM_LOG" ]
+  [ -e "$active/lib/node_modules/$PKG" ]
+}
+
+@test "leaves a non-mise prefix that is not on PATH alone" {
+  local active="$MISE_NODE/26.13.1" other="$SCAN/other" npm_bin
+  mkdir -p "$active"
+  make_prefix "$other" "$PKG"
+  give_prefix_an_npm "$other"
+  npm_bin=$(stub_active_npm "$active")
+
+  PATH="$npm_bin:/usr/bin:/bin" run npm_nightly_prune_shadows "$PKG" tilth
+  [ "$status" -eq 0 ]
+  [ ! -e "$RM_LOG" ]
+  [ -e "$other/lib/node_modules/$PKG" ]
+}
+
+@test "prunes no mise prefix when the active prefix is not a real directory" {
+  local old="$MISE_NODE/26.13.0" npm_bin
+  make_prefix "$old" "$PKG"
+  give_prefix_an_npm "$old"
+  npm_bin=$(stub_active_npm "$SCAN/nonexistent-prefix")
+
+  PATH="$npm_bin:/usr/bin:/bin" run npm_nightly_prune_shadows "$PKG" tilth
+  [ "$status" -eq 0 ]
+  [ ! -e "$RM_LOG" ]
+  [ -e "$old/lib/node_modules/$PKG" ]
 }
