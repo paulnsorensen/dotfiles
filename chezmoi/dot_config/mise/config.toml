@@ -56,7 +56,7 @@
 "aqua:dandavison/delta" = "0.20.1"
 "aqua:git-lfs/git-lfs" = "v3.8.1"
 "aqua:tmux/tmux-builds" = "v3.8"
-"aqua:j178/prek" = "v0.5.10"
+"aqua:j178/prek" = "v0.5.11"
 "aqua:ajeetdsouza/zoxide" = "v0.10.0"
 "aqua:atuinsh/atuin" = "v18.24.8"
 "aqua:ClementTsang/bottom" = "0.15.0"
