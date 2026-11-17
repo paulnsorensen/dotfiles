@@ -45,8 +45,8 @@ give_prefix_an_npm() {
   cat > "$prefix/bin/npm" <<EOF
 #!/usr/bin/env bash
 echo "\$*" >> "$RM_LOG"
-[[ "\$1" == "rm" ]] && rm -rf "$prefix/lib/node_modules/\$3" "$prefix/bin/tilth"
-exit 0
+[[ "\$1" == "rm" && "\$2" == "-g" && "\$3" == "--prefix" && "\$4" == "$prefix" ]] || exit 1
+rm -rf "\$4/lib/node_modules/\$5" "\$4/bin/tilth"
 EOF
   chmod +x "$prefix/bin/npm"
 }
@@ -75,8 +75,32 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"removed the shadow copy"* ]]
   # The prune must call that prefix's own npm, not the active one.
-  grep -qx "rm -g $PKG" "$RM_LOG"
+  grep -qx "rm -g --prefix $second $PKG" "$RM_LOG"
   [ ! -e "$second/lib/node_modules/$PKG" ]
+}
+
+@test "real npm removes only the inactive prefix despite inherited active prefix" {
+  local active="$SCAN/active" second="$SCAN/second" npm_bin node_bin
+  node_bin=$(dirname "$(MISE_DATA_DIR='' node -p 'process.execPath')")
+  mkdir -p "$SCAN/runtime-bin"
+  ln -s "$node_bin/node" "$SCAN/runtime-bin/node"
+  make_prefix "$active" "$PKG"
+  make_prefix "$second" "$PKG"
+  printf '{"name":"%s","version":"1.0.0","bin":{"tilth":"bin/tilth"}}\n' "$PKG" > "$second/lib/node_modules/$PKG/package.json"
+  ln -s "$node_bin/npm" "$second/bin/npm"
+  ln -s "$node_bin/node" "$second/bin/node"
+  ln -s "$node_bin/../lib/node_modules/npm" "$second/lib/node_modules/npm"
+  npm_bin=$(stub_active_npm "$active")
+
+  PATH="$npm_bin:$second/bin:$SCAN/runtime-bin:/usr/bin:/bin" NPM_CONFIG_PREFIX="$active" \
+    NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_GLOBALCONFIG="$SCAN/global.npmrc" \
+    NPM_CONFIG_CACHE="$SCAN/cache" NPM_CONFIG_OFFLINE=true \
+    NPM_CONFIG_AUDIT=false NPM_CONFIG_FUND=false \
+    NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_IGNORE_SCRIPTS=true \
+    run npm_nightly_prune_shadows "$PKG" tilth
+  [ "$status" -eq 0 ]
+  [ ! -e "$second/lib/node_modules/$PKG" ]
+  [ -e "$active/lib/node_modules/$PKG" ]
 }
 
 @test "leaves the active prefix's own copy alone" {
@@ -184,7 +208,7 @@ EOF
   # Each fake npm deletes only its own prefix, so this proves the old
   # prefix's npm ran and the active one's did not.
   [ "$(grep -c . "$RM_LOG")" -eq 1 ]
-  grep -qx "rm -g $PKG" "$RM_LOG"
+  grep -qx "rm -g --prefix $old $PKG" "$RM_LOG"
   [ ! -e "$old/lib/node_modules/$PKG" ]
   [ -e "$active/lib/node_modules/$PKG" ]
 }

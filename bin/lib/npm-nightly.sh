@@ -54,10 +54,10 @@ npm_nightly_remove_copy() {
     fi
 
     echo "Removing stale $pkg from npm prefix $shadow_root ($why)..."
-    if "$shadow_npm" rm -g "$pkg" >/dev/null 2>&1; then
+    if "$shadow_npm" rm -g --prefix "${shadow_root%/lib}" "$pkg" >/dev/null 2>&1; then
         echo "✓ removed the shadow copy at $shadow_root"
     else
-        echo "⚠ '$shadow_npm rm -g $pkg' failed — remove that copy by hand so '$bin_name' resolves to the nightly fork." >&2
+        echo "⚠ '$shadow_npm rm -g --prefix ${shadow_root%/lib} $pkg' failed — remove that copy by hand so '$bin_name' resolves to the nightly fork." >&2
     fi
     return 0
 }
@@ -115,9 +115,9 @@ npm_nightly_prune_shadows() {
     done < <(type -ap "$bin_name" 2>/dev/null || true)
 
     # mise keeps one npm global prefix per node version. A node upgrade leaves
-    # the old version's copy off the new PATH, so the scan above never sees it,
-    # yet a session started before the upgrade still runs it (2026-11-14: a
-    # node 26.13.0 copy restarted the hallouminate daemon from an old build).
+    # the old copy off the new PATH, so the scan above cannot see it.
+    # An older session can still run that copy. On 2026-11-14, a node 26.13.0
+    # copy restarted the hallouminate daemon from an old build.
     for version_dir in "$(npm_nightly_mise_node_dir)"/*; do
         [[ -d "$version_dir/lib/node_modules/$pkg" ]] || continue
         # Canonicalize like the active prefix: mise links partial versions
