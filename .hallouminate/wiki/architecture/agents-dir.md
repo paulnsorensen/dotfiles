@@ -143,6 +143,18 @@ These decisions hold:
 
 `disable-model-invocation: true` is a Claude Code field. OMP honors it (normalized to `disableModelInvocation`); Codex ignores it and will auto-invoke the skill from `~/.agents/skills` on a description match. A user-only skill therefore ships **both** the frontmatter flag and `skills/<name>/agents/openai.yaml` with `policy.allow_implicit_invocation: false`. `install-local.sh`, the chezmoi `exact_skills` assembler, and `npx skills add --copy` all carry the nested `agents/` directory, so nothing else is needed. `$ARGUMENTS` substitution is also Claude-only; user-only skills state their grammar in `argument-hint` and parse "the text after the skill name" in prose. First applied to `/skillz` and `/land`. The full matrix and sources live in `skills/skillz/references/harness-layout.md` in `paulnsorensen/skillz-that-grillz`, which `/skillz self-update` re-researches and rewrites (its `Checked:` date is the staleness signal). Research record: `.cheese/research/cross-harness-skill-layout.md`.
 
+#### Architecture review skill: opening decisions
+
+The architecture review design keeps the subsystem map visible while a reviewer examines a changed boundary.[^review-opening]
+Stable landmarks help the reviewer return from a source detail without rebuilding a mental map.
+Repository-only input opens the subsystem overview without selecting a change.
+For a diff, the design spends the lower-tier worker budget on the opening focus only.[^review-opening]
+Browsing is local. Another area needs an explicit analysis request.
+This avoids spending the budget on explanations the reviewer never reads.
+These are design decisions, not claims about an installed tool.
+
+[^review-opening]: User selections in the dotfiles architecture review design session, 2026-11-18: “Change in context” and “Opening focus”.
+
 #### Shared land workflow
 
 `/land` uses one workflow for Claude and Codex, with their existing user-only invocation controls.[^land-workflow]
