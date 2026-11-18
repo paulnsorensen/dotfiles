@@ -374,11 +374,14 @@ PATH can therefore select the old build even after cleanup.[^hallouminate-nightl
 An unchanged version does not cause a restart.
 The helper reads the status text because both daemon states return exit code zero.
 A stopped daemon stays stopped.
-A failed restart prints the manual command and does not stop sync.[^hallouminate-nightly-status]
+A failed restart prints the shell-quoted selected executable and does not stop sync.
+A failed status probe preserves its diagnostic and warns without restarting.
+The sourced library resolves the npm prefix, so the installer only dispatches.
+A failed or empty prefix lookup warns and never falls back to PATH.[^hallouminate-nightly-status]
 
-[^hallouminate-nightly-restart]: chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl:40-55,78-87; tests/chezmoi-wiring.bats:1156-1220
-[^hallouminate-nightly-selection]: bin/lib/npm-nightly.sh:47-53,101-103; chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl:79-85; tests/chezmoi-wiring.bats:1182-1211
-[^hallouminate-nightly-status]: bin/lib/npm-nightly.sh:141-171; tests/npm-nightly.bats:220-277
+[^hallouminate-nightly-restart]: chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl:40-55,78-84; tests/chezmoi-wiring.bats:1153-1226
+[^hallouminate-nightly-selection]: bin/lib/npm-nightly.sh:47-53,101-103,177-186; tests/chezmoi-wiring.bats:1186-1226
+[^hallouminate-nightly-status]: bin/lib/npm-nightly.sh:141-186; tests/npm-nightly-daemon.bats:56-175
 
 ## Gotcha: index drift is its own drift class
 

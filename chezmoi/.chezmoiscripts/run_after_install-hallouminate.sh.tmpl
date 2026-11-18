@@ -80,10 +80,7 @@ if [[ -r "$NIGHTLY_LIB" ]]; then
     # A retained shadow can still lead PATH. Use the active npm prefix binary
     # for both the status probe and restart after the prune.
     if [[ "$installed_new" == 1 ]]; then
-        active_prefix="$(npm prefix -g 2>/dev/null || true)"
-        if [[ -n "$active_prefix" ]]; then
-            npm_nightly_restart_hallouminate_daemon "$active_prefix/bin/hallouminate"
-        fi
+        npm_nightly_restart_installed_hallouminate_daemon
     fi
 else
     echo "⚠ $NIGHTLY_LIB not found — skipping the $PKG second-prefix shadow prune." >&2

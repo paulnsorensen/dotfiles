@@ -158,14 +158,29 @@ npm_nightly_restart_hallouminate_daemon() {
         hallouminate_bin="$(command -v hallouminate 2>/dev/null)" || return 0
     fi
     [[ -x "$hallouminate_bin" ]] || return 0
-    IFS= read -r status_line < <("$hallouminate_bin" daemon status 2>/dev/null) || true
+    if ! status_line="$("$hallouminate_bin" daemon status)"; then
+        printf '⚠ Cannot read hallouminate daemon status; restart skipped. Check the diagnostic above.\n' >&2
+        return 0
+    fi
+    status_line="${status_line%%$'\n'*}"
     [[ "$status_line" == running* ]] || return 0
 
     echo "Restarting the running hallouminate daemon so it serves the new build..."
     if "$hallouminate_bin" daemon restart; then
         echo "✓ restarted the hallouminate daemon"
     else
-        echo "⚠ 'hallouminate daemon restart' failed — run it by hand so MCP sessions use the new build." >&2
+        printf '⚠ Daemon restart failed. Run %q daemon restart so MCP sessions use the new build.\n' "$hallouminate_bin" >&2
     fi
     return 0
+}
+
+# Resolve the installed binary here so installer templates only dispatch.
+npm_nightly_restart_installed_hallouminate_daemon() {
+    local active_prefix
+    if ! active_prefix="$(npm prefix -g)" || [[ -z "$active_prefix" ]]; then
+        printf '⚠ Cannot resolve the active npm prefix; daemon restart skipped.\n' >&2
+        printf "Run 'npm prefix -g', then restart its bin/hallouminate by hand.\n" >&2
+        return 0
+    fi
+    npm_nightly_restart_hallouminate_daemon "$active_prefix/bin/hallouminate"
 }

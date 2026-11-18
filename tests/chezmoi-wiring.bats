@@ -1150,20 +1150,9 @@ EOF
     done
 }
 
-# The hallouminate daemon is a long-lived singleton, so a nightly install does
-# not reach it. The installer restarts a running daemon only when this run
-# installed a new version; an up-to-date sync leaves it alone.
-@test "hallouminate nightly installer restarts the running daemon only after a new install" {
-    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
-
-    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl"
-    local script="$TEST_HOME/install-hallouminate.sh"
-    chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$script"
-
-    local npm_bin="$TEST_HOME/restart-npm-bin"
-    local npm_state="$TEST_HOME/restart-npm.state"
-    local active_prefix="$TEST_HOME/active-prefix"
-    mkdir -p "$npm_bin" "$active_prefix"
+make_hallouminate_nightly_npm() {
+    local npm_bin="$1" npm_state="$2" active_prefix="$3"
+    mkdir -p "$npm_bin"
     cat > "$npm_bin/npm" <<EOF
 #!/bin/bash
 case "\$1 \$2" in
@@ -1179,44 +1168,61 @@ case "\$1 \$2" in
     "prefix -g") echo "$active_prefix" ;;
 esac
 EOF
-    local old_prefix="$TEST_HOME/old-prefix"
-    local old_bin="$old_prefix/lib/node_modules/@paulnsorensen/hallouminate-nightly/bin/hallouminate"
-    local active_bin="$active_prefix/bin/hallouminate"
-    local hal_log="$TEST_HOME/hallouminate.log"
-    local old_log="$TEST_HOME/old-hallouminate.log"
-    mkdir -p "$(dirname "$old_bin")" "$old_prefix/bin" "$active_prefix/bin"
-    cat > "$old_bin" <<EOF
-#!/bin/bash
-echo "\$*" >> "$old_log"
-[[ "\$1 \$2" == "daemon status" ]] && echo running
-exit 0
-EOF
-    ln -s "../lib/node_modules/@paulnsorensen/hallouminate-nightly/bin/hallouminate" "$old_prefix/bin/hallouminate"
-    cat > "$active_bin" <<EOF
-#!/bin/bash
-echo "\$*" >> "$hal_log"
-[[ "\$1 \$2" == "daemon status" ]] && echo running
-exit 0
-EOF
-    chmod +x "$npm_bin/npm" "$old_bin" "$active_bin"
+    chmod +x "$npm_bin/npm"
+}
 
-    # A retained old copy leads PATH because its own npm is not executable.
-    printf '%s\n' "@paulnsorensen/hallouminate-nightly@0.0.0-experimental.321.1" > "$npm_state"
-    run env HOME="$TEST_HOME" PATH="$npm_bin:$old_prefix/bin:$active_prefix/bin:/usr/bin:/bin" /bin/bash "$script"
+make_hallouminate_daemon_executable() {
+    local executable="$1" log="$2"
+    mkdir -p "$(dirname "$executable")"
+    cat > "$executable" <<EOF
+#!/bin/bash
+echo "\$*" >> "$log"
+[[ "\$1 \$2" == "daemon status" ]] && echo running
+exit 0
+EOF
+    chmod +x "$executable"
+}
+
+setup_hallouminate_restart_fixture() {
+    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl"
+    restart_script="$TEST_HOME/install-hallouminate.sh"
+    chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$restart_script"
+    restart_npm_bin="$TEST_HOME/restart-npm-bin"
+    restart_npm_state="$TEST_HOME/restart-npm.state"
+    restart_active_prefix="$TEST_HOME/active-prefix"
+    restart_old_prefix="$TEST_HOME/old-prefix"
+    restart_old_bin="$restart_old_prefix/lib/node_modules/@paulnsorensen/hallouminate-nightly/bin/hallouminate"
+    restart_log="$TEST_HOME/hallouminate.log"
+    restart_old_log="$TEST_HOME/old-hallouminate.log"
+    make_hallouminate_nightly_npm "$restart_npm_bin" "$restart_npm_state" "$restart_active_prefix"
+    make_hallouminate_daemon_executable "$restart_old_bin" "$restart_old_log"
+    make_hallouminate_daemon_executable "$restart_active_prefix/bin/hallouminate" "$restart_log"
+    mkdir -p "$restart_old_prefix/bin"
+    ln -s "../lib/node_modules/@paulnsorensen/hallouminate-nightly/bin/hallouminate" "$restart_old_prefix/bin/hallouminate"
+}
+
+# An old copy without its own npm remains on PATH after the prune.
+# The installer must restart through the active prefix, and only after an install.
+@test "hallouminate nightly installer restarts the running daemon only after a new install" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    setup_hallouminate_restart_fixture
+    local daemon_path="$restart_npm_bin:$restart_old_prefix/bin:$restart_active_prefix/bin:/usr/bin:/bin"
+
+    printf '%s\n' "@paulnsorensen/hallouminate-nightly@0.0.0-experimental.321.1" > "$restart_npm_state"
+    run env HOME="$TEST_HOME" PATH="$daemon_path" /bin/bash "$restart_script"
     assert_success
     assert_output_contains "hallouminate (nightly) 0.0.0-experimental.345.1 installed"
-    grep -qx "daemon status" "$hal_log"
-    grep -qx "daemon restart" "$hal_log"
-    [[ ! -e "$old_log" ]]
-    [[ -x "$old_bin" ]]
+    [[ "$(cat "$restart_log")" == $'daemon status\ndaemon restart' ]]
+    [[ ! -e "$restart_old_log" ]]
+    [[ -x "$restart_old_bin" ]]
 
-    # current == latest: nothing installs, so the daemon is not touched.
-    rm -f "$hal_log"
-    run env HOME="$TEST_HOME" PATH="$npm_bin:$old_prefix/bin:$active_prefix/bin:/usr/bin:/bin" /bin/bash "$script"
+    # The second run finds the latest version and leaves the daemon alone.
+    rm -f "$restart_log"
+    run env HOME="$TEST_HOME" PATH="$daemon_path" /bin/bash "$restart_script"
     assert_success
     assert_output_contains "already latest"
-    [[ ! -e "$hal_log" ]]
-    [[ ! -e "$old_log" ]]
+    [[ ! -e "$restart_log" ]]
+    [[ ! -e "$restart_old_log" ]]
 }
 
 @test "nightly installer fails when npm leaves the old package installed" {
