@@ -138,28 +138,31 @@ npm_nightly_prune_shadows() {
     return 0
 }
 
-# npm_nightly_restart_hallouminate_daemon — restart a running hallouminate
-# daemon so it serves the build that was just installed.
+# npm_nightly_restart_hallouminate_daemon [binary] — restart a running
+# hallouminate daemon so it serves the build that was just installed.
 #
-# The daemon is a long-lived singleton.
-# A nightly install does not replace the build that the daemon runs.
-# Every MCP `serve` uses that build until the daemon exits.
+# The daemon is a long-lived singleton. A nightly install does not replace
+# the build that the daemon runs. Every MCP serve uses that build until the daemon exits.
 # On 2026-11-14, build 321 used 177% CPU and 2.5 GB RSS after build 345 was installed.
-# Call this after npm_nightly_prune_shadows so PATH resolves to the new binary.
+# Use the active npm prefix binary when given; PATH can still lead to a
+# retained shadow after pruning.
 # Call this only when this run installs a new version.
 #
 # `hallouminate daemon status` exits 0 in both states and prints `running` or
 # `not running` on its first line. Never starts a daemon that is not running.
 # Returns 0 even when the restart fails, so `dots sync` continues.
 npm_nightly_restart_hallouminate_daemon() {
-    local status_line=""
+    local hallouminate_bin="${1:-}" status_line=""
 
-    command -v hallouminate >/dev/null 2>&1 || return 0
-    IFS= read -r status_line < <(hallouminate daemon status 2>/dev/null) || true
+    if [[ -z "$hallouminate_bin" ]]; then
+        hallouminate_bin="$(command -v hallouminate 2>/dev/null)" || return 0
+    fi
+    [[ -x "$hallouminate_bin" ]] || return 0
+    IFS= read -r status_line < <("$hallouminate_bin" daemon status 2>/dev/null) || true
     [[ "$status_line" == running* ]] || return 0
 
     echo "Restarting the running hallouminate daemon so it serves the new build..."
-    if hallouminate daemon restart; then
+    if "$hallouminate_bin" daemon restart; then
         echo "✓ restarted the hallouminate daemon"
     else
         echo "⚠ 'hallouminate daemon restart' failed — run it by hand so MCP sessions use the new build." >&2

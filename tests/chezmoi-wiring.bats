@@ -1179,30 +1179,44 @@ case "\$1 \$2" in
     "prefix -g") echo "$active_prefix" ;;
 esac
 EOF
-    local hal_bin="$TEST_HOME/restart-hallouminate-bin"
+    local old_prefix="$TEST_HOME/old-prefix"
+    local old_bin="$old_prefix/lib/node_modules/@paulnsorensen/hallouminate-nightly/bin/hallouminate"
+    local active_bin="$active_prefix/bin/hallouminate"
     local hal_log="$TEST_HOME/hallouminate.log"
-    mkdir -p "$hal_bin"
-    cat > "$hal_bin/hallouminate" <<EOF
+    local old_log="$TEST_HOME/old-hallouminate.log"
+    mkdir -p "$(dirname "$old_bin")" "$old_prefix/bin" "$active_prefix/bin"
+    cat > "$old_bin" <<EOF
+#!/bin/bash
+echo "\$*" >> "$old_log"
+[[ "\$1 \$2" == "daemon status" ]] && echo running
+exit 0
+EOF
+    ln -s "../lib/node_modules/@paulnsorensen/hallouminate-nightly/bin/hallouminate" "$old_prefix/bin/hallouminate"
+    cat > "$active_bin" <<EOF
 #!/bin/bash
 echo "\$*" >> "$hal_log"
 [[ "\$1 \$2" == "daemon status" ]] && echo running
 exit 0
 EOF
-    chmod +x "$npm_bin/npm" "$hal_bin/hallouminate"
+    chmod +x "$npm_bin/npm" "$old_bin" "$active_bin"
 
-    # A new version installs, so the running daemon restarts.
+    # A retained old copy leads PATH because its own npm is not executable.
     printf '%s\n' "@paulnsorensen/hallouminate-nightly@0.0.0-experimental.321.1" > "$npm_state"
-    run env HOME="$TEST_HOME" PATH="$npm_bin:$hal_bin:/usr/bin:/bin" /bin/bash "$script"
+    run env HOME="$TEST_HOME" PATH="$npm_bin:$old_prefix/bin:$active_prefix/bin:/usr/bin:/bin" /bin/bash "$script"
     assert_success
     assert_output_contains "hallouminate (nightly) 0.0.0-experimental.345.1 installed"
+    grep -qx "daemon status" "$hal_log"
     grep -qx "daemon restart" "$hal_log"
+    [[ ! -e "$old_log" ]]
+    [[ -x "$old_bin" ]]
 
     # current == latest: nothing installs, so the daemon is not touched.
     rm -f "$hal_log"
-    run env HOME="$TEST_HOME" PATH="$npm_bin:$hal_bin:/usr/bin:/bin" /bin/bash "$script"
+    run env HOME="$TEST_HOME" PATH="$npm_bin:$old_prefix/bin:$active_prefix/bin:/usr/bin:/bin" /bin/bash "$script"
     assert_success
     assert_output_contains "already latest"
     [[ ! -e "$hal_log" ]]
+    [[ ! -e "$old_log" ]]
 }
 
 @test "nightly installer fails when npm leaves the old package installed" {

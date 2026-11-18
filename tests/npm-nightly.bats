@@ -255,6 +255,28 @@ EOF
   [ -z "$output" ]
 }
 
+@test "does not use a PATH shadow when the selected hallouminate binary is missing" {
+  local bin_dir
+  bin_dir=$(stub_hallouminate running)
+
+  PATH="$bin_dir:/usr/bin:/bin" run npm_nightly_restart_hallouminate_daemon "$SCAN/missing/hallouminate"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -e "$SCAN/hallouminate.log" ]
+}
+
+@test "uses a selected hallouminate binary in a path with spaces" {
+  local bin_dir selected
+  bin_dir=$(stub_hallouminate running)
+  mkdir -p "$SCAN/active prefix/bin"
+  selected="$SCAN/active prefix/bin/hallouminate"
+  cp "$bin_dir/hallouminate" "$selected"
+
+  PATH="/usr/bin:/bin" run npm_nightly_restart_hallouminate_daemon "$selected"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$SCAN/hallouminate.log")" = $'daemon status\ndaemon restart' ]
+}
+
 # 2026-11-14: mise moved node 26.13.0 -> 26.13.1. The 26.13.0 prefix kept an old
 # nightly that no longer sat on PATH, so the PATH scan never saw it, yet an older
 # session still ran it and restarted the daemon from that build.

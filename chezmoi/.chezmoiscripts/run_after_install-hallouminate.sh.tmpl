@@ -77,10 +77,13 @@ if [[ -r "$NIGHTLY_LIB" ]]; then
     # shellcheck source=../../bin/lib/npm-nightly.sh
     source "$NIGHTLY_LIB"
     npm_nightly_prune_shadows "$PKG" hallouminate
-    # The daemon is a long-lived singleton that keeps the old build after an
-    # install. Restart it after the prune, so PATH resolves to the new binary.
+    # A retained shadow can still lead PATH. Use the active npm prefix binary
+    # for both the status probe and restart after the prune.
     if [[ "$installed_new" == 1 ]]; then
-        npm_nightly_restart_hallouminate_daemon
+        active_prefix="$(npm prefix -g 2>/dev/null || true)"
+        if [[ -n "$active_prefix" ]]; then
+            npm_nightly_restart_hallouminate_daemon "$active_prefix/bin/hallouminate"
+        fi
     fi
 else
     echo "⚠ $NIGHTLY_LIB not found — skipping the $PKG second-prefix shadow prune." >&2
