@@ -1285,7 +1285,7 @@ EOF
 
     # The removal went through that prefix's own npm, and named the nightly.
     [[ -f "$rm_log" ]] || { echo "second prefix npm was never invoked" >&2; return 1; }
-    grep -qx "rm -g @paulnsorensen/tilth-nightly" "$rm_log"
+    grep -qx "rm -g --prefix $second_real @paulnsorensen/tilth-nightly" "$rm_log"
 
     # The upstream copy keeps its own (warning-only) treatment.
     assert_output_not_contains "removed the shadow copy at $upstream"

@@ -127,3 +127,5 @@
 2026-11-11 · d12f60ced848c892 · merged · operations/session-analytics-gotchas.md · Record Skillz package ownership, canonical prompt selection, benchmark cohort limits, and composite result joins. All three frozen retrieval probes return this page at rank 1.
 
 2026-11-15 · wiki-harvest-auto/dotfiles-20261115 · curated · harnesses/pi.md · Record Pi package bump traps: pin-test literal and pi-subagents child prompt inheritance. Supersedes the 2026-10-25 curation PR.
+
+2026-11-17 · pr-1596-prefix-safety · merged · architecture/config-drift.md · Record inactive mise discovery and explicit npm prefix selection. The executable path alone does not constrain removal.

@@ -567,7 +567,7 @@ strings can even MATCH (both `0.0.0-experimental.21.1`) while the postinstall-
 downloaded platform binaries differ, so `npm ls -g` comparison is not a valid
 freshness signal across prefixes.
 
-**Fix**: `/opt/homebrew/bin/npm rm -g @paulnsorensen/tilth-nightly`, then verify
+**Fix**: `/opt/homebrew/bin/npm rm -g --prefix /opt/homebrew @paulnsorensen/tilth-nightly`, then verify
 `which -a tilth` lists only mise paths. Reconnect MCPs (`/mcp` or new session).
 
 **Detection**: `which -a tilth` showing a non-mise path first, or the MCP log
@@ -612,6 +612,22 @@ Only paths inside a `node_modules/<pkg>/` tree are removed, so an upstream
 package or cargo build exposing the same bin still gets a warning and keeps its
 files. A failed removal warns and returns 0 — a `run_after` installer must not
 abort the rest of `dots sync` over a shadow it could not clear.
+
+### Inactive mise installs and explicit npm prefixes
+
+The prune also scans inactive mise Node installs because an upgrade removes their binaries from PATH, not their packages.[^nightly-mise]
+It preserves the canonical active prefix and deduplicates candidates from both discovery paths.[^nightly-mise]
+
+Each removal passes `--prefix` with the selected inactive prefix.[^nightly-prefix]
+Selecting that prefix's npm executable alone does not select its global installation directory.
+Inherited npm prefix settings can redirect removal to the active installation.
+The explicit argument overrides those settings and preserves the active package.
+This rule also applies to the manual removal command above.
+A real-npm regression uses temporary prefixes and an inherited active-prefix override.[^nightly-prefix-test]
+
+[^nightly-mise]: bin/lib/npm-nightly.sh:77-139; tests/npm-nightly.bats:194-251
+[^nightly-prefix]: bin/lib/npm-nightly.sh:47-63; PR #1596 review verifies npm prefix configuration precedence.
+[^nightly-prefix-test]: tests/npm-nightly.bats:82-105
 
 ## Known drift pattern: moving npm tags can leave a nightly one release behind
 

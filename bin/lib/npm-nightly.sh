@@ -35,19 +35,48 @@ npm_nightly_resolve_path() {
     cd -P "$(dirname "$path")" && printf '%s/%s\n' "$PWD" "$(basename "$path")"
 }
 
+# npm_nightly_mise_node_dir — echo the directory that holds mise's node
+# installs. Each version under it is its own npm global prefix.
+npm_nightly_mise_node_dir() {
+    printf '%s/installs/node\n' "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"
+}
+
+# npm_nightly_remove_copy <pkg> <shadow_root> <why> <bin_name> — remove <pkg>
+# from the npm prefix whose lib dir is <shadow_root>, through that prefix's own
+# npm. Warns and returns 0 when that npm is missing or fails.
+npm_nightly_remove_copy() {
+    local pkg="$1" shadow_root="$2" why="$3" bin_name="$4"
+    local shadow_npm="${shadow_root%/lib}/bin/npm"
+
+    if [[ ! -x "$shadow_npm" ]]; then
+        echo "⚠ $shadow_root holds a stale $pkg ($why) but '$shadow_npm' is not executable — remove that copy by hand so '$bin_name' resolves to the nightly fork." >&2
+        return 0
+    fi
+
+    echo "Removing stale $pkg from npm prefix $shadow_root ($why)..."
+    if "$shadow_npm" rm -g --prefix "${shadow_root%/lib}" "$pkg" >/dev/null 2>&1; then
+        echo "✓ removed the shadow copy at $shadow_root"
+    else
+        echo "⚠ '$shadow_npm rm -g --prefix ${shadow_root%/lib} $pkg' failed — remove that copy by hand so '$bin_name' resolves to the nightly fork." >&2
+    fi
+    return 0
+}
+
 # npm_nightly_prune_shadows <pkg> <bin_name> — remove every copy of <pkg> that
-# a npm global prefix other than the active one exposes as <bin_name> on PATH.
+# a npm global prefix other than the active one exposes as <bin_name> on PATH,
+# and every copy in a mise node install prefix other than the active one.
 #
 # Only copies whose resolved path lies inside a `node_modules/<pkg>/` tree are
 # touched, so an upstream package or a cargo build that happens to expose the
-# same bin is left alone (those get their own warnings in the callers).
+# same bin is left alone (those get their own warnings in the callers). A
+# non-mise prefix that is not on PATH is never touched.
 #
 # Returns 0 even when a removal fails: a run_after installer must not abort the
 # rest of `dots sync` over a shadow it could not clear, and the next sync
 # retries. Prints what it removed so the action is never silent.
 npm_nightly_prune_shadows() {
     local pkg="$1" bin_name="$2"
-    local npm_prefix candidate resolved shadow_root shadow_npm
+    local npm_prefix candidate resolved shadow_root version_dir
     local pruned=$'\n'
 
     npm_prefix="$(npm prefix -g 2>/dev/null || true)"
@@ -81,19 +110,30 @@ npm_nightly_prune_shadows() {
         esac
         pruned="$pruned$shadow_root"$'\n'
 
-        shadow_npm="${shadow_root%/lib}/bin/npm"
-        if [[ ! -x "$shadow_npm" ]]; then
-            echo "⚠ $candidate resolves into a second npm prefix ($shadow_root) but '$shadow_npm' is not executable — remove that copy by hand so '$bin_name' resolves to the nightly fork." >&2
-            continue
-        fi
-
-        echo "Removing stale $pkg from second npm prefix $shadow_root (it shadowed '$bin_name' on PATH)..."
-        if "$shadow_npm" rm -g "$pkg" >/dev/null 2>&1; then
-            echo "✓ removed the shadow copy at $shadow_root"
-        else
-            echo "⚠ '$shadow_npm rm -g $pkg' failed — remove that copy by hand so '$bin_name' resolves to the nightly fork." >&2
-        fi
+        npm_nightly_remove_copy "$pkg" "$shadow_root" \
+            "$candidate shadowed '$bin_name' on PATH" "$bin_name"
     done < <(type -ap "$bin_name" 2>/dev/null || true)
+
+    # mise keeps one npm global prefix per node version. A node upgrade leaves
+    # the old copy off the new PATH, so the scan above cannot see it.
+    # An older session can still run that copy. On 2026-11-14, a node 26.13.0
+    # copy restarted the hallouminate daemon from an old build.
+    for version_dir in "$(npm_nightly_mise_node_dir)"/*; do
+        [[ -d "$version_dir/lib/node_modules/$pkg" ]] || continue
+        # Canonicalize like the active prefix: mise links partial versions
+        # (node/26 -> 26.13.1), and a link to the active prefix must match it.
+        version_dir="$(cd -P "$version_dir" && pwd)" || continue
+        [[ "$version_dir" != "$npm_prefix" ]] || continue
+        shadow_root="$version_dir/lib"
+
+        case "$pruned" in
+            *$'\n'"$shadow_root"$'\n'*) continue ;;
+        esac
+        pruned="$pruned$shadow_root"$'\n'
+
+        npm_nightly_remove_copy "$pkg" "$shadow_root" \
+            "a non-active mise node prefix" "$bin_name"
+    done
 
     return 0
 }
@@ -101,11 +141,12 @@ npm_nightly_prune_shadows() {
 # npm_nightly_restart_hallouminate_daemon — restart a running hallouminate
 # daemon so it serves the build that was just installed.
 #
-# The daemon is a long-lived singleton. A nightly install does not replace the
-# build it runs, so every MCP `serve` keeps the old build until the daemon
-# idle-exits (2026-11-14: build 321 ran at 177% CPU and 2.5 GB RSS after
-# build 345 was installed). Call this after npm_nightly_prune_shadows, so PATH
-# resolves to the new binary, and only when this run installed a new version.
+# The daemon is a long-lived singleton.
+# A nightly install does not replace the build that the daemon runs.
+# Every MCP `serve` uses that build until the daemon exits.
+# On 2026-11-14, build 321 used 177% CPU and 2.5 GB RSS after build 345 was installed.
+# Call this after npm_nightly_prune_shadows so PATH resolves to the new binary.
+# Call this only when this run installs a new version.
 #
 # `hallouminate daemon status` exits 0 in both states and prints `running` or
 # `not running` on its first line. Never starts a daemon that is not running.
