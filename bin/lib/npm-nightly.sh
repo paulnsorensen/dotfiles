@@ -137,3 +137,50 @@ npm_nightly_prune_shadows() {
 
     return 0
 }
+
+# npm_nightly_restart_hallouminate_daemon [binary] — restart a running
+# hallouminate daemon so it serves the build that was just installed.
+#
+# The daemon is a long-lived singleton. A nightly install does not replace
+# the build that the daemon runs. Every MCP serve uses that build until the daemon exits.
+# On 2026-11-14, build 321 used 177% CPU and 2.5 GB RSS after build 345 was installed.
+# Use the active npm prefix binary when given; PATH can still lead to a
+# retained shadow after pruning.
+# Call this only when this run installs a new version.
+#
+# `hallouminate daemon status` exits 0 in both states and prints `running` or
+# `not running` on its first line. Never starts a daemon that is not running.
+# Returns 0 even when the restart fails, so `dots sync` continues.
+npm_nightly_restart_hallouminate_daemon() {
+    local hallouminate_bin="${1:-}" status_line=""
+
+    if [[ -z "$hallouminate_bin" ]]; then
+        hallouminate_bin="$(command -v hallouminate 2>/dev/null)" || return 0
+    fi
+    [[ -x "$hallouminate_bin" ]] || return 0
+    if ! status_line="$("$hallouminate_bin" daemon status)"; then
+        printf '⚠ Cannot read hallouminate daemon status; restart skipped. Check the diagnostic above.\n' >&2
+        return 0
+    fi
+    status_line="${status_line%%$'\n'*}"
+    [[ "$status_line" == running* ]] || return 0
+
+    echo "Restarting the running hallouminate daemon so it serves the new build..."
+    if "$hallouminate_bin" daemon restart; then
+        echo "✓ restarted the hallouminate daemon"
+    else
+        printf '⚠ Daemon restart failed. Run %q daemon restart so MCP sessions use the new build.\n' "$hallouminate_bin" >&2
+    fi
+    return 0
+}
+
+# Resolve the installed binary here so installer templates only dispatch.
+npm_nightly_restart_installed_hallouminate_daemon() {
+    local active_prefix
+    if ! active_prefix="$(npm prefix -g)" || [[ -z "$active_prefix" ]]; then
+        printf '⚠ Cannot resolve the active npm prefix; daemon restart skipped.\n' >&2
+        printf "Run 'npm prefix -g', then restart its bin/hallouminate by hand.\n" >&2
+        return 0
+    fi
+    npm_nightly_restart_hallouminate_daemon "$active_prefix/bin/hallouminate"
+}

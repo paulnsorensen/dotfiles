@@ -1150,6 +1150,81 @@ EOF
     done
 }
 
+make_hallouminate_nightly_npm() {
+    local npm_bin="$1" npm_state="$2" active_prefix="$3"
+    mkdir -p "$npm_bin"
+    cat > "$npm_bin/npm" <<EOF
+#!/bin/bash
+case "\$1 \$2" in
+    "view @paulnsorensen/hallouminate-nightly") echo "0.0.0-experimental.345.1" ;;
+    "install -g") printf '%s\n' "\$3" > "$npm_state" ;;
+    "ls -g")
+        [[ -f "$npm_state" ]] || exit 1
+        case "\$(cat "$npm_state")" in
+            "\$3"@*) echo "└── \$(cat "$npm_state")" ;;
+            *) exit 1 ;;
+        esac
+        ;;
+    "prefix -g") echo "$active_prefix" ;;
+esac
+EOF
+    chmod +x "$npm_bin/npm"
+}
+
+make_hallouminate_daemon_executable() {
+    local executable="$1" log="$2"
+    mkdir -p "$(dirname "$executable")"
+    cat > "$executable" <<EOF
+#!/bin/bash
+echo "\$*" >> "$log"
+[[ "\$1 \$2" == "daemon status" ]] && echo running
+exit 0
+EOF
+    chmod +x "$executable"
+}
+
+setup_hallouminate_restart_fixture() {
+    local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl"
+    restart_script="$TEST_HOME/install-hallouminate.sh"
+    chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$template" > "$restart_script"
+    restart_npm_bin="$TEST_HOME/restart-npm-bin"
+    restart_npm_state="$TEST_HOME/restart-npm.state"
+    restart_active_prefix="$TEST_HOME/active-prefix"
+    restart_old_prefix="$TEST_HOME/old-prefix"
+    restart_old_bin="$restart_old_prefix/lib/node_modules/@paulnsorensen/hallouminate-nightly/bin/hallouminate"
+    restart_log="$TEST_HOME/hallouminate.log"
+    restart_old_log="$TEST_HOME/old-hallouminate.log"
+    make_hallouminate_nightly_npm "$restart_npm_bin" "$restart_npm_state" "$restart_active_prefix"
+    make_hallouminate_daemon_executable "$restart_old_bin" "$restart_old_log"
+    make_hallouminate_daemon_executable "$restart_active_prefix/bin/hallouminate" "$restart_log"
+    mkdir -p "$restart_old_prefix/bin"
+    ln -s "../lib/node_modules/@paulnsorensen/hallouminate-nightly/bin/hallouminate" "$restart_old_prefix/bin/hallouminate"
+}
+
+# An old copy without its own npm remains on PATH after the prune.
+# The installer must restart through the active prefix, and only after an install.
+@test "hallouminate nightly installer restarts the running daemon only after a new install" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    setup_hallouminate_restart_fixture
+    local daemon_path="$restart_npm_bin:$restart_old_prefix/bin:$restart_active_prefix/bin:/usr/bin:/bin"
+
+    printf '%s\n' "@paulnsorensen/hallouminate-nightly@0.0.0-experimental.321.1" > "$restart_npm_state"
+    run env HOME="$TEST_HOME" PATH="$daemon_path" /bin/bash "$restart_script"
+    assert_success
+    assert_output_contains "hallouminate (nightly) 0.0.0-experimental.345.1 installed"
+    [[ "$(cat "$restart_log")" == $'daemon status\ndaemon restart' ]]
+    [[ ! -e "$restart_old_log" ]]
+    [[ -x "$restart_old_bin" ]]
+
+    # The second run finds the latest version and leaves the daemon alone.
+    rm -f "$restart_log"
+    run env HOME="$TEST_HOME" PATH="$daemon_path" /bin/bash "$restart_script"
+    assert_success
+    assert_output_contains "already latest"
+    [[ ! -e "$restart_log" ]]
+    [[ ! -e "$restart_old_log" ]]
+}
+
 @test "nightly installer fails when npm leaves the old package installed" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
 

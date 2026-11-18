@@ -36,6 +36,8 @@ installed_version() {
 
 latest="$(npm view "$PKG" version 2>/dev/null || true)"
 current="$(installed_version)"
+# Set to 1 only when this run installs a new version (the daemon restart below).
+installed_new=0
 
 if [[ -n "$latest" && "$current" == "$latest" ]]; then
     echo "✓ hallouminate (nightly) $current already latest ($latest) — nothing to do"
@@ -50,6 +52,7 @@ else
         exit 1
     fi
     echo "✓ hallouminate (nightly) $current installed"
+    installed_new=1
 fi
 
 # Keep the fork's nightly the single source of truth for the `hallouminate` bin.
@@ -74,6 +77,14 @@ if [[ -r "$NIGHTLY_LIB" ]]; then
     # shellcheck source=../../bin/lib/npm-nightly.sh
     source "$NIGHTLY_LIB"
     npm_nightly_prune_shadows "$PKG" hallouminate
+    # A retained shadow can still lead PATH. Use the active npm prefix binary
+    # for both the status probe and restart after the prune.
+    if [[ "$installed_new" == 1 ]]; then
+        npm_nightly_restart_installed_hallouminate_daemon
+    fi
 else
     echo "⚠ $NIGHTLY_LIB not found — skipping the $PKG second-prefix shadow prune." >&2
+    if [[ "$installed_new" == 1 ]]; then
+        echo "⚠ run 'hallouminate daemon restart' by hand so a running daemon uses the new build." >&2
+    fi
 fi

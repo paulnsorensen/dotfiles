@@ -129,3 +129,5 @@
 2026-11-15 · wiki-harvest-auto/dotfiles-20261115 · curated · harnesses/pi.md · Record Pi package bump traps: pin-test literal and pi-subagents child prompt inheritance. Supersedes the 2026-10-25 curation PR.
 
 2026-11-17 · pr-1596-prefix-safety · merged · architecture/config-drift.md · Record inactive mise discovery and explicit npm prefix selection. The executable path alone does not constrain removal.
+
+2026-11-18 · pr-1597-daemon-lifecycle · curated · architecture/config-drift.md · Record the new-install restart condition and stopped-daemon preservation. Package replacement alone does not update a running daemon.

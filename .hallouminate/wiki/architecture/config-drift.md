@@ -366,6 +366,23 @@ The global baseline does not index `~/.cheese`, because agents do not write dura
 
 [^hallouminate-global-corpora]: `chezmoi/dot_config/hallouminate/config.toml.tmpl:1-25`
 
+A nightly package replacement also leaves the running daemon on its previous build.
+The installer restarts that daemon only after it verifies a new version and prunes shadow copies.[^hallouminate-nightly-restart]
+It uses the active npm-prefix executable for status and restart.
+Cleanup can retain an old nightly without its own npm, or an unrelated binary.
+PATH can therefore select the old build even after cleanup.[^hallouminate-nightly-selection]
+An unchanged version does not cause a restart.
+The helper reads the status text because both daemon states return exit code zero.
+A stopped daemon stays stopped.
+A failed restart prints the shell-quoted selected executable and does not stop sync.
+A failed status probe preserves its diagnostic and warns without restarting.
+The sourced library resolves the npm prefix, so the installer only dispatches.
+A failed or empty prefix lookup warns and never falls back to PATH.[^hallouminate-nightly-status]
+
+[^hallouminate-nightly-restart]: chezmoi/.chezmoiscripts/run_after_install-hallouminate.sh.tmpl:40-55,78-84; tests/chezmoi-wiring.bats:1153-1226
+[^hallouminate-nightly-selection]: bin/lib/npm-nightly.sh:47-53,101-103,177-186; tests/chezmoi-wiring.bats:1186-1226
+[^hallouminate-nightly-status]: bin/lib/npm-nightly.sh:141-186; tests/npm-nightly-daemon.bats:56-175
+
 ## Gotcha: index drift is its own drift class
 
 The hallouminate wiki index (LanceDB) is derived from the markdown on disk. If

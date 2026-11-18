@@ -10,6 +10,8 @@
 # happens to expose the same bin, and nothing at all when the active prefix
 # cannot be trusted as a reference point.
 
+bats_require_minimum_version 1.5.0
+
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
 setup() {
