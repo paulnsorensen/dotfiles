@@ -151,7 +151,10 @@ Repository-only input opens the subsystem overview without selecting a change.
 For a diff, the design spends the lower-tier worker budget on the opening focus only.[^review-opening]
 Browsing is local. Another area needs an explicit analysis request.
 This avoids spending the budget on explanations the reviewer never reads.
-These are design decisions, not claims about an installed tool.
+Select a symbol to follow a dependency. Select an arrow to see where the source establishes it.[^review-graph]
+Removed relationships belong to the base snapshot, not the current traversal. This distinction prevents a historical call from appearing current.
+
+[^review-graph]: `skills/architecture-review/assets/viewer.js`, `symbolGraph` and `sourceView`; `tests/architecture_review/browser_check.py`.
 
 [^review-opening]: User selections in the dotfiles architecture review design session, 2026-11-18: “Change in context” and “Opening focus”.
 

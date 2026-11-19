@@ -20,6 +20,13 @@ The default review uses `HEAD`. A diff compares the specified trees directly.
 Open the `viewer` path from the JSON result in a local browser.
 Do not serve it or upload the embedded source.
 
+Select a subsystem, then a symbol, to open its code diagram.
+Select a neighboring symbol to move the diagram there.
+Select an arrow to inspect its source line at the displayed revision.
+Use Back to restore the previous diagram.
+Inspect removed calls at base; they are not head dependencies.
+These arrows show resolved references, not observed execution.
+
 The default cache persists by repository path under `${XDG_CACHE_HOME:-~/.cache}/architecture-review/` on Linux.
 On macOS, it uses `~/Library/Caches/architecture-review/` unless `XDG_CACHE_HOME` is set.
 The script creates a private per-repository cache directory with mode 0700.

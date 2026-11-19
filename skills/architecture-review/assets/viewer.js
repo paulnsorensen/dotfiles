@@ -7,7 +7,8 @@
   const groups = doc.groups || [];
   const snapshots = doc.snapshots || {};
   const changes = doc.changes || {nodes: {}, edges: {}};
-  const state = {group: null, node: null, revision: "head", compare: false, page: 0, query: "", expanded: new Set(), history: [], edge: null, citation: null, sourceLine: null};
+  let graphObserver = null;
+  const state = {group: null, node: null, revision: "head", compare: false, page: 0, query: "", expanded: new Set(), history: [], edge: null, citation: null, sourceLine: null, graphExpanded: false, indexExpanded: false};
 
   function element(tag, className, label) {
     const result = document.createElement(tag);
@@ -45,12 +46,12 @@
   function save() {
     state.history.push({group: state.group, node: state.node, revision: state.revision,
       page: state.page, query: state.query, compare: state.compare,
-      expanded: new Set(state.expanded), edge: state.edge, citation: state.citation, sourceLine: state.sourceLine});
+      expanded: new Set(state.expanded), edge: state.edge, citation: state.citation, sourceLine: state.sourceLine, graphExpanded: state.graphExpanded, indexExpanded: state.indexExpanded});
     if (state.history.length > 50) state.history.shift();
   }
   function selectGroup(id, revision = state.revision) {
     save(); state.group = id; state.node = null; state.revision = revision;
-    state.edge = null; state.citation = null; state.sourceLine = null;
+    state.edge = null; state.citation = null; state.sourceLine = null; state.graphExpanded = false; state.indexExpanded = false;
     const index = groups.findIndex(group => group.id === id);
     if (index >= 0 && !state.query) state.page = Math.floor(index / 6);
     render();
@@ -61,9 +62,14 @@
     save(); state.group = node.group; state.node = id; state.revision = revision;
     state.edge = focus.edge || null; state.citation = focus.citation || null;
     state.sourceLine = focus.line || null;
+    state.graphExpanded = false;
     const index = groups.findIndex(group => group.id === node.group);
     if (index >= 0 && !state.query) state.page = Math.floor(index / 6);
     render();
+    if (focus.line) {
+      const side = [...document.querySelectorAll(".revision-side")].find(item => item.dataset.revision === revision);
+      side?.querySelector(".source-line.highlighted")?.scrollIntoView?.({block: "center"});
+    }
   }
   function matches(group) {
     if (!state.query) return true;
@@ -79,29 +85,66 @@
     const visible = mapGroups();
     const count = visible.length;
     const rows = Math.max(1, Math.ceil(count / 2));
-    const width = 760, height = rows * 132 + 28;
+    const width = 800, height = rows * 132 + 28;
     map.setAttribute("viewBox", `0 0 ${width} ${height}`);
     const positions = new Map();
     visible.forEach((group, index) => {
       positions.set(group.id, {x: 30 + (index % 2) * 385, y: 20 + Math.floor(index / 2) * 132});
     });
-    const groupByNode = new Map();
-    for (const rev of ["head", "base"]) for (const node of nodes(rev)) groupByNode.set(node.id, node.group);
-    const pairs = new Set();
+    const groupByNode = new Map(nodes(state.revision).map(node => [node.id, node.group]));
+    const pairs = new Map();
     for (const edge of edges(state.revision)) {
       const from = groupByNode.get(edge.source), to = groupByNode.get(edge.target);
       if (!from || !to || from === to || !positions.has(from) || !positions.has(to)) continue;
-      pairs.add(from + "\0" + to);
+      const key = from + "\0" + to;
+      if (!pairs.has(key)) pairs.set(key, []);
+      pairs.get(key).push(edge);
     }
-    for (const pair of pairs) {
+    const otherRevision = state.revision === "head" ? "base" : "head";
+    const otherGroups = new Map(nodes(otherRevision).map(node => [node.id, node.group]));
+    const otherPairs = new Map();
+    for (const edge of edges(otherRevision)) {
+      const key = `${otherGroups.get(edge.source)}\0${otherGroups.get(edge.target)}`;
+      if (!otherPairs.has(key)) otherPairs.set(key, new Set());
+      otherPairs.get(key).add(edge.id);
+    }
+    const defs = svg("defs");
+    const marker = svg("marker", {id: "map-arrow", viewBox: "0 0 10 10", refX: "9", refY: "5",
+      markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse"});
+    marker.append(svg("path", {d: "M 0 0 L 10 5 L 0 10 z", class: "map-arrow"}));
+    defs.append(marker); map.append(defs);
+    for (const [pair, related] of [...pairs.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
       const [from, to] = pair.split("\0"), a = positions.get(from), b = positions.get(to);
-      const line = svg("path", {d: `M ${a.x + 165} ${a.y + 46} C ${a.x + 245} ${a.y + 46}, ${b.x - 50} ${b.y + 46}, ${b.x + 4} ${b.y + 46}`, class: "map-link"});
-      const title = svg("title"); title.textContent = `${labelFor(from)} → ${labelFor(to)}: resolved relationship`; line.append(title);
-      map.append(line);
+      const y1 = a.y + 46, y2 = b.y + 46;
+      let d;
+      if (a.x === b.x) {
+        const right = a.x > width / 2;
+        const side = right ? a.x + 355 : a.x;
+        const lane = right ? width - 12 : 12;
+        d = `M ${side} ${y1} C ${lane} ${y1}, ${lane} ${y1}, ${lane} ${y1 + (y2 > y1 ? 12 : -12)} ` +
+          `L ${lane} ${y2} C ${lane} ${y2}, ${lane} ${y2}, ${side} ${y2}`;
+      } else {
+        const direction = a.x < b.x ? 1 : -1;
+        const x1 = a.x + (direction > 0 ? 355 : 0);
+        const x2 = b.x + (direction > 0 ? 0 : 355);
+        d = `M ${x1} ${y1} C ${x1 + direction * 12} ${y1}, ${x2 - direction * 12} ${y2}, ${x2} ${y2}`;
+      }
+      const statusSet = new Set(related.map(edge => changes.edges?.[edge.id]).filter(Boolean));
+      let kind = statusSet.size === 1 ? [...statusSet][0] : statusSet.size ? "changed" : "";
+      const previous = otherPairs.get(pair);
+      if (previous?.size && (previous.size !== related.length || related.some(edge => !previous.has(edge.id)))) kind = "changed";
+      else if ((kind === "added" || kind === "removed") &&
+          related.some(edge => changes.edges?.[edge.id] !== kind)) kind = "changed";
+      const line = svg("path", {d, class: "map-link" + (kind ? " " + kind : ""),
+        "marker-end": "url(#map-arrow)", "data-from": from, "data-to": to});
+      const kinds = [...new Set(related.map(edge => edge.kind))].sort().join(", ");
+      const title = svg("title");
+      title.textContent = `${labelFor(from)} → ${labelFor(to)} · ${related.length} ${kinds} relationship(s) · ${state.revision}${kind ? " · " + kind : ""}`;
+      line.append(title); map.append(line);
     }
     visible.forEach(group => {
       const {x, y} = positions.get(group.id);
-      const box = svg("g", {class: "map-node" + (state.group === group.id ? " selected" : "") + (group.changed ? " changed" : ""), role: "button", tabindex: "0", "aria-label": `Open ${group.label} subsystem`});
+      const box = svg("g", {class: "map-node" + (state.group === group.id ? " selected" : "") + (group.changed ? " changed" : ""), role: "button", tabindex: "0", "aria-label": `Open ${group.label} subsystem`, "data-group-id": group.id});
       box.append(svg("rect", {x, y, width: 355, height: 94, rx: 13}));
       const eyebrow = svg("text", {x: x + 18, y: y + 27, class: "map-index"});
       eyebrow.textContent = `0${groups.indexOf(group) + 1}  ·  ${group.changed ? "CHANGED" : "SUBSYSTEM"}`; box.append(eyebrow);
@@ -144,6 +187,121 @@
       if (shown > 30) $("groups").append(element("p", "muted", `${shown - 30} more entities. Refine the search.`));
     }
   }
+  function symbolGraph(selected, revision) {
+    const box = element("section", "symbol-graph");
+    box.setAttribute("aria-label", `One-hop relationships for ${selected.label} at ${revision}`);
+    box.append(element("h4", "", "Inbound → selected → outbound"));
+    const byId = new Map(nodes(revision).map(node => [node.id, node]));
+    const compareEdges = edges(revision).filter(edge => edge.source === selected.id || edge.target === selected.id);
+    const order = (a, b) => {
+      const rank = edge => changes.edges?.[edge.id] || changed(edge.source === selected.id ? edge.target : edge.source) ? 0 : 1;
+      const other = edge => byId.get(edge.source === selected.id ? edge.target : edge.source);
+      return rank(a) - rank(b) || (other(a)?.label || "").localeCompare(other(b)?.label || "")
+        || a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id);
+    };
+    const incoming = compareEdges.filter(edge => edge.target === selected.id && edge.source !== selected.id && byId.has(edge.source)).sort(order);
+    const outgoing = compareEdges.filter(edge => edge.source === selected.id && edge.target !== selected.id && byId.has(edge.target)).sort(order);
+    const self = compareEdges.filter(edge => edge.source === selected.id && edge.target === selected.id).sort(order);
+    const limit = state.graphExpanded ? Infinity : 8;
+    const shownIncoming = incoming.slice(0, limit), shownOutgoing = outgoing.slice(0, limit);
+    const viewport = element("div", "graph-viewport");
+    const canvas = element("div", "graph-canvas");
+    const wire = svg("svg", {class: "graph-wires", "aria-label": "Directed relationship connectors"});
+    const layout = element("div", "graph-layout");
+    const left = element("div", "graph-lane"), center = element("div", "graph-center"), right = element("div", "graph-lane");
+    left.append(element("p", "graph-lane-label", `Inbound · ${incoming.length}`));
+    right.append(element("p", "graph-lane-label", `Outbound · ${outgoing.length}`));
+    const focus = button(selected.label, () => selectNode(selected.id, revision), "graph-node focus");
+    focus.dataset.graphNode = selected.id;
+    focus.setAttribute("aria-label", `Selected ${selected.kind} ${selected.label} at ${revision}`);
+    focus.append(element("small", "", selected.kind + " · " + selected.path));
+    if (changed(selected.id)) focus.append(status(changed(selected.id)));
+    center.append(focus);
+    const positions = [];
+    function addNeighbor(lane, edge, neighborId, direction) {
+      const neighbor = byId.get(neighborId);
+      const nodeButton = button(neighbor.label, () => selectNode(neighbor.id, revision), "graph-node");
+      nodeButton.dataset.graphNode = neighbor.id;
+      nodeButton.setAttribute("aria-label", `Open ${neighbor.kind} ${neighbor.label} at ${revision}`);
+      nodeButton.append(element("small", "", neighbor.kind + " · " + neighbor.path));
+      nodeButton.append(element("small", "graph-relation-type", `${edge.kind} · ${edge.path}:${edge.line}`));
+      const edgeKind = changes.edges?.[edge.id], nodeKind = changed(neighbor.id);
+      if (edgeKind) {
+        const mark = status(edgeKind);
+        mark.textContent = `${edgeKind} reference${edgeKind === nodeKind ? " + symbol" : ""}`;
+        nodeButton.append(mark);
+      }
+      if (nodeKind && nodeKind !== edgeKind) {
+        const mark = status(nodeKind);
+        mark.textContent = `${nodeKind} symbol`;
+        nodeButton.append(mark);
+      }
+      lane.append(nodeButton);
+      const kind = changes.edges?.[edge.id] || "";
+      const link = svg("g", {class: "graph-edge" + (kind ? " " + kind : ""), role: "button", tabindex: "0",
+        "aria-label": `Open ${revision} ${kind ? kind + " " : ""}${edge.kind} evidence at ${edge.path} line ${edge.line}`});
+      link.dataset.graphEdge = edge.id;
+      const path = svg("path", {class: "graph-edge-line"});
+      const hit = svg("path", {class: "graph-edge-hit"});
+      const arrow = svg("polygon", {class: "graph-arrow"});
+      link.append(path, hit, arrow);
+      const title = svg("title"); title.textContent = `${edge.kind} · ${edge.path}:${edge.line} · ${revision}`; link.append(title);
+      const open = () => selectNode(edge.source, revision, {edge: edge.id, line: edge.line});
+      link.addEventListener("click", open);
+      link.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); }
+      });
+      wire.append(link);
+      positions.push({nodeButton, link, path, hit, arrow, direction});
+    }
+    for (const edge of shownIncoming) addNeighbor(left, edge, edge.source, "incoming");
+    for (const edge of shownOutgoing) addNeighbor(right, edge, edge.target, "outgoing");
+    layout.append(left, center, right); canvas.append(wire, layout); viewport.append(canvas); box.append(viewport);
+    if (!incoming.length && !outgoing.length && !self.length) box.append(element("p", "empty", "No resolved one-hop relationships at this revision."));
+    if (self.length) {
+      const loops = element("div", "graph-self");
+      loops.append(element("span", "graph-lane-label", `Self calls · ${self.length}`));
+      for (const edge of self.slice(0, limit)) {
+        const loop = button(`↺ ${edge.kind} · ${edge.path}:${edge.line}`, () =>
+          selectNode(edge.source, revision, {edge: edge.id, line: edge.line}), "graph-self-edge");
+        loop.dataset.graphEdge = edge.id;
+        loop.setAttribute("aria-label", `Open self ${edge.kind} evidence at ${edge.path} line ${edge.line} in ${revision}`);
+        if (changes.edges?.[edge.id]) loop.append(status(changes.edges[edge.id]));
+        loops.append(loop);
+      }
+      box.append(loops);
+    }
+    const hidden = incoming.length - shownIncoming.length + outgoing.length - shownOutgoing.length + self.length - Math.min(self.length, limit);
+    if (hidden) box.append(button(`Show all ${incoming.length + outgoing.length + self.length} relationships (${hidden} more)`,
+      () => {state.graphExpanded = true; render();}, "graph-more"));
+    else if (state.graphExpanded && incoming.length + outgoing.length + self.length > 8)
+      box.append(button("Show fewer relationships", () => {state.graphExpanded = false; render();}, "graph-more"));
+    function draw() {
+      if (!canvas.isConnected) return;
+      const bounds = canvas.getBoundingClientRect();
+      const width = Math.max(1, canvas.clientWidth), height = Math.max(1, canvas.clientHeight);
+      wire.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      wire.setAttribute("width", String(width)); wire.setAttribute("height", String(height));
+      const a = focus.getBoundingClientRect();
+      for (const item of positions) {
+        const b = item.nodeButton.getBoundingClientRect();
+        const incomingSide = item.direction === "incoming";
+        const x1 = (incomingSide ? b.right : a.right) - bounds.left;
+        const y1 = (incomingSide ? b.top + b.height / 2 : a.top + a.height / 2) - bounds.top;
+        const x2 = (incomingSide ? a.left : b.left) - bounds.left;
+        const y2 = (incomingSide ? a.top + a.height / 2 : b.top + b.height / 2) - bounds.top;
+        const curve = `M ${x1} ${y1} C ${x1 + 24} ${y1}, ${x2 - 24} ${y2}, ${x2} ${y2}`;
+        item.path.setAttribute("d", curve); item.hit.setAttribute("d", curve);
+        item.arrow.setAttribute("points", `${x2},${y2} ${x2 - 10},${y2 - 5} ${x2 - 10},${y2 + 5}`);
+      }
+    }
+    requestAnimationFrame(draw);
+    if (typeof ResizeObserver !== "undefined") {
+      graphObserver = new ResizeObserver(draw);
+      graphObserver.observe(canvas);
+    }
+    return box;
+  }
   function describePath(node, revision) {
     const box = element("section", "path-panel");
     box.append(element("h4", "", "Resolved relationships"));
@@ -181,12 +339,13 @@
     const section = element("section", "source-view");
     section.append(element("h4", "", "Source · " + revision));
     const citation = state.citation && doc.annotations?.citations?.[state.citation];
+    const selectedEdge = state.edge && edges(revision).find(edge => edge.id === state.edge && edge.source === node.id);
     const citedEdge = citation?.type === "edge" ? edges(revision).find(edge => edge.id === citation.entity) : null;
     const cited = citation?.side === revision && (citation.entity === node.id || citedEdge?.source === node.id) ? citation : null;
-    const path = cited?.path || node.path;
+    const path = selectedEdge?.path || cited?.path || node.path;
     const file = snapshot(revision).files?.[path];
-    const blob = cited?.blob || node.blob;
-    const focusLine = state.sourceLine || cited?.line || node.line;
+    const blob = selectedEdge?.blob || cited?.blob || node.blob;
+    const focusLine = state.sourceLine || selectedEdge?.line || cited?.line || node.line;
     section.append(element("p", "source-meta", `${path}:${focusLine} · blob ${blob || file?.blob || "unknown"} · lines ${node.line}–${node.end}`));
     if (!file || typeof file.text !== "string" || (file.blob && blob && file.blob !== blob)) {
       section.append(element("p", "empty", "Source is not available for this pinned blob in the artifact."));
@@ -226,6 +385,7 @@
   }
   function snapshotDetail(group, revision) {
     const side = element("article", "revision-side");
+    side.dataset.revision = revision;
     const snap = snapshot(revision);
     side.append(element("p", "eyebrow", revision.toUpperCase() + " · " + (snap.revision || "unavailable")));
     if (!snapshots[revision]) { side.append(element("p", "empty", "No " + revision + " snapshot.")); return side; }
@@ -247,6 +407,46 @@
       coverageDetail.append(element("p", "muted", `Unsupported: ${adapters.unsupported.extensions}; max file size ${adapters.unsupported.max_bytes} bytes.`));
     }
     side.append(coverageDetail);
+    const drill = element("section", "module-index");
+    drill.append(element("h4", "", "Explore entities"));
+    const callIds = new Set(edges(revision).filter(edge => edge.kind === "call").flatMap(edge => [edge.source, edge.target]));
+    const ordered = members.filter(node => node.kind !== "file").sort((a, b) =>
+      Number(Boolean(changed(b.id))) - Number(Boolean(changed(a.id)))
+      || Number(callIds.has(b.id)) - Number(callIds.has(a.id))
+      || a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
+    const quick = element("div", "module-index-links");
+    for (const node of ordered.slice(0, state.indexExpanded ? Infinity : 12)) {
+      const entry = button(node.label, () => selectNode(node.id, revision), "entity-link");
+      entry.append(element("small", "", node.path));
+      if (changed(node.id)) entry.append(status(changed(node.id)));
+      quick.append(entry);
+    }
+    if (!ordered.length) quick.append(element("p", "empty", "No symbol entities in this subsystem."));
+    drill.append(quick);
+    if (ordered.length > 12) drill.append(button(state.indexExpanded ? "Show fewer entities" : `Show all ${ordered.length} entities`,
+      () => {state.indexExpanded = !state.indexExpanded; render();}, "graph-more"));
+    side.append(drill);
+    const selected = members.find(node => node.id === state.node && revision === state.revision);
+    if (selected) {
+      const inspected = element("section", "inspection");
+      inspected.append(element("h3", "", selected.label));
+      inspected.append(element("p", "muted", selected.kind + " · " + (selected.public ? "public" : "internal") + " · " + selected.id));
+      const otherRevision = revision === "head" ? "base" : "head";
+      if (nodes(otherRevision).some(node => node.id === selected.id)) inspected.append(button(`View ${otherRevision} history for this entity`,
+        () => selectNode(selected.id, otherRevision), "history-link"));
+      inspected.append(symbolGraph(selected, revision));
+      if (state.edge) {
+        const edge = edges(revision).find(item => item.id === state.edge);
+        if (edge) {
+          inspected.append(element("p", "selected-edge", `Selected ${edge.kind} relationship · ${edge.path}:${edge.line} · blob ${edge.blob}`));
+          const evidence = button(`Open evidence · ${edge.path}:${edge.line}`, () => selectNode(edge.source, revision, {edge: edge.id, line: edge.line}), "relationship");
+          evidence.dataset.edgeEvidenceId = edge.id;
+          inspected.append(evidence);
+        }
+      }
+      inspected.append(describePath(selected, revision), sourceView(selected, revision));
+      side.append(inspected);
+    }
     for (const path of files) {
       const module = element("section", "module");
       const key = revision + ":" + path;
@@ -270,23 +470,6 @@
         module.append(list);
       }
       side.append(module);
-    }
-    const selected = members.find(node => node.id === state.node && revision === state.revision);
-    if (selected) {
-      const inspected = element("section", "inspection");
-      inspected.append(element("h3", "", selected.label));
-      inspected.append(element("p", "muted", selected.kind + " · " + (selected.public ? "public" : "internal") + " · " + selected.id));
-      if (state.edge) {
-        const edge = edges(revision).find(item => item.id === state.edge);
-        if (edge) {
-          inspected.append(element("p", "selected-edge", `Selected ${edge.kind} relationship · ${edge.path}:${edge.line} · blob ${edge.blob}`));
-          const evidence = button(`Open evidence · ${edge.path}:${edge.line}`, () => selectNode(edge.source, revision, {edge: edge.id, line: edge.line}), "relationship");
-          evidence.dataset.edgeEvidenceId = edge.id;
-          inspected.append(evidence);
-        }
-      }
-      inspected.append(describePath(selected, revision), sourceView(selected, revision));
-      side.append(inspected);
     }
     return side;
   }
@@ -338,6 +521,8 @@
     for (const conflict of data.conflicts || []) target.append(element("p", "unknown", "Conflict: " + (typeof conflict === "string" ? conflict : JSON.stringify(conflict))));
   }
   function render() {
+    graphObserver?.disconnect();
+    graphObserver = null;
     $("revisions").textContent = doc.base ? `Base ${doc.base.slice(0, 12)} → Head ${doc.head.slice(0, 12)}` : `Repository · ${doc.head.slice(0, 12)}`;
     $("search").value = state.query;
     $("back").disabled = !state.history.length;
