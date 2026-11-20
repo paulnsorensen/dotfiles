@@ -5,7 +5,9 @@
 #
 # Source of truth: ~/.claude/sessions/<pid>.json, one record per Claude
 # process (sessionId, cwd, procStart). A record is dead when its pid is gone
-# or now belongs to a process with a different start time.
+# or now belongs to a process with a different start time. Remote Control
+# sessions in bridge-cse_* worktrees can lose their record, so their
+# transcripts are a second source.
 
 # salvage_duration_secs <dur> — "90m", "6h", "2d", or "30s" in seconds.
 salvage_duration_secs() {
@@ -47,6 +49,25 @@ salvage_pid_live() {
     [[ "$want" == - || "${fields[19]:-}" == "$want" ]]
 }
 
+# salvage_pid_started_after <pid> <file> — exit 0 when the process started
+# in a later second than the last write of <file>, so <file> cannot be its
+# record. A reboot gives old pids to new processes. Without /proc this cannot
+# tell, so it exits 1.
+salvage_pid_started_after() {
+    local proc="${CC_SALVAGE_PROC_DIR:-/proc}" stat key val btime="" tck mtime
+    local -a fields
+    [[ -r "$proc/$1/stat" && -r "$proc/stat" ]] || return 1
+    while read -r key val _; do
+        [[ "$key" == btime ]] && { btime="$val"; break; }
+    done < "$proc/stat"
+    stat="$(<"$proc/$1/stat")"
+    read -r -a fields <<< "${stat##*) }"
+    tck="$(getconf CLK_TCK 2>/dev/null)" || tck=100
+    mtime="$(resume_file_mtime "$2")" || return 1
+    [[ "$btime" =~ ^[0-9]+$ && "${fields[19]:-}" =~ ^[0-9]+$ && "$tck" =~ ^[0-9]+$ ]] || return 1
+    (( btime + fields[19] / tck > mtime ))
+}
+
 # salvage_registry_rows — print one row per terminal or Remote Control
 # session: "pid<TAB>procStart<TAB>sessionId<TAB>cwd<TAB>name<TAB>path".
 # Remote Control spawns are sdk-cli records with a bridgeSessionId. Other
@@ -65,6 +86,49 @@ salvage_registry_rows() {
     done
 }
 
+# salvage_record_ids — print "pid<TAB>procStart<TAB>sessionId" for every
+# record of any entrypoint. A live process of any kind writes the transcript,
+# so each one counts for the liveness check. An empty record, or one that jq
+# cannot read, fails the call when the pid in its <pid>.json name still runs,
+# because its session is unknown. A broken record of a dead pid, or of a pid
+# that a newer process now holds, is skipped.
+salvage_record_ids() {
+    local f pid
+    for f in "$HOME"/.claude/sessions/*.json; do
+        [[ -f "$f" ]] || continue
+        jq -r 'select((.sessionId | type) == "string")
+            | [(.pid | tostring), (.procStart // "-" | tostring), .sessionId] | @tsv' "$f" 2>/dev/null \
+            && [[ -s "$f" ]] && continue
+        pid="$(basename "$f" .json)"
+        if [[ "$pid" =~ ^[0-9]+$ ]] && salvage_pid_live "$pid" - && ! salvage_pid_started_after "$pid" "$f"; then
+            echo "cc-salvage: cannot read $f of running pid $pid; try again" >&2
+            return 1
+        fi
+    done
+}
+
+# salvage_bridge_rows — print one registry-shaped row per Remote Control
+# transcript in a <repo>/.claude/worktrees/bridge-cse_* worktree, with "-" for
+# pid, procStart, name, and path. A graceful stop removes the record of such a
+# session, so only its transcript and worktree stay. Claude names the project
+# directory after the cwd with each non-alphanumeric character as "-". The
+# cwd comes from the first transcript record that has one. A row whose
+# worktree is gone is left out, because nothing is left to resume in. A
+# transcript that is not newer than its salvaged/<sessionId>.bridge marker
+# was resumed already.
+salvage_bridge_rows() {
+    local t sid cwd marker
+    for t in "$HOME"/.claude/projects/*-claude-worktrees-bridge-cse-*/*.jsonl; do
+        [[ -s "$t" ]] || continue
+        sid="$(basename "$t" .jsonl)"
+        marker="$HOME/.claude/sessions/salvaged/$sid.bridge"
+        [[ -f "$marker" && ! "$t" -nt "$marker" ]] && continue
+        cwd="$(jq -nrR 'first(limit(50; inputs) | fromjson? | .cwd | strings)' "$t" 2>/dev/null)" || continue
+        [[ "$cwd" == */.claude/worktrees/bridge-cse_* && "${cwd##*/.claude/worktrees/}" != */* && -d "$cwd" ]] || continue
+        printf -- '-\t-\t%s\t%s\t-\t-\n' "$sid" "$cwd"
+    done
+}
+
 # salvage_transcript <session-id> — path of the session's non-empty transcript.
 salvage_transcript() {
     local f
@@ -77,16 +141,18 @@ salvage_transcript() {
 # salvage_candidates <since-epoch> <until-epoch> — dead sessions whose
 # transcript changed inside the window, newest first, as
 # "mtime<TAB>sessionId<TAB>cwd<TAB>name<TAB>pid<TAB>procStart<TAB>path".
-# A session id with any live record is left out, because a resume would fork
-# a second writer.
+# A session id with a live record of any entrypoint is left out, because a
+# resume would fork a second writer. Registry rows come before bridge rows,
+# so a dead record wins over a transcript of the same session.
 salvage_candidates() {
-    local since="$1" until="$2" rows live=" " seen=" "
+    local since="$1" until="$2" rows ids live=" " seen=" "
     local pid start sid cwd name file t mtime
-    rows="$(salvage_registry_rows)"
+    rows="$(salvage_registry_rows; salvage_bridge_rows)"
     [[ -n "$rows" ]] || return 0
-    while IFS=$'\t' read -r pid start sid _; do
+    ids="$(salvage_record_ids)" || return 1
+    while IFS=$'\t' read -r pid start sid; do
         if salvage_pid_live "$pid" "$start"; then live+="$sid "; fi
-    done <<< "$rows"
+    done <<< "$ids"
     while IFS=$'\t' read -r pid start sid cwd name file; do
         [[ "$sid" =~ ^[0-9A-Za-z_-]+$ ]] || continue
         [[ "$live$seen" == *" $sid "* ]] && continue
@@ -114,22 +180,32 @@ salvage_target_session() {
 }
 
 # salvage_archive_record <file> <pid> <procStart> <session-id> — after a
-# successful resume, move the selected record to salvaged/ when its pid,
-# procStart, and sessionId still match. Also move every other dead record of
-# the same session. A live record never moves. Each archive gets a unique
-# <pid>.<sessionId>.<epoch>.json name, and mv -n never overwrites one.
+# successful resume, write a salvaged/<sessionId>.bridge marker, so
+# salvage_bridge_rows does not offer the session again whatever row resumed
+# it. Then move the selected record to salvaged/ when its pid, procStart, and
+# sessionId still match. Also move every other dead record of the same
+# session. A live record never moves. Each archive gets a unique
+# <pid>.<sessionId>.<epoch>.json name, and mv -n never overwrites one. A
+# bridge row has "-" as its file, so only the marker applies to it.
 salvage_archive_record() {
     local file="$1" pid="$2" start="$3" sid="$4" dest="$HOME/.claude/sessions/salvaged"
     local p s i f stamp
     stamp="$(date +%s)"
-    if jq -e --arg pid "$pid" --arg start "$start" --arg sid "$sid" \
+    if ! { mkdir -p "$dest" && touch -- "$dest/$sid.bridge"; } 2>/dev/null; then
+        echo "cc-salvage: cannot write $dest/$sid.bridge" >&2
+        return 1
+    fi
+    if [[ "$file" != - && -f "$file" ]] && jq -e --arg pid "$pid" --arg start "$start" --arg sid "$sid" \
         '(.pid | tostring) == $pid and (.procStart // "-" | tostring) == $start and .sessionId == $sid' \
         "$file" >/dev/null 2>&1; then
-        mkdir -p "$dest" && mv -n -- "$file" "$dest/$(basename "$file" .json).$sid.$stamp.json"
+        mv -n -- "$file" "$dest/$(basename "$file" .json).$sid.$stamp.json" \
+            || { echo "cc-salvage: cannot archive $file" >&2; return 1; }
     fi
     while IFS=$'\t' read -r p s i _ _ f; do
         [[ "$i" == "$sid" && "$f" != "$file" ]] || continue
-        salvage_pid_live "$p" "$s" || { mkdir -p "$dest" && mv -n -- "$f" "$dest/$(basename "$f" .json).$sid.$stamp.json"; }
+        salvage_pid_live "$p" "$s" && continue
+        mv -n -- "$f" "$dest/$(basename "$f" .json).$sid.$stamp.json" \
+            || { echo "cc-salvage: cannot archive $f" >&2; return 1; }
     done < <(salvage_registry_rows)
     return 0
 }
@@ -137,9 +213,10 @@ salvage_archive_record() {
 # salvage_launch <tmux-session> <row> — open a detached window that resumes
 # the session of a candidate row with the same launcher as `cc`. After a
 # successful resume the window archives the records. After a failed resume
-# the window waits for Enter, so the error stays visible. tmux expands "#"
-# in the window name and directory, so "##" escapes it. The window sources
-# this file by path, because DOTFILES_DIR is not in its environment.
+# or a failed archive the window waits for Enter, so the error stays visible.
+# tmux expands "#" in the window name and directory, so "##" escapes it. The
+# window sources this file by path, because DOTFILES_DIR is not in its
+# environment.
 salvage_launch() {
     local target="$1" row="$2" dotfiles="${DOTFILES_DIR:-$HOME/Dev/dotfiles}"
     local sid cwd name pid start file
@@ -155,11 +232,13 @@ salvage_launch() {
             shift 5
             "$@"; rc=$?
             if [ "$rc" -eq 0 ]; then
-                . "$lib" && salvage_archive_record "$file" "$pid" "$start" "$sid"
+                . "$lib" && salvage_archive_record "$file" "$pid" "$start" "$sid" && exit 0
+                echo "cc-salvage: archive failed (Enter closes)"
             else
                 echo "cc-salvage: resume exited $rc (Enter closes)"
-                read -r _
-            fi' \
+            fi
+            read -r _
+            exit 1' \
         bash "${BASH_SOURCE[0]}" "$file" "$pid" "$start" "$sid" "${cmd[@]}"
 }
 
@@ -168,6 +247,8 @@ salvage_usage() {
 Usage: cc-salvage [--since DUR] [--until DUR] [--session NAME] [--limit N] [--dry-run]
 
 Reopen Claude sessions that died (box restart, crash) in tmux windows.
+Dead sessions come from leftover records in ~/.claude/sessions and from
+Remote Control transcripts in .claude/worktrees/bridge-cse_* worktrees.
 Each window runs `claude --resume <id> --remote-control` in the session's
 original cwd.
 
@@ -231,7 +312,7 @@ salvage_main() {
     [[ "$session" != *[:.]* ]] || { echo "cc-salvage: --session cannot contain ':' or '.': $session" >&2; return 2; }
     command -v jq >/dev/null || { echo "cc-salvage: jq is required" >&2; return 1; }
     now="${CC_SALVAGE_NOW:-$(date +%s)}"
-    rows="$(salvage_candidates $(( now - since_s )) $(( now - until_s )))"
+    rows="$(salvage_candidates $(( now - since_s )) $(( now - until_s )))" || return 1
     if [[ -z "$rows" ]]; then
         echo "cc-salvage: no dead sessions with activity in the window" >&2
         return 0
