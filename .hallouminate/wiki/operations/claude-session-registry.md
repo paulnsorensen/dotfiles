@@ -19,7 +19,8 @@
 - Claude names a project directory after the cwd with each non-alphanumeric character as `-`, so `bridge-cse_x` becomes `bridge-cse-x`. Names over 200 characters get a hash suffix, and the glob misses them.
 - The first transcript records have `"cwd": null`. cc-salvage takes the first string `cwd` in the first 50 lines and requires a `.claude/worktrees/bridge-cse_*` directory that still exists.
 - A live record of any entrypoint blocks a resume, because any live process writes the transcript.
-- A bridge session has no record to archive. After a resume exits 0, cc-salvage touches `salvaged/<sessionId>.bridge`. A transcript that is not newer than its marker is not offered again.
+- After any resume exits 0, cc-salvage touches `salvaged/<sessionId>.bridge`, whether a record or a transcript supplied the row. A transcript that is not newer than its marker is not offered again. A failed marker write keeps the tmux window open with the error.
+- An empty record, or one that jq cannot read (for example, one caught mid-write), has an unknown session. jq exits 0 on empty input, so cc-salvage also checks the size. When the pid in its `<pid>.json` name still runs, cc-salvage stops with "try again". It skips the record when the pid is dead, or when the pid's process started after the record's mtime (a reboot reused the pid).
 
 ## Why liveness compares procStart
 

@@ -318,7 +318,7 @@ EOF
         run bash "$TMUX_COMMAND_FILE"
         assert_success
         cmp "$CLAUDE_REPLACEMENT" "$HOME/.claude/sessions/501.json"
-        [[ ! -d "$HOME/.claude/sessions/salvaged" ]]
+        [[ -z "$(find "$HOME/.claude/sessions/salvaged" -name '*.json' 2>/dev/null)" ]]
     done
 }
 
@@ -623,4 +623,81 @@ add_bridge_transcript() {
     run cc-salvage --since 2h --dry-run
     assert_success
     assert_output_not_contains "bridge00"
+}
+
+@test "an unreadable record of a running process stops discovery" {
+    local bwt="$TEST_HOME/repo/.claude/worktrees/bridge-cse_09"
+    mkdir -p "$bwt"
+    echo '{"pid": 530, "sessionId": "bridge00-0000-0000-0000-000000000009"' > "$HOME/.claude/sessions/530.json"
+    mark_live 530 333
+    add_bridge_transcript bridge00-0000-0000-0000-000000000009 5 "$bwt"
+
+    run cc-salvage --since 2h --dry-run
+    assert_failure
+    assert_output_contains "530.json"
+    assert_output_not_contains "bridge00"
+
+    # A record that Claude truncated before its write is empty, and jq accepts empty input.
+    : > "$HOME/.claude/sessions/530.json"
+    run cc-salvage --since 2h --dry-run
+    assert_failure
+    assert_output_contains "530.json"
+}
+
+@test "an unreadable record of a dead process does not stop discovery" {
+    local bwt="$TEST_HOME/repo/.claude/worktrees/bridge-cse_11"
+    mkdir -p "$bwt"
+    echo '{"pid": 532' > "$HOME/.claude/sessions/532.json"
+    add_bridge_transcript bridge00-0000-0000-0000-000000000011 5 "$bwt"
+
+    run cc-salvage --since 2h --dry-run
+    assert_success
+    assert_output_contains "bridge00-0000-0000-0000-000000000011"
+}
+
+@test "an unreadable record whose pid now belongs to a newer process does not stop discovery" {
+    local bwt="$TEST_HOME/repo/.claude/worktrees/bridge-cse_13"
+    mkdir -p "$bwt"
+    echo '{"pid": 533' > "$HOME/.claude/sessions/533.json"
+    touch -t 202001010000 "$HOME/.claude/sessions/533.json"
+    # The box booted at NOW; pid 533 started 3 s later, long after the record was written.
+    echo "btime $CC_SALVAGE_NOW" > "$CC_SALVAGE_PROC_DIR/stat"
+    mark_live 533 300
+    add_bridge_transcript bridge00-0000-0000-0000-000000000013 5 "$bwt"
+
+    run cc-salvage --since 2h --dry-run
+    assert_success
+    assert_output_contains "bridge00-0000-0000-0000-000000000013"
+}
+
+@test "a bridge session resumed from its dead record is not offered again" {
+    capture_resume
+    local bwt="$TEST_HOME/repo/.claude/worktrees/bridge-cse_10"
+    mkdir -p "$bwt"
+    add_session 531 bridge00-0000-0000-0000-000000000010 "$bwt" cli
+    add_bridge_transcript bridge00-0000-0000-0000-000000000010 5 "$bwt"
+
+    run cc-salvage --since 2h
+    assert_success
+    assert_output_contains "resumed"
+    run bash "$TMUX_COMMAND_FILE" < /dev/null
+    assert_success
+    run cc-salvage --since 2h --dry-run
+    assert_success
+    assert_output_not_contains "bridge00"
+}
+
+@test "a marker that cannot be written fails the window and keeps the error visible" {
+    capture_resume
+    local bwt="$TEST_HOME/repo/.claude/worktrees/bridge-cse_12"
+    mkdir -p "$bwt"
+    add_bridge_transcript bridge00-0000-0000-0000-000000000012 5 "$bwt"
+    : > "$HOME/.claude/sessions/salvaged"
+
+    run cc-salvage --since 2h
+    assert_success
+    run bash "$TMUX_COMMAND_FILE" <<< ''
+    assert_failure
+    assert_output_contains "bridge00-0000-0000-0000-000000000012.bridge"
+    assert_output_contains "Enter closes"
 }
