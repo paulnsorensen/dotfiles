@@ -198,11 +198,14 @@ salvage_archive_record() {
     if [[ "$file" != - && -f "$file" ]] && jq -e --arg pid "$pid" --arg start "$start" --arg sid "$sid" \
         '(.pid | tostring) == $pid and (.procStart // "-" | tostring) == $start and .sessionId == $sid' \
         "$file" >/dev/null 2>&1; then
-        mv -n -- "$file" "$dest/$(basename "$file" .json).$sid.$stamp.json"
+        mv -n -- "$file" "$dest/$(basename "$file" .json).$sid.$stamp.json" \
+            || { echo "cc-salvage: cannot archive $file" >&2; return 1; }
     fi
     while IFS=$'\t' read -r p s i _ _ f; do
         [[ "$i" == "$sid" && "$f" != "$file" ]] || continue
-        salvage_pid_live "$p" "$s" || { mkdir -p "$dest" && mv -n -- "$f" "$dest/$(basename "$f" .json).$sid.$stamp.json"; }
+        salvage_pid_live "$p" "$s" && continue
+        mv -n -- "$f" "$dest/$(basename "$f" .json).$sid.$stamp.json" \
+            || { echo "cc-salvage: cannot archive $f" >&2; return 1; }
     done < <(salvage_registry_rows)
     return 0
 }

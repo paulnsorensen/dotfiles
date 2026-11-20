@@ -701,3 +701,20 @@ add_bridge_transcript() {
     assert_output_contains "bridge00-0000-0000-0000-000000000012.bridge"
     assert_output_contains "Enter closes"
 }
+
+@test "a record that cannot be moved fails the window and keeps the error visible" {
+    [[ "$(id -u)" -ne 0 ]] || skip "root ignores directory permissions"
+    capture_resume
+    add_session 501 move0000-0000-0000-0000-000000000001 "$WT"
+    add_transcript move0000-0000-0000-0000-000000000001 5
+    mkdir -p "$HOME/.claude/sessions/salvaged"
+
+    run cc-salvage --since 2h
+    assert_success
+    chmod 555 "$HOME/.claude/sessions"
+    run bash "$TMUX_COMMAND_FILE" <<< ''
+    chmod 755 "$HOME/.claude/sessions"
+    assert_failure
+    assert_output_contains "501.json"
+    assert_output_contains "Enter closes"
+}
