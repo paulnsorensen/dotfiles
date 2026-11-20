@@ -53,7 +53,7 @@
 "aqua:sharkdp/bat" = "v0.26.1"
 "aqua:charmbracelet/glow" = "v3.0.0"
 "aqua:ast-grep/ast-grep" = "0.51.3"
-"aqua:dandavison/delta" = "0.21.1"
+"aqua:dandavison/delta" = "0.21.2"
 "aqua:git-lfs/git-lfs" = "v3.8.1"
 "aqua:tmux/tmux-builds" = "v3.8"
 "aqua:j178/prek" = "v0.5.11"
