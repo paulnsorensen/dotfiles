@@ -21,8 +21,11 @@ max_tokens = 600
 # 194 of 208 Claude sessions (2026-10-16).
 # 850: eatmydata rules for throwaway tests, gates, and builds; crabbot NVMe flush
 # pressure from parallel test fsyncs (2026-10-24).
+# 960: sub-agent tilth routing, hallouminate corpus, and jq null-guard rules;
+# 10-day hallouminate analytics showed hook blocks on 57 of 86 Read calls and
+# 6 of 11 corpus-less backlinks failures (2026-11-21).
 path = "agents/AGENTS.md"
-max_tokens = 850
+max_tokens = 960
 
 [[source]]
 # 520: PR #1051 added section-read and coder re-dispatch rules (2026-09-24).
@@ -120,15 +123,16 @@ max_tokens = 5000
 # 1310: global AGENTS.md acceptance-check lifecycle rules (2026-10-14).
 # 1320: the agents/AGENTS.md raise to 750 (2026-10-16).
 # 1420: the agents/AGENTS.md raise to 850 (2026-10-24).
+# 1540: the agents/AGENTS.md raise to 960 (2026-11-21).
 [[stack]]
 name = "global_codex"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1420
+max_tokens = 1540
 
 [[stack]]
 name = "global_claude"
 sources = ["agents/AGENTS.md", "agents/preamble.md"]
-max_tokens = 1420
+max_tokens = 1540
 
 [[stack]]
 name = "repo_codex"
@@ -152,10 +156,11 @@ max_tokens = 500
 
 # 900: global AGENTS.md acceptance-check lifecycle rules (2026-10-14).
 # 960: global AGENTS.md eatmydata rules (2026-10-24).
+# 1075: global AGENTS.md sub-agent tool rules (2026-11-21).
 [[stack]]
 name = "pi"
 sources = ["agents/AGENTS.md", "chezmoi/dot_pi/private_agent/APPEND_SYSTEM.md"]
-max_tokens = 960
+max_tokens = 1075
 
 [[stack]]
 name = "copilot_coding_max"

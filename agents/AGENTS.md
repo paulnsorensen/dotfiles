@@ -57,6 +57,14 @@ Do not use it for tests that check durability or crash recovery.
 When a guide or skill gives the exact command, put `eatmydata` after any leading `VAR=value` assignments.
 Stay within the authorized live-call budget; ask before you exceed it.
 
+## Tools
+
+These rules also bind sub-agents.
+In Claude and Codex, hooks block host Read and Write and shell readers such as `cat`, `grep`, `sed`, `awk`, and `tail`.
+There, use `tilth_read`, `tilth_search`, and `tilth_write`, also for skill references and other worktrees.
+Pass hallouminate `corpus` explicitly; get the name from `list_corpora`.
+Guard shell `jq` iteration with `.[]?` or `// []`.
+
 ## Evidence
 
 Compute counts, comparisons, and other deterministic results with tools.
