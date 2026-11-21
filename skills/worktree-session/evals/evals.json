@@ -358,8 +358,8 @@
       ],
       "expected_skill": "worktree-session",
       "assertions": [
-        "Selects ccd_session start_session with initiation user_asked, not ccw, claude --worktree, or another terminal launcher.",
-        "States that the parent has no worktree and that Worktree is off by default, so isolation needs the user to turn on Worktree under Options when the schema has no worktree field.",
+        "Selects ccd_session start_session, not ccw, claude --worktree, or another terminal launcher.",
+        "States that the parent has no worktree, Worktree is off by default, and the schema has no worktree field, so it posts an offer card and tells the user to turn on Worktree under Options instead of calling user_asked.",
         "Reports pending until the started session confirms its worktree path, branch, base commit, and write access."
       ]
     },
