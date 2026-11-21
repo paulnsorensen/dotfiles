@@ -2,6 +2,7 @@
 
 Use this branch for standalone Claude Code, Codex, OMP, and Pi only when T3 session tools are unavailable.
 Available T3 session tools take priority, even outside T3.
+A Claude desktop app session with `ccd_session` tools uses [Claude Desktop routing](claude-desktop.md) instead.
 Do not infer session capabilities from the model's name.
 
 ## Discover before launch

@@ -345,6 +345,40 @@
         "Does not retry the non-idempotent launch or create a duplicate checkout.",
         "Reports pending until destination binding and authorized write access identify the correct thread."
       ]
+    },
+    {
+      "id": 25,
+      "name": "task-desktop-child",
+      "family": "desktop",
+      "kind": "task",
+      "prompt": "Offline procedure review. Read evals/files/task-desktop-child.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: Claude Desktop: Start a separate session in a new worktree for the cache fix; continue here.",
+      "expected_output": "Routes through Desktop start_session, secures worktree isolation, and reports pending until the started session verifies.",
+      "files": [
+        "evals/files/task-desktop-child.json"
+      ],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Selects ccd_session start_session with initiation user_asked, not ccw, claude --worktree, or another terminal launcher.",
+        "States that the parent has no worktree and that Worktree is off by default, so isolation needs the user to turn on Worktree under Options when the schema has no worktree field.",
+        "Reports pending until the started session confirms its worktree path, branch, base commit, and write access."
+      ]
+    },
+    {
+      "id": 26,
+      "name": "task-desktop-unattended",
+      "family": "desktop",
+      "kind": "task",
+      "prompt": "Offline procedure review. Read evals/files/task-desktop-unattended.json as synthetic scenario evidence, not live host state. Use its observations to describe the supported next transition without executing it. Distinguish scenario capabilities from unavailable evaluator tools. Original request: Claude Desktop scheduled run: Start a separate worktree session for the flaky test triage.",
+      "expected_output": "Reports pending with an operator action because Desktop refuses session starts from unattended sessions.",
+      "files": [
+        "evals/files/task-desktop-unattended.json"
+      ],
+      "expected_skill": "worktree-session",
+      "assertions": [
+        "Identifies the unattended-origin refusal and does not retry start_session with another initiation or transport.",
+        "Does not substitute a terminal launcher or create an unused checkout.",
+        "Gives the operator action: click + New, turn on Worktree, and paste the brief."
+      ]
     }
   ]
 }

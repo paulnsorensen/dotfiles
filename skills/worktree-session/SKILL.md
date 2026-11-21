@@ -46,7 +46,8 @@ Explicitly authorize that agent to use its own sub-agents in the destination che
    Do not try another transport after a permission denial.
    Prefer a supported T3 session mechanism when available to the caller's credential scope.
    Read [T3 routing](references/t3.md) when T3 tools are available or the session runs inside T3.
-   Use [native and CLI routing](references/native-cli.md) only when T3 tools are unavailable outside T3.
+   Otherwise, read [Claude Desktop routing](references/claude-desktop.md) when `ccd_session` tools are available.
+   Use [native and CLI routing](references/native-cli.md) only when neither T3 nor Desktop session tools are available.
    An unsupported T3 transition does not authorize a native or CLI substitute.
    Use a CLI launcher only when it starts a separate session in the selected checkout.
    If neither exists, report the missing capability without creating an unused checkout.
@@ -98,6 +99,7 @@ Stop and report the unsupported transition.
 ## References
 
 - [T3 routing](references/t3.md) — read when T3 tools are available or the active session runs inside T3.
-- [Native and CLI routing](references/native-cli.md) — read when T3 tools are unavailable outside T3.
+- [Claude Desktop routing](references/claude-desktop.md) — read when the Claude desktop app's `ccd_session` tools are available without T3.
+- [Native and CLI routing](references/native-cli.md) — read when neither T3 nor Desktop session tools are available.
 - [Coordination](references/coordination.md) — read when multiple tasks share one destination worktree.
 - [Recovery](references/recovery.md) — read when resumption fails and work must continue in a new worktree.
