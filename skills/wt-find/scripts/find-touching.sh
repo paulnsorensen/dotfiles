@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# find-touching.sh <pathspec> [ccw-find flags...] — worktrees whose uncommitted
+# find-touching.sh <pathspec> [wt-find flags...] — worktrees whose uncommitted
 # diff or unmerged commits touch <pathspec> (a git pathspec, e.g. 'src/auth/*'
-# or '*login*'). Extra flags narrow the candidate set via ccw-find; with none,
+# or '*login*'). Extra flags narrow the candidate set via wt-find; with none,
 # all worktrees under ~/Dev are candidates.
 # Output per match: path<TAB>branch (age), then the touched files indented.
 set -euo pipefail
 
-spec="${1:?usage: find-touching.sh <pathspec> [ccw-find flags...]}"
+spec="${1:?usage: find-touching.sh <pathspec> [wt-find flags...]}"
 shift
 [[ $# -eq 0 ]] && set -- --root "${HOME}/Dev"
 
@@ -28,8 +28,8 @@ while IFS=$'\t' read -r wt meta; do
     found=1
     printf '%s\t%s\n' "$wt" "$meta"
     awk 'NR<=8 {print "    " $0} END {if (NR>8) print "    … (+" NR-8 " more)"}' <<<"$files"
-done < <(ccw-find "$@")
+done < <(wt-find "$@")
 
 if (( ! found )); then
-    echo "No worktree touches '${spec}' (searched: ccw-find $*)."
+    echo "No worktree touches '${spec}' (searched: wt-find $*)."
 fi

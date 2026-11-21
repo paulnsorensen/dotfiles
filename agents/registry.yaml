@@ -138,7 +138,7 @@ agents:
     autoCompactWindow: 150000
     body_path: agents/agent_definitions/whey-drainer.md
   worktree-content-digest:
-    description: Read-only worktree inspector. Given one worktree path, runs git log/diff/ls-files and returns a 2-3 line digest — unique commits, uncommitted diff summary, and whether untracked files look throwaway vs. worth keeping. Fanned out one-per-worktree (in parallel) by the worktree-triage skill so diff bodies stay in the sub-agent's window.
+    description: Read-only worktree inspector. Given one worktree path, runs git log/diff/ls-files and returns a 2-3 line digest — unique commits, uncommitted diff summary, and whether untracked files look throwaway vs. worth keeping. Fanned out one-per-worktree (in parallel) by the wt-triage skill so diff bodies stay in the sub-agent's window.
     models:
       claude: haiku
       codex: gpt-6-luna

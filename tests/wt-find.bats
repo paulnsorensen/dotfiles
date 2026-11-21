@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for bin/ccw-find — the thin CLI over wt_find (bin/lib/worktree.sh).
+# Tests for bin/wt-find — the thin CLI over wt_find (bin/lib/worktree.sh).
 # Covers flag parsing, the no-criteria error, and that each criterion
 # (slug / branch / repo / stale) reaches the search.
 
@@ -37,59 +37,59 @@ add_worktree() {
   git -C "$repo" worktree add "$repo/.worktrees/$slug" -b "$branch" --quiet 2>/dev/null
 }
 
-@test "ccw-find with no criteria exits non-zero" {
-  run ccw-find
+@test "wt-find with no criteria exits non-zero" {
+  run wt-find
   [[ $status -ne 0 ]]
   [[ "$output" == *"no criteria"* ]]
 }
 
-@test "ccw-find --help prints usage" {
-  run ccw-find --help
+@test "wt-find --help prints usage" {
+  run wt-find --help
   [[ $status -eq 0 ]]
   [[ "$output" == *"locate worktrees"* ]]
 }
 
-@test "ccw-find --slug returns the matching path" {
+@test "wt-find --slug returns the matching path" {
   create_repo "$SCAN/repo"
   add_worktree "$SCAN/repo" "alpha-feature"
   add_worktree "$SCAN/repo" "beta-fix"
 
-  run ccw-find --root "$SCAN" --slug alpha
+  run wt-find --root "$SCAN" --slug alpha
   [[ $status -eq 0 ]]
   [[ "$output" == *"alpha-feature"* ]]
   [[ "$output" != *"beta-fix"* ]]
 }
 
-@test "ccw-find --branch matches the worktree HEAD branch" {
+@test "wt-find --branch matches the worktree HEAD branch" {
   create_repo "$SCAN/repo"
   add_worktree "$SCAN/repo" "wt1" "feat/login"
   add_worktree "$SCAN/repo" "wt2" "fix/logout"
 
-  run ccw-find --root "$SCAN" --branch login
+  run wt-find --root "$SCAN" --branch login
   [[ "$output" == *"wt1"* ]]
   [[ "$output" != *"wt2"* ]]
 }
 
-@test "ccw-find --repo restricts to that repo" {
+@test "wt-find --repo restricts to that repo" {
   create_repo "$SCAN/alpha"
   create_repo "$SCAN/bravo"
   add_worktree "$SCAN/alpha" "a-wt"
   add_worktree "$SCAN/bravo" "b-wt"
 
-  run ccw-find --root "$SCAN" --repo bravo
+  run wt-find --root "$SCAN" --repo bravo
   [[ "$output" == *"b-wt"* ]]
   [[ "$output" != *"a-wt"* ]]
 }
 
-@test "ccw-find emits path TAB status" {
+@test "wt-find emits path TAB status" {
   create_repo "$SCAN/repo"
   add_worktree "$SCAN/repo" "wt1" "claude/wt1"
 
-  run ccw-find --root "$SCAN" --slug wt1
+  run wt-find --root "$SCAN" --slug wt1
   [[ "$output" == *"$SCAN/repo/.worktrees/wt1	claude/wt1 ("* ]]
 }
 
-@test "ccw-find rejects an unknown flag" {
-  run ccw-find --bogus x
+@test "wt-find rejects an unknown flag" {
+  run wt-find --bogus x
   [[ $status -ne 0 ]]
 }

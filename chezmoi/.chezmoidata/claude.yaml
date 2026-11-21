@@ -182,6 +182,7 @@ claude:
       - "Bash(cargo test:*)"
       - "Bash(cat:*)"
       - "Bash(ccw-sweep:*)"
+      - "Bash(wt-sweep:*)"
       - "Bash(cd ${HOME}/Dev/*)"
       - "Bash(chmod:*)"
       - "Bash(claude:*)"
@@ -387,10 +388,10 @@ claude:
     - version-doctor
     - wat
     - work-recovery
-    - worktree-session
-    - worktree-find
-    - worktree-triage
+    - wt
+    - wt-find
     - wt-git
+    - wt-triage
     - xray
 
   # ── ~/.claude/agents selection (agents/agent_definitions/) ─────────────────

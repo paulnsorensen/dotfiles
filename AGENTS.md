@@ -67,7 +67,7 @@ Implementation details (vault provisioning, codex merge semantics, credential is
 
 `dots sync`, `dots test`, `dots doctor`, `dots claude diff`, `dots profile list|describe|launch`
 
-`mcp-edit`, `hook-edit`, `agent-edit`, `skill-edit`, `plugin-edit`; `cc`, `ccc`, `ccr`, `ccp <name>`; `ccw` and `wt-git`.
+`mcp-edit`, `hook-edit`, `agent-edit`, `skill-edit`, `plugin-edit`; `cc`, `ccc`, `ccr`, `ccp <name>`; `ccw`; `wt`, `wt-git`, `wt-find`, `wt-sweep`, `wt-rm`, `wt-check` (former `ccw-*` names still work).
 
 ## Repo-specific gotchas
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for bin/ccw-check — worktree permission and sandbox checks.
+# Tests for bin/wt-check — worktree permission and sandbox checks.
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
@@ -25,7 +25,7 @@ teardown() {
 @test "auto-detects a top-level worktree from a subdir" {
     mkdir -p "$REPO/.worktrees/parent/sub"
     cd "$REPO/.worktrees/parent/sub"
-    run "$DOTFILES_DIR/bin/ccw-check"
+    run "$DOTFILES_DIR/bin/wt-check"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Checking worktree: parent"* ]]
     [[ "$output" == *"Permission symlink → main repo"* ]]
@@ -33,7 +33,7 @@ teardown() {
 
 @test "auto-detects a nested worktree from inside it" {
     cd "$REPO/.worktrees/parent/.worktrees/child"
-    run "$DOTFILES_DIR/bin/ccw-check"
+    run "$DOTFILES_DIR/bin/wt-check"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Checking worktree: child"* ]]
     [[ "$output" == *"Permission symlink → main repo"* ]]
@@ -48,7 +48,7 @@ teardown() {
     rm "$projects/$child_key"
     ln -s "$projects/$parent_key" "$projects/$child_key"
     cd "$REPO/.worktrees/parent"
-    run "$DOTFILES_DIR/bin/ccw-check" child
+    run "$DOTFILES_DIR/bin/wt-check" child
     [ "$status" -eq 0 ]
     [[ "$output" == *"Permission symlink → main repo"* ]]
 }
@@ -60,7 +60,7 @@ teardown() {
     rm "$projects/$child_key"
     ln -s "$projects/missing" "$projects/$child_key"
     cd "$REPO/.worktrees/parent"
-    run "$DOTFILES_DIR/bin/ccw-check" child
+    run "$DOTFILES_DIR/bin/wt-check" child
     [ "$status" -ne 0 ]
     [[ "$output" == *"unexpected target"* ]]
 }
@@ -68,7 +68,7 @@ teardown() {
 @test "does not treat a plain clone under a .worktrees dir as a linked worktree" {
     git clone -q "$REPO" "$TMPROOT/.worktrees/clone"
     cd "$TMPROOT/.worktrees/clone"
-    run "$DOTFILES_DIR/bin/ccw-check"
+    run "$DOTFILES_DIR/bin/wt-check"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"Usage: ccw-check <slug>"* ]]
+    [[ "$output" == *"Usage: wt-check <slug>"* ]]
 }

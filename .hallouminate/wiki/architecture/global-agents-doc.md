@@ -39,7 +39,7 @@ The block names Claude and Codex because Pi and OpenCode use native file tools.[
 
 ### Worktree session ownership
 
-The global preferences keep one pointer to `/worktree-session` for isolated work.
+The global preferences keep one pointer to `/wt` (formerly `/worktree-session`) for isolated work.
 Detailed standing instructions exceed the source and assembled-stack token budgets.
 The skill selects session ownership before checkout creation and verifies destination permissions before edits.
 Its conditional references separate T3 routing from standalone Claude, Codex, OMP, and Pi capability discovery.
@@ -47,7 +47,7 @@ It replaces `/worktree`, whose checkout-and-`cd` procedure does not create an is
 The `wt` checkout helper and `ccw` Claude launcher remain available.
 The shared pointer reaches Pi, which does not load the execution preamble.[^worktree-session]
 
-Offline `/worktree-session` eval cases must name their case-local synthetic capability and Git observations in the case request.
+Offline `/wt` eval cases must name their case-local synthetic capability and Git observations in the case request.
 The evaluator sends only the case request; it does not list the staged fixture files.
 Without named observations, a model can treat absent T3 tools in the evaluator as real scenario incapability.
 A commit comparison needs explicitly observed commits; it must not infer them.
@@ -57,8 +57,8 @@ These offline cases do not prove live launch, permission verification, or dirty-
 Production policy and test guards do not change for them.
 A previous validation run used an unreferenced fixture file and no hashes, so its result is confounded.
 
-[^worktree-session]: `agents/AGENTS.md:27`; `skills/worktree-session/SKILL.md`; `skills/worktree-session/references/`; operator decision on 2026-11-01.
-[^worktree-session-evals]: `skills/worktree-session/evals/evals.json`; `skills/worktree-session/SKILL.md:59-70`; installed skillz `_candidate.stage_task` and `_evaluator._prompt`; skillz `references/eval-formats.md:44` and its experiments reference require named fixture paths.
+[^worktree-session]: `agents/AGENTS.md:27`; `skills/wt/SKILL.md`; `skills/wt/references/`; operator decision on 2026-11-01; renamed from `worktree-session` on 2026-11-21.
+[^worktree-session-evals]: `skills/wt/evals/evals.json`; `skills/wt/SKILL.md:59-70`; installed skillz `_candidate.stage_task` and `_evaluator._prompt`; skillz `references/eval-formats.md:44` and its experiments reference require named fixture paths.
 
 *Source: worktree-session eval-fixture repair session · Updated: 2026-11-01*
 

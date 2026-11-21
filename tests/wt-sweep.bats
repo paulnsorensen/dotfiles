@@ -1,5 +1,9 @@
 #!/usr/bin/env bats
-# Tests for ccw-sweep — worktree scanning and cleanup
+# Tests for wt-sweep (formerly ccw-sweep) — worktree scanning and cleanup
+#
+# Most tests run the legacy `ccw-sweep` symlink with CCW_SWEEP_* settings on
+# purpose: that keeps the former names covered. The "Renamed entry point"
+# tests run `wt-sweep` with WT_SWEEP_* settings.
 #
 # Bug fixes validated:
 # 1. stdin hijacking: read prompts inside while-read loop consumed find output,
@@ -127,6 +131,9 @@ setup() {
   export CCW_SWEEP_SAFE_IDLE_DAYS=0
   unset CCW_SWEEP_ARCHIVE_IDLE_DAYS CCW_SWEEP_RECLAIM_IDLE_DAYS CCW_SWEEP_NOW \
     CCW_SWEEP_REGENERABLE CCW_SWEEP_T3_ROOT CCW_SWEEP_CHEESE_ARCHIVE FAKE_GH_TSV
+  # WT_SWEEP_* wins over CCW_SWEEP_*, so a value exported in the caller's
+  # shell would override the fixtures above.
+  unset "${!WT_SWEEP_@}"
   # T3 state DB inside the temp HOME: absent unless a test creates it.
   export CCW_SWEEP_T3_DB="$HOME/.t3/userdata/state.sqlite"
   # Stub gh: fails (no PR info) unless FAKE_GH_TSV names a TSV file to print.
@@ -1253,8 +1260,8 @@ CHEESE_DEFAULT_REL=".local/share/ccw-sweep/cheese"
 
   run ccw-sweep --auto --path "$SCAN"
   assert_success
-  assert_contains "SUMMARY ccw-sweep: total=3 safe=1 removed=1 archived=0 reclaimed_kib=0 skipped=2 skip_recent=0 skip_live=0 skip_t3=0 skip_open_pr=0 skip_dirty=1 skip_warn=1 skip_nested=0 cheese_archived=0 skip_cheese=0 dry_run=0"
-  [[ "${lines[${#lines[@]}-1]}" == "SUMMARY ccw-sweep: "* ]] || { echo "SUMMARY is not the last line"; return 1; }
+  assert_contains "SUMMARY wt-sweep: total=3 safe=1 removed=1 archived=0 reclaimed_kib=0 skipped=2 skip_recent=0 skip_live=0 skip_t3=0 skip_open_pr=0 skip_dirty=1 skip_warn=1 skip_nested=0 cheese_archived=0 skip_cheese=0 dry_run=0"
+  [[ "${lines[${#lines[@]}-1]}" == "SUMMARY wt-sweep: "* ]] || { echo "SUMMARY is not the last line"; return 1; }
 }
 
 @test "--archive without --auto or --dry-run is an error" {
@@ -1270,7 +1277,28 @@ CHEESE_DEFAULT_REL=".local/share/ccw-sweep/cheese"
 @test "rejects a non-numeric idle threshold" {
   run env CCW_SWEEP_ARCHIVE_IDLE_DAYS=soon ccw-sweep --dry-run --path "$SCAN"
   [[ $status -ne 0 ]]
-  assert_contains "CCW_SWEEP_ARCHIVE_IDLE_DAYS must be a whole number"
+  assert_contains "WT_SWEEP_ARCHIVE_IDLE_DAYS must be a whole number"
+}
+
+# ── Renamed entry point ──────────────────────────────────────────────────────
+
+@test "each former ccw-* command is a symlink to its wt-* script" {
+  local bin="$BATS_TEST_DIRNAME/../bin" name
+  for name in find check rm sweep; do
+    [[ -L "$bin/ccw-$name" ]] || { echo "bin/ccw-$name is not a symlink"; return 1; }
+    [[ "$(readlink "$bin/ccw-$name")" == "wt-$name" ]] || { echo "bin/ccw-$name does not point at wt-$name"; return 1; }
+    [[ -x "$bin/wt-$name" && ! -L "$bin/wt-$name" ]] || { echo "bin/wt-$name is not an executable file"; return 1; }
+  done
+}
+
+@test "wt-sweep prefers WT_SWEEP_* over the former CCW_SWEEP_* name" {
+  run env WT_SWEEP_ARCHIVE_IDLE_DAYS=soon CCW_SWEEP_ARCHIVE_IDLE_DAYS=5 wt-sweep --dry-run --path "$SCAN"
+  [[ $status -ne 0 ]]
+  assert_contains "WT_SWEEP_ARCHIVE_IDLE_DAYS must be a whole number"
+
+  run env WT_SWEEP_ARCHIVE_IDLE_DAYS=5 CCW_SWEEP_ARCHIVE_IDLE_DAYS=soon wt-sweep --dry-run --path "$SCAN"
+  assert_success
+  [[ "${lines[${#lines[@]}-1]}" == "SUMMARY wt-sweep: "* ]] || { echo "SUMMARY is not the last line"; return 1; }
 }
 
 # ── Targeted fetch of merged-PR heads ─────────────────────────────────────────
@@ -1401,10 +1429,10 @@ add_two_commit_worktree() {
 @test "rejects invalid CCW_SWEEP_CHERRY_MAX and CCW_SWEEP_FETCH_PR_HEADS" {
   run env CCW_SWEEP_CHERRY_MAX=lots ccw-sweep --dry-run --path "$SCAN"
   [[ $status -ne 0 ]]
-  assert_contains "CCW_SWEEP_CHERRY_MAX must be a whole number"
+  assert_contains "WT_SWEEP_CHERRY_MAX must be a whole number"
   run env CCW_SWEEP_FETCH_PR_HEADS=yes ccw-sweep --dry-run --path "$SCAN"
   [[ $status -ne 0 ]]
-  assert_contains "CCW_SWEEP_FETCH_PR_HEADS must be 0 or 1"
+  assert_contains "WT_SWEEP_FETCH_PR_HEADS must be 0 or 1"
 }
 
 @test "rejects an idle threshold with a leading zero (bash reads it as octal)" {
@@ -1413,7 +1441,7 @@ add_two_commit_worktree() {
 
   run env CCW_SWEEP_SAFE_IDLE_DAYS=08 ccw-sweep --auto --path "$SCAN"
   [[ $status -ne 0 ]]
-  assert_contains "CCW_SWEEP_SAFE_IDLE_DAYS must be a whole number without leading zeros, got: '08'"
+  assert_contains "WT_SWEEP_SAFE_IDLE_DAYS must be a whole number without leading zeros, got: '08'"
   [[ -d "$SCAN/repo/.worktrees/fresh" ]] || { echo "worktree removed despite a rejected threshold"; return 1; }
 }
 

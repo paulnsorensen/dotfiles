@@ -297,30 +297,38 @@ alias wto='wt -o'
 alias wtm='wt -m'
 
 # Clean worktrees — single-repo (current dir) or full sweep (~/Dev)
-ccw-clean() {
+wt-clean() {
     if ! git rev-parse --is-inside-work-tree &>/dev/null; then
         echo "Not a git repository"
         return 1
     fi
     local repo_root
     repo_root="$(git rev-parse --show-toplevel)"
-    ccw-sweep --path "$repo_root" "$@"
+    wt-sweep --path "$repo_root" "$@"
 }
 
 # Sweep all repos under ~/Dev for stale worktrees
-alias ccw-sweep='$DOTFILES_DIR/bin/ccw-sweep'
+alias wt-sweep='$DOTFILES_DIR/bin/wt-sweep'
 
 # List active worktrees
-alias ccw-ls='git worktree list'
+alias wt-ls='git worktree list'
 
 # Verify worktree permissions and sandbox config (lives in bin/)
-alias ccw-check='$DOTFILES_DIR/bin/ccw-check'
+alias wt-check='$DOTFILES_DIR/bin/wt-check'
 
 # Tear down one worktree — remove it + delete branch + kill tmux session (lives in bin/)
-alias ccw-rm='$DOTFILES_DIR/bin/ccw-rm'
+alias wt-rm='$DOTFILES_DIR/bin/wt-rm'
 
 # Locate worktrees by branch / slug / repo / staleness (lives in bin/)
-alias ccw-find='$DOTFILES_DIR/bin/ccw-find'
+alias wt-find='$DOTFILES_DIR/bin/wt-find'
+
+# Former ccw-* names. bin/ccw-* are symlinks to the wt-* scripts.
+alias ccw-clean='wt-clean'
+alias ccw-sweep='wt-sweep'
+alias ccw-ls='wt-ls'
+alias ccw-check='wt-check'
+alias ccw-rm='wt-rm'
+alias ccw-find='wt-find'
 
 # GitHub helpers (gh-pr-review, gh-pr-prep, gh-issue-context) live in bin/
 

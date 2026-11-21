@@ -2,14 +2,14 @@
 # commands.sh <worktree-path> <remove|archive> — print (never execute) the
 # recommended cleanup commands for one triaged worktree, as one `&&` chain so
 # removal never runs after a failed tag. The worktree can live anywhere (the
-# `path:` line of ccw-sweep output). Derives the branch from the worktree
+# `path:` line of wt-sweep output). Derives the branch from the worktree
 # itself and adds --force when the tree is dirty.
 set -euo pipefail
 
-# Shared helpers: the in-repo bin/lib, else the lib beside ccw-sweep on PATH
+# Shared helpers: the in-repo bin/lib, else the lib beside wt-sweep on PATH
 # (dots sync deploys this skill as a copy outside the repo).
 lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../../bin/lib/worktree.sh"
-if [[ ! -f "$lib" ]] && sweep="$(command -v ccw-sweep)"; then
+if [[ ! -f "$lib" ]] && sweep="$(command -v wt-sweep)"; then
     lib="$(dirname "$sweep")/lib/worktree.sh"
 fi
 [[ -f "$lib" ]] || { echo "commands.sh: cannot find bin/lib/worktree.sh; put the dotfiles bin/ on PATH" >&2; exit 1; }

@@ -1,6 +1,6 @@
 # Claude Desktop session starts
 
-The Code tab of the Claude desktop app starts sessions through its own `ccd_session` MCP server. Terminal launchers (`ccw`, `claude --worktree`) do not apply there. The `worktree-session` skill routes Desktop through `skills/worktree-session/references/claude-desktop.md`. Researched on 2026-11-21.
+The Code tab of the Claude desktop app starts sessions through its own `ccd_session` MCP server. Terminal launchers (`ccw`, `claude --worktree`) do not apply there. The `/wt` skill (formerly `worktree-session`) routes Desktop through `skills/wt/references/claude-desktop.md`. Researched on 2026-11-21.
 
 ## Decision
 

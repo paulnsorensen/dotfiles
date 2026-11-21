@@ -22,7 +22,7 @@ The implementation extracts config/bootstrap/migration logic into sourced functi
 
 - `teardown_test_env` now tries `rm -rf` first, then uses `chmod -R` and retries only after failure. A few Go/prek caches can still require the fallback.[^8]
 - Workflow parsing is cached by path in `tests/workflows/harness.mjs`; each execution still receives a fresh VM context.
-- Reusing prepared Git repository histories through local clones/worktrees in `ccw-sweep`, `git-file-risk`, and similar suites remains a measured follow-up.
+- Reusing prepared Git repository histories through local clones/worktrees in `wt-sweep`, `git-file-risk`, and similar suites remains a measured follow-up.
 - Pytest's read-only shipped-manifest fixtures are module-scoped; repeated setup previously cost roughly one second per case.[^9]
 
 ## CI gate coverage

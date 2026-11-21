@@ -1,0 +1,46 @@
+# Worktree command names
+
+The worktree skills and shell commands share the `wt` prefix. The operator chose this scheme on 2026-11-21. It extends the existing `wt` and `wt-git` names.
+
+## Names
+
+| Kind | Current | Former |
+| --- | --- | --- |
+| Skill | `/wt` | `/worktree-session` |
+| Skill | `/wt-find` | `/worktree-find` |
+| Skill | `/wt-triage` | `/worktree-triage` |
+| Skill and shell | `wt-git` | (same) |
+| Shell | `wt`, `wto`, `wtm` | (same) |
+| Shell | `wt-find`, `wt-check`, `wt-rm`, `wt-sweep` | `ccw-find`, `ccw-check`, `ccw-rm`, `ccw-sweep` |
+| zsh | `wt-clean`, `wt-ls` | `ccw-clean`, `ccw-ls` |
+| Env | `WT_SWEEP_*` | `CCW_SWEEP_*` |
+
+`ccw` keeps its name. It is a Claude launcher in the `cc` family (`cc`, `ccc`, `ccr`, `ccp`), not a worktree tool.
+
+## Why not `/thread`
+
+T3 and Claude Desktop already use "thread" and "session" for conversations, and `/steel-thread` is a different skill. `/wt-find` and `/wt-triage` act on worktrees, not threads.
+
+## Compatibility
+
+- `bin/ccw-*` are symlinks to `bin/wt-*`. The scripts locate `bin/lib/` through `BASH_SOURCE`, which works through the symlink.
+- `zsh/claude.zsh` keeps `ccw-*` aliases that point to the `wt-*` names.
+- `wt_env` in `bin/lib/worktree.sh` reads `WT_<suffix>`, then `CCW_<suffix>`, then the default. Validation messages name the `WT_SWEEP_*` form.
+- Claude permission lists allow both `Bash(ccw-sweep:*)` and `Bash(wt-sweep:*)`.
+- Skill descriptions name the former skill names so old slash phrases still route.
+- Most `tests/wt-sweep.bats` cases still run `ccw-sweep` with `CCW_SWEEP_*` settings. This keeps the legacy path covered. The "Renamed entry point" cases cover `wt-sweep` and `WT_SWEEP_*`.
+
+## Kept on purpose
+
+`wt-sweep` keeps internal `ccw-sweep` names that are on-disk state, not interface:
+
+- the archive default `~/.local/share/ccw-sweep/cheese`, so earlier archives stay together
+- the `refs/ccw-sweep/` fetch namespace, which its cleanup deletes on every run
+- the probe commit identity and temp-directory prefix
+
+Renaming them would orphan existing data or leave stale refs.
+
+## Related
+
+- [[harnesses/claude-desktop-sessions]]
+- [[architecture/global-agents-doc]]

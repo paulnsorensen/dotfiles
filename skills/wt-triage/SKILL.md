@@ -1,15 +1,15 @@
 ---
-name: worktree-triage
+name: wt-triage
 model: sonnet
 effort: medium
 allowed-tools: Bash, AskUserQuestion, Agent
 description: >
   Triage WARN/DIRTY git worktrees into keep/archive/remove/stash
-  recommendations. Use for /worktree-triage or "triage (stale) worktrees".
+  recommendations. Use for /wt-triage (formerly /worktree-triage) or "triage (stale) worktrees".
   Recommends only — never removes or commits.
 ---
 
-# worktree-triage
+# wt-triage
 
 Runs inline, not as a sub-agent — it fans out sub-agents itself and only one
 nesting level exists (ADR-348-A). It recommends only: never remove, commit,

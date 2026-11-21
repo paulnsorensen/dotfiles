@@ -13,6 +13,8 @@ INTERNAL="_cc_base _cdd sesh-sessions periodic TRAPWINCH TRAPUSR1 render_prompt 
 TMUX_OWNED="mtmux tmux-clients tmux-detach-others tmux-take-size trl tss tsip ta tls tn tk tsw"
 # Commands provided by external tools (not defined as aliases/functions here).
 ALLOW="z"
+# Former names kept as aliases; the sheet documents the current wt-* names.
+LEGACY="ccw-clean ccw-sweep ccw-ls ccw-check ccw-rm ccw-find"
 
 strip_ansi() { printf '%s' "$1" | sed $'s/\x1b\\[[0-9;]*m//g'; }
 
@@ -76,7 +78,7 @@ documented_tokens() {
     local name
     while IFS= read -r name; do
         [[ -z "$name" ]] && continue
-        case " $INTERNAL $TMUX_OWNED " in *" $name "*) continue ;; esac
+        case " $INTERNAL $TMUX_OWNED $LEGACY " in *" $name "*) continue ;; esac
         grep -qxF -- "$name" <<<"$documented" || missing+=("$name")
     done < <(defined_names)
     if [[ ${#missing[@]} -gt 0 ]]; then

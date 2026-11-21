@@ -48,6 +48,7 @@ settings:
     - Bash(cargo build:*)
     - Bash(wt-git:*)
     - Bash(ccw-sweep:*)
+    - Bash(wt-sweep:*)
     - Bash(dots:*)
     - Bash(prek:*)
     - Bash(fd:*)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for bin/ccw-rm — one-step worktree teardown.
+# Tests for bin/wt-rm — one-step worktree teardown.
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 
@@ -32,21 +32,21 @@ teardown() {
 }
 
 @test "usage error with no slug" {
-    run ccw-rm
+    run wt-rm
     [ "$status" -ne 0 ]
     [[ "$output" == *Usage* ]]
 }
 
 @test "errors when the worktree does not exist" {
     cd "$REPO"
-    run ccw-rm nope
+    run wt-rm nope
     [ "$status" -ne 0 ]
     [[ "$output" == *"no worktree"* ]]
 }
 
 @test "removes the worktree and its branch" {
     cd "$REPO"
-    run ccw-rm feat
+    run wt-rm feat
     [ "$status" -eq 0 ]
     [ ! -d "$REPO/.worktrees/feat" ]
     run git -C "$REPO" show-ref --verify --quiet refs/heads/worktree/feat
@@ -56,7 +56,7 @@ teardown() {
 @test "refuses a dirty worktree without --force" {
     cd "$REPO"
     echo dirty >"$REPO/.worktrees/feat/untracked.txt"
-    run ccw-rm feat
+    run wt-rm feat
     [ "$status" -ne 0 ]
     [ -d "$REPO/.worktrees/feat" ]
 }
@@ -64,7 +64,7 @@ teardown() {
 @test "--force discards a dirty worktree" {
     cd "$REPO"
     echo dirty >"$REPO/.worktrees/feat/untracked.txt"
-    run ccw-rm feat --force
+    run wt-rm feat --force
     [ "$status" -eq 0 ]
     [ ! -d "$REPO/.worktrees/feat" ]
 }
@@ -74,10 +74,10 @@ teardown() {
     git -C "$REPO/.worktrees/feat" worktree add -q "$REPO/.worktrees/feat/.worktrees/child" -b worktree/child
     touch "$REPO/.worktrees/feat/.worktrees/child/precious"
     cd "$REPO"
-    run ccw-rm feat --force
+    run wt-rm feat --force
     [ "$status" -ne 0 ]
     [[ "$output" == *"nested worktrees"* ]]
-    [[ "$output" == *"ccw-rm child"* ]]
+    [[ "$output" == *"wt-rm child"* ]]
     [ -f "$REPO/.worktrees/feat/.worktrees/child/precious" ]
     run git -C "$REPO" show-ref --verify --quiet refs/heads/worktree/feat
     [ "$status" -eq 0 ]
@@ -86,7 +86,7 @@ teardown() {
 @test "removes a nested worktree from inside its parent" {
     git -C "$REPO/.worktrees/feat" worktree add -q "$REPO/.worktrees/feat/.worktrees/child" -b worktree/child
     cd "$REPO/.worktrees/feat"
-    run ccw-rm child
+    run wt-rm child
     [ "$status" -eq 0 ]
     [[ "$output" == *"Removed worktree: $(cd -P "$REPO" && pwd)/.worktrees/feat/.worktrees/child"* ]]
     [ ! -d "$REPO/.worktrees/feat/.worktrees/child" ]
@@ -99,10 +99,10 @@ teardown() {
     git -C "$REPO/.worktrees/feat" worktree add -q "$child" -b worktree/odd
     touch "$child/precious"
     cd "$REPO"
-    run ccw-rm feat
+    run wt-rm feat
     [ "$status" -ne 0 ]
     [[ "$output" == *"nested worktrees"* ]]
-    run ccw-rm feat --force
+    run wt-rm feat --force
     [ "$status" -ne 0 ]
     [[ "$output" == *"nested worktrees"* ]]
     [ -f "$child/precious" ]
@@ -113,7 +113,7 @@ teardown() {
     git -C "$REPO" worktree add -q "$REPO/.worktrees/my feat" -b worktree/myfeat
     git -C "$REPO/.worktrees/my feat" worktree add -q "$REPO/.worktrees/my feat/.worktrees/child" -b worktree/child
     cd "$REPO"
-    run ccw-rm "my feat"
+    run wt-rm "my feat"
     [ "$status" -ne 0 ]
     [[ "$output" == *'my\ feat'* ]]
 }
