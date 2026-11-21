@@ -354,6 +354,7 @@ claude:
 
   # ── ~/.claude/skills selection (repo skills/) ───────────────────────────────
   skills:
+    - architecture-review
     - bash-shortening
     - bin-doctor
     - build-optimize
