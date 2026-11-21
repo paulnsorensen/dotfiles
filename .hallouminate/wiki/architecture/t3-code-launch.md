@@ -77,6 +77,18 @@ Verification on 2026-10-18:
 - `tests/dots-wrappers.bats` covers the launch lines, the TOML escape, the
   caller-config merge, and prompt parity with the OpenCode registry.
 
+## Antigravity binaryPath (mise agy)
+
+The `antigravity` instance has no preamble wrapper. Its `binaryPath` is
+`$HOME/.local/share/mise/shims/agy`. An empty `binaryPath` makes T3 install
+and run its own managed runtime under `~/.t3/userdata/providers/antigravity/`.
+That copy does not follow the mise pin or the Renovate 4-hour soak.
+
+T3 accepts a custom path only when its basename is `agy` or `antigravity`.
+The shim passes this check. Its target is the `mise` binary, so the shim
+works under the bare systemd PATH of `t3code.service`. The registry owns only
+the `binaryPath` leaf. T3 keeps `enabled`, `authMethod`, and `customModels`.
+
 ## Why the permission mode matters
 
 Under bypass mode Claude Code itself injects a preamble that says to prefer

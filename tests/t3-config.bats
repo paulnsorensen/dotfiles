@@ -64,6 +64,19 @@ setup() {
     done
 }
 
+@test "t3 antigravity instance launches the mise agy shim" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SCRIPT" <<'JSON'
+{
+  "providerInstances": {
+    "antigravity": { "driver": "antigravity", "enabled": true, "config": { "authMethod": "oauth-personal", "binaryPath": "", "customModels": [] } }
+  }
+}
+JSON
+    [ "$status" -eq 0 ]
+    run jq -c '.providerInstances.antigravity | [.driver, .enabled, .config.authMethod, .config.binaryPath]' <<<"$output"
+    [ "$output" = '["antigravity",true,"oauth-personal","/home/tester/.local/share/mise/shims/agy"]' ]
+}
+
 @test "t3 wrapper paths follow a clone outside ~/Dev" {
     local clone="$TEST_HOME/code/my dots"
     mkdir -p "$clone/chezmoi/lib" "$clone/chezmoi/.chezmoidata"
