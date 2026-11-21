@@ -4,7 +4,7 @@
 # Version-string convention:
 #   - `aqua:` entries use the researched raw GitHub release tag; Aqua applies
 #     per-tool prefix/filter normalization from its registry metadata.
-#   - core-plugin entries (node, bun, rust): the plain semver the tool
+#   - core-plugin entries (node, bun): the plain semver the tool
 #     itself reports, stripped of any git-tag prefix (mise core plugins
 #     query the tool's own version scheme, not a GitHub tag).
 #   - npm-backend entries: bare semver (npm versions never carry a prefix).
@@ -31,6 +31,14 @@
 # build is darwin-only — `mise install` hard-fails on Linux. It's a plain
 # brew formula anyway, so it's pinned in packages/packages.yaml under
 # `platform: mac` instead, which already supports OS-scoped packages.
+#
+# Rust has no entry here: rustup owns the toolchains. The mise `rust` core
+# plugin exports RUSTUP_TOOLCHAIN for the selected version, and rustup ranks
+# that variable above a repository's rust-toolchain.toml. A global `rust`
+# entry therefore forced one toolchain into every checkout (docs/lang/rust.md,
+# "Version files"). Its rustc/cargo shims did the same in non-interactive
+# shells. Without it, the rustup proxies read rust-toolchain.toml and fall
+# back to the rustup default (stable) elsewhere. Removed 2026-11-21.
 #
 # rust-analyzer uses a date-stamp release tag (not semver) and tmux uses
 # `v3.7b` — both kept as-is, not normalized to look more like semver.
@@ -91,7 +99,6 @@
 
 node = "26.13.1"
 bun = "1.4.5"
-rust = "1.100.0"
 
 "npm:t3" = "0.1.11"
 "npm:bash-language-server" = "5.8.1"

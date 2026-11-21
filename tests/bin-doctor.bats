@@ -291,15 +291,22 @@ esac'
 
 # ── clean / outdated ─────────────────────────────────────────────────
 
-@test "clean steps: only installed managers, cargo only with cargo-cache" {
+@test "clean steps: only installed managers" {
     stub uv 'exit 0'
-    stub cargo 'exit 1'
     run bd_clean_steps
     [[ "$output" == "uv"$'\t'"uv cache prune" ]]
+}
 
+@test "clean steps never delete cargo's extracted sources" {
+    # A running build compiles each registry crate from inside its
+    # ~/.cargo/registry/src directory. `cargo cache --autoclean` deletes that
+    # tree, so a timer or `dots sync` clean failed concurrent builds with
+    # "No such file or directory" (2026-11-21).
     stub cargo 'exit 0'
     run bd_clean_steps
-    [[ "${lines[0]}" == "cargo"$'\t'"cargo cache --autoclean" ]]
+    [[ "$output" != *cargo* ]]
+    run bd_sync_steps
+    [[ "$output" != *cargo* ]]
 }
 
 @test "clean steps never uninstall software unattended" {
@@ -330,11 +337,40 @@ esac'
     run bd_sync_steps
     [[ "$output" == *"uv"$'\t'"uv cache prune"* ]]
     [[ "$output" == *"mise"$'\t'"mise cache prune"* ]]
-    [[ "$output" == *"mise"$'\t'"mise prune -y"* ]]
+    [[ "$output" == *"mise"$'\t'"unlink unused mise rust installs"$'\n'"mise"$'\t'"mise prune -y"* ]]
     [[ "$output" == *"docker"$'\t'"docker image prune -f"* ]]
     [[ "$output" == *"docker"$'\t'"docker builder prune -f --filter unused-for=168h"* ]]
     # -a would delete tagged images such as the devbox image.
     [[ "$output" != *"prune -a"* ]]
+}
+
+@test "unlink mise rust: removes unselected symlinks and keeps rustup's files" {
+    # mise prune uninstalls an unused rust version with `rustup toolchain
+    # uninstall`. Removing the symlink first keeps the rustup toolchain.
+    local jq_bin
+    jq_bin="$(PATH="$REAL_PATH" command -v jq)" || skip "jq not installed"
+    ln -s "$jq_bin" "$T/tools/jq"
+    local installs="$XDG_DATA_HOME/mise/installs/rust"
+    mkdir -p "$installs" "$CARGO_HOME/bin" "$T/notalink"
+    exe "$CARGO_HOME/bin/rustc"
+    ln -s "$CARGO_HOME/bin" "$installs/1.99.1"
+    ln -s "$CARGO_HOME/bin" "$installs/1.100.0"
+    cat > "$T/rust.json" <<EOF
+[
+  {"version": "1.99.1", "install_path": "$installs/1.99.1", "installed": true},
+  {"version": "1.100.0", "install_path": "$installs/1.100.0", "installed": true,
+   "source": {"type": "mise.toml", "path": "$HOME/.config/mise/config.toml"}},
+  {"version": "1.0.0", "install_path": "$T/notalink", "installed": true}
+]
+EOF
+    stub mise "cat '$T/rust.json'"
+
+    run bd_run_step unlink unused mise rust installs
+    [[ $status -eq 0 ]]
+    [[ ! -e "$installs/1.99.1" && ! -L "$installs/1.99.1" ]]
+    [[ -L "$installs/1.100.0" ]]
+    [[ -d "$T/notalink" ]]
+    [[ -x "$CARGO_HOME/bin/rustc" ]]
 }
 
 @test "sync steps skip docker when the daemon does not answer" {

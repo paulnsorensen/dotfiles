@@ -265,7 +265,7 @@ bd_check_brew() {
         printf 'brew-stray\t%s\t%s\n' "$name" "brew leaf not declared in packages.yaml or the allowlist"
     done <<< "$leaves"
     if grep -qxF rust <<< "$leaves" && brew list --formula rustup >/dev/null 2>&1; then
-        printf 'conflict\t%s\t%s\n' rust "brew formula rust shadows the rustup toolchains that mise pins"
+        printf 'conflict\t%s\t%s\n' rust "brew formula rust shadows the rustup toolchains"
     fi
 }
 
@@ -298,10 +298,13 @@ bd_check_unmanaged() {
 # <manager>\t<command>. Each command only deletes data its manager can
 # re-download or rebuild, runs without a prompt, and leaves installed
 # versions alone. Managers that are not installed are skipped.
+#
+# Cargo has no step. `cargo cache --autoclean` deletes all of
+# ~/.cargo/registry/src, and a running build compiles each registry crate with
+# its source directory as the working directory. A clean during a build fails
+# it with "No such file or directory". Cargo 1.88+ runs its own automatic GC,
+# which deletes only sources that no build used for a month.
 bd_clean_steps() {
-    if command -v cargo >/dev/null 2>&1 && cargo cache --version >/dev/null 2>&1; then
-        printf 'cargo\tcargo cache --autoclean\n'
-    fi
     if command -v brew >/dev/null 2>&1; then
         printf 'brew\tbrew cleanup --prune=30\n'
     fi
@@ -322,7 +325,10 @@ bd_clean_steps() {
 # Docker keeps tagged images, because -a would delete the devbox image.
 bd_sync_steps() {
     bd_clean_steps
-    command -v mise >/dev/null 2>&1 && printf 'mise\tmise prune -y\n'
+    if command -v mise >/dev/null 2>&1; then
+        printf 'mise\tunlink unused mise rust installs\n'
+        printf 'mise\tmise prune -y\n'
+    fi
     if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
         printf 'docker\tdocker image prune -f\n'
         printf 'docker\tdocker builder prune -f --filter unused-for=168h\n'
@@ -336,8 +342,22 @@ bd_run_step() {
     case "$*" in
         "bun pm cache rm") bd_bun_cache_rm ;;
         "uv cache prune") bd_uv_cache_prune ;;
+        "unlink unused mise rust installs") bd_unlink_mise_rust ;;
         *) "$@" ;;
     esac
+}
+
+# bd_unlink_mise_rust — rustup owns the Rust toolchains. A mise rust install is
+# only a symlink to $CARGO_HOME/bin, but `mise prune` removes an unused one with
+# `rustup toolchain uninstall`. Remove each symlink that no config selects, so
+# prune never uninstalls a rustup toolchain. A selected version keeps its link.
+bd_unlink_mise_rust() {
+    local json path
+    command -v jq >/dev/null 2>&1 || return 1
+    json="$(mise -C "$HOME" ls --json rust)" || return 1
+    while IFS= read -r path; do
+        if [[ -L "$path" ]]; then rm -f -- "$path"; fi
+    done < <(jq -r '.[]? | select(.source == null) | .install_path // empty' <<< "$json")
 }
 
 # bd_bun_cache_rm — bun 1.3 exits 1 on `bun pm cache rm` when the working

@@ -29,7 +29,7 @@ usage() {
 hint_for() {
     case "$1" in
         shadow) echo "keep the copy the manifest owns; uninstall the others" ;;
-        conflict) echo "brew uninstall rust  # rustup + the mise rust pin own the toolchain" ;;
+        conflict) echo "brew uninstall rust  # rustup owns the toolchains" ;;
         cargo-stray) echo "declare it in packages.yaml (source: cargo) or: cargo uninstall <name>" ;;
         cargo-stale) echo "remove the crate's lines from ~/.cargo/.crates.toml and ~/.cargo/.crates2.json" ;;
         cargo-untracked) echo "delete the file, or reinstall it through its manifest" ;;
