@@ -14,10 +14,10 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     [[ $status -eq 0 ]]
 }
 
-@test "mise config pins exactly 54 tools (44 aqua + 3 core-plugin + 7 backend)" {
+@test "mise config pins exactly 55 tools (45 aqua + 3 core-plugin + 7 backend)" {
     run yq -p=toml -o=json '.tools | length' "$CONFIG"
     [[ $status -eq 0 ]]
-    [[ "$output" == "54" ]]
+    [[ "$output" == "55" ]]
 }
 
 @test "no tool version is 'latest' or a floating range specifier" {
@@ -50,13 +50,26 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     [[ -z "$dupes" ]]
 }
 
-@test "claude and codex are pinned to exact tags, not floating" {
+@test "claude, codex, and antigravity are pinned to exact tags, not floating" {
     local tool version
     for tool in \
         'aqua:anthropics/claude-code' \
-        'aqua:openai/codex'; do
+        'aqua:openai/codex' \
+        'aqua:google-antigravity/antigravity-cli'; do
         version="$(yq -p=toml -o=json '.tools' "$CONFIG" | jq -r --arg tool "$tool" '.[$tool]')"
-        [[ "$version" =~ ^(v|rust-v)[0-9]+\.[0-9]+\.[0-9]+$ ]]
+        [[ "$version" =~ ^(v|rust-v)?[0-9]+\.[0-9]+\.[0-9]+$ ]]
+    done
+}
+
+@test "agent harness pins share the short Renovate soak" {
+    local tool rule
+    rule="$(awk '/Fast-moving agent tooling/,/minimumReleaseAge/' "$DOTFILES_DIR/renovate.json5")"
+    [[ "$rule" == *'"minimumReleaseAge": "4 hours"'* ]]
+    for tool in \
+        'aqua:anthropics/claude-code' \
+        'aqua:openai/codex' \
+        'aqua:google-antigravity/antigravity-cli'; do
+        [[ "$rule" == *"\"$tool\""* ]] || { echo "missing from soak rule: $tool" >&2; return 1; }
     done
 }
 
