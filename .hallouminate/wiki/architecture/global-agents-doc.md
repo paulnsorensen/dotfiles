@@ -25,6 +25,18 @@ process from starting, so the flag and tool name must move together.
 
 [^tilth-graduation]: Tilth main `src/main.rs`, `src/mcp/mod.rs`, and `src/mcp/tools/definitions.rs`; dotfiles `agents/preamble.md:17` and `agents/mcp/registry.yaml:31-35`.
 
+### Sub-agent tool rules live in the agents doc (2026-11-21)
+
+The preamble replaces only the parent's system prompt.
+Sub-agents load their definition body and the agents doc, but not the preamble.
+Thus the agents doc owns one short `## Tools` block for sub-agents.
+The block covers tilth file routing, an explicit hallouminate `corpus`, and `jq` null guards.
+Other surfaces refer to that block; do not copy it into agent bodies or skills.
+Explore and Plan set `omitClaudeMd: true`, so their bodies keep their own tilth lines.
+The block names Claude and Codex because Pi and OpenCode use native file tools.[^subagent-tools]
+
+[^subagent-tools]: `agents/AGENTS.md` `## Tools`; `claude/agents/Explore.md:5`; `chezmoi/dot_pi/private_agent/APPEND_SYSTEM.md:5`; a 10-day hallouminate session review found hook blocks on 57 of 86 Read calls, 13 of 17 Write calls, and 304 of 1751 Bash calls, `jq` "Cannot iterate over null" failures, and 6 of 11 corpus-less `backlinks` failures.
+
 ### Worktree session ownership
 
 The global preferences keep one pointer to `/worktree-session` for isolated work.
