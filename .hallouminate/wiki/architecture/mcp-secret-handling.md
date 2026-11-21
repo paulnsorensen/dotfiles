@@ -88,6 +88,35 @@ Unknown tools, changed arguments, missing nonces, expired approvals, replayed
 approvals, unsafe policy files, and user-writable upstream executables all fail
 closed.
 
+## Secretless CLI clients
+
+`tvly-broker` and `ctx7-broker` use the existing broker sockets without client-side credentials.[^broker-clients]
+They keep the MCP backend but do not require a harness MCP registration.
+This separates shell access from tool-schema loading while preserving the service-owned key and broker policy.
+
+The clients expose only these existing read operations:[^broker-client-tools]
+
+| Client command | Broker tool |
+|---|---|
+| `tvly-broker search QUERY` | `tavily_search` |
+| `tvly-broker extract URL...` | `tavily_extract` |
+| `ctx7-broker library LIBRARY_NAME QUERY` | `resolve-library-id` |
+| `ctx7-broker docs LIBRARY_ID QUERY` | `query-docs` |
+
+Put global options before the subcommand.
+Use `--json` to retain the complete MCP tool result.
+Use `--arguments '{"max_results":3}'` to add provider parameters.
+The clients reject extra parameters that replace positional fields.[^broker-client-options]
+
+Stock `tvly` remains separate.
+These clients do not add crawl, map, research, credential retrieval, or direct HTTP fallback.
+Existing MCP registrations stay in place during the initial rollout.
+The executables run from the checkout's `bin/` directory; this workspace does not install them into another clone.[^broker-clients]
+
+The clients use the shared system-Python resolver.
+Python 3.9 requires separate handling for `socket.timeout` and `TimeoutError`.
+This keeps timeout failures distinct from disconnects.[^broker-client-timeout]
+
 ## Managed configuration surfaces
 
 The fixed proxy command is canonical in `agents/mcp/registry.yaml` and is
@@ -139,3 +168,9 @@ Vaudeville does not add OpenRouter to `vault-provision` or store a BWS access to
 [^vaudeville-example]: .env.example:33-39.
 
 _Source: user-selected Jev setup and local configuration · Updated: 2026-10-01 · Supersedes: Haiku default, 2026-10-01_
+
+[^broker-clients]: bin/tvly-broker:1-11; bin/ctx7-broker:1-11; scripts/agent-secret-client.py, run.
+[^broker-client-tools]: scripts/agent-secret-client.py, TOOLS; bin/vault-provision:168-178.
+[^broker-client-options]: scripts/agent-secret-client.py, arguments_for and parser_for.
+
+[^broker-client-timeout]: bin/lib/agent-secret-python.sh:11-16; scripts/agent-secret-client.py:57-90; tests/agent-secret-client.bats:199-218.
