@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# snapshot.sh [ccw-sweep flags...] — ccw-sweep --dry-run distilled for triage:
+# snapshot.sh [wt-sweep flags...] — wt-sweep --dry-run distilled for triage:
 # ANSI stripped, SAFE rows dropped. Survivors: repo headers (only for repos
 # with WARN/DIRTY worktrees), WARN/DIRTY entries with reasons, `path:` and
 # `action:` lines, and nested-child relocation warnings, skipped-repo notices,
@@ -8,7 +8,7 @@ set -euo pipefail
 
 esc="$(printf '\033')"
 
-ccw-sweep --dry-run "$@" \
+wt-sweep --dry-run "$@" \
     | sed -E "s/${esc}\[[0-9;]*m//g" \
     | awk '
         / worktree\(s\), default: / { hdr = $0; skip = 1; next }

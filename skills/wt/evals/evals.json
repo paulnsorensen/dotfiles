@@ -1,14 +1,14 @@
 {
-  "skill_name": "worktree-session",
+  "skill_name": "wt",
   "evals": [
     {
       "id": 1,
       "name": "trigger-1",
       "kind": "trigger",
       "prompt": "create an isolated worktree",
-      "expected_output": "The worktree-session skill loads.",
+      "expected_output": "The wt skill loads.",
       "files": [],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": []
     },
     {
@@ -16,9 +16,9 @@
       "name": "trigger-2",
       "kind": "trigger",
       "prompt": "resume a worktree session",
-      "expected_output": "The worktree-session skill loads.",
+      "expected_output": "The wt skill loads.",
       "files": [],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": []
     },
     {
@@ -26,9 +26,9 @@
       "name": "trigger-3",
       "kind": "trigger",
       "prompt": "move this task into a worktree",
-      "expected_output": "The worktree-session skill loads.",
+      "expected_output": "The wt skill loads.",
       "files": [],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": []
     },
     {
@@ -36,9 +36,9 @@
       "name": "trigger-4",
       "kind": "trigger",
       "prompt": "delegate in a worktree",
-      "expected_output": "The worktree-session skill loads.",
+      "expected_output": "The wt skill loads.",
       "files": [],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": []
     },
     {
@@ -46,19 +46,29 @@
       "name": "trigger-5",
       "kind": "trigger",
       "prompt": "start a worktree session",
-      "expected_output": "The worktree-session skill loads.",
+      "expected_output": "The wt skill loads.",
       "files": [],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": []
     },
     {
       "id": 6,
       "name": "trigger-6",
       "kind": "trigger",
-      "prompt": "/worktree-session fix-cache",
-      "expected_output": "The worktree-session skill loads.",
+      "prompt": "/wt fix-cache",
+      "expected_output": "The wt skill loads.",
       "files": [],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
+      "assertions": []
+    },
+    {
+      "id": 27,
+      "name": "trigger-legacy-name",
+      "kind": "trigger",
+      "prompt": "Use the worktree-session skill to start an isolated session for fix-cache.",
+      "expected_output": "The wt skill loads for its former name.",
+      "files": [],
+      "expected_skill": "wt",
       "assertions": []
     },
     {
@@ -66,7 +76,7 @@
       "name": "near-miss-find",
       "kind": "near-miss",
       "prompt": "Find the worktree for PR 1503.",
-      "expected_output": "The worktree-session skill stays unloaded.",
+      "expected_output": "The wt skill stays unloaded.",
       "files": [],
       "expected_skill": null,
       "assertions": []
@@ -76,7 +86,7 @@
       "name": "near-miss-triage",
       "kind": "near-miss",
       "prompt": "Triage stale worktrees without deleting them.",
-      "expected_output": "The worktree-session skill stays unloaded.",
+      "expected_output": "The wt skill stays unloaded.",
       "files": [],
       "expected_skill": null,
       "assertions": []
@@ -86,7 +96,7 @@
       "name": "near-miss-git",
       "kind": "near-miss",
       "prompt": "Run git status in another worktree.",
-      "expected_output": "The worktree-session skill stays unloaded.",
+      "expected_output": "The wt skill stays unloaded.",
       "files": [],
       "expected_skill": null,
       "assertions": []
@@ -101,7 +111,7 @@
       "files": [
         "evals/files/task-child.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Selects delegate_task with isolation worktree, not a top-level thread or handoff.",
         "Keeps the parent binding unchanged and states that uncommitted edits do not transfer.",
@@ -118,7 +128,7 @@
       "files": [
         "evals/files/task-dirty.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Selects t3_thread_launch with existing_worktree strategy, exact path, and branch.",
         "Preserves staged and untracked changes without stash, reset, clean, or commit.",
@@ -135,7 +145,7 @@
       "files": [
         "evals/files/task-root.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Checks t3_worktree_status before handoff.",
         "Selects t3_worktree_handoff with explicit baseRef and startFromOrigin false.",
@@ -152,7 +162,7 @@
       "files": [
         "evals/files/task-bound.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Does not call a second handoff or launch a top-level conversation.",
         "Reports the unsupported current-thread transition without creating a checkout.",
@@ -169,7 +179,7 @@
       "files": [
         "evals/files/task-codex.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Reports blocked because no supported launcher can bind a destination session.",
         "Does not create a checkout, change directories as a permission fix, or request broader roots.",
@@ -186,7 +196,7 @@
       "files": [
         "evals/files/task-claude.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Identifies a pending operator launch rather than starting an unattended nested interactive process.",
         "Distinguishes wt -o base preparation from ccw's current-branch default.",
@@ -203,7 +213,7 @@
       "files": [
         "evals/files/task-native.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Inspects current capabilities or primary documentation before choosing a mechanism.",
         "Does not invent Claude or Codex flags or silently switch providers.",
@@ -220,7 +230,7 @@
       "files": [
         "evals/files/task-dirty-child.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Does not substitute a fresh checkout for the requested dirty checkout.",
         "Does not open a top-level conversation without an explicit user request.",
@@ -237,7 +247,7 @@
       "files": [
         "evals/files/task-dependent-dirty-base.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Does not launch a child with a stale committed base.",
         "Does not commit, stash, or copy user changes.",
@@ -254,7 +264,7 @@
       "files": [
         "evals/files/task-lost-launch-response.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Inspects t3_thread_list before retrying.",
         "Does not claim ready from the failed acknowledgment.",
@@ -271,7 +281,7 @@
       "files": [
         "evals/files/task-no-destination-evidence.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Reports pending rather than ready.",
         "Names missing checkout, branch, preservation, and write-access evidence.",
@@ -288,7 +298,7 @@
       "files": [
         "evals/files/task-independent-child-base-mismatch.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Identifies that child isolation starts from parent HEAD, not the requested origin/main commit.",
         "Reports blocked without launching a child from the wrong base.",
@@ -305,7 +315,7 @@
       "files": [
         "evals/files/task-bound-same-destination.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Confirms the current destination path, branch, write access, and preserved changes before ready.",
         "Does not call handoff or launch another thread for the same checkout.",
@@ -322,7 +332,7 @@
       "files": [
         "evals/files/task-destination-base-mismatch.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Compares expected and observed full commit IDs and rejects ready despite valid path, branch, and write access.",
         "Does not edit the wrong-base destination or silently change its base.",
@@ -339,7 +349,7 @@
       "files": [
         "evals/files/task-lost-response-ambiguous.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Inspects both plausible thread-list entries and does not guess a thread ID.",
         "Does not retry the non-idempotent launch or create a duplicate checkout.",
@@ -356,7 +366,7 @@
       "files": [
         "evals/files/task-desktop-child.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Selects ccd_session start_session, not ccw, claude --worktree, or another terminal launcher.",
         "States that the parent has no worktree, Worktree is off by default, and the schema has no worktree field, so it posts an offer card and tells the user to turn on Worktree under Options instead of calling user_asked.",
@@ -373,7 +383,7 @@
       "files": [
         "evals/files/task-desktop-unattended.json"
       ],
-      "expected_skill": "worktree-session",
+      "expected_skill": "wt",
       "assertions": [
         "Identifies the unattended-origin refusal and does not retry start_session with another initiation or transport.",
         "Does not substitute a terminal launcher or create an unused checkout.",

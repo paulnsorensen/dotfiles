@@ -27,8 +27,8 @@ Distilled from `.cheese/notes/strip-log.md` + Phase D decisions.
 | `bin/dots` | GENERICIZE | Fixed hardcoded `$HOME/Dev/dotfiles` default; now derives path from `BASH_SOURCE` location |
 | `bin/cc-env-exec` | COPY | Generic machinery |
 | `bin/ccw-init` | COPY | Generic worktree init |
-| `bin/ccw-check` | COPY | Generic worktree check |
-| `bin/ccw-sweep` | COPY | Generic worktree sweep |
+| `bin/wt-check` | COPY | Generic worktree check |
+| `bin/wt-sweep` | COPY | Generic worktree sweep |
 | `bin/colors` | COPY | Generic color utility |
 | `bin/gh-issue-context` | COPY | Generic GH context tool |
 | `bin/gh-pr-batch` | COPY | Generic GH PR batch tool |
@@ -40,7 +40,7 @@ Distilled from `.cheese/notes/strip-log.md` + Phase D decisions.
 | `bin/install-linux-server` | COPY | Generic Linux server installer |
 | `bin/linux-install` | GENERICIZE | Relaxed root check for container environments; `_sudo` helper wraps all privilege calls |
 | `bin/wt-git` | COPY | Generic worktree git helper |
-| `bin/lib/term-colors.sh` | COPY | Colour constants; `ccw-sweep` and `install-linux-server` source it |
+| `bin/lib/term-colors.sh` | COPY | Colour constants; `wt-sweep` and `install-linux-server` source it |
 | `bin/lib/tagged-log.sh` | COPY | Tagged log helpers; `install-linux-server` and `linux-install` source it |
 | `bin/dotsclaude` | SKIP | Personal Claude launcher |
 | `bin/cheatsheet` | SKIP | Personal cheatsheet |

@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 
 @test "worktree task scenarios are isolated and observable" {
-    run python3 - "$BATS_TEST_DIRNAME/../skills/worktree-session/evals" <<'PY'
+    run python3 - "$BATS_TEST_DIRNAME/../skills/wt/evals" <<'PY'
 import json
 import pathlib
 import re
@@ -10,7 +10,7 @@ import sys
 root = pathlib.Path(sys.argv[1])
 cases = json.loads((root / "evals.json").read_text())["evals"]
 tasks = [case for case in cases if case["kind"] == "task"]
-assert len(cases) == 26 and len(tasks) == 17
+assert len(cases) == 27 and len(tasks) == 17
 paths = []
 for case in tasks:
     assert len(case["files"]) == 1, case["name"]

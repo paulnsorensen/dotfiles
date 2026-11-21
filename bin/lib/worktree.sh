@@ -1,10 +1,23 @@
 # shellcheck shell=bash
-# worktree.sh — shared worktree helpers, sourced by bin/ccw-sweep, bin/ccw-find, and bin/wt.
+# worktree.sh — shared worktree helpers, sourced by bin/wt-sweep, bin/wt-find, and bin/wt.
 #
 # Parallels the .sync <-> .sync-lib.sh "lib beside script" precedent, scoped to
 # bin/. Every consumer sources this via its own resolved dir; bats tests source
 # it directly. Functions only — no top-level side effects, so sourcing is safe.
 
+# wt_env <suffix> <default> — read a setting that was renamed from CCW_* to WT_*.
+# Echoes the first non-empty value of WT_<suffix>, CCW_<suffix>, then <default>,
+# so scripts and shells that still export the former name keep working.
+wt_env() {
+    local new="WT_$1" old="CCW_$1"
+    if [[ -n "${!new:-}" ]]; then
+        printf '%s\n' "${!new}"
+    elif [[ -n "${!old:-}" ]]; then
+        printf '%s\n' "${!old}"
+    else
+        printf '%s\n' "$2"
+    fi
+}
 # Resolve the repo's default branch (main / master / trunk / …) from
 # refs/remotes/origin/HEAD. If that's not set, probe the conventional
 # alternatives explicitly before defaulting — falling back to a literal
@@ -166,7 +179,7 @@ wt_cheese_tracked_changed() {
 # has work that must not be lost: uncommitted changes, staged changes, untracked
 # files, or commits not yet on its remote default branch. Exit 1 when the child
 # is clean and fully merged (safe to drop with its parent). Predicates mirror
-# ccw-sweep's check_worktree (git diff [--cached], ls-files --others, rev-list
+# wt-sweep's check_worktree (git diff [--cached], ls-files --others, rev-list
 # against origin/<default>).
 wt_child_blocks_removal() {
     local child="$1"

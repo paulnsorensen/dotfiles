@@ -54,14 +54,14 @@ assert_not_contains() {
     }
 }
 
-# ── worktree-find/scripts/find-touching.sh ──────────────────────────
+# ── wt-find/scripts/find-touching.sh ──────────────────────────
 
 @test "find-touching.sh finds the worktree with an uncommitted touch" {
     make_worktree alpha
     make_worktree beta
     echo change >> "$REPO/.worktrees/alpha/file.txt"
 
-    run "$SKILLS/worktree-find/scripts/find-touching.sh" 'file.txt' --root "$DEV"
+    run "$SKILLS/wt-find/scripts/find-touching.sh" 'file.txt' --root "$DEV"
     [ "$status" -eq 0 ]
     assert_contains "$output" ".worktrees/alpha"
     assert_contains "$output" "    file.txt"
@@ -76,7 +76,7 @@ assert_not_contains() {
     git -C "$REPO/.worktrees/beta" add docs/x.md
     git -C "$REPO/.worktrees/beta" commit -q -m "docs: add x"
 
-    run "$SKILLS/worktree-find/scripts/find-touching.sh" 'docs/*' --root "$DEV"
+    run "$SKILLS/wt-find/scripts/find-touching.sh" 'docs/*' --root "$DEV"
     [ "$status" -eq 0 ]
     assert_contains "$output" ".worktrees/beta"
     assert_contains "$output" "    docs/x.md"
@@ -91,7 +91,7 @@ assert_not_contains() {
     git -C "$REPO/.worktrees/alpha" add .
     git -C "$REPO/.worktrees/alpha" commit -qm "test files"
 
-    run "$SKILLS/worktree-find/scripts/find-touching.sh" 't*.txt' --root "$DEV"
+    run "$SKILLS/wt-find/scripts/find-touching.sh" 't*.txt' --root "$DEV"
     [ "$status" -eq 0 ]
     assert_contains "$output" "    t0.txt"
     assert_contains "$output" "(+2 more)"
@@ -100,12 +100,12 @@ assert_not_contains() {
 
 @test "find-touching.sh reports no match plainly" {
     make_worktree alpha
-    run "$SKILLS/worktree-find/scripts/find-touching.sh" 'nope/*' --root "$DEV"
+    run "$SKILLS/wt-find/scripts/find-touching.sh" 'nope/*' --root "$DEV"
     [ "$status" -eq 0 ]
     assert_contains "$output" "No worktree touches 'nope/*'"
 }
 
-# ── worktree-find/scripts/find-pr.sh ────────────────────────────────
+# ── wt-find/scripts/find-pr.sh ────────────────────────────────
 
 @test "find-pr.sh joins an open PR to its worktree via stubbed gh" {
     make_worktree alpha
@@ -119,7 +119,7 @@ STUB
     chmod +x "$TMPROOT/stub/gh"
     PATH="$TMPROOT/stub:$PATH"
 
-    run "$SKILLS/worktree-find/scripts/find-pr.sh" --root "$DEV"
+    run "$SKILLS/wt-find/scripts/find-pr.sh" --root "$DEV"
     [ "$status" -eq 0 ]
     assert_contains "$output" ".worktrees/alpha"
     assert_contains "$output" "PR #7"
@@ -135,19 +135,19 @@ STUB
     chmod +x "$TMPROOT/stub/gh"
     PATH="$TMPROOT/stub:$PATH"
 
-    run "$SKILLS/worktree-find/scripts/find-pr.sh" --root "$DEV"
+    run "$SKILLS/wt-find/scripts/find-pr.sh" --root "$DEV"
     [ "$status" -eq 0 ]
     assert_contains "$output" "No open PR matches a local worktree"
 }
 
-# ── worktree-triage/scripts/snapshot.sh ─────────────────────────────
+# ── wt-triage/scripts/snapshot.sh ─────────────────────────────
 
 @test "snapshot.sh keeps DIRTY rows with reasons and drops SAFE rows" {
     make_worktree alpha
     make_worktree beta
     echo change >> "$REPO/.worktrees/alpha/file.txt"
 
-    run "$SKILLS/worktree-triage/scripts/snapshot.sh" --path "$DEV"
+    run "$SKILLS/wt-triage/scripts/snapshot.sh" --path "$DEV"
     [ "$status" -eq 0 ]
     assert_contains "$output" "[DIRTY] alpha"
     assert_contains "$output" "uncommitted changes"
@@ -158,11 +158,11 @@ STUB
     assert_not_contains "$output" "$(printf '\033')"
 }
 
-# ── worktree-triage/scripts/commands.sh ─────────────────────────────
+# ── wt-triage/scripts/commands.sh ─────────────────────────────
 
 @test "commands.sh archive emits tag + remove + branch -D with the real branch" {
     make_worktree alpha
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" archive
+    run "$SKILLS/wt-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" archive
     [ "$status" -eq 0 ]
     assert_contains "$output" "tag archive/alpha worktree/alpha"
     assert_contains "$output" "worktree remove .worktrees/alpha"
@@ -171,19 +171,19 @@ STUB
 
 @test "commands.sh remove adds --force for a dirty tree and omits it when clean" {
     make_worktree alpha
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" remove
+    run "$SKILLS/wt-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" remove
     [ "$status" -eq 0 ]
     assert_not_contains "$output" "--force"
 
     echo change >> "$REPO/.worktrees/alpha/file.txt"
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" remove
+    run "$SKILLS/wt-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" remove
     [ "$status" -eq 0 ]
     assert_contains "$output" "worktree remove --force .worktrees/alpha"
 }
 
 @test "commands.sh rejects an unknown action" {
     make_worktree alpha
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" shred
+    run "$SKILLS/wt-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" shred
     [ "$status" -eq 2 ]
     assert_contains "$output" "unknown action 'shred'"
 }
@@ -196,7 +196,7 @@ STUB
     local sha8
     sha8="$(git -C "$REPO/.worktrees/alpha" rev-parse --short=8 HEAD)"
 
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" archive
+    run "$SKILLS/wt-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" archive
     [ "$status" -eq 0 ]
     assert_contains "$output" "tag archive/alpha-${sha8} worktree/alpha && \\"
     assert_contains "$output" "worktree remove .worktrees/alpha && \\"
@@ -207,7 +207,7 @@ STUB
 @test "commands.sh targets the bare repo for a worktree of a bare repo" {
     git clone -q --bare "$REPO" "$TMPROOT/bare.git"
     git -C "$TMPROOT/bare.git" worktree add -q "$TMPROOT/bare-wt" -b worktree/bare
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$TMPROOT/bare-wt" remove
+    run "$SKILLS/wt-triage/scripts/commands.sh" "$TMPROOT/bare-wt" remove
     [ "$status" -eq 0 ]
     assert_contains "$output" "git -C $TMPROOT/bare.git worktree remove $TMPROOT/bare-wt"
     assert_not_contains "$output" "git -C $TMPROOT worktree"
@@ -215,7 +215,7 @@ STUB
 
 @test "commands.sh takes a worktree outside the repo and uses its absolute path" {
     git -C "$REPO" worktree add -q "$TMPROOT/t3/alpha" -b worktree/far
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$TMPROOT/t3/alpha" archive
+    run "$SKILLS/wt-triage/scripts/commands.sh" "$TMPROOT/t3/alpha" archive
     [ "$status" -eq 0 ]
     assert_contains "$output" "git -C $REPO tag archive/alpha worktree/far"
     assert_contains "$output" "worktree remove $TMPROOT/t3/alpha"
@@ -223,7 +223,7 @@ STUB
 }
 
 @test "commands.sh refuses the main checkout" {
-    run "$SKILLS/worktree-triage/scripts/commands.sh" "$REPO" remove
+    run "$SKILLS/wt-triage/scripts/commands.sh" "$REPO" remove
     [ "$status" -eq 1 ]
     assert_contains "$output" "main checkout"
 }

@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
 # Tests for bin/lib/worktree.sh — the shared worktree helpers used by
-# ccw-sweep (nested detection) and ccw-find (cross-repo search).
+# wt-sweep (nested detection) and wt-find (cross-repo search).
 #
 # WHY these matter: wt_child_blocks_removal is the predicate that stops
-# ccw-sweep from deleting a parent worktree that nests unmerged/dirty work.
+# wt-sweep from deleting a parent worktree that nests unmerged/dirty work.
 # A false "doesn't block" here means real, unpushed work gets destroyed —
 # so every blocking condition (dirty / staged / untracked / unmerged) gets
 # a test, plus the clean-and-merged negative case.
@@ -427,4 +427,23 @@ add_worktree() {
   run wt_archive_tag "$SCAN/repo" "bad..slug" "$head"
   [[ $status -eq 0 ]]
   [[ "$output" == "archive/wt-${head:0:12}" ]]
+}
+
+# ── wt_env: renamed settings with a legacy fallback ────────────────────────────
+
+@test "wt_env prefers WT_<suffix> over CCW_<suffix>" {
+  WT_TEST_KNOB=new CCW_TEST_KNOB=old run wt_env TEST_KNOB fallback
+  [[ "$output" == "new" ]]
+}
+
+@test "wt_env falls back to CCW_<suffix> when WT_<suffix> is unset or empty" {
+  CCW_TEST_KNOB=old run wt_env TEST_KNOB fallback
+  [[ "$output" == "old" ]]
+  WT_TEST_KNOB='' CCW_TEST_KNOB=old run wt_env TEST_KNOB fallback
+  [[ "$output" == "old" ]]
+}
+
+@test "wt_env returns the default when neither name is set" {
+  run wt_env TEST_KNOB "two words"
+  [[ "$output" == "two words" ]]
 }

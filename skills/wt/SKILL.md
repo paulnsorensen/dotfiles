@@ -1,18 +1,17 @@
 ---
-name: worktree-session
-model: sonnet
-effort: medium
+name: wt
+model: inherit
 description: >
   Creates or resumes an isolated editing session in a Git worktree.
   Use when the user says "create an isolated worktree", "resume a worktree session",
   "move this task into a worktree", "delegate in a worktree", or "start a worktree session".
-  Also use for /worktree-session.
-  Do NOT use for worktree searches (/worktree-find), cleanup triage (/worktree-triage),
+  Also use for /wt and the former name /worktree-session.
+  Do NOT use for worktree searches (/wt-find), cleanup triage (/wt-triage),
   or Git-only operations (/wt-git).
 argument-hint: "<task or existing worktree> [base branch]"
 ---
 
-# worktree-session
+# wt
 
 Select the session boundary before creating a checkout.
 A Git worktree or shell directory change does not change the current session's permissions.

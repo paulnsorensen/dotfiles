@@ -1,10 +1,10 @@
 # Claude Desktop session starts
 
-The Code tab of the Claude desktop app starts sessions through its own `ccd_session` MCP server. Terminal launchers (`ccw`, `claude --worktree`) do not apply there. The `worktree-session` skill routes Desktop through `skills/worktree-session/references/claude-desktop.md`. Researched on 2026-11-21.
+The Code tab of the Claude desktop app starts sessions through its own `ccd_session` MCP server. Terminal launchers (`ccw`, `claude --worktree`) do not apply there. The `/wt` skill (formerly `worktree-session`) routes Desktop through `skills/wt/references/claude-desktop.md`. Researched on 2026-11-21.
 
 ## Decision
 
-- Route order in `worktree-session`: T3 tools first, then Desktop `ccd_session` tools, then native and CLI launchers.
+- Route order in `/wt`: T3 tools first, then Desktop `ccd_session` tools, then native and CLI launchers.
 - Desktop sessions never fall back to a terminal launcher. The Desktop sidebar and cross-session tools do not see terminal, T3, or cloud sessions, so a substitute session becomes invisible to Desktop.
 - The skill reads the live `start_session` schema before each call. Parameter names come from user bug reports, not official documentation.
 
