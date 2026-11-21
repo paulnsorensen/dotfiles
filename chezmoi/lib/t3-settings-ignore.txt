@@ -13,7 +13,7 @@ defaultTheme
 defaultThemeSetAt
 # Provider instances: enable toggles, credentials, and custom model lists.
 # The registry owns each instance driver, the claudeAgent launchArgs, and the
-# claudeAgent, codex, and opencode binaryPath leaves.
+# claudeAgent, codex, opencode, and antigravity binaryPath leaves.
 providerInstances
 observability
 usageLimitSources
