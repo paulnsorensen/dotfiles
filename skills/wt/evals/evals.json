@@ -65,7 +65,7 @@
       "id": 27,
       "name": "trigger-legacy-name",
       "kind": "trigger",
-      "prompt": "/worktree-session fix-cache",
+      "prompt": "Use the worktree-session skill to start an isolated session for fix-cache.",
       "expected_output": "The wt skill loads for its former name.",
       "files": [],
       "expected_skill": "wt",

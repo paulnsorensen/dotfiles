@@ -27,8 +27,9 @@ T3 and Claude Desktop already use "thread" and "session" for conversations, and 
 - `zsh/claude.zsh` keeps `ccw-*` aliases that point to the `wt-*` names.
 - `wt_env` in `bin/lib/worktree.sh` reads `WT_<suffix>`, then `CCW_<suffix>`, then the default. Validation messages name the `WT_SWEEP_*` form.
 - Claude permission lists allow both `Bash(ccw-sweep:*)` and `Bash(wt-sweep:*)`.
-- Skill descriptions name the former skill names so old slash phrases still route.
+- Skill descriptions name the former skill names, so a request that names an old skill still routes. A bare `/worktree-session` slash command does not resolve, because Claude Code looks up slash commands by skill name.
 - Most `tests/wt-sweep.bats` cases still run `ccw-sweep` with `CCW_SWEEP_*` settings. This keeps the legacy path covered. The "Renamed entry point" cases cover `wt-sweep` and `WT_SWEEP_*`.
+- The last output line of `wt-sweep` changed from `SUMMARY ccw-sweep:` to `SUMMARY wt-sweep:`, also through the `ccw-sweep` symlink. No consumer in the repo reads the old prefix. An outside script that matches it must change.
 
 ## Kept on purpose
 
