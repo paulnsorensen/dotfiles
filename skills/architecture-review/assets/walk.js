@@ -91,6 +91,19 @@
     reachMemo.set(id, found);
     return found;
   }
+  // A public function with a changed private helper is a step too: the helper shows folded inside it.
+  const helperMemo = new Map();
+  function helperChange(id) {
+    if (helperMemo.has(id)) return helperMemo.get(id);
+    helperMemo.set(id, false);
+    const found = N[id].calls.some(call => {
+      const target = N[call.to];
+      return target && !target.public && target.kind !== "test" && (Boolean(target.change) || helperChange(call.to));
+    });
+    helperMemo.set(id, found);
+    return found;
+  }
+  const stepWorthy = id => Boolean(N[id].change) || (N[id].kind !== "test" && helperChange(id));
   // Depth first from the entry, in call order; only changed steps join the order.
   const orderMemo = new Map();
   function walkOrder(entry) {
@@ -98,14 +111,14 @@
     const order = [], parent = new Map(), seen = new Set();
     const visit = (id, depth) => {
       seen.add(id);
-      if (N[id].change || id === entry) order.push({id, depth});
+      if (stepWorthy(id) || id === entry) order.push({id, depth});
       if (depth > 200) return;
       for (const callee of publicCallees(id)) {
         if (!seen.has(callee.id)) { parent.set(callee.id, id); visit(callee.id, depth + 1); }
       }
     };
     visit(entry, 0);
-    const result = {order, parent, seen, steps: order.filter(item => N[item.id].change).length};
+    const result = {order, parent, seen, steps: order.filter(item => stepWorthy(item.id)).length};
     orderMemo.set(entry, result);
     return result;
   }
@@ -327,10 +340,12 @@
     main.append(trail);
 
     const card = element("article", "walk-card");
-    const kind = sel === entry && N[sel].kind !== "test" ? "ENTRY POINT" : node.kind === "test" ? "TEST" : node.overrides?.length ? "DISPATCHED METHOD"
+    const isOrphan = entries.some(item => item.id === entry && item.orphan);
+    const kind = sel === entry && !isOrphan && N[sel].kind !== "test" ? "ENTRY POINT" : node.kind === "test" ? "TEST" : node.overrides?.length ? "DISPATCHED METHOD"
       : node.kind === "method" ? (node.public ? "PUBLIC METHOD" : "PRIVATE METHOD") : node.public ? "PUBLIC FUNCTION" : "PRIVATE HELPER";
     const meta = element("div", "walk-card-meta");
-    meta.append(element("span", "eyebrow", kind), element("span", "walk-where", `${node.path}:${node.line}`), element("span", "status " + (node.change ? "changed" : ""), `${MARK[node.change]} ${CHANGE[node.change]}`));
+    const status = node.change ? `${MARK[node.change]} ${CHANGE[node.change]}` : helperChange(sel) ? "○ unchanged · a private helper changed" : "○ unchanged";
+    meta.append(element("span", "eyebrow", kind), element("span", "walk-where", `${node.path}:${node.line}`), element("span", "status " + (node.change ? "changed" : ""), status));
     card.append(meta, element("h2", "walk-sig", node.sig));
     if (node.was) card.append(element("p", "walk-was", "was: " + node.was));
     if (node.summary) card.append(element("p", "walk-doc", node.summary));
@@ -375,6 +390,7 @@
       const target = N[callee.id];
       const bits = [callee.via.length ? "via " + callee.via.join(" › ") : callee.how === "impl" ? "implements " + node.qual : "L" + callee.line];
       if (callee.how === "dynamic") bits.push("call on an object");
+      if (callee.how === "ref") bits.push("passed as a value");
       if (!target.change) { const below = reach(target.id).size; bits.push(below ? `unchanged · leads to ${below} changed` : "unchanged"); }
       const item = button("", () => select(callee.id), "walk-callee" + (target.change ? " changed" : ""));
       item.append(element("span", "walk-callee-name", `${MARK[target.change]} ${short(target)}`));
@@ -391,7 +407,7 @@
     }
     const key = element("details", "walk-key");
     key.append(element("summary", "", "Key and limits"));
-    for (const text of ["→ public call: opens that function", "⇢ call on an object, resolved by method name", "▸ private helper: opens in place",
+    for (const text of ["→ public call, or a function passed as a value: opens that function", "⇢ call on an object, resolved by type or method name", "▸ private helper: opens in place",
       "+ new · ● signature changed · ◐ body changed · ○ unchanged", ...(walk.limits || [])]) key.append(element("p", "", text));
     if (walk.unparsed?.length) key.append(element("p", "unknown", `${walk.unparsed.length} Python files did not parse.`));
     aside.append(key);

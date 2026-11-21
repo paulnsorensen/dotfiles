@@ -8,11 +8,13 @@ import json
 import os
 import subprocess
 import tempfile
-from pathlib import Path
+import tomllib
+from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import Any
 
 from .graph import assemble, changes
+from .rust_adapter import link_crates
 
 LIMIT = 1_000_000
 ADAPTERS = {".py": ("python_adapter", "Python"), ".ts": ("typescript_adapter", "TypeScript"),
@@ -81,11 +83,47 @@ def parse(cache: Path, path: str, blob: str, text: str, module: ModuleType) -> d
     return facts
 
 
+def rust_crates(repo: Path, rows: list[tuple[str, str, str, str, str]]) -> tuple[dict[str, str], dict[str, str]]:
+    """Return library roots by crate name, and the crate root file of each Rust file."""
+    present = {row[0] for row in rows}
+    crates: dict[str, str] = {}
+    roots: dict[str, str] = {}
+    for path, _, kind, blob, size in rows:
+        if PurePosixPath(path).name != "Cargo.toml" or kind != "blob" or size == "-" or int(size) > LIMIT:
+            continue
+        try:
+            raw = read_blob(repo, blob)
+            manifest = tomllib.loads(raw.decode("utf-8")) if raw else {}
+        except (subprocess.CalledProcessError, UnicodeError, tomllib.TOMLDecodeError):
+            continue
+        package = manifest.get("package", {}).get("name")
+        library = manifest.get("lib", {})
+        if not isinstance(package, str) or not isinstance(library, dict):
+            continue
+        directory = PurePosixPath(path).parent
+        library_root = str(directory / str(library.get("path", "src/lib.rs")).removeprefix("./"))
+        binary_root = str(directory / "src/main.rs")
+        if library_root in present:
+            crates[str(library.get("name") or package).replace("-", "_")] = library_root
+        own = library_root if library_root in present else binary_root if binary_root in present else None
+        if own:
+            roots[str(directory)] = own
+    owners = {}
+    for path in present:
+        if path.endswith(".rs"):
+            parent = PurePosixPath(path).parent
+            owner = next((roots[str(folder)] for folder in (parent, *parent.parents) if str(folder) in roots), None)
+            if owner:
+                owners[path] = owner
+    return crates, owners
+
+
 def snapshot(repo: Path, revision_id: str, cache: Path) -> dict[str, Any]:
     files: dict[str, dict[str, Any]] = {}
     parsed: dict[str, dict[str, Any]] = {}
     gaps: list[dict[str, Any]] = []
-    for path, mode, kind, blob, size in tree(repo, revision_id):
+    rows = tree(repo, revision_id)
+    for path, mode, kind, blob, size in rows:
         suffix = Path(path).suffix
         adapter = ADAPTERS.get(suffix)
         files[path] = {"blob": blob}
@@ -120,6 +158,7 @@ def snapshot(repo: Path, revision_id: str, cache: Path) -> dict[str, Any]:
                          "reason": f"parse failed: {item['reason']}"} for item in details)
             continue
         parsed[path] = facts
+    link_crates(parsed, *rust_crates(repo, rows))
     result = assemble(revision_id, files, parsed, gaps)
     result["coverage"]["adapters"] = {
         "supported": {suffix: {"language": language, "version": getattr(importlib.import_module(f".{name}", package=__package__), "VERSION")}

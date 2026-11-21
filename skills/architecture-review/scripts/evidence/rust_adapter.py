@@ -8,7 +8,7 @@ import tempfile
 from pathlib import PurePosixPath
 
 
-VERSION = "2"
+VERSION = "3"
 _ITEM_KINDS = (
     "mod_item,function_item,struct_item,enum_item,trait_item,type_item,"
     "const_item,static_item,impl_item,use_declaration,call_expression,"
@@ -31,6 +31,47 @@ _ITEM = re.compile(
 )
 _PATH = re.compile(r"(?:crate|self|super|[A-Za-z_][A-Za-z_0-9]*)"
                    r"(?:::[A-Za-z_][A-Za-z_0-9]*)*")
+_GROUP = re.compile(r"(?P<prefix>[A-Za-z_][A-Za-z_0-9]*(?:::[A-Za-z_][A-Za-z_0-9]*)*)::\{(?P<items>[A-Za-z_0-9,:\s]*)\}")
+_ALIAS = re.compile(r"(?P<path>\S+)\s+as\s+[A-Za-z_][A-Za-z_0-9]*")
+
+
+def _use_paths(name):
+    """Return the plain paths that one use declaration names, or None when one is not plain."""
+    group = _GROUP.fullmatch(name)
+    items = [part.strip() for part in group["items"].split(",") if part.strip()] if group else [name]
+    paths = []
+    for item in items:
+        alias = _ALIAS.fullmatch(item)
+        item = alias["path"] if alias else item
+        paths.append(item if not group else group["prefix"] if item == "self" else f"{group['prefix']}::{item}")
+    return paths if paths and all(_PATH.fullmatch(path) for path in paths) else None
+
+
+def crate_targets(root, segments):
+    """Return the graph identities that a path below a crate root can name."""
+    source = PurePosixPath(root).parent
+    targets = []
+    for split in range(len(segments)):
+        rest = "::".join(segments[split:])
+        module = source.joinpath(*segments[:split])
+        files = [root] if not split else [f"{module}.rs", str(module / "mod.rs")]
+        targets += [f"{file}::{rest}" for file in files]
+    return targets
+
+
+def link_crates(parsed, crates, owners):
+    """Turn paths into other crates, and crate:: paths, into graph references.
+
+    crates maps a crate name to its library root file. owners maps a Rust file to the root file of its own crate.
+    A path that names no crate in the repository stays an unresolved reference.
+    """
+    for path, facts in parsed.items():
+        for item in facts.pop("paths", []):
+            first, _, rest = item["path"].partition("::")
+            root = owners.get(path) if first == "crate" else crates.get(first)
+            facts["refs"].append({"source": item["source"], "kind": item["kind"], "line": item["line"],
+                                  "targets": crate_targets(root, rest.split("::")) if root and rest else [],
+                                  "reason": item["reason"]})
 
 
 def _site(node):
@@ -84,7 +125,7 @@ def _candidate(path, name, source, defs, external):
 
 def extract(path: str, text: str) -> dict:
     """Return local Rust declarations and only locally supported relations."""
-    result = {"defs": [], "refs": [], "unknowns": [], "failed": False}
+    result = {"defs": [], "refs": [], "paths": [], "unknowns": [], "failed": False}
     tool = shutil.which("ast-grep")
     if tool is None:
         result["failed"] = True
@@ -167,15 +208,20 @@ def extract(path: str, text: str) -> dict:
         source = _scope(node, scopes)
         if code.startswith("use ") or code.startswith("pub use "):
             name = code.removeprefix("pub ").removeprefix("use ").removesuffix(";").strip()
-            if not _PATH.fullmatch(name):
+            paths = _use_paths(name)
+            if paths is None:
                 result["unknowns"].append({"line": line, "reason": "use alias, group, or glob is unresolved"})
                 continue
-            target = _candidate(path, name, source, defs, external)
-            if target:
-                result["refs"].append({"source": source, "targets": target, "kind": "use",
-                                       "line": line, "reason": "local syntax path"})
-            else:
-                result["unknowns"].append({"line": line, "reason": "external use path is unresolved"})
+            for item in paths:
+                target = _candidate(path, item, source, defs, external)
+                if target:
+                    result["refs"].append({"source": source, "targets": target, "kind": "use",
+                                           "line": line, "reason": "local syntax path"})
+                elif "::" in item and not item.startswith(("self::", "super::")):
+                    result["paths"].append({"source": source, "path": item, "kind": "use", "line": line,
+                                            "reason": "external use path is unresolved"})
+                else:
+                    result["unknowns"].append({"line": line, "reason": "external use path is unresolved"})
         elif code.endswith("()") or ("(" in code and code.endswith(")")):
             callee = code.split("(", 1)[0].strip()
             if "." in callee:
@@ -197,6 +243,9 @@ def extract(path: str, text: str) -> dict:
                     if target:
                         result["refs"].append({"source": source, "targets": target, "kind": "call",
                                                "line": line, "reason": "direct syntax path"})
+                    elif "::" in callee and not callee.startswith(("self::", "super::")):
+                        result["paths"].append({"source": source, "path": callee, "kind": "call", "line": line,
+                                                "reason": "external or dynamic call is unresolved"})
                     else:
                         result["unknowns"].append({"line": line, "reason": "external or dynamic call is unresolved"})
         if "!(" in code and not code.startswith(("fn ", "pub fn ")):

@@ -77,6 +77,28 @@ mod external;
         self.assertFalse(any(ref["kind"] == "module" for ref in result["refs"]))
         self.assertTrue(any("attributes" in item["reason"] for item in result["unknowns"]))
 
+    def test_paths_into_other_crates_link_by_crate_name(self):
+        sources = {
+            "crates/core/src/lib.rs": "pub mod common;\n",
+            "crates/core/src/common.rs": "pub fn key() {}\n",
+            "crates/app/src/main.rs": ("use domain_core::common::key;\nuse domain_core::{common, common::key as k};\n"
+                                       "use std::fmt::Debug;\nfn run() { domain_core::common::key(); }\n"),
+        }
+        parsed = {path: rust_adapter.extract(path, text) for path, text in sources.items()}
+        rust_adapter.link_crates(parsed, {"domain_core": "crates/core/src/lib.rs"},
+                                 {path: path if path.endswith("main.rs") else "crates/core/src/lib.rs" for path in sources})
+        files = {path: {"blob": path, "language": "Rust", "text": text} for path, text in sources.items()}
+        graph = architecture_graph.assemble("test", files, parsed, [])
+        edges = {(edge["source"], edge["target"], edge["kind"], edge["line"]) for edge in graph["edges"]}
+        app = "crates/app/src/main.rs"
+        self.assertIn((app, "crates/core/src/common.rs::key", "use", 1), edges)
+        self.assertIn((app, "crates/core/src/lib.rs::common", "use", 2), edges)
+        key_use = next(edge for edge in graph["edges"] if edge["source"] == app and edge["kind"] == "use"
+                       and edge["target"].endswith("::key"))
+        self.assertEqual(sorted(key_use["sites"]), [1, 2])
+        self.assertIn((f"{app}::run", "crates/core/src/common.rs::key", "call", 4), edges)
+        self.assertIn({"path": app, "line": 3, "reason": "external use path is unresolved"}, graph["unknowns"])
+
     def test_invalid_syntax_is_not_reported_as_complete(self):
         result = rust_adapter.extract("src/lib.rs", "fn broken( {\n")
         self.assertTrue(result["failed"])

@@ -29,15 +29,23 @@ These arrows show resolved references, not observed execution.
 
 ## Call walk
 
-A diff with Python changes opens on the call walk. Use Subsystem map to return to the map.
-The walk lists entry points: `main` functions, string command branches inside `main`, and changed code that no entry point reaches.
+A diff with changed Python production code opens on the call walk. Use Subsystem map to return to the map.
+A diff without such changes has no walk and opens on the map.
+The walk lists entry points: `main` functions, string command branches inside `main`, and functions that a CLI decorator such as `@app.command()` registers.
+It also lists changed code that no entry point reaches. A changed private helper starts at its public caller.
 The entry point with the most changed steps comes first.
 Use Next, Previous, `j`, or `k` to move through changed public functions depth first, in call order.
+An unchanged public function with a changed private helper is also a step.
 Each step shows the signature, the first docstring line, changed lines with two lines of context, and lines that make calls.
-Select a `→` chip to open a public callee. A `⇢` chip is a call on an object that resolves by method name.
+Select a `→` chip to open a public callee. A function passed as an argument, or listed in a module-level table, also counts as a call.
+A `⇢` chip is a call through a Protocol or class hierarchy.
+The walk finds the receiver type from annotations, local bindings, and `self` attributes. Calls on standard-library and third-party values are not followed.
+A bare method name falls back to a hierarchy only when the calling module imports its public owner.
 Select a `▸` chip to open a private helper in place.
 End-to-end tests show after the code. Unit tests stay folded.
+A test is end to end when it passes a command list to an entry point, or runs an entry module or script in a subprocess.
 The walk covers Python only. Use the map for other languages and removed code.
+In Rust, a `use other_crate::…` path links to the crate in the same repository.
 
 The default cache persists by repository path under `${XDG_CACHE_HOME:-~/.cache}/architecture-review/` on Linux.
 On macOS, it uses `~/Library/Caches/architecture-review/` unless `XDG_CACHE_HOME` is set.

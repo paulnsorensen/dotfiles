@@ -149,5 +149,206 @@ class WalkTests(unittest.TestCase):
         self.assertEqual(walk.build_walk(self.doc)["unparsed"], ["pkg/broken.py"])
 
 
+PROTO = '''from typing import Protocol
+
+
+class Runner(Protocol):
+    def run(self) -> int: ...
+    def wait(self) -> bool: ...
+
+
+class Local:
+    def run(self) -> int:
+        return 1
+
+    def wait(self) -> bool:
+        return True
+'''
+TOOL = '''import subprocess
+import threading
+from dataclasses import dataclass, field
+
+import fromargs
+
+from .proto import Runner
+
+
+@dataclass
+class Skipped:
+    path: str
+
+    def to_json(self) -> dict:
+        return {"path": self.path}
+
+
+@dataclass
+class Evidence:
+    skipped: list[Skipped] = field(default_factory=list)
+
+    def to_json(self) -> dict:
+        return {"skipped": [item.to_json() for item in self.skipped]}
+
+
+def handle(argv) -> int:
+    return len(argv)
+
+
+def build_app() -> fromargs.App:
+    return fromargs.App("tool", default_command=handle)
+
+
+def run_all(runners: dict[str, Runner]) -> int:
+    runner = runners.get("local")
+    return runner.run()
+
+
+def main(argv=None) -> int:
+    subprocess.run(["true"], check=False)
+    done = threading.Event()
+    done.wait(0)
+    return build_app().run(argv)
+'''
+OTHER = '''class _Conn:
+    def execute(self, sql):
+        return sql
+
+
+class _Wrapped(_Conn):
+    def execute(self, sql):
+        return sql
+
+
+def poll(job, conn):
+    conn.execute("PRAGMA x")
+    return job.wait()
+'''
+ADAPTER = '''class ProcessAdapter:
+    def start(self) -> int:
+        return self._run_protected()
+
+    def _run_protected(self) -> int:
+        return 1
+'''
+TYPER_CLI = '''import typer
+
+app = typer.Typer()
+
+
+@app.command("add-node")
+def add_node(name: str) -> None:
+    print(name)
+
+
+@app.command()
+def list_nodes() -> None:
+    print("nodes")
+'''
+APP_TESTS = '''import subprocess
+import sys
+
+from typer.testing import CliRunner
+
+from app.cli import app
+from app.proto import Local
+
+
+def test_add_node():
+    assert CliRunner().invoke(app, ["add-node", "x"]).exit_code == 0
+
+
+def test_tool_module_runs():
+    subprocess.run([sys.executable, "-m", "app.tool", "x"], check=True)
+
+
+def test_event_is_not_the_runner():
+    import threading
+    released = threading.Event()
+    assert not released.wait(0)
+
+
+def test_local_runner():
+    assert Local().run() == 1
+'''
+
+
+class ResolutionTests(unittest.TestCase):
+    """Regressions from real repositories: foreign values, CLI frameworks, and hidden private changes."""
+
+    def setUp(self):
+        common = {"app/__init__.py": "", "app/proto.py": PROTO, "app/other.py": OTHER}
+        base = files({**common, "app/tool.py": TOOL, "app/adapter.py": ADAPTER, "app/cli.py": TYPER_CLI})
+        head = files({**common,
+                      "app/tool.py": TOOL.replace("return len(argv)", "return len(argv) + 1")
+                      .replace('{"path": self.path}', '{"path": self.path, "kind": "size"}')
+                      .replace('{"skipped": [', '{"version": 2, "skipped": ['),
+                      "app/adapter.py": ADAPTER.replace("return 1", "return 2"),
+                      "app/cli.py": TYPER_CLI.replace("print(name)", "print(name.upper())"),
+                      "tests/test_app.py": APP_TESTS})
+        self.doc = {"schema": 1, "base": "a" * 40, "head": "b" * 40,
+                    "snapshots": {"base": {"files": base}, "head": {"files": head}}}
+        self.walk = walk.build_walk(self.doc)
+        self.nodes = self.walk["nodes"]
+        self.entries = {entry["id"]: entry for entry in self.walk["entries"]}
+
+    def calls(self, identity):
+        return {(call["to"], call["how"]) for call in self.nodes[identity]["calls"]}
+
+    def test_standard_library_values_do_not_dispatch_to_repository_methods(self):
+        targets = {target for target, _ in self.calls("app/tool.py::main")}
+        self.assertNotIn("app/proto.py::Runner.run", targets)
+        self.assertNotIn("app/proto.py::Runner.wait", targets)
+        self.assertEqual(targets, {"app/tool.py::build_app"})
+        self.assertNotIn("tests/test_app.py::test_event_is_not_the_runner", self.nodes)
+
+    def test_method_names_do_not_dispatch_to_private_or_unimported_owners(self):
+        self.assertNotIn("app/other.py::poll", self.nodes)
+        poll = walk.calls_in(*self.program_parts("app/other.py", "poll"))
+        self.assertEqual(poll, [])
+
+    def program_parts(self, path, name):
+        program = walk.Program(self.doc["snapshots"]["head"]["files"])
+        module = program.modules[path]
+        return program, module, module.funcs[name], None, walk.dispatch_table(program)
+
+    def test_value_taken_from_an_annotated_mapping_dispatches_through_its_protocol(self):
+        calls = walk.calls_in(*self.program_parts("app/tool.py", "run_all"))
+        self.assertEqual([(call["to"], call["how"]) for call in calls], [("app/proto.py::Runner.run", "dynamic")])
+
+    def test_function_passed_as_an_argument_is_a_call(self):
+        self.assertIn(("app/tool.py::handle", "ref"), self.calls("app/tool.py::build_app"))
+        self.assertEqual(self.nodes["app/tool.py::handle"]["change"], "body")
+        self.assertNotIn("app/tool.py::handle", [entry for entry, item in self.entries.items() if item.get("orphan")])
+
+    def test_cli_decorators_register_entry_points_and_drive_tests(self):
+        self.assertEqual(self.entries["app/cli.py::add_node"]["label"], "cli add-node")
+        self.assertEqual(self.entries["app/cli.py::list_nodes"]["label"], "cli list-nodes")
+        test = self.nodes["tests/test_app.py::test_add_node"]
+        self.assertTrue(test["e2e"])
+        self.assertIn(("app/cli.py::add_node", "command"), self.calls(test["id"]))
+
+    def test_subprocess_module_run_drives_the_entry_point(self):
+        test = self.nodes["tests/test_app.py::test_tool_module_runs"]
+        self.assertTrue(test["e2e"])
+        self.assertIn(("app/tool.py::main", "command"), self.calls(test["id"]))
+
+    def test_loop_item_type_comes_from_the_field_annotation(self):
+        self.assertIn(("app/tool.py::Skipped.to_json", "direct"), self.calls("app/tool.py::Evidence.to_json"))
+        orphans = [entry for entry, item in self.entries.items() if item.get("orphan")]
+        self.assertIn("app/tool.py::Evidence.to_json", orphans)
+        self.assertNotIn("app/tool.py::Skipped.to_json", orphans)
+
+    def test_changed_private_helper_starts_at_its_public_caller(self):
+        orphans = [entry for entry, item in self.entries.items() if item.get("orphan")]
+        self.assertIn("app/adapter.py::ProcessAdapter.start", orphans)
+        self.assertNotIn("app/adapter.py::ProcessAdapter._run_protected", orphans)
+
+    def test_no_changed_python_code_has_no_walk(self):
+        head = dict(self.doc["snapshots"]["base"]["files"])
+        head["tests/test_app.py"] = {"blob": "0" * 40, "text": APP_TESTS}
+        head["src/lib.rs"] = {"blob": "1" * 40, "text": "fn main() {}\n"}
+        doc = {**self.doc, "snapshots": {"base": self.doc["snapshots"]["base"], "head": {"files": head}}}
+        self.assertIsNone(walk.build_walk(doc))
+
+
 if __name__ == "__main__":
     unittest.main()
