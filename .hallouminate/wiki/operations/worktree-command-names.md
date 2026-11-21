@@ -40,6 +40,12 @@ T3 and Claude Desktop already use "thread" and "session" for conversations, and 
 
 Renaming them would orphan existing data or leave stale refs.
 
+
+
+## Model pin
+
+`/wt` sets `model: inherit` and no `effort:`. A skill's `model` and `effort` apply for the rest of the turn ([Claude Code skills docs](https://code.claude.com/docs/en/skills.md)). Agents call `/wt` mid-task, so a `sonnet` pin moved the remaining verification and transfer work off an Opus session. `tests/agent-skill-model-effort.bats` accepts `inherit` only when `effort:` is absent. The operator approved this guard change on 2026-11-21.
+
 ## Related
 
 - [[harnesses/claude-desktop-sessions]]

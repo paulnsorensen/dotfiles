@@ -3,7 +3,10 @@
 #
 # Canonical agents and selected workflow skills retain the Claude haiku→low,
 # sonnet→medium, opus→high mapping; inline user-invoked skills inherit the
-# session model. xhigh/max remain manual-only. Codex models are workload-specific.
+# session model. A selected skill may set `model: inherit` with no `effort:`
+# to keep the caller's model and effort, because a skill's model and effort
+# apply for the rest of the turn. xhigh/max remain manual-only. Codex models
+# are workload-specific.
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 REGISTRY="$DOTFILES_DIR/agents/registry.yaml"
@@ -86,6 +89,10 @@ expected_agent_codex_model() {
         model="$(echo "$fm" | yq -r '.model // ""')"
         effort="$(echo "$fm" | yq -r '.effort // ""')"
         [[ -n "$model" ]] || { echo "skill '$s' has no model:" >&2; return 1; }
+        if [[ "$model" == inherit ]]; then
+            [[ -z "$effort" ]] || { echo "skill '$s' sets model: inherit, so it must omit effort: (got '$effort')" >&2; return 1; }
+            continue
+        fi
         [[ -n "$effort" ]] || { echo "skill '$s' has no effort:" >&2; return 1; }
     done < <(yq -r '.claude.skills[]' "$CLAUDE_YAML")
 }
@@ -97,6 +104,7 @@ expected_agent_codex_model() {
         fm="$(awk '/^---/{c++; if(c==2)exit; if(c==1)next} c==1{print}' "$DOTFILES_DIR/skills/$s/SKILL.md")"
         is_inline_skill "$fm" && continue
         model="$(echo "$fm" | yq -r '.model // ""')"
+        [[ "$model" == inherit ]] && continue
         effort="$(echo "$fm" | yq -r '.effort // ""')"
         want="$(expected_effort "$model")"
         [[ "$want" != "UNMAPPED" ]] \

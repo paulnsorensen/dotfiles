@@ -1,7 +1,6 @@
 ---
 name: wt
-model: sonnet
-effort: medium
+model: inherit
 description: >
   Creates or resumes an isolated editing session in a Git worktree.
   Use when the user says "create an isolated worktree", "resume a worktree session",
