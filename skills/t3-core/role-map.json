@@ -1,0 +1,19 @@
+{
+  "reviewer": {"providerInstanceId": "claudeAgent", "model": "claude-opus-5-5", "options": {"effort": "high"}, "isolation": "shared"},
+  "planner": {"providerInstanceId": "claudeAgent", "model": "claude-opus-5-5", "options": {"effort": "high"}, "isolation": "shared"},
+  "taste-test": {"providerInstanceId": "claudeAgent", "model": "claude-opus-5-5", "options": {"effort": "medium"}, "isolation": "shared"},
+  "second-reviewer": {"providerInstanceId": "codex", "model": "gpt-6.1-sol", "options": {"reasoningEffort": "high"}, "isolation": "shared"},
+  "advisor": {"providerInstanceId": "codex", "model": "gpt-6-astra", "options": {"reasoningEffort": "high"}, "isolation": "shared"},
+  "coder": {"providerInstanceId": "claudeAgent", "model": "claude-sonnet-5-5", "options": {"effort": "medium"}, "isolation": "worktree"},
+  "press": {"providerInstanceId": "claudeAgent", "model": "claude-sonnet-5-5", "options": {"effort": "medium"}, "isolation": "worktree"},
+  "cure": {"providerInstanceId": "claudeAgent", "model": "claude-sonnet-5-5", "options": {"effort": "medium"}, "isolation": "worktree"},
+  "continuation": {"providerInstanceId": "claudeAgent", "model": "claude-sonnet-5-5", "options": {"effort": "medium"}, "isolation": "worktree"},
+  "explorer": {"providerInstanceId": "claudeAgent", "model": "claude-sonnet-5-5", "options": {"effort": "low"}, "isolation": "shared"},
+  "researcher": {"providerInstanceId": "claudeAgent", "model": "claude-sonnet-5-5", "options": {"effort": "medium"}, "isolation": "shared"},
+  "gate-runner": {"providerInstanceId": "claudeAgent", "model": "claude-haiku-5-5", "options": {"effort": "low"}, "isolation": "shared"},
+  "runner": {"providerInstanceId": "claudeAgent", "model": "claude-haiku-5-5", "options": {"effort": "low"}, "isolation": "shared"},
+  "recon": {"providerInstanceId": "claudeAgent", "model": "claude-haiku-5-5", "options": {"effort": "low"}, "isolation": "shared"},
+  "worktree-digest": {"providerInstanceId": "claudeAgent", "model": "claude-haiku-5-5", "options": {"effort": "low"}, "isolation": "shared"},
+  "formatter": {"providerInstanceId": "codex", "model": "gpt-6-luna", "options": {"reasoningEffort": "medium"}, "isolation": "shared"},
+  "verifier": {"providerInstanceId": "codex", "model": "gpt-6-luna", "options": {"reasoningEffort": "medium"}, "isolation": "shared"}
+}

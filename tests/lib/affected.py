@@ -86,7 +86,7 @@ SHELL_LINT_EXTRA = frozenset({"chezmoi/private_dot_codex/modify_private_config.t
 
 BATS_GLOB = "tests/*.bats"
 BATS_HELPER_GLOB = "tests/*.bash"
-SMOKE_GLOB = "tests/workflows/*.test.mjs"
+SMOKE_GLOBS = ("tests/workflows/*.test.mjs", "tests/t3-run/*.test.mjs")
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_.*${}-]*/[A-Za-z0-9_.*${}/-]*")
 _VAR_RE = re.compile(r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*")
@@ -407,9 +407,11 @@ def lint_legs(root: Path, path: str) -> dict[str, bool]:
     return legs
 
 
-def _read_tests(root: Path, pattern: str) -> dict[str, str]:
+def _read_tests(root: Path, patterns: str | tuple[str, ...]) -> dict[str, str]:
+    globs = (patterns,) if isinstance(patterns, str) else patterns
     return {
         p.relative_to(root).as_posix(): p.read_text(encoding="utf-8", errors="replace")
+        for pattern in globs
         for p in sorted(root.glob(pattern))
     }
 
@@ -448,7 +450,7 @@ def build_plan(root: Path, changed: list[str], run_all: bool = False) -> Plan:
     helpers = helper_tokens(_read_tests(root, BATS_HELPER_GLOB), tops)
     suites = (
         ("test", BATS_GLOB, BATS_ALL, helpers),
-        ("smoke", SMOKE_GLOB, SMOKE_ALL, {}),
+        ("smoke", SMOKE_GLOBS, SMOKE_ALL, {}),
     )
     for leg, pattern, shared, suite_helpers in suites:
         tests = _read_tests(root, pattern)
