@@ -1,0 +1,36 @@
+{
+  "scenario": "task-desktop-child",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "Claude desktop app, Code tab, local session",
+    "parent": {
+      "checkout": "/repo",
+      "worktree": false,
+      "branch": "main"
+    },
+    "request": {
+      "user_asked": true,
+      "separate_session": true,
+      "isolated_worktree": true,
+      "task": "cache fix"
+    },
+    "capabilities": {
+      "t3_session_tools": false,
+      "ccd_session": [
+        "start_session",
+        "list_start_targets"
+      ],
+      "spawn_task": false,
+      "start_session_worktree_field": false,
+      "terminal_launchers": [
+        "ccw",
+        "claude --worktree"
+      ]
+    },
+    "destination": {
+      "checkout": null,
+      "branch": null,
+      "write_access": null
+    }
+  }
+}

@@ -3,6 +3,7 @@
 The repo deploys shared agent configuration into seven active AI coding surfaces. Claude, Codex, Copilot, and Cursor are `ap` render targets. OMP, Pi, and OpenCode use native chezmoi configuration.
 
 - [[claude]] — Claude Code and an `ap` isolated-launch target.
+  - [[claude-desktop-sessions]] defines how the Desktop Code tab starts sessions.
 - [[codex]] — OpenAI Codex CLI.
   - [[codex-hooks-schema]] defines the managed hook shape.
   - [[../architecture/chezmoi-authoritative-codex]] defines config ownership.

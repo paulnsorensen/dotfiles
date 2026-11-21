@@ -1,0 +1,30 @@
+{
+  "scenario": "task-desktop-unattended",
+  "evidence": "synthetic",
+  "observations": {
+    "host": "Claude desktop app, Code tab, scheduled session",
+    "parent": {
+      "checkout": "/repo/.claude/worktrees/triage",
+      "worktree": true,
+      "origin": "scheduled"
+    },
+    "request": {
+      "separate_session": true,
+      "isolated_worktree": true,
+      "task": "flaky test triage"
+    },
+    "capabilities": {
+      "t3_session_tools": false,
+      "ccd_session": [
+        "start_session"
+      ]
+    },
+    "attempts": [
+      {
+        "tool": "start_session",
+        "initiation": "own_initiative",
+        "result": "refused: Starting sessions requires a user at the keyboard; this session runs unattended (scheduled or remotely dispatched)."
+      }
+    ]
+  }
+}

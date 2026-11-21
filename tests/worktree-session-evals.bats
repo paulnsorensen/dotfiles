@@ -10,7 +10,7 @@ import sys
 root = pathlib.Path(sys.argv[1])
 cases = json.loads((root / "evals.json").read_text())["evals"]
 tasks = [case for case in cases if case["kind"] == "task"]
-assert len(cases) == 24 and len(tasks) == 15
+assert len(cases) == 26 and len(tasks) == 17
 paths = []
 for case in tasks:
     assert len(case["files"]) == 1, case["name"]
@@ -47,6 +47,15 @@ ambiguous = scenario("task-lost-response-ambiguous")
 assert ambiguous["launch"]["threadId"] is None
 assert len({item["threadId"] for item in ambiguous["thread_list"]}) == 2
 assert all(not item["binding_verified"] for item in ambiguous["thread_list"])
+desktop = scenario("task-desktop-child")
+assert desktop["capabilities"]["t3_session_tools"] is False
+assert "start_session" in desktop["capabilities"]["ccd_session"]
+assert desktop["parent"]["worktree"] is False
+assert desktop["capabilities"]["start_session_worktree_field"] is False
+assert desktop["destination"]["write_access"] is None
+unattended = scenario("task-desktop-unattended")
+assert unattended["parent"]["origin"] == "scheduled"
+assert all(item["result"].startswith("refused") for item in unattended["attempts"])
 PY
     [ "$status" -eq 0 ]
 }
