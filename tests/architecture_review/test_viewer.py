@@ -53,6 +53,9 @@ class ViewerTests(unittest.TestCase):
         self.assertIn("Change", html)
         self.assertIn("Source", html)
         self.assertIn("viewer.js", html)
+        self.assertIn("walk.js", html)
+        self.assertIn('id="walk"', html)
+        self.assertIn('id="walk-toggle"', html)
 
     def test_untrusted_data_cannot_break_script_or_markup(self):
         self.doc["groups"][0]["label"] = '</script><img src=x onerror=alert(1)>'

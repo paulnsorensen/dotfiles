@@ -27,6 +27,18 @@ Use Back to restore the previous diagram.
 Inspect removed calls at base; they are not head dependencies.
 These arrows show resolved references, not observed execution.
 
+## Call walk
+
+A diff with Python changes opens on the call walk. Use Subsystem map to return to the map.
+The walk lists entry points: `main` functions, string command branches inside `main`, and changed code that no entry point reaches.
+The entry point with the most changed steps comes first.
+Use Next, Previous, `j`, or `k` to move through changed public functions depth first, in call order.
+Each step shows the signature, the first docstring line, changed lines with two lines of context, and lines that make calls.
+Select a `→` chip to open a public callee. A `⇢` chip is a call on an object that resolves by method name.
+Select a `▸` chip to open a private helper in place.
+End-to-end tests show after the code. Unit tests stay folded.
+The walk covers Python only. Use the map for other languages and removed code.
+
 The default cache persists by repository path under `${XDG_CACHE_HOME:-~/.cache}/architecture-review/` on Linux.
 On macOS, it uses `~/Library/Caches/architecture-review/` unless `XDG_CACHE_HOME` is set.
 The script creates a private per-repository cache directory with mode 0700.

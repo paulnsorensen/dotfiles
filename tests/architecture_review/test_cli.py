@@ -57,6 +57,8 @@ class CliTests(unittest.TestCase):
             self.assertIn("Architecture review", Path(summary["viewer"]).read_text())
             self.assertEqual(summary["worker_status"], "unavailable")
             self.assertEqual(summary["tasks"], [])
+            self.assertEqual(summary["walk_entries"], 1)
+            self.assertIn('"walk":', Path(summary["viewer"]).read_text())
             repeat = run(*args)
             self.assertEqual(repeat.returncode, 0, repeat.stderr)
             self.assertEqual(json.loads(repeat.stdout)["head"], head)

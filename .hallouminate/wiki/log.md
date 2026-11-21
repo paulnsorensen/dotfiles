@@ -129,3 +129,7 @@
 2026-11-15 · wiki-harvest-auto/dotfiles-20261115 · curated · harnesses/pi.md · Record Pi package bump traps: pin-test literal and pi-subagents child prompt inheritance. Supersedes the 2026-10-25 curation PR.
 
 2026-11-17 · pr-1596-prefix-safety · merged · architecture/config-drift.md · Record inactive mise discovery and explicit npm prefix selection. The executable path alone does not constrain removal.
+
+2026-11-20 · research-pr1615 · new-page · research/code-review-interfaces.md · Tool patterns for decision cards (Research 1 and 2).
+2026-11-20 · research-pr1615 · new-page · research/code-review-cognitive-load.md · Evidence on review load, with open questions (Research 3).
+2026-11-20 · research-pr1615 · merged · architecture/agents-dir.md · Related links under the architecture review section.

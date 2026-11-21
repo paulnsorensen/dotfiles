@@ -145,6 +145,8 @@ These decisions hold:
 
 #### Architecture review skill: opening decisions
 
+Related: tool patterns for decision cards are in [[research/code-review-interfaces]]. Evidence on review load is in [[research/code-review-cognitive-load]].
+
 The architecture review design keeps the subsystem map visible while a reviewer examines a changed boundary.[^review-opening]
 Stable landmarks help the reviewer return from a source detail without rebuilding a mental map.
 Repository-only input opens the subsystem overview without selecting a change.

@@ -17,6 +17,8 @@ BASE = "cb92ab00b41cb7343db3a0410f2641c0e214339b"
 HEAD = "fa73ab4eb6765adbb09498131d7cc08b46cf39a7"
 TARGET = "require_compile_targets"
 VALIDATORS = ("validate_compile_targets", "validate_harness_field_coverage")
+WALK_STEP = "agent-profile/agent_profile/renderers/claude.py::ClaudeRenderer.render"
+BROWNFIELD_BASE00 = "rgb(33, 26, 22)"
 
 
 def artifact_data(path: Path) -> dict:
@@ -82,6 +84,31 @@ def cited_evidence(doc: dict, citation_id: str) -> dict:
         for item in items
     ), f"Citation {citation_id} cites a missing or foreign site"
     return citation
+
+
+def check_walk(page, path: Path) -> None:
+    """Walk from the entry point to a public method, then open a folded private helper."""
+    assert page.locator("#walk").is_visible(), "Diff does not open on the call walk"
+    assert not page.locator(".workbench").is_visible(), "Subsystem map shows under the walk"
+    assert page.evaluate("getComputedStyle(document.body).backgroundColor") == BROWNFIELD_BASE00, "Page does not use the Brownfield background"
+    assert page.locator(".walk-entry[aria-current=true] .walk-entry-name").inner_text().endswith("cli compile"), (
+        "First entry point is not the one with the most changed steps"
+    )
+    assert page.locator(".walk-test").count() >= 1, "End-to-end tests do not show after the entry code"
+    unit = page.locator(".walk-tests .walk-toggle")
+    assert unit.count() == 0 or unit.get_attribute("aria-expanded") == "false", "Unit tests do not start folded"
+    page.goto(path.resolve().as_uri() + "#walk:" + WALK_STEP, wait_until="load")
+    assert page.locator(".walk-trail").inner_text().startswith("cli compile"), "Trail does not start at the entry point"
+    helper = page.locator(".walk-chip.helper", has_text="_write_mcp_json").first
+    assert helper.get_attribute("aria-expanded") == "false", "Private helper does not start folded"
+    assert page.locator(".walk-block.nested").count() == 0, "Helper body shows before a click"
+    helper.click()
+    assert "if logical_root is None:" in page.locator(".walk-block.nested").inner_text(), "Opened helper hides its guard"
+    page.locator(".walk-button", has_text="Open in map").click()
+    assert page.locator("#detail .inspection h3").inner_text() == "render", "Open in map lost the symbol"
+    page.goto(path.resolve().as_uri(), wait_until="load")
+    page.locator("#walk-toggle").click()
+    assert page.locator(".workbench").is_visible(), "Walk toggle does not show the subsystem map"
 
 
 def check_symbol_graph(page, doc: dict, target: dict, validators: list[dict], validator_edges: dict) -> None:
@@ -276,6 +303,7 @@ def check(path: Path) -> None:
         page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
         page.on("request", lambda request: requests.append(request.url) if request.url.startswith(("http:", "https:")) else None)
         page.goto(path.resolve().as_uri(), wait_until="load")
+        check_walk(page, path)
         assert page.locator("#map .map-node").count() <= 6, "Opening map exceeds six groups"
         assert page.locator("#map .map-node").count() > 0, "Opening map is empty"
         selected = page.locator("#detail .section-heading h2").inner_text()

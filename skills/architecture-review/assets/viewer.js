@@ -570,6 +570,7 @@
     render();
   });
   $("compare").addEventListener("click", () => {state.compare = !state.compare; render();});
+  document.addEventListener("architecture:open-node", event => selectNode(event.detail?.id, event.detail?.revision || "head"));
   $("previous-change").addEventListener("click", () => navigateChange(-1));
   $("next-change").addEventListener("click", () => navigateChange(1));
   $("search").addEventListener("input", event => {state.query = event.target.value.trim(); state.page = 0; render();});

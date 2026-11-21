@@ -20,6 +20,7 @@ sys.dont_write_bytecode = True
 from analysis import accept, prepare
 from evidence import build
 from viewer import render
+from walk import build_walk
 
 
 MAX_REPLIES = 256_000
@@ -133,6 +134,9 @@ def run(argv: list[str]) -> dict:
     cache = private_directory(args.cache if args.cache else default_cache(repo), owned=False)
     doc = build(repo, args.base, args.rev or args.head or "HEAD", cache,
                 args.focus or args.explain)
+    walk = build_walk(doc)
+    if walk:
+        doc["walk"] = walk
     viewer = out / "index.html"
     safe_file(viewer, render(doc))  # Publish static evidence before scheduling any worker.
     tasks: list[dict] = []
@@ -164,6 +168,7 @@ def run(argv: list[str]) -> dict:
         safe_file(out / "tasks.json", json.dumps(task_paths, indent=2) + "\n")
     return {"viewer": str(viewer), "head": doc["head"], "base": doc["base"],
             "focus": doc.get("focus"), "groups": len(doc["groups"]),
+            "walk_entries": len(walk["entries"]) if walk else 0,
             "tasks": task_paths, "worker_status": worker_status,
             "claims": len(annotations.get("claims", [])),
             "missing": [item for item in annotations.get("unknowns", [])
