@@ -15,6 +15,17 @@ setup() {
 Test preamble content for assertion checks.
 MD
     export CODEX_HOME="$TEST_HOME/.codex"
+    # A failing tilth keeps the suite hermetic: Codex then gets the dotfiles
+    # preamble alone. stub_tilth_preamble replaces this stub.
+    mkdir -p "$TEST_HOME/fakebin"
+    printf '%s\n' '#!/bin/sh' 'exit 1' > "$TEST_HOME/fakebin/tilth"
+    chmod +x "$TEST_HOME/fakebin/tilth"
+    export PATH="$TEST_HOME/fakebin:$PATH"
+}
+
+# A tilth that has the `preamble` subcommand.
+stub_tilth_preamble() {
+    printf '%s\n' '#!/bin/sh' 'printf "# tilth agent preamble\n\nbase rule\n"' > "$TEST_HOME/fakebin/tilth"
 }
 
 teardown() { teardown_test_env; }
@@ -163,4 +174,49 @@ TOML
     run yq -e '.opencode.config.instructions[0] == "~/.config/opencode/preamble.md"' \
         "$REAL_DOTFILES_DIR/chezmoi/.chezmoidata/opencode.yaml"
     assert_success
+}
+
+# ── the tilth preamble as the Codex base ─────────────────────────────────────
+
+@test "install-prompts.sh installs the tilth preamble before the dotfiles preamble for Codex" {
+    stub_tilth_preamble
+    INSTALL_PROMPTS_HAVE_CODEX=1 \
+        run bash "$LIB" "$PREAMBLE_SRC"
+    assert_success
+    [ "$(head -n 1 "$CODEX_HOME/preamble.md")" = "# tilth agent preamble" ]
+    diff <(tail -n "$(wc -l < "$PREAMBLE_SRC")" "$CODEX_HOME/preamble.md") "$PREAMBLE_SRC"
+}
+
+@test "install-prompts.sh keeps the dotfiles preamble alone for OpenCode" {
+    stub_tilth_preamble
+    export OPENCODE_HOME="$TEST_HOME/.config/opencode"
+    INSTALL_PROMPTS_HAVE_CODEX=0 \
+        run bash "$LIB" "$PREAMBLE_SRC"
+    assert_success
+    diff "$PREAMBLE_SRC" "$OPENCODE_HOME/preamble.md"
+}
+
+@test "install-prompts.sh gives Codex the plain preamble when bin/dots-preamble fails" {
+    stub_tilth_preamble
+    local clone="$TEST_HOME/clone"
+    mkdir -p "$clone/chezmoi/lib" "$clone/bin"
+    cp "$LIB" "$clone/chezmoi/lib/install-prompts.sh"
+    printf '%s\n' '#!/bin/sh' "echo \"$TEST_HOME/never-written.md\"" 'exit 1' > "$clone/bin/dots-preamble"
+    chmod +x "$clone/bin/dots-preamble"
+    INSTALL_PROMPTS_HAVE_CODEX=1 \
+        run bash "$clone/chezmoi/lib/install-prompts.sh" "$PREAMBLE_SRC"
+    assert_success
+    diff "$PREAMBLE_SRC" "$CODEX_HOME/preamble.md"
+}
+
+@test "install-prompts.sh gives Codex the plain preamble when bin/dots-preamble prints a missing path" {
+    local clone="$TEST_HOME/clone"
+    mkdir -p "$clone/chezmoi/lib" "$clone/bin"
+    cp "$LIB" "$clone/chezmoi/lib/install-prompts.sh"
+    printf '%s\n' '#!/bin/sh' "echo \"$TEST_HOME/does-not-exist.md\"" > "$clone/bin/dots-preamble"
+    chmod +x "$clone/bin/dots-preamble"
+    INSTALL_PROMPTS_HAVE_CODEX=1 \
+        run bash "$clone/chezmoi/lib/install-prompts.sh" "$PREAMBLE_SRC"
+    assert_success
+    diff "$PREAMBLE_SRC" "$CODEX_HOME/preamble.md"
 }

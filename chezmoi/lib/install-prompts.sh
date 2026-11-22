@@ -1,12 +1,13 @@
 #!/bin/bash
 # install-prompts.sh — wire agents/preamble.md into Codex and OpenCode.
 #
-# Claude Code reads preamble.md directly via the cc/ccc/ccr wrappers
+# Claude Code gets its preamble through the cc/ccc/ccr wrappers
 # in zsh/claude.zsh (--system-prompt-file), so it is not handled here.
 #
 # Per-harness mechanism:
 #
-#   Codex     — copy preamble.md to <CODEX_HOME>/preamble.md, then yq-edit
+#   Codex     — copy the tilth preamble joined with preamble.md
+#               (bin/dots-preamble) to <CODEX_HOME>/preamble.md, then yq-edit
 #               <CODEX_HOME>/config.toml to set
 #                 model_instructions_file = "<CODEX_HOME>/preamble.md"
 #               This REPLACES the bundled per-model system prompt
@@ -41,6 +42,19 @@ install_prompts_have() {
     command -v "$cmd" &>/dev/null
 }
 
+# Prints the file to install for Codex: the tilth preamble joined with the
+# dotfiles preamble (bin/dots-preamble). When the helper is missing or fails,
+# it prints the dotfiles preamble path.
+install_prompts_codex_source() {
+    local preamble="$1" helper joined
+    helper="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/bin/dots-preamble"
+    if [[ -x "$helper" ]] && joined="$("$helper" "$preamble" 2>/dev/null)" && [[ -f "$joined" ]]; then
+        printf '%s\n' "$joined"
+    else
+        printf '%s\n' "$preamble"
+    fi
+}
+
 install_prompts_wire_codex() {
     local preamble="$1"
     local codex_home="${CODEX_HOME:-$HOME/.codex}"
@@ -53,7 +67,7 @@ install_prompts_wire_codex() {
     }
 
     mkdir -p "$codex_home"
-    cp -f "$preamble" "$codex_prompt"
+    cp -f "$(install_prompts_codex_source "$preamble")" "$codex_prompt"
     echo "  Copied preamble.md -> $codex_prompt"
 
     if [[ ! -f "$codex_config" ]]; then

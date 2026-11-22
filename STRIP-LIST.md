@@ -43,6 +43,7 @@ Distilled from `.cheese/notes/strip-log.md` + Phase D decisions.
 | `bin/lib/term-colors.sh` | COPY | Colour constants; `wt-sweep` and `install-linux-server` source it |
 | `bin/lib/tagged-log.sh` | COPY | Tagged log helpers; `install-linux-server` and `linux-install` source it |
 | `bin/dotsclaude` | SKIP | Personal Claude launcher |
+| `bin/dots-preamble` | SKIP | Personal preamble path helper for the Claude and Codex launchers |
 | `bin/cheatsheet` | SKIP | Personal cheatsheet |
 | `bin/claude-json-prune` | SKIP | Personal session pruner |
 | `bin/record-prompt` | SKIP | Personal prompt recorder |

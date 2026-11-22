@@ -13,6 +13,26 @@ owns task-to-tool routing and the agents doc keeps stable cross-project rules.
 
 OMP and Pi use native prompt addenda. Their prompt contracts are not forced through the Claude/Codex preamble installer.
 
+### The tilth preamble is the base (2026-11-22)
+
+Claude and Codex launch with the bundled tilth preamble first and `agents/preamble.md` after it.
+`tilth preamble` prints the tilth text.
+tilth tunes its tool rules with its benchmark and ships them with the binary.
+`dots_effective_preamble` joins the two texts into `~/.cache/dotfiles/preamble-<cksum>.md`.[^tilth-base]
+
+- One joined file serves both harnesses. Codex takes one `model_instructions_file`, so an append flag for Claude alone adds a second mechanism.
+- The checksum gives each content its own file. A running session keeps its file when tilth or the dotfiles preamble changes.
+- The function requires the heading `# tilth agent preamble`. A tilth without the subcommand searches for the word "preamble" and exits 0.
+- Without a usable tilth, the launchers pass `agents/preamble.md` alone. Thus that file keeps its `## Tools` block, and OpenCode keeps the file unjoined.
+- The joined text repeats some tool rules and some `agents/AGENTS.md` rules. `agents/instruction-budgets.toml` does not count the tilth text, because the repository does not own it.
+- `install-prompts.sh` copies the joined file to `~/.codex/preamble.md`. Its `run_onchange` hash includes the `tilth preamble` output.
+
+Live checks on 2026-11-22 use tilth 0.8.4 and Claude Code 2.1.330.
+The `api-request-shape` entry of a `dotsclaude -p` session holds both headings.
+The `base_instructions` of a `dotscodex exec` rollout holds both headings, tilth first.
+
+[^tilth-base]: `bin/lib/preamble-wrappers.sh` (`dots_effective_preamble`); `bin/dots-preamble`; `bin/dotsclaude`; `bin/dotscodex`; `zsh/claude.zsh` (`_cc_base`); `chezmoi/lib/install-prompts.sh`; `tests/dots-wrappers.bats`.
+
 ### tilth search v2 graduated to the canonical surface (2026-09-07)
 
 Tilth main removed the temporary `tilth_search_v2` alias and the

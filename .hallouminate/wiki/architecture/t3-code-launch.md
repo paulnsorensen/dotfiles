@@ -45,12 +45,16 @@ Everything else (claude.ai connectors, plugins, tilth, context7) loads from
 
 T3 launches each harness through `providerInstances.<id>.config.binaryPath`.
 The registry points three instances at the `bin/dots*` wrappers. Each wrapper
-replaces the native system prompt with `agents/preamble.md`:
+replaces the native system prompt. Claude and Codex get the tilth preamble
+joined with `agents/preamble.md`; OpenCode gets `agents/preamble.md` alone.
+`dots_effective_preamble` (`bin/lib/preamble-wrappers.sh`) writes the joined
+file to `~/.cache/dotfiles/preamble-<cksum>.md`. Without a usable tilth, it
+returns `<clone>/agents/preamble.md`. See [[global-agents-doc]].
 
 | Instance | Wrapper | Mechanism |
 |---|---|---|
-| `claudeAgent` | `bin/dotsclaude` | `--system-prompt-file <clone>/agents/preamble.md`. T3 still appends its own blocks after the preamble. |
-| `codex` | `bin/dotscodex` | `-c model_instructions_file="<clone>/agents/preamble.md"` before the subcommand. T3 runs `<binaryPath> app-server`. |
+| `claudeAgent` | `bin/dotsclaude` | `--system-prompt-file <joined file>`. T3 still appends its own blocks after the preamble. |
+| `codex` | `bin/dotscodex` | `-c model_instructions_file="<joined file>"` before the subcommand. T3 runs `<binaryPath> app-server`. |
 | `opencode` | `bin/dotsopencode` | Merges work-agent prompts and the preamble path into `OPENCODE_CONFIG_CONTENT`. T3 runs `<binaryPath> serve` and sets that variable (`"{}"` by default). |
 
 **Why wrappers when config already does it:** Codex reads

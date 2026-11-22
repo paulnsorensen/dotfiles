@@ -42,7 +42,11 @@ _cc_base() {
     set -- "${passthru[@]}"
 
     local -a flags=()
-    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    # The tilth preamble, then agents/preamble.md (bin/dots-preamble).
+    local preamble
+    preamble="$("${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/dots-preamble" "$AGENTS_DOTFILES/preamble.md" 2>/dev/null)" \
+        || preamble="$AGENTS_DOTFILES/preamble.md"
+    [[ -f "$preamble" ]] && flags+=(--system-prompt-file "$preamble")
     local -a cmd=(claude "${flags[@]}" "$@")
     local launcher="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-env-exec"
     [[ -x "$launcher" ]] && cmd=("$launcher" "${cmd[@]}")

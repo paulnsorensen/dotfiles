@@ -216,7 +216,7 @@ The standalone `agents/mcp/sync.sh` and `agents/hooks/sync.sh` remain legacy nat
 Shared agent *content* that chezmoi copies directly (not through `ap`):
 
 - **`agents/AGENTS.md`** — global coding-agent preferences installed for Claude, Codex, and Pi.
-- **`agents/preamble.md`** — the compact standing system-prompt body. Claude wrappers pass it with `--system-prompt-file`; `install-prompts.sh` installs it as Codex's `model_instructions_file`. OMP and Pi use separate native `APPEND_SYSTEM.md` files because their prompt contracts differ.
+- **`agents/preamble.md`** — the compact standing system-prompt body. Claude and Codex launch with the tilth preamble first and this file after it (`bin/dots-preamble`); see [[global-agents-doc]]. OMP and Pi use separate native `APPEND_SYSTEM.md` files because their prompt contracts differ.
 
 See [[../harnesses/index]] for how each harness consumes these artifacts and the official docs for its native config surfaces.
 

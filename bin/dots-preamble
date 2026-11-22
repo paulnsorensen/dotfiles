@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# dots-preamble — print the path of the system-prompt file for Claude and
+# Codex: the tilth preamble, then agents/preamble.md. The zsh `cc` wrappers
+# call this script. bin/dotsclaude and bin/dotscodex source the same library.
+#
+# Usage: dots-preamble [dotfiles-preamble-path]
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/lib/preamble-wrappers.sh
+source "$SCRIPT_DIR/lib/preamble-wrappers.sh"
+
+# The clone is the parent of bin/ unless DOTFILES_DIR is set.
+AGENTS_DOTFILES="${AGENTS_DOTFILES:-${DOTFILES_DIR:-${SCRIPT_DIR%/bin}}/agents}"
+dots_effective_preamble "${1:-$AGENTS_DOTFILES/preamble.md}"

@@ -13,8 +13,10 @@
 #   and hallouminate stay in the preloaded tool list. The modify script
 #   expands $HOME and $DOTFILES; chezmoi data files are not templated.
 # - binaryPath points each harness at its bin/dots* wrapper, which replaces
-#   the native system prompt with agents/preamble.md. $DOTFILES is the parent
-#   of the chezmoi source directory, so the path follows the clone location.
+#   the native system prompt. Claude and Codex get the tilth preamble joined
+#   with agents/preamble.md; OpenCode gets agents/preamble.md. $DOTFILES is the
+#   parent of the chezmoi source directory, so the path follows the clone
+#   location.
 # - antigravity binaryPath points at the mise agy shim, so T3 runs the
 #   Renovate-pinned CLI instead of its own managed runtime under
 #   ~/.t3/userdata/providers. T3 accepts a custom path only when its basename

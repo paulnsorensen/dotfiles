@@ -14,9 +14,13 @@ CLAUDE_BIN="${CLAUDE_BIN:-${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims/claude
 
 flags=()
 
-# Preamble system-prompt replacement (replaces Anthropic's baked prompt).
-[[ -f "$AGENTS_DOTFILES/preamble.md" ]] && \
-    flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+# Preamble system-prompt replacement (replaces Anthropic's baked prompt): the
+# tilth preamble, then agents/preamble.md. See dots_effective_preamble.
+# shellcheck source=bin/lib/preamble-wrappers.sh
+source "$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/preamble-wrappers.sh"
+if preamble="$(dots_effective_preamble "$AGENTS_DOTFILES/preamble.md")"; then
+    flags+=(--system-prompt-file "$preamble")
+fi
 
 # Fresh .env keys at process start (mirrors _cc_base's launcher prefix) —
 # Conductor doesn't source zsh init, so .env keys may be absent from its env.

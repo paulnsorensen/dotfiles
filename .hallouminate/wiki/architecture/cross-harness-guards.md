@@ -111,6 +111,29 @@ Feedback therefore keeps safe recovery steps and asks for explicit approval when
 [^guard-policy]: `agents/AGENTS.md` (`Scope`).
 [^guard-history]: Native Codex transcripts: `rollout-2026-08-20T18-11-22-01a0205e-da69-76f0-b805-c278bef1af34.jsonl:166-170`; `rollout-2026-07-31T08-21-21-019fb743-7c74-7a93-89ca-216060ec40ae.jsonl:119-123`; `rollout-2026-08-01T07-28-18-019fbc39-4958-70a2-9764-6a6f9f4cedd0.jsonl:104-108`; `rollout-2026-07-26T08-53-38-019f9da1-3fe3-78a0-b3bd-efca459374a0.jsonl:98-106`. Verified 2026-10-05.
 
+### Native `tilth hook` layer (parked, 2026-11-22)
+
+`tilth hook` is tilth's own shell guard: a tree-sitter-bash parse, a deny-list, exit 2, and no rewrite.
+A spike replaces the `search` and `io` modules with a `tilth` module that calls it.
+The spike is on branch `spike/tilth-hook-layer`; it is not merged.[^tilth-layer]
+
+A live `claude -p` session denied `wc -l AGENTS.md` with the tilth reason, and the model recovered with `tilth_read`.
+The layer also closes gaps in the JavaScript deny-list: `python -c`, `perl -pi`, `jq FILE`, and `git show REV:PATH`.
+
+The layer waits because `tilth hook` 0.8.4 denies every output capture to a file.
+`just check > check.log 2>&1`, `cmd | tee log`, and `cmd 2> err.txt` all deny.
+The dotfiles hook allows these captures on purpose.
+tilth issue #470 asks for an opt-in capture policy.
+
+Decisions for the merge:
+
+- Run tilth as a dispatcher module, not as a second registry entry. The dispatcher owns the kill switch, the deny schema that Codex accepts, and `decisions.jsonl`.
+- Require the `Blocked:` prefix before a deny. A tilth without the `hook` subcommand exits 2 with a usage error.
+- Do not use `tilth install <host> --hook`. It writes managed targets, and an npm install registers `npx tilth hook` with `onFailure: "block"`.
+- The small-file and scratch exemptions for shell commands end with the layer. `tilth hook` has no exemption.
+
+[^tilth-layer]: Branch `spike/tilth-hook-layer`, commit `c7b19d4f`; <https://github.com/paulnsorensen/tilth/issues/470>; tilth `src/hook/` and ADR `tilth-hook-strict-evolve`.
+
 ### Why deny, and why two layers on Claude
 
 The earlier design rewrote shell searches to the `tilth` CLI, because a static deny made the model retry. That design depended on a Tilth CLI, and the Tilth fork now narrows to code intelligence and AST search through MCP. A hook cannot turn a Bash call into an MCP call, so the hook now denies with the exact MCP call instead.

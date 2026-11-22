@@ -1,11 +1,13 @@
 #!/bin/bash
-# run_onchange — re-runs whenever agents/preamble.md changes.
+# run_onchange — re-runs whenever agents/preamble.md or the tilth preamble
+# changes.
 #
 # Forks to chezmoi/lib/install-prompts.sh, which wires preamble.md for Codex
-# and OpenCode.
-# Claude Code reads it through the cc/ccc/ccr zsh wrappers.
+# and OpenCode. Codex gets the tilth preamble joined with preamble.md.
+# Claude Code gets its preamble through the cc/ccc/ccr zsh wrappers.
 #
 # Prompts hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/preamble.md 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
+# Tilth preamble hash: {{ output "sh" "-c" "tilth preamble 2>/dev/null | shasum -a 256 | cut -d' ' -f1" }}
 
 set -euo pipefail
 

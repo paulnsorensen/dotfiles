@@ -1,9 +1,10 @@
 # shellcheck shell=bash
-# preamble-wrappers.sh — launch logic for bin/dotscodex and bin/dotsopencode.
-# Each wrapper replaces its harness's native system prompt with
-# agents/preamble.md. The wrappers only parse and dispatch; the logic lives
-# here. Functions only — no top-level side effects, so sourcing is safe from
-# bats tests. Bash 3.2 compatible (macOS /bin/bash).
+# preamble-wrappers.sh — launch logic for bin/dotsclaude, bin/dotscodex,
+# bin/dotsopencode, and bin/dots-preamble. Claude and Codex get the tilth
+# preamble joined with agents/preamble.md as their system prompt. OpenCode
+# gets agents/preamble.md. The wrappers only parse and dispatch; the logic
+# lives here. Functions only — no top-level side effects, so sourcing is safe
+# from bats tests. Bash 3.2 compatible (macOS /bin/bash).
 
 # dots_codex_instructions_override <preamble-path>
 # Prints the `-c` value that sets model_instructions_file to the path.
@@ -15,6 +16,48 @@ dots_codex_instructions_override() {
     escaped="${preamble//\\/\\\\}"
     escaped="${escaped//\"/\\\"}"
     printf 'model_instructions_file="%s"\n' "$escaped"
+}
+
+# dots_effective_preamble <dotfiles-preamble-path>
+# Prints the path of the system-prompt file for Claude and Codex.
+# When `tilth preamble` works, the file holds the tilth preamble and then the
+# dotfiles preamble. tilth owns the tool rules and ships them with its binary.
+# The file is in the cache directory, with a content checksum in its name, so
+# a running session keeps its file when the content changes.
+# When tilth is missing or too old, or the cache write fails, the function
+# prints the dotfiles preamble path. Returns 1 when that file is missing.
+dots_effective_preamble() {
+    local addendum="$1" base dir sum out tmp
+    [[ -f "$addendum" ]] || return 1
+    base="$(tilth preamble 2>/dev/null)" || base=""
+    # A tilth without the subcommand searches for the word "preamble".
+    if [[ "$base" != "# tilth agent preamble"* ]]; then
+        printf '%s\n' "$addendum"
+        return 0
+    fi
+    # A relative or empty XDG_CACHE_HOME is not valid; use the home default.
+    dir="${XDG_CACHE_HOME:-}"
+    [[ "$dir" == /* ]] || dir="${HOME:-}/.cache"
+    dir="$dir/dotfiles"
+    sum="$(_dots_join_preamble "$base" "$addendum" | cksum)"
+    out="$dir/preamble-${sum// /-}.md"
+    if [[ ! -f "$out" ]]; then
+        if ! { mkdir -p "$dir" 2>/dev/null \
+            && tmp="$(mktemp "$dir/preamble.XXXXXX" 2>/dev/null)" \
+            && _dots_join_preamble "$base" "$addendum" >"$tmp" \
+            && mv "$tmp" "$out"; }; then
+            printf '%s\n' "$addendum"
+            return 0
+        fi
+    fi
+    printf '%s\n' "$out"
+}
+
+# _dots_join_preamble <tilth-preamble-text> <dotfiles-preamble-path>
+# Prints the tilth preamble, an empty line, and the dotfiles preamble.
+_dots_join_preamble() {
+    printf '%s\n\n' "$1"
+    cat "$2"
 }
 
 # dots_opencode_preamble_path <agents-dotfiles-dir>
