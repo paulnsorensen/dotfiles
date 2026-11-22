@@ -14,7 +14,7 @@
 #               (codex-rs/core/gpt_5_*_prompt.md). AGENTS.md cascade still
 #               loads as developer-role messages (untouched).
 #
-#   OpenCode  — copy preamble.md to <OPENCODE_HOME>/preamble.md. The
+#   OpenCode  — copy the same joined text to <OPENCODE_HOME>/preamble.md. The
 #               `instructions` key in opencode.json (chezmoi/.chezmoidata/
 #               opencode.yaml) appends it to OpenCode's own system prompt.
 #
@@ -42,16 +42,27 @@ install_prompts_have() {
     command -v "$cmd" &>/dev/null
 }
 
-# Prints the file to install for Codex: the tilth preamble joined with the
-# dotfiles preamble (bin/dots-preamble). When the helper is missing or fails,
-# it prints the dotfiles preamble path.
-install_prompts_codex_source() {
-    local preamble="$1" helper joined
-    helper="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/bin/dots-preamble"
-    if [[ -x "$helper" ]] && joined="$("$helper" "$preamble" 2>/dev/null)" && [[ -f "$joined" ]]; then
-        printf '%s\n' "$joined"
+# The join is dots_effective_preamble in bin/lib/preamble-wrappers.sh. A
+# stripped copy of this repository can lack that file. The plain preamble is
+# then the effective preamble.
+INSTALL_PROMPTS_WRAPPERS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/bin/lib/preamble-wrappers.sh"
+if [[ -f "$INSTALL_PROMPTS_WRAPPERS" ]]; then
+    # shellcheck source=bin/lib/preamble-wrappers.sh
+    source "$INSTALL_PROMPTS_WRAPPERS"
+else
+    dots_effective_preamble() { printf '%s\n' "$1"; }
+fi
+
+# install_prompts_copy <preamble_path> <target>
+# Copies the effective preamble to the target and reports which text it holds.
+install_prompts_copy() {
+    local preamble="$1" target="$2" effective
+    effective="$(dots_effective_preamble "$preamble")"
+    cp -f "$effective" "$target"
+    if [[ "$effective" == "$preamble" ]]; then
+        echo "  Copied preamble.md -> $target (no usable tilth preamble)"
     else
-        printf '%s\n' "$preamble"
+        echo "  Copied tilth preamble + preamble.md -> $target"
     fi
 }
 
@@ -67,8 +78,7 @@ install_prompts_wire_codex() {
     }
 
     mkdir -p "$codex_home"
-    cp -f "$(install_prompts_codex_source "$preamble")" "$codex_prompt"
-    echo "  Copied preamble.md -> $codex_prompt"
+    install_prompts_copy "$preamble" "$codex_prompt"
 
     if [[ ! -f "$codex_config" ]]; then
         echo "  Skipped $codex_config (not yet scaffolded; will pick up the prompt path on next dots sync)"
@@ -109,8 +119,7 @@ install_prompts_wire_opencode() {
     local opencode_home="${OPENCODE_HOME:-$HOME/.config/opencode}"
 
     mkdir -p "$opencode_home"
-    cp -f "$preamble" "$opencode_home/preamble.md"
-    echo "  Copied preamble.md -> $opencode_home/preamble.md"
+    install_prompts_copy "$preamble" "$opencode_home/preamble.md"
 }
 
 install_prompts_main() {

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# dots-preamble — print the path of the system-prompt file for Claude and
-# Codex: the tilth preamble, then agents/preamble.md. The zsh `cc` wrappers
-# call this script. bin/dotsclaude and bin/dotscodex source the same library.
+# dots-preamble — print the path of the system-prompt file for Claude, Codex,
+# and OpenCode: the tilth preamble, then agents/preamble.md. The zsh `cc`
+# wrappers and the run_onchange prompt template call this script. The bin/dots*
+# wrappers and install-prompts.sh source the same library.
 #
 # Usage: dots-preamble [dotfiles-preamble-path]
 set -euo pipefail

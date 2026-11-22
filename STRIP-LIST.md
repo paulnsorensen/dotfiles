@@ -43,7 +43,7 @@ Distilled from `.cheese/notes/strip-log.md` + Phase D decisions.
 | `bin/lib/term-colors.sh` | COPY | Colour constants; `wt-sweep` and `install-linux-server` source it |
 | `bin/lib/tagged-log.sh` | COPY | Tagged log helpers; `install-linux-server` and `linux-install` source it |
 | `bin/dotsclaude` | SKIP | Personal Claude launcher |
-| `bin/dots-preamble` | SKIP | Personal preamble path helper for the Claude and Codex launchers |
+| `bin/dots-preamble` | SKIP | Personal preamble path helper for the zsh `cc` wrappers and the `run_onchange` prompt template |
 | `bin/cheatsheet` | SKIP | Personal cheatsheet |
 | `bin/claude-json-prune` | SKIP | Personal session pruner |
 | `bin/record-prompt` | SKIP | Personal prompt recorder |
@@ -98,7 +98,7 @@ All other packages (productivity tools, editors, optional CLIs). See catalog.
 | `.chezmoiignore` | COPY | Standard ignores |
 | `lib/install-cursor-plugin.sh` | GENERICIZE | Fixed comment referencing old `cheese-grok` plugin name |
 | `lib/install-codex.sh` | COPY | Machinery lib |
-| `lib/install-prompts.sh` | COPY | Machinery lib |
+| `lib/install-prompts.sh` | COPY | Machinery lib; without `bin/lib/preamble-wrappers.sh` it installs the plain preamble |
 
 ---
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # The bin/dots* wrappers replace each harness's native system prompt with
-# the tilth preamble joined with agents/preamble.md (OpenCode: agents/preamble.md
-# alone). T3 Code launches them through providerInstances
+# the tilth preamble joined with agents/preamble.md. T3 Code launches them
+# through providerInstances
 # binaryPath (chezmoi/.chezmoidata/t3.yaml). A fake harness binary prints its
 # argv and the OpenCode config variable, so each test checks the launch line.
 
@@ -33,16 +33,29 @@ SH
 
 teardown() { teardown_test_env; }
 
+# stub_tilth_text <text> — put a fake tilth first on PATH. Its
+# `preamble --path` call prints the path of a file that holds <text>. Every
+# other call exits 2, as an unknown argument does.
+stub_tilth_text() {
+    printf '%s' "$1" > "$TEST_HOME/tilth-preamble.md"
+    cat > "$TEST_HOME/fakebin/tilth" <<SH
+#!/bin/sh
+[ "\$1" = preamble ] && [ "\$2" = --path ] || exit 2
+printf '%s\n' '$TEST_HOME/tilth-preamble.md'
+SH
+    chmod +x "$TEST_HOME/fakebin/tilth"
+}
+
 # stub_tilth <mode> — put a fake tilth first on PATH.
-#   preamble : a tilth with the `preamble` subcommand
-#   search   : an old tilth, which searches for the word "preamble"
+#   preamble : a tilth with `preamble --path`
+#   old      : a tilth without the subcommand; it rejects `--path`
 #   fail     : a tilth that exits 1
 stub_tilth() {
     case "$1" in
-        preamble) printf '%s\n' '#!/bin/sh' 'printf "# tilth agent preamble\n\nbase rule\n"' ;;
-        search)   printf '%s\n' '#!/bin/sh' 'printf "# Search: preamble in . (3 matches)\n"' ;;
-        fail)     printf '%s\n' '#!/bin/sh' 'exit 1' ;;
-    esac > "$TEST_HOME/fakebin/tilth"
+        preamble) stub_tilth_text $'# tilth agent preamble\n\nbase rule\n' ;;
+        old)      printf '%s\n' '#!/bin/sh' 'echo "error: unexpected argument --path" >&2' 'exit 2' > "$TEST_HOME/fakebin/tilth" ;;
+        fail)     printf '%s\n' '#!/bin/sh' 'exit 1' > "$TEST_HOME/fakebin/tilth" ;;
+    esac
     chmod +x "$TEST_HOME/fakebin/tilth"
 }
 
@@ -252,7 +265,7 @@ SH
 
 @test "dots-preamble falls back to the dotfiles preamble without a usable tilth" {
     local mode
-    for mode in fail search; do
+    for mode in fail old; do
         stub_tilth "$mode"
         run "$REAL_DOTFILES_DIR/bin/dots-preamble"
         [ "$status" -eq 0 ]
@@ -299,12 +312,15 @@ SH
     [ "${lines[2]}" = "exec" ]
 }
 
-@test "dotsopencode keeps the dotfiles preamble alone" {
+@test "dotsopencode passes the joined preamble when no installed copy exists" {
     command -v jq >/dev/null 2>&1 || skip "jq not installed"
     stub_tilth preamble
+    local joined
+    joined=$("$REAL_DOTFILES_DIR/bin/dots-preamble")
+    [[ "$joined" == "$HOME/.cache/dotfiles/preamble-"*.md ]]
     run "$REAL_DOTFILES_DIR/bin/dotsopencode" serve
     [ "$status" -eq 0 ]
-    jq -e --arg p "$AGENTS_DOTFILES/preamble.md" '.instructions == [$p]' <<<"$(config_of "$output")"
+    jq -e --arg p "$joined" '.instructions == [$p]' <<<"$(config_of "$output")"
 }
 
 @test "the real tilth preamble comes first and the dotfiles preamble is the tail" {
@@ -369,7 +385,8 @@ SH
 }
 
 @test "dots-preamble falls back when tilth prints the heading and then fails" {
-    printf '%s\n' '#!/bin/sh' 'printf "# tilth agent preamble\n\nhalf\n"' 'exit 3' > "$TEST_HOME/fakebin/tilth"
+    stub_tilth preamble
+    printf '%s\n' '#!/bin/sh' "printf '%s\\n' '$TEST_HOME/tilth-preamble.md'" 'exit 3' > "$TEST_HOME/fakebin/tilth"
     run "$REAL_DOTFILES_DIR/bin/dots-preamble"
     [ "$status" -eq 0 ]
     [ "$output" = "$AGENTS_DOTFILES/preamble.md" ]
@@ -377,11 +394,11 @@ SH
 }
 
 @test "dots-preamble falls back when the heading is not the first output" {
-    printf '%s\n' '#!/bin/sh' 'printf "\n# tilth agent preamble\n"' > "$TEST_HOME/fakebin/tilth"
+    stub_tilth_text $'\n# tilth agent preamble\n'
     run "$REAL_DOTFILES_DIR/bin/dots-preamble"
     [ "$status" -eq 0 ]
     [ "$output" = "$AGENTS_DOTFILES/preamble.md" ]
-    printf '%s\n' '#!/bin/sh' 'printf "warning: x\n# tilth agent preamble\n"' > "$TEST_HOME/fakebin/tilth"
+    stub_tilth_text $'warning: x\n# tilth agent preamble\n'
     run "$REAL_DOTFILES_DIR/bin/dots-preamble"
     [ "$status" -eq 0 ]
     [ "$output" = "$AGENTS_DOTFILES/preamble.md" ]
@@ -426,10 +443,8 @@ SH
         echo after
     ' _ "$REAL_DOTFILES_DIR" "$AGENTS_DOTFILES/preamble.md"
     [ "$status" -eq 0 ]
-    [ "${lines[1]}" = "after" ]
-    # Without a home the cache is /.cache: a file there or the plain fallback.
-    [[ "${lines[0]}" == "path:$AGENTS_DOTFILES/preamble.md" \
-        || "${lines[0]}" == "path:/.cache/dotfiles/preamble-"*.md ]]
+    # No absolute cache base exists, so the function prints the plain path.
+    [ "$output" = "path:$AGENTS_DOTFILES/preamble.md"$'\nafter' ]
 }
 
 @test "dots-preamble treats an empty XDG_CACHE_HOME as unset" {
@@ -440,18 +455,27 @@ SH
     [ -f "$output" ]
 }
 
-@test "dots-preamble does not rewrite an existing cache file" {
+@test "dots-preamble reuses a cached file with equal content" {
     stub_tilth preamble
     run "$REAL_DOTFILES_DIR/bin/dots-preamble"
     local cached="$output"
-    printf 'sentinel\n' > "$cached"
     # A hard link names the same inode; a rewrite through a rename breaks it.
     ln "$cached" "$TEST_HOME/cached-link"
     run "$REAL_DOTFILES_DIR/bin/dots-preamble"
     [ "$status" -eq 0 ]
     [ "$output" = "$cached" ]
-    [ "$(cat "$cached")" = "sentinel" ]
     [ "$cached" -ef "$TEST_HOME/cached-link" ]
+}
+
+@test "dots-preamble replaces a cached file whose content differs" {
+    stub_tilth preamble
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    local cached="$output"
+    printf 'planted\n' > "$cached"
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$cached" ]
+    [ "$(cat "$cached")" = $'# tilth agent preamble\n\nbase rule\n\n# Execution preamble' ]
 }
 
 @test "dotsclaude launches without a system prompt flag when the preamble is missing" {
@@ -462,4 +486,122 @@ SH
     [ "${lines[0]}" = "-p" ]
     [ "${lines[1]}" = "hi" ]
     [[ "$output" != *--system-prompt-file* ]]
+}
+
+# ── probe, cache trust, and cache hygiene ────────────────────────────────────
+
+@test "dots-preamble probes tilth with preamble --path and nothing else" {
+    stub_tilth preamble
+    cat > "$TEST_HOME/fakebin/tilth" <<SH
+#!/bin/sh
+printf '%s\n' "\$*" >> '$TEST_HOME/tilth-calls'
+printf '%s\n' '$TEST_HOME/tilth-preamble.md'
+SH
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$TEST_HOME/tilth-calls")" = "preamble --path" ]
+}
+
+@test "dots-preamble falls back when tilth prints a path that does not exist" {
+    stub_tilth preamble
+    rm "$TEST_HOME/tilth-preamble.md"
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$AGENTS_DOTFILES/preamble.md" ]
+}
+
+@test "dots-preamble creates the cache directory with mode 700" {
+    stub_tilth preamble
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    [ "$status" -eq 0 ]
+    [ -n "$(find "$HOME/.cache/dotfiles" -maxdepth 0 -perm 700)" ]
+}
+
+@test "dots-preamble refuses a cache directory that is a symlink" {
+    stub_tilth preamble
+    mkdir -p "$HOME/.cache" "$TEST_HOME/elsewhere"
+    ln -s "$TEST_HOME/elsewhere" "$HOME/.cache/dotfiles"
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$AGENTS_DOTFILES/preamble.md" ]
+    [ -z "$(find "$TEST_HOME/elsewhere" -type f)" ]
+}
+
+@test "dots-preamble refuses a cache directory that other users can write" {
+    stub_tilth preamble
+    mkdir -p "$HOME/.cache/dotfiles"
+    chmod 777 "$HOME/.cache/dotfiles"
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$AGENTS_DOTFILES/preamble.md" ]
+    [ -z "$(find "$HOME/.cache/dotfiles" -type f)" ]
+    # Group write stays allowed: umask 002 gives it with a private group.
+    chmod 775 "$HOME/.cache/dotfiles"
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "$HOME/.cache/dotfiles/preamble-"*.md ]]
+}
+
+@test "dots-preamble falls back when the cache file name is a directory" {
+    stub_tilth preamble
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    local cached="$output"
+    rm "$cached"
+    mkdir "$cached"
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$AGENTS_DOTFILES/preamble.md" ]
+    [ -z "$(find "$cached" -type f)" ]
+}
+
+@test "dots-preamble deletes joined files older than 30 days after a new write" {
+    stub_tilth preamble
+    local dir="$HOME/.cache/dotfiles"
+    mkdir -p "$dir"
+    touch -t 202001010000 "$dir/preamble-1-1.md" "$dir/other.md"
+    touch "$dir/preamble-2-2.md"
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    [ "$status" -eq 0 ]
+    [ -f "$output" ]
+    [ ! -e "$dir/preamble-1-1.md" ]
+    [ -f "$dir/preamble-2-2.md" ]
+    [ -f "$dir/other.md" ]
+}
+
+@test "dots-preamble removes its temporary file when the rename fails" {
+    stub_tilth preamble
+    printf '%s\n' '#!/bin/sh' 'exit 1' > "$TEST_HOME/fakebin/mv"
+    chmod +x "$TEST_HOME/fakebin/mv"
+    run "$REAL_DOTFILES_DIR/bin/dots-preamble"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$AGENTS_DOTFILES/preamble.md" ]
+    [ -z "$(find "$HOME/.cache/dotfiles" -type f)" ]
+}
+
+# ── dotsclaude through a file symlink ────────────────────────────────────────
+
+@test "dotsclaude through a file symlink finds the library in DOTFILES_DIR" {
+    stub_tilth preamble
+    local clone="$TEST_HOME/clone"
+    mkdir -p "$clone/bin/lib" "$TEST_HOME/elsewhere"
+    cp "$REAL_DOTFILES_DIR/bin/lib/preamble-wrappers.sh" "$clone/bin/lib/"
+    ln -s "$REAL_DOTFILES_DIR/bin/dotsclaude" "$TEST_HOME/elsewhere/dotsclaude"
+    DOTFILES_DIR="$clone" run "$TEST_HOME/elsewhere/dotsclaude" -p hi
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "--system-prompt-file" ]
+    [[ "${lines[1]}" == "$HOME/.cache/dotfiles/preamble-"*.md ]]
+    [ "${lines[2]}" = "-p" ]
+    [ "${lines[3]}" = "hi" ]
+}
+
+@test "dotsclaude through a file symlink without a library passes the dotfiles preamble" {
+    stub_tilth preamble
+    mkdir -p "$TEST_HOME/elsewhere"
+    ln -s "$REAL_DOTFILES_DIR/bin/dotsclaude" "$TEST_HOME/elsewhere/dotsclaude"
+    run "$TEST_HOME/elsewhere/dotsclaude" -p hi
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "--system-prompt-file" ]
+    [ "${lines[1]}" = "$AGENTS_DOTFILES/preamble.md" ]
+    [ "${lines[2]}" = "-p" ]
+    [ "${lines[3]}" = "hi" ]
 }

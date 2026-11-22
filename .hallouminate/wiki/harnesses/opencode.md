@@ -39,7 +39,7 @@ Removing home MCP overrides prevents retired servers and credentials from return
 | `share` | `disabled` | Keep sessions local. |
 | `formatter` | `true` | Built-in formatters run after edits. The schema disables them when the key is absent. |
 | `compaction.auto` | `true` | v2 ignores `compaction.prune` with a warning, so the key is retired. |
-| `instructions` | `~/.config/opencode/preamble.md` | Loads the shared execution preamble. Custom work-agent prompts replace native tool guidance. |
+| `instructions` | `~/.config/opencode/preamble.md` | Loads the tilth preamble and then the shared execution preamble. Custom work-agent prompts replace native tool guidance. |
 | `mcp` | `servers.tilth` (`--mcp --edit`, `codemode: false`); context7, tavily, milknado, hallouminate | The same server set as Codex and Pi. Secret-bearing servers use the broker sockets. |
 | `permission` | `*` allow; secret-path `read` denies; `sudo`/`rm -rf`/`security`/`bws` bash denies | Mirrors Claude `permissions.deny` and the Pi permission system. |
 
@@ -78,7 +78,7 @@ Internal title, summary, and compaction prompts remain native.
 [^work-prompts]: chezmoi/.chezmoidata/opencode.yaml; tests/opencode-agents.bats
 
 - `run_onchange_after_install-agents-doc.sh.tmpl` copies `agents/AGENTS.md` to `~/.config/opencode/AGENTS.md`. v2 has no `CLAUDE.md` fallback.
-- `chezmoi/lib/install-prompts.sh` copies `agents/preamble.md` to `~/.config/opencode/preamble.md`.
+- `chezmoi/lib/install-prompts.sh` copies the tilth preamble joined with `agents/preamble.md` to `~/.config/opencode/preamble.md`.
 - OpenCode discovers skills natively from its config `skill`/`skills` directories and the `.claude`/`.agents` roots. Chezmoi copies no skill tree.
 
 ### `OPENCODE_CONFIG_CONTENT` merge (v2.0.32)

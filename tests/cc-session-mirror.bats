@@ -106,7 +106,8 @@ EOF
     cp "$REAL_DOTFILES_DIR/bin/dots-preamble" "$FIXTURE_DIR/bin/"
     cp "$REAL_DOTFILES_DIR/bin/lib/preamble-wrappers.sh" "$FIXTURE_DIR/bin/lib/"
     printf '# Execution preamble\n' > "$FIXTURE_DIR/agents/preamble.md"
-    printf '%s\n' '#!/bin/sh' 'printf "# tilth agent preamble\n"' > "$MOCK_BIN/tilth"
+    printf '# tilth agent preamble\n' > "$FIXTURE_DIR/tilth-preamble.md"
+    printf '%s\n' '#!/bin/sh' "printf '%s\\n' '$FIXTURE_DIR/tilth-preamble.md'" > "$MOCK_BIN/tilth"
     chmod +x "$MOCK_BIN/tilth"
     run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' AGENTS_DOTFILES='$FIXTURE_DIR/agents' XDG_CACHE_HOME='$FIXTURE_DIR/cache'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
     [ "$status" -eq 0 ]
@@ -123,6 +124,33 @@ EOF
     export MOCK_TMUX_SESSIONS=""
     mkdir -p "$FIXTURE_DIR/agents"
     printf '# Execution preamble\n' > "$FIXTURE_DIR/agents/preamble.md"
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' AGENTS_DOTFILES='$FIXTURE_DIR/agents'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
+    [ "$status" -eq 0 ]
+    grep -q -- "--system-prompt-file $FIXTURE_DIR/agents/preamble.md" "$MOCK_ARGS_FILE"
+}
+
+@test "cc passes no system prompt flag when dots-preamble fails and no preamble exists" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    _mock_tmux
+    export MOCK_TMUX_SESSIONS=""
+    mkdir -p "$FIXTURE_DIR/agents"
+    printf '%s\n' '#!/bin/sh' 'exit 1' > "$FIXTURE_DIR/bin/dots-preamble"
+    chmod +x "$FIXTURE_DIR/bin/dots-preamble"
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' AGENTS_DOTFILES='$FIXTURE_DIR/agents'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
+    [ "$status" -eq 0 ]
+    [ -f "$MOCK_ARGS_FILE" ]
+    run grep -q -- "--system-prompt-file" "$MOCK_ARGS_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cc passes the dotfiles preamble when dots-preamble fails" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    _mock_tmux
+    export MOCK_TMUX_SESSIONS=""
+    mkdir -p "$FIXTURE_DIR/agents"
+    printf '# Execution preamble\n' > "$FIXTURE_DIR/agents/preamble.md"
+    printf '%s\n' '#!/bin/sh' 'exit 1' > "$FIXTURE_DIR/bin/dots-preamble"
+    chmod +x "$FIXTURE_DIR/bin/dots-preamble"
     run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' AGENTS_DOTFILES='$FIXTURE_DIR/agents'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
     [ "$status" -eq 0 ]
     grep -q -- "--system-prompt-file $FIXTURE_DIR/agents/preamble.md" "$MOCK_ARGS_FILE"

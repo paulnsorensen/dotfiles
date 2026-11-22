@@ -1,13 +1,15 @@
 #!/bin/bash
-# run_onchange — re-runs whenever agents/preamble.md or the tilth preamble
+# run_onchange — re-runs whenever agents/preamble.md or the joined preamble
 # changes.
 #
-# Forks to chezmoi/lib/install-prompts.sh, which wires preamble.md for Codex
-# and OpenCode. Codex gets the tilth preamble joined with preamble.md.
+# Forks to chezmoi/lib/install-prompts.sh, which installs the tilth preamble
+# joined with preamble.md for Codex and OpenCode.
 # Claude Code gets its preamble through the cc/ccc/ccr zsh wrappers.
 #
 # Prompts hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/preamble.md 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
-# Tilth preamble hash: {{ output "sh" "-c" "tilth preamble 2>/dev/null | shasum -a 256 | cut -d' ' -f1" }}
+# The joined file name holds a checksum of its content, so the name changes
+# with the tilth text, with preamble.md, and with the join logic.
+# Joined preamble file: {{ output "sh" "-c" (printf "%q/../bin/dots-preamble %q/../agents/preamble.md 2>/dev/null | sed 's|.*/||'" .chezmoi.sourceDir .chezmoi.sourceDir) }}
 
 set -euo pipefail
 

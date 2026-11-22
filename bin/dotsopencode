@@ -7,7 +7,8 @@
 # the global config, so this wrapper adds two things there:
 #   - work-agent prompts for build, plan, general, and explore. A custom agent
 #     prompt replaces the native provider prompt.
-#   - the preamble path in `instructions`.
+#   - the preamble path in `instructions`. The file holds the tilth preamble
+#     and then agents/preamble.md (dots_opencode_preamble_path).
 # bin/lib/preamble-wrappers.sh builds the value. T3 always sets
 # OPENCODE_CONFIG_CONTENT ("{}" by default); its keys win over the keys that
 # this wrapper adds, except that its `instructions` are appended.

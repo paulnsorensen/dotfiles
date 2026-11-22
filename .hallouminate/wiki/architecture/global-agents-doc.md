@@ -5,33 +5,60 @@
 
 ## Why routing detail lives in the preamble, not the agents doc
 
-Claude and Codex receive both the shared agents doc and `agents/preamble.md`.
-The preamble replaces the bundled system prompt through Claude's launcher and
-Codex's `model_instructions_file`; the agents doc loads as additional context.
-Duplicating routing guidance in both paid its token cost twice, so the preamble
-owns task-to-tool routing and the agents doc keeps stable cross-project rules.
+Claude, Codex, and OpenCode receive the shared agents doc and one system-prompt file.
+That file holds the tilth preamble and then `agents/preamble.md`.
+It replaces the bundled system prompt through Claude's launcher and Codex's `model_instructions_file`.
+OpenCode loads it through `instructions`.
+The agents doc loads as additional context.
+Duplicating routing guidance in both paid its token cost twice.
+Thus the tilth text owns the tool rules, `agents/preamble.md` owns wiki use and delegation, and the agents doc keeps stable cross-project rules.
 
 OMP and Pi use native prompt addenda. Their prompt contracts are not forced through the Claude/Codex preamble installer.
 
 ### The tilth preamble is the base (2026-11-22)
 
-Claude and Codex launch with the bundled tilth preamble first and `agents/preamble.md` after it.
-`tilth preamble` prints the tilth text.
+Claude, Codex, and OpenCode launch with the bundled tilth preamble first and `agents/preamble.md` after it.
+`tilth preamble --path` gives the tilth text as a file.
 tilth tunes its tool rules with its benchmark and ships them with the binary.
-`dots_effective_preamble` joins the two texts into `~/.cache/dotfiles/preamble-<cksum>.md`.[^tilth-base]
+`dots_effective_preamble` joins the two texts into `preamble-<crc>-<size>.md` in the join cache.
+The join cache is `$XDG_CACHE_HOME/dotfiles` for an absolute `XDG_CACHE_HOME`, else `~/.cache/dotfiles`.[^tilth-base]
 
-- One joined file serves both harnesses. Codex takes one `model_instructions_file`, so an append flag for Claude alone adds a second mechanism.
+- One joined file serves the three harnesses. Codex takes one `model_instructions_file`, so an append flag for Claude alone adds a second mechanism.
 - The checksum gives each content its own file. A running session keeps its file when tilth or the dotfiles preamble changes.
-- The function requires the heading `# tilth agent preamble`. A tilth without the subcommand searches for the word "preamble" and exits 0.
-- Without a usable tilth, the launchers pass `agents/preamble.md` alone. Thus that file keeps its `## Tools` block, and OpenCode keeps the file unjoined.
+- The probe uses `--path`. A tilth without the subcommand rejects the flag at once. Without the flag, such a build searches the current directory for the word "preamble".
+- The function requires the heading `# tilth agent preamble` on the first line of the tilth file.
+- The join cache follows the rules of tilth's own cache: mode 700, no symlink, the user's own directory, and no write access for other users.
+- The function compares a cached file with the joined text before reuse, because the checksum does not prove the content.
+- A new write deletes joined files that are older than 30 days.
+- Without a usable tilth or a private cache, the launchers pass `agents/preamble.md` alone. Thus that file keeps its `## Tools` block.
 - The joined text repeats some tool rules and some `agents/AGENTS.md` rules. `agents/instruction-budgets.toml` does not count the tilth text, because the repository does not own it.
-- `install-prompts.sh` copies the joined file to `~/.codex/preamble.md`. Its `run_onchange` hash includes the `tilth preamble` output.
+- `install-prompts.sh` copies the joined file to `~/.codex/preamble.md` and `~/.config/opencode/preamble.md`. These copies change only on `dots sync`.
+- After a tilth upgrade and before the next sync, plain `codex` and OpenCode run the old tilth text, while `bin/dotscodex` runs the new text.
+- The `run_onchange` key holds the joined file name. The installer therefore runs again when the tilth text, `agents/preamble.md`, or the join logic changes.
+- The join cache is interim. tilth owns the cache policy for its text, and an append option on `tilth preamble --path` can replace the dotfiles join.
+
+#### Which harnesses get the tilth base
+
+The tilth text says: "Use the tilth tools for repository content. Shell is not a content reader."
+It fits only a harness whose file tools are the tilth tools.
+
+| Harness | File tools | Tilth base |
+|---|---|---|
+| Claude, Codex | tilth only (`tool-reroute` hook) | yes |
+| OpenCode | tilth only (`tilth-only.js` removes the native tools) | yes |
+| Pi | native file tools; tilth for structural work | no |
+| Copilot, Cursor | native file tools | no |
+| OMP | native tools; no tilth MCP | no |
+
+Isolated `ap` profiles use their profile prompt and get no tilth base.
+A profile such as `review` whitelists native Read, Grep, and Glob, so each profile needs a tool-policy decision first.
 
 Live checks on 2026-11-22 use tilth 0.8.4 and Claude Code 2.1.330.
 The `api-request-shape` entry of a `dotsclaude -p` session holds both headings.
 The `base_instructions` of a `dotscodex exec` rollout holds both headings, tilth first.
+OpenCode has no live check.
 
-[^tilth-base]: `bin/lib/preamble-wrappers.sh` (`dots_effective_preamble`); `bin/dots-preamble`; `bin/dotsclaude`; `bin/dotscodex`; `zsh/claude.zsh` (`_cc_base`); `chezmoi/lib/install-prompts.sh`; `tests/dots-wrappers.bats`.
+[^tilth-base]: `bin/lib/preamble-wrappers.sh` (`dots_effective_preamble`); `bin/dots-preamble`; `bin/dotsclaude`; `bin/dotscodex`; `bin/dotsopencode`; `zsh/claude.zsh` (`_cc_base`); `chezmoi/lib/install-prompts.sh`; `tests/dots-wrappers.bats`; `tests/install-prompts.bats`.
 
 ### tilth search v2 graduated to the canonical surface (2026-09-07)
 

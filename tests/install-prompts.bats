@@ -23,9 +23,14 @@ MD
     export PATH="$TEST_HOME/fakebin:$PATH"
 }
 
-# A tilth that has the `preamble` subcommand.
+# A tilth that has `preamble --path`. Every other call exits 2.
 stub_tilth_preamble() {
-    printf '%s\n' '#!/bin/sh' 'printf "# tilth agent preamble\n\nbase rule\n"' > "$TEST_HOME/fakebin/tilth"
+    printf '# tilth agent preamble\n\nbase rule\n' > "$TEST_HOME/tilth-preamble.md"
+    cat > "$TEST_HOME/fakebin/tilth" <<SH
+#!/bin/sh
+[ "\$1" = preamble ] && [ "\$2" = --path ] || exit 2
+printf '%s\n' '$TEST_HOME/tilth-preamble.md'
+SH
 }
 
 teardown() { teardown_test_env; }
@@ -187,36 +192,50 @@ TOML
     diff <(tail -n "$(wc -l < "$PREAMBLE_SRC")" "$CODEX_HOME/preamble.md") "$PREAMBLE_SRC"
 }
 
-@test "install-prompts.sh keeps the dotfiles preamble alone for OpenCode" {
+@test "install-prompts.sh installs the tilth preamble before the dotfiles preamble for OpenCode" {
     stub_tilth_preamble
     export OPENCODE_HOME="$TEST_HOME/.config/opencode"
     INSTALL_PROMPTS_HAVE_CODEX=0 \
         run bash "$LIB" "$PREAMBLE_SRC"
     assert_success
+    assert_output_contains "Copied tilth preamble + preamble.md -> $OPENCODE_HOME/preamble.md"
+    [ "$(head -n 1 "$OPENCODE_HOME/preamble.md")" = "# tilth agent preamble" ]
+    diff <(tail -n "$(wc -l < "$PREAMBLE_SRC")" "$OPENCODE_HOME/preamble.md") "$PREAMBLE_SRC"
+}
+
+@test "install-prompts.sh reports the plain copy when no tilth preamble is usable" {
+    export OPENCODE_HOME="$TEST_HOME/.config/opencode"
+    INSTALL_PROMPTS_HAVE_CODEX=1 \
+        run bash "$LIB" "$PREAMBLE_SRC"
+    assert_success
+    assert_output_contains "Copied preamble.md -> $CODEX_HOME/preamble.md (no usable tilth preamble)"
+    assert_output_contains "Copied preamble.md -> $OPENCODE_HOME/preamble.md (no usable tilth preamble)"
+    diff "$PREAMBLE_SRC" "$CODEX_HOME/preamble.md"
     diff "$PREAMBLE_SRC" "$OPENCODE_HOME/preamble.md"
 }
 
-@test "install-prompts.sh gives Codex the plain preamble when bin/dots-preamble fails" {
+@test "install-prompts.sh copies the plain preamble when the join library is absent" {
     stub_tilth_preamble
     local clone="$TEST_HOME/clone"
-    mkdir -p "$clone/chezmoi/lib" "$clone/bin"
+    mkdir -p "$clone/chezmoi/lib"
     cp "$LIB" "$clone/chezmoi/lib/install-prompts.sh"
-    printf '%s\n' '#!/bin/sh' "echo \"$TEST_HOME/never-written.md\"" 'exit 1' > "$clone/bin/dots-preamble"
-    chmod +x "$clone/bin/dots-preamble"
+    export OPENCODE_HOME="$TEST_HOME/.config/opencode"
     INSTALL_PROMPTS_HAVE_CODEX=1 \
         run bash "$clone/chezmoi/lib/install-prompts.sh" "$PREAMBLE_SRC"
     assert_success
     diff "$PREAMBLE_SRC" "$CODEX_HOME/preamble.md"
+    diff "$PREAMBLE_SRC" "$OPENCODE_HOME/preamble.md"
 }
 
-@test "install-prompts.sh gives Codex the plain preamble when bin/dots-preamble prints a missing path" {
-    local clone="$TEST_HOME/clone"
-    mkdir -p "$clone/chezmoi/lib" "$clone/bin"
-    cp "$LIB" "$clone/chezmoi/lib/install-prompts.sh"
-    printf '%s\n' '#!/bin/sh' "echo \"$TEST_HOME/does-not-exist.md\"" > "$clone/bin/dots-preamble"
-    chmod +x "$clone/bin/dots-preamble"
-    INSTALL_PROMPTS_HAVE_CODEX=1 \
-        run bash "$clone/chezmoi/lib/install-prompts.sh" "$PREAMBLE_SRC"
+@test "the run_onchange key follows the joined preamble file name" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    local tmpl="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-prompts.sh.tmpl"
+    # The default stub is not a usable tilth, so the key names the plain file.
+    run chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl"
     assert_success
-    diff "$PREAMBLE_SRC" "$CODEX_HOME/preamble.md"
+    assert_output_contains "# Joined preamble file: preamble.md"
+    stub_tilth_preamble
+    run chezmoi --source "$REAL_DOTFILES_DIR/chezmoi" execute-template < "$tmpl"
+    assert_success
+    [[ "$output" =~ Joined\ preamble\ file:\ preamble-[0-9]+-[0-9]+\.md ]]
 }
