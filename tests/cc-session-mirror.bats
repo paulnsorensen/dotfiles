@@ -96,62 +96,24 @@ EOF
     grep -qx -- "$SESSION_NAME" "$MOCK_ARGS_FILE"
 }
 
-# ── system prompt: the tilth preamble joined with agents/preamble.md ─────────
+# ── launch assembly: cc delegates to bin/dotsclaude ──────────────────────────
 
-@test "cc passes the tilth preamble joined with the dotfiles preamble" {
+@test "cc launches through bin/dotsclaude and keeps the claude on PATH" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     _mock_tmux
     export MOCK_TMUX_SESSIONS=""
-    mkdir -p "$FIXTURE_DIR/bin/lib" "$FIXTURE_DIR/agents" "$FIXTURE_DIR/cache"
-    cp "$REAL_DOTFILES_DIR/bin/dots-preamble" "$FIXTURE_DIR/bin/"
-    cp "$REAL_DOTFILES_DIR/bin/lib/preamble-wrappers.sh" "$FIXTURE_DIR/bin/lib/"
-    printf '# Execution preamble\n' > "$FIXTURE_DIR/agents/preamble.md"
-    printf '# tilth agent preamble\n' > "$FIXTURE_DIR/tilth-preamble.md"
-    printf '%s\n' '#!/bin/sh' "printf '%s\\n' '$FIXTURE_DIR/tilth-preamble.md'" > "$MOCK_BIN/tilth"
-    chmod +x "$MOCK_BIN/tilth"
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' AGENTS_DOTFILES='$FIXTURE_DIR/agents' XDG_CACHE_HOME='$FIXTURE_DIR/cache'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
+    printf '%s\n' '#!/bin/sh' 'exit 0' > "$FIXTURE_DIR/bin/dotsclaude"
+    chmod +x "$FIXTURE_DIR/bin/dotsclaude"
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc --continue"
     [ "$status" -eq 0 ]
-    local joined
-    joined=$(find "$FIXTURE_DIR/cache/dotfiles" -name 'preamble-*.md')
-    [ "$(head -n 1 "$joined")" = "# tilth agent preamble" ]
-    [ "$(tail -n 1 "$joined")" = "# Execution preamble" ]
-    grep -q -- "--system-prompt-file $joined" "$MOCK_ARGS_FILE"
+    grep -qx -- "env CLAUDE_BIN=claude $FIXTURE_DIR/bin/dotsclaude --continue" "$MOCK_ARGS_FILE"
 }
 
-@test "cc passes the dotfiles preamble alone when dots-preamble is missing" {
+@test "cc runs claude in place of a missing bin/dotsclaude" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     _mock_tmux
     export MOCK_TMUX_SESSIONS=""
-    mkdir -p "$FIXTURE_DIR/agents"
-    printf '# Execution preamble\n' > "$FIXTURE_DIR/agents/preamble.md"
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' AGENTS_DOTFILES='$FIXTURE_DIR/agents'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc --continue"
     [ "$status" -eq 0 ]
-    grep -q -- "--system-prompt-file $FIXTURE_DIR/agents/preamble.md" "$MOCK_ARGS_FILE"
-}
-
-@test "cc passes no system prompt flag when dots-preamble fails and no preamble exists" {
-    command -v zsh &>/dev/null || skip "zsh not installed"
-    _mock_tmux
-    export MOCK_TMUX_SESSIONS=""
-    mkdir -p "$FIXTURE_DIR/agents"
-    printf '%s\n' '#!/bin/sh' 'exit 1' > "$FIXTURE_DIR/bin/dots-preamble"
-    chmod +x "$FIXTURE_DIR/bin/dots-preamble"
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' AGENTS_DOTFILES='$FIXTURE_DIR/agents'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
-    [ "$status" -eq 0 ]
-    [ -f "$MOCK_ARGS_FILE" ]
-    run grep -q -- "--system-prompt-file" "$MOCK_ARGS_FILE"
-    [ "$status" -ne 0 ]
-}
-
-@test "cc passes the dotfiles preamble when dots-preamble fails" {
-    command -v zsh &>/dev/null || skip "zsh not installed"
-    _mock_tmux
-    export MOCK_TMUX_SESSIONS=""
-    mkdir -p "$FIXTURE_DIR/agents"
-    printf '# Execution preamble\n' > "$FIXTURE_DIR/agents/preamble.md"
-    printf '%s\n' '#!/bin/sh' 'exit 1' > "$FIXTURE_DIR/bin/dots-preamble"
-    chmod +x "$FIXTURE_DIR/bin/dots-preamble"
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' AGENTS_DOTFILES='$FIXTURE_DIR/agents'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
-    [ "$status" -eq 0 ]
-    grep -q -- "--system-prompt-file $FIXTURE_DIR/agents/preamble.md" "$MOCK_ARGS_FILE"
+    grep -qx -- "claude --continue" "$MOCK_ARGS_FILE"
 }

@@ -9,7 +9,7 @@
 # Prompts hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/preamble.md 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
 # The joined file name holds a checksum of its content, so the name changes
 # with the tilth text, with preamble.md, and with the join logic.
-# Joined preamble file: {{ output "sh" "-c" (printf "%q/../bin/dots-preamble %q/../agents/preamble.md 2>/dev/null | sed 's|.*/||'" .chezmoi.sourceDir .chezmoi.sourceDir) }}
+# Joined preamble file: {{ output "bash" "-c" (printf "{ source %q/../bin/lib/preamble-wrappers.sh && dots_effective_preamble %q/../agents/preamble.md; } 2>/dev/null | sed 's|.*/||'" .chezmoi.sourceDir .chezmoi.sourceDir) }}
 
 set -euo pipefail
 

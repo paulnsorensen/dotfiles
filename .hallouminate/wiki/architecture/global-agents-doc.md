@@ -35,7 +35,8 @@ The join cache is `$XDG_CACHE_HOME/dotfiles` for an absolute `XDG_CACHE_HOME`, e
 - `install-prompts.sh` copies the joined file to `~/.codex/preamble.md` and `~/.config/opencode/preamble.md`. These copies change only on `dots sync`.
 - After a tilth upgrade and before the next sync, plain `codex` and OpenCode run the old tilth text, while `bin/dotscodex` runs the new text.
 - The `run_onchange` key holds the joined file name. The installer therefore runs again when the tilth text, `agents/preamble.md`, or the join logic changes.
-- The join cache is interim. tilth owns the cache policy for its text, and an append option on `tilth preamble --path` can replace the dotfiles join.
+- The join cache is interim. tilth owns the cache policy for its text, and an append option on `tilth preamble --path` can replace the dotfiles join. tilth issue #473 asks for that option.
+- `bin/dotsclaude` owns the Claude launch assembly. The zsh `cc` wrappers run it with `CLAUDE_BIN=claude` inside their tmux wrap, so one script decides the system prompt.
 
 #### Which harnesses get the tilth base
 
@@ -52,13 +53,14 @@ It fits only a harness whose file tools are the tilth tools.
 
 Isolated `ap` profiles use their profile prompt and get no tilth base.
 A profile such as `review` whitelists native Read, Grep, and Glob, so each profile needs a tool-policy decision first.
+The user confirmed both exclusions on 2026-11-22: Pi, Copilot, and Cursor keep their prompts, and the `ap` profiles stay unchanged for now.
 
 Live checks on 2026-11-22 use tilth 0.8.4 and Claude Code 2.1.330.
 The `api-request-shape` entry of a `dotsclaude -p` session holds both headings.
 The `base_instructions` of a `dotscodex exec` rollout holds both headings, tilth first.
 OpenCode has no live check.
 
-[^tilth-base]: `bin/lib/preamble-wrappers.sh` (`dots_effective_preamble`); `bin/dots-preamble`; `bin/dotsclaude`; `bin/dotscodex`; `bin/dotsopencode`; `zsh/claude.zsh` (`_cc_base`); `chezmoi/lib/install-prompts.sh`; `tests/dots-wrappers.bats`; `tests/install-prompts.bats`.
+[^tilth-base]: `bin/lib/preamble-wrappers.sh` (`dots_effective_preamble`); `bin/dotsclaude`; `bin/dotscodex`; `bin/dotsopencode`; `zsh/claude.zsh` (`_cc_base`); `chezmoi/lib/install-prompts.sh`; `tests/dots-wrappers.bats`; `tests/install-prompts.bats`.
 
 ### tilth search v2 graduated to the canonical surface (2026-09-07)
 

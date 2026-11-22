@@ -7,7 +7,7 @@
 # Per-harness mechanism:
 #
 #   Codex     — copy the tilth preamble joined with preamble.md
-#               (bin/dots-preamble) to <CODEX_HOME>/preamble.md, then yq-edit
+#               (dots_effective_preamble) to <CODEX_HOME>/preamble.md, then yq-edit
 #               <CODEX_HOME>/config.toml to set
 #                 model_instructions_file = "<CODEX_HOME>/preamble.md"
 #               This REPLACES the bundled per-model system prompt

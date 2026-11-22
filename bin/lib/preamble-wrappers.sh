@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # preamble-wrappers.sh — launch logic for bin/dotsclaude, bin/dotscodex,
-# bin/dotsopencode, and bin/dots-preamble. Claude, Codex, and OpenCode get the
+# and bin/dotsopencode. Claude, Codex, and OpenCode get the
 # tilth preamble joined with agents/preamble.md. The wrappers only parse and
 # dispatch; the logic lives here. Functions only — no top-level side effects,
 # so sourcing is safe from bats tests. Bash 3.2 compatible (macOS /bin/bash).
