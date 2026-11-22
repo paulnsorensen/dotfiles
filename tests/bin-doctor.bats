@@ -337,7 +337,7 @@ esac'
     run bd_sync_steps
     [[ "$output" == *"uv"$'\t'"uv cache prune"* ]]
     [[ "$output" == *"mise"$'\t'"mise cache prune"* ]]
-    [[ "$output" == *"mise"$'\t'"unlink unused mise rust installs"$'\n'"mise"$'\t'"mise prune -y"* ]]
+    [[ "$output" == *"mise"$'\t'"mise prune -y"* ]]
     [[ "$output" == *"docker"$'\t'"docker image prune -f"* ]]
     [[ "$output" == *"docker"$'\t'"docker builder prune -f --filter unused-for=168h"* ]]
     # -a would delete tagged images such as the devbox image.
@@ -365,12 +365,39 @@ esac'
 EOF
     stub mise "cat '$T/rust.json'"
 
-    run bd_run_step unlink unused mise rust installs
+    run bd_unlink_mise_rust
     [[ $status -eq 0 ]]
     [[ ! -e "$installs/1.99.1" && ! -L "$installs/1.99.1" ]]
     [[ -L "$installs/1.100.0" ]]
     [[ -d "$T/notalink" ]]
     [[ -x "$CARGO_HOME/bin/rustc" ]]
+}
+
+@test "mise prune step: unlinks mise rust installs before it prunes" {
+    local jq_bin
+    jq_bin="$(PATH="$REAL_PATH" command -v jq)" || skip "jq not installed"
+    ln -s "$jq_bin" "$T/tools/jq"
+    # shellcheck disable=SC2016  # $1 and $* belong to the stub script
+    stub mise 'echo "mise $*" >> '"'$LOG'"'; [[ "$3" == ls ]] && echo "[]"; exit 0'
+
+    run bd_run_step mise prune -y
+    [[ $status -eq 0 ]]
+    [[ "$(cat "$LOG")" == "mise -C $HOME ls --json rust"$'\n'"mise prune -y" ]]
+}
+
+@test "mise prune step: a failed unlink skips the prune" {
+    # Without the unlink, prune would run `rustup toolchain uninstall`.
+    local jq_bin
+    jq_bin="$(PATH="$REAL_PATH" command -v jq)" || skip "jq not installed"
+    ln -s "$jq_bin" "$T/tools/jq"
+    # shellcheck disable=SC2016  # $3 belongs to the stub script
+    stub mise 'echo "mise $*" >> '"'$LOG'"'; [[ "$3" == ls ]] && exit 1; exit 0'
+
+    run bd_run_step mise prune -y
+    [[ $status -ne 0 ]]
+    [[ "$output" == *"mise prune skipped"* ]]
+    grep -q "ls --json rust" "$LOG"
+    ! grep -q "mise prune" "$LOG"
 }
 
 @test "sync steps skip docker when the daemon does not answer" {
