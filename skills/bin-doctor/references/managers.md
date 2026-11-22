@@ -10,8 +10,8 @@ Checked: 2026-09-27. Sources: the research report `research/binary-manager-clean
 |---|---|---|---|---|
 | mise | `mise ls --current`, `mise bin-paths`, `mise which <bin>` | remove the pin from the chezmoi source, then `mise prune --yes` (manual only, needs approval) | `mise cache prune` | `mise outdated` |
 | Homebrew | `brew leaves`, `brew list --formula` | `brew uninstall <name>`; `brew autoremove` removes orphaned dependencies (manual only, needs approval) | `brew cleanup --prune=30` | `brew outdated` |
-| cargo | `cargo install --list` | `cargo uninstall <crate>` | `cargo cache --autoclean` (extracted sources and git checkouts; archives stay) | `cargo install-update --list` |
-| rustup | `rustup toolchain list` | `rustup toolchain uninstall <tc>` | none needed | pins move with the mise `rust` entry |
+| cargo | `cargo install --list` | `cargo uninstall <crate>` | none: cargo's automatic GC (1.88+). `cargo cache --autoclean` deletes the extracted sources that running builds use as their working directory | `cargo install-update --list` |
+| rustup | `rustup toolchain list` | `rustup toolchain uninstall <tc>` | none needed | `rustup check`; each repository pins its own channel in `rust-toolchain.toml` |
 | uv | `uv tool list` | `uv tool uninstall <name>` | `uv cache prune` (dangling entries) | `uv tool list --outdated` |
 | npm | `npm ls -g --depth=0` | `npm rm -g <pkg>` | `npm cache verify` (garbage-collects, keeps valid data) | `npm outdated -g` |
 | pnpm | `pnpm ls -g` | `pnpm rm -g <pkg>` | `pnpm store prune` | — |

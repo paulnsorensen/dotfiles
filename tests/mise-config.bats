@@ -14,10 +14,18 @@ CONFIG="$DOTFILES_DIR/chezmoi/dot_config/mise/config.toml"
     [[ $status -eq 0 ]]
 }
 
-@test "mise config pins exactly 55 tools (45 aqua + 3 core-plugin + 7 backend)" {
+@test "mise config pins exactly 54 tools (45 aqua + 2 core-plugin + 7 backend)" {
     run yq -p=toml -o=json '.tools | length' "$CONFIG"
     [[ $status -eq 0 ]]
-    [[ "$output" == "55" ]]
+    [[ "$output" == "54" ]]
+}
+
+@test "mise config has no rust entry: rustup owns the toolchains" {
+    # The mise rust plugin exports RUSTUP_TOOLCHAIN, which rustup ranks above
+    # a repository's rust-toolchain.toml. A global entry overrides every pin.
+    run yq -p=toml -o=json '.tools | has("rust")' "$CONFIG"
+    [[ $status -eq 0 ]]
+    [[ "$output" == "false" ]]
 }
 
 @test "no tool version is 'latest' or a floating range specifier" {
@@ -91,9 +99,9 @@ tool_version() {
     [[ "$(tool_version 'aqua:tmux/tmux-builds')" =~ ^v3\.[0-9]+[a-z]?$ ]]
 }
 
-@test "core-plugin tools (node, bun, rust) are stripped of git-tag prefixes" {
+@test "core-plugin tools (node, bun) are stripped of git-tag prefixes" {
     local tool
-    for tool in node bun rust; do
+    for tool in node bun; do
         [[ "$(tool_version "$tool")" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
     done
 }
