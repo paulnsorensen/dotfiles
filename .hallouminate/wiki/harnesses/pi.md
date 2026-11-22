@@ -67,6 +67,8 @@ Renovate bumps the Pi packages often. Two traps recur in the `green-harvest` iss
 
 `tests/pi-config.bats` has the test "pi registry pins the selected mainstream packages". It compares the whole `packages` array to a literal string. A Renovate PR edits only `chezmoi/.chezmoidata/pi.yaml`, so the test fails in CI. Update the literal in the same change as the registry pin. Do not weaken the test.
 
+The Pi CLI pin has the same trap. The test "pi CLI install is pinned and lifecycle scripts are disabled" compares the version in `packages/packages.yaml` to a literal. A bot bump changes only `packages.yaml`, so the test fails. Update the literal in the same change.
+
 ### Children may lose the Pi addendum
 
 The `green-harvest` issues report a change in `pi-subagents` 0.79.2. Children that start with `systemPromptMode: replace` no longer receive `APPEND_SYSTEM.md`. This covers every builtin agent except `delegate`. Children also skip the global `~/.pi/agent/AGENTS.md`, unless the settings key `subagents.defaultInheritGlobalContext` is on (added in 0.87.0, per the same issues). The repo pins 0.77.0, so the change takes effect only after a bump merges.
@@ -77,5 +79,9 @@ The addendum file in `chezmoi/dot_pi/private_agent/` holds two kinds of rules:
 - Delegation advice: only the parent needs this.
 
 Before a bump, choose one option. Put the routing in the agent prompts. Or set the inheritance key in `pi.yaml`. Or accept that the addendum applies only to the parent. <speculative>The repo has not chosen yet.</speculative>
+
+### Pi 1.6.0 model note
+
+The `green-harvest` issues report that Pi 1.6.0 adds GPT-6.2 Sol and GPT-6.2 Astra, and makes Sol the default. Both models reject the thinking levels `none` and `minimal`. The repo sets `defaultModel: gpt-6-sol` and `defaultThinkingLevel: medium` in `pi.yaml`. The bump does not change the active model, and `medium` stays valid. Do not set a level below `low` for these models. Moving to `gpt-6.2-sol` is a separate decision. <speculative>The repo has not chosen yet.</speculative>
 
 Related: [[index]], [[../architecture/agents-dir]], [[../operations/sync-and-chezmoi]].

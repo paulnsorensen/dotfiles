@@ -131,3 +131,5 @@
 2026-11-17 · pr-1596-prefix-safety · merged · architecture/config-drift.md · Record inactive mise discovery and explicit npm prefix selection. The executable path alone does not constrain removal.
 
 2026-11-18 · pr-1597-daemon-lifecycle · curated · architecture/config-drift.md · Record the new-install restart condition and stopped-daemon preservation. Package replacement alone does not update a running daemon.
+
+2026-11-22 · wiki-harvest-auto/dotfiles-20261122 · curated · harnesses/pi.md · Record the Pi CLI pin-test literal trap and the Pi 1.6.0 model and thinking-level limits.
