@@ -93,7 +93,7 @@
 "aqua:EmbarkStudios/cargo-deny" = "0.22.0"
 "aqua:axodotdev/cargo-dist" = "v0.34.0"
 "aqua:rust-lang/mdBook" = "v0.5.4"
-"aqua:anthropics/claude-code" = "v2.1.330"
+"aqua:anthropics/claude-code" = "v2.1.331"
 "aqua:openai/codex" = "rust-v0.166.0"
 "aqua:google-antigravity/antigravity-cli" = "1.5.15"
 
