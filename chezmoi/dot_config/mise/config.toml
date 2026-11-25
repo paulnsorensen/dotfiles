@@ -100,7 +100,7 @@
 node = "26.13.1"
 bun = "1.4.5"
 
-"npm:t3" = "0.1.11"
+"npm:t3" = "0.1.12"
 "npm:bash-language-server" = "5.8.1"
 "npm:yaml-language-server" = "2.0.0"
 "npm:basedpyright" = "1.40.2"
