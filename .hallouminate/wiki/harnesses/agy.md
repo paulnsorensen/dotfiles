@@ -28,10 +28,17 @@ The modifier expands `${HOME}` in permission strings at apply time.
 The registry owns the permission lists. The modifier drops a live entry that the registry lacks and warns with its name.
 File rules take no globs, so `read_file(.env)` covers only a workspace-root `.env`.
 Use absolute `${HOME}/...` paths for home secrets. Denying `read_file` also denies `write_file`.
+`agy` checks each part of a pipeline or `&&`/`||`/`;` chain against the rules on its own.
+A `$(...)` or backtick substitution turns off prefix matching, so that command asks.
+The `command(...)` allow list mirrors Claude's list without the broad code runners (`python3`, `node`, `npx`, `uv`, `npm run`, `gh`, `dots`).
 
 **Linux AppArmor gotcha:** `agy` requires unprivileged Linux user namespaces for its terminal sandbox.
-When `kernel.apparmor_restrict_unprivileged_userns = 1` blocks `agy`, `agy` logs `Terminal sandbox unavailable` and falls back to `default` mode.
-Saved `settings.json` keys stay intact and take effect once the host allows user namespaces.
+When `kernel.apparmor_restrict_unprivileged_userns = 1` blocks `agy`, its log says `auto mode is unavailable because the terminal sandbox is unavailable, falling back to default`.
+Default mode then asks before each command that no `command(...)` rule allows.
+`bin/linux-install` fixes this through `bin/lib/agy-apparmor.sh`.
+It renders `services/apparmor/antigravity` for every mise-installed `antigravity` binary and loads it as `/etc/apparmor.d/antigravity`.
+Like Ubuntu's `code` and `chrome` profiles, the profile is unconfined and only grants `userns`.
+Restart `agy` after the load.
 `auto` mode is not available for business or enterprise accounts.
 
 ## MCP servers and native plugins
