@@ -109,6 +109,17 @@ EOF
     grep -qx -- "env CLAUDE_BIN=claude DOTFILES_DIR=$FIXTURE_DIR $FIXTURE_DIR/bin/dotsclaude --continue" "$MOCK_ARGS_FILE"
 }
 
+@test "cc carries a set TILTH_BIN into the tmux session" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    _mock_tmux
+    export MOCK_TMUX_SESSIONS=""
+    printf '%s\n' '#!/bin/sh' 'exit 0' > "$FIXTURE_DIR/bin/dotsclaude"
+    chmod +x "$FIXTURE_DIR/bin/dotsclaude"
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR' TILTH_BIN=/opt/tilth; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc"
+    [ "$status" -eq 0 ]
+    grep -qx -- "env CLAUDE_BIN=claude DOTFILES_DIR=$FIXTURE_DIR TILTH_BIN=/opt/tilth $FIXTURE_DIR/bin/dotsclaude" "$MOCK_ARGS_FILE"
+}
+
 @test "cc runs claude in place of a missing bin/dotsclaude" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     _mock_tmux

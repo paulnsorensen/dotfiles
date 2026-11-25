@@ -44,11 +44,12 @@ _cc_base() {
     # CLAUDE_BIN=claude keeps the `claude` on PATH, so the bin/claude session
     # guard still applies. Without bin/dotsclaude, run claude with no preamble.
     local dotsclaude="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/dotsclaude"
-    # DOTFILES_DIR goes in argv because a new tmux session takes the server's
-    # environment, which can name another clone.
+    # DOTFILES_DIR and a set TILTH_BIN go in argv because a new tmux session
+    # takes the server's environment, which can name another clone or tilth.
     local -a cmd=(claude "$@")
     if [[ -x "$dotsclaude" ]]; then
-        cmd=(env CLAUDE_BIN=claude DOTFILES_DIR="${dotsclaude%/bin/dotsclaude}" "$dotsclaude" "$@")
+        cmd=(env CLAUDE_BIN=claude DOTFILES_DIR="${dotsclaude%/bin/dotsclaude}"
+            ${TILTH_BIN:+TILTH_BIN="$TILTH_BIN"} "$dotsclaude" "$@")
     else
         print -u2 "cc: $dotsclaude missing; claude starts without the preamble"
     fi
