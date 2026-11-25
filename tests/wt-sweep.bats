@@ -960,18 +960,18 @@ name_origin() {
 }
 
 # add_claude_nx_files <name> — a SAFE worktree whose only ignored files are
-# Claude Code per-worktree files and Nx, Yarn, and Husky output.
+# Claude, Nx, Yarn, and Husky output.
 add_claude_nx_files() {
-  add_ignored_cache "$1" ".claude/settings.local.json" .claude/settings.local.json
+  add_ignored_cache "$1" ".claude/scheduled_tasks.lock" .claude/scheduled_tasks.lock
   local wt="$SCAN/repo/.worktrees/$1" file
-  exclude_in "$wt" ".claude/scheduled_tasks.lock" ".nx/" ".yarn/install-state.gz" ".husky/_/"
-  for file in .claude/scheduled_tasks.lock .nx/cache/x .nx/workspace-data/y .yarn/install-state.gz .husky/_/pre-commit; do
+  exclude_in "$wt" ".nx/" ".yarn/install-state.gz" ".husky/_/"
+  for file in .nx/cache/x .nx/workspace-data/y .yarn/install-state.gz .husky/_/pre-commit; do
     mkdir -p "$(dirname "$wt/$file")"
     echo generated > "$wt/$file"
   done
 }
 
-@test "auto removes a worktree whose ignored files are Claude, Nx, Yarn, and Husky output" {
+@test "auto removes a worktree whose ignored files are Claude lock, Nx, Yarn, and Husky output" {
   add_claude_nx_files agentwt
   assert_cache_safe agentwt
 
@@ -991,6 +991,41 @@ add_claude_nx_files() {
   assert_contains "[WARN] agentkeep"
   assert_contains "ignored files: "
   [[ -f "$wt/.claude/launch.json" ]] || { echo "launch.json removed"; return 1; }
+}
+
+@test "auto keeps a merged worktree with custom ignored Claude settings" {
+  add_claude_nx_files agentcustom
+  local wt="$SCAN/repo/.worktrees/agentcustom" expected="$SCAN/custom-settings.json"
+  exclude_in "$wt" ".claude/settings.local.json"
+  printf '%s\n' '{"permissions":{"allow":["Bash(git status:*)"]}}' > "$expected"
+  cp "$expected" "$wt/.claude/settings.local.json"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] agentcustom"
+  assert_contains ".claude/settings.local.json"
+  cmp -s "$expected" "$wt/.claude/settings.local.json" || { echo "custom settings changed"; return 1; }
+}
+
+@test "auto archive keeps an eligible diverged worktree with custom ignored Claude settings" {
+  create_repo "$SCAN/repo"
+  add_diverged_worktree "$SCAN/repo" "old-custom"
+  local wt="$SCAN/repo/.worktrees/old-custom" expected="$SCAN/custom-settings.json"
+  exclude_in "$wt" ".claude/settings.local.json" ".claude/scheduled_tasks.lock"
+  mkdir -p "$wt/.claude"
+  printf '%s\n' '{"permissions":{"allow":["Bash(git status:*)"]}}' > "$expected"
+  cp "$expected" "$wt/.claude/settings.local.json"
+  printf '%s\n' generated > "$wt/.claude/scheduled_tasks.lock"
+  no_prs
+  CCW_SWEEP_NOW="$(days_from_now 40)"
+  export CCW_SWEEP_NOW
+
+  run ccw-sweep --auto --archive --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] old-custom"
+  assert_contains ".claude/settings.local.json"
+  assert_not_contains "action: archive as archive/old-custom"
+  cmp -s "$expected" "$wt/.claude/settings.local.json" || { echo "custom settings changed"; return 1; }
 }
 
 @test "auto --archive archives an idle unmerged worktree whose ignored files are regenerable" {
