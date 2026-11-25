@@ -166,6 +166,14 @@ EOF
     [ "$(yq -p=toml -oy -r '.mcp_servers.tilth.command' "$out")" = "tilth" ]
 }
 
+@test "modify_config.toml pins Milknado to Python 3.13" {
+    run --separate-stderr sh "$MERGE" </dev/null
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" >"$TEST_HOME/out.toml"
+    [ "$(yq -p=toml -oy -r '.mcp_servers.milknado.command' "$TEST_HOME/out.toml")" = "uvx" ]
+    [ "$(yq -p=toml -oj -I=0 '.mcp_servers.milknado.args' "$TEST_HOME/out.toml")" = '["--python","3.13","--from","git+https://github.com/paulnsorensen/milknado@main","milknado-mcp"]' ]
+}
+
 @test "modify_config.toml leaves an unparseable live file untouched" {
     local live="$TEST_HOME/bad.toml"
     printf 'this is [not valid = toml\n' >"$live"

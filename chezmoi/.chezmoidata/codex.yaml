@@ -82,7 +82,7 @@ codex:
       args: ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
     milknado:
       command: uvx
-      args: ["--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]
+      args: ["--python", "3.13", "--from", "git+https://github.com/paulnsorensen/milknado@main", "milknado-mcp"]
     hallouminate:
       command: hallouminate
       args: ["serve"]
