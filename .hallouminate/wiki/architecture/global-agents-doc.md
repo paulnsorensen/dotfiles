@@ -10,6 +10,9 @@ The preamble replaces the bundled system prompt through Claude's launcher and
 Codex's `model_instructions_file`; the agents doc loads as additional context.
 Duplicating routing guidance in both paid its token cost twice, so the preamble
 owns task-to-tool routing and the agents doc keeps stable cross-project rules.
+Since 2026-11-25 the launchers prepend the tilth preamble, which owns file
+routing; `agents/preamble.md` keeps only rules that tilth does not state. See
+[[t3-code-launch]].
 
 OMP and Pi use native prompt addenda. Their prompt contracts are not forced through the Claude/Codex preamble installer.
 

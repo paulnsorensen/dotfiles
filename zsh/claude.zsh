@@ -14,7 +14,9 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # ═══════════════════════════════════════════════════════════════════
 # Quick Access
 # ═══════════════════════════════════════════════════════════════════
-# preamble.md replaces Claude's baked system prompt via --system-prompt-file.
+# The tilth preamble plus agents/preamble.md replaces Claude's baked system
+# prompt via --system-prompt-file (see dots_preamble_file in
+# bin/lib/preamble-wrappers.sh; without tilth --append, preamble.md alone).
 # CLAUDE.md auto-discovery, hooks, plugins, auto-memory all stay active —
 # only Anthropic's system prompt is swapped out. Symbol-level reads/edits
 # now route through Serena (MCP) instead of dynamically gated LSP plugins.
@@ -42,7 +44,12 @@ _cc_base() {
     set -- "${passthru[@]}"
 
     local -a flags=()
-    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
+    local preamble="$AGENTS_DOTFILES/preamble.md" joined
+    if [[ -f "$preamble" ]]; then
+        joined=$("${TILTH_BIN:-tilth}" preamble --append "$preamble" --path 2>/dev/null) \
+            && [[ -f "$joined" ]] && preamble=$joined
+        flags+=(--system-prompt-file "$preamble")
+    fi
     local -a cmd=(claude "${flags[@]}" "$@")
     local launcher="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-env-exec"
     [[ -x "$launcher" ]] && cmd=("$launcher" "${cmd[@]}")
