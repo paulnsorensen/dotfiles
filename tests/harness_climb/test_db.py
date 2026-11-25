@@ -13,6 +13,7 @@ from unittest import TestCase, main, mock, skipUnless
 from .support import (
     DAY,
     HAVE_DUCKDB,
+    ROOT,
     T0,
     RepoCase,
     call,
@@ -285,6 +286,68 @@ class LoadRowsTests(RepoCase):
         self.assertEqual((s2["permission_denials"], s2["stop_hook_blocks"]), (0, 0))
         self.assertIsNone(s2["tool_error_rate"])
         self.assertIsNone(s2["tokens_per_turn"])
+
+    def test_harness_r1_counts_blocked_shell_calls_once(self) -> None:
+        t = AFTER + 100
+        uses = [
+            ("claude", "s1", "u1", "Bash"),
+            ("claude", "s1", "u1", "Bash"),
+            ("claude", "s1", "u2", "Bash"),
+            ("claude", "s2", "u3", "Bash"),
+            ("claude", "s2", "u4", "Bash"),
+            ("claude", "s3", "u1", "Bash"),
+            ("claude", "s3", "u5", "Bash"),
+            ("codex", "s1", "u1", "exec_command"),
+            ("codex", "s1", "u2", "exec_command"),
+            ("omp", "s1", "u1", "shell"),
+        ]
+        results = [
+            ("claude", "s1", "u1", "Blocked: not a shell reader", "true"),
+            ("claude", "s1", "u1", "Blocked: not a shell reader", "false"),
+            (
+                "claude",
+                "s2",
+                "u3",
+                "wrapper: Blocked: shell write-redirect to /tmp/out",
+                "true",
+            ),
+            ("claude", "s2", "u4", "ordinary command error", "true"),
+            ("claude", "s3", "u1", "ordinary command error", "true"),
+            ("claude", "s3", "u5", "Blocked: not a shell reader", "false"),
+            ("codex", "s1", "u1", "ordinary command error", "true"),
+            ("codex", "s1", "u2", "Blocked: not a raw search tool", "true"),
+            ("omp", "s1", "u1", "Blocked: not a shell reader", "true"),
+        ]
+        db = self.build(
+            session_row("claude", "s1", t, t + 1, "1", 1),
+            session_row("claude", "s2", t, t + 1, "1", 1),
+            session_row("claude", "s3", t, t + 1, "1", 1),
+            session_row("codex", "s1", t, t + 1, "1", 1),
+            session_row("omp", "s1", t, t + 1, "1", 1),
+            (
+                "CREATE TABLE tool_uses (harness VARCHAR, sessionId VARCHAR, "
+                "tool_use_id VARCHAR, tool_name VARCHAR)"
+            ),
+            "INSERT INTO tool_uses VALUES "
+            + ", ".join("(" + ", ".join(map(q, row)) + ")" for row in uses),
+            "INSERT INTO tool_results VALUES "
+            + ", ".join(
+                f"({q(h)}, {q(uid)}, {q(content)}, {q(error)}, true, 'ts', {q(sid)})"
+                for h, sid, uid, content, error in results
+            ),
+        )
+        gate = json.loads((ROOT / "harness-climb/gates/harness-r1.json").read_text())
+        rows = hc_db.load_rows(db, gate, AFTER, AFTER + DAY)
+        values = {(row["harness"], row["session"]): row["target"] for row in rows}
+        self.assertEqual(
+            values,
+            {
+                ("claude", "s1"): 0.5,
+                ("claude", "s2"): 0.5,
+                ("claude", "s3"): 0.0,
+                ("codex", "s1"): 0.5,
+            },
+        )
 
     def test_sub_agent_sessions_are_excluded(self) -> None:
         db = self.build_session_db(AFTER + 100)
