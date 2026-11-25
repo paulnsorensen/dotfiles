@@ -95,7 +95,7 @@
 "aqua:rust-lang/mdBook" = "v0.5.4"
 "aqua:anthropics/claude-code" = "v2.1.332"
 "aqua:openai/codex" = "rust-v0.166.0"
-"aqua:google-antigravity/antigravity-cli" = "1.5.16"
+"aqua:google-antigravity/antigravity-cli" = "1.5.17"
 
 node = "26.13.1"
 bun = "1.4.5"
