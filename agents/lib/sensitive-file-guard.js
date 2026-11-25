@@ -110,6 +110,20 @@ function bashTokens(command) {
     .filter(Boolean);
 }
 
+// A jq program addresses fields as `.key` or `.pem`, and the split above
+// leaves that field as a bare token. A jq command (`jq` or `gh --jq`) keeps
+// such a stemless token. A stemmed name (`server.key`), a path (`./.key`),
+// and `.env` stay guarded.
+function isBareKeyExt(token) {
+  return /^\.[^./]+$/.test(token) && SENSITIVE_EXT.test(token);
+}
+
+function bashTargets(command) {
+  const tokens = bashTokens(command);
+  if (!tokens.some((t) => t === 'jq' || t === '--jq')) return tokens;
+  return tokens.filter((t) => !isBareKeyExt(t));
+}
+
 // Codex routes file edits through `apply_patch`, whose tool_input.command is a
 // patch whose headers name the target files (`*** Add|Update|Delete File: <p>`).
 // Match only the headers, not patch content, to avoid flagging a diff that
@@ -192,7 +206,7 @@ function tilthSearchTargets(input) {
 function extractTargets(toolName, input) {
   if (!input) return [];
   if (toolName === SEARCH_TOOL) return tilthSearchTargets(input);
-  if (toolName === 'Bash') return bashTokens(input.command || '');
+  if (toolName === 'Bash') return bashTargets(input.command || '');
   // Codex apply_patch: target paths live in the patch headers (command field).
   if (toolName === 'apply_patch') return applyPatchTargets(input.command || '');
   if (READ_TOOLS.has(toolName) || EDIT_TOOLS.has(toolName)) {

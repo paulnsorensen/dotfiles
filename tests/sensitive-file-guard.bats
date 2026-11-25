@@ -211,6 +211,46 @@ guard() {
     [[ "$(guard Bash '{"command":"echo `cat .env`"}')" == "deny" ]]
 }
 
+# jq field access (regression: the tokenizer split `| .key` and `(.key==` into
+# a bare `.key` token, which the key-extension rule matched). A jq command may
+# keep a bare, stemless key-extension token. Each allow case has a deny twin.
+
+@test "Bash jq to_entries .key is allowed" {
+    [[ "$(guard Bash '{"command":"jq -r \"to_entries[] | .key\" data.json"}')" == "allow" ]]
+}
+
+@test "Bash cat .key without jq is denied" {
+    [[ "$(guard Bash '{"command":"cat .key"}')" == "deny" ]]
+}
+
+@test "Bash jq select(.key==x) is allowed" {
+    [[ "$(guard Bash '{"command":"jq \"select(.key==\\\"x\\\")\" data.json"}')" == "allow" ]]
+}
+
+@test "Bash jq reading a stemmed key file is denied" {
+    [[ "$(guard Bash '{"command":"jq . server.key"}')" == "deny" ]]
+}
+
+@test "Bash gh api --jq .key is allowed" {
+    [[ "$(guard Bash '{"command":"gh api repos/o/r/keys --jq \".[]|.key\""}')" == "allow" ]]
+}
+
+@test "Bash cat server.key without jq is denied" {
+    [[ "$(guard Bash '{"command":"cat server.key"}')" == "deny" ]]
+}
+
+@test "Bash jq .pem field is allowed" {
+    [[ "$(guard Bash '{"command":"jq -r .pem cert.json"}')" == "allow" ]]
+}
+
+@test "Bash jq reading .env is denied" {
+    [[ "$(guard Bash '{"command":"jq -R . .env"}')" == "deny" ]]
+}
+
+@test "Bash jq reading a stemless key file by path is denied" {
+    [[ "$(guard Bash '{"command":"jq -R . ./.key"}')" == "deny" ]]
+}
+
 @test "Bash cat README.md is allowed" {
     [[ "$(guard Bash '{"command":"cat README.md"}')" == "allow" ]]
 }
