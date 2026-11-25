@@ -612,6 +612,29 @@ SH
     assert_success
 }
 
+@test "zshenv exports DOTFILES_DIR from its own real path and puts bin on PATH" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    local zdot="$BATS_TEST_TMPDIR/zdot"
+    mkdir -p "$zdot"
+    ln -s "$REAL_DOTFILES_DIR/zshenv" "$zdot/.zshenv"
+
+    run env -i HOME="$TEST_HOME" PATH=/usr/bin:/bin ZDOTDIR="$zdot" \
+        zsh -c "print -r -- \"\$DOTFILES_DIR\"; print -r -- \${path[(r)\$DOTFILES_DIR/bin]}"
+
+    assert_success
+    [ "${lines[0]}" = "$REAL_DOTFILES_DIR" ]
+    [ "${lines[1]}" = "$REAL_DOTFILES_DIR/bin" ]
+}
+
+@test "zshenv keeps an already exported DOTFILES_DIR" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    run env -i HOME="$TEST_HOME" PATH=/usr/bin:/bin DOTFILES_DIR=/custom \
+        zsh -c "source '$REAL_DOTFILES_DIR/zshenv'; print -r -- \"\$DOTFILES_DIR\""
+
+    assert_success
+    [ "$output" = "/custom" ]
+}
+
 @test "zshenv's mise shims guard is idempotent — double-sourcing doesn't grow PATH" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     local fake_xdg="$TEST_HOME/xdg-data-idempotent"

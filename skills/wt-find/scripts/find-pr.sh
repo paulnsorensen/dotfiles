@@ -5,6 +5,9 @@
 # Output per match: path<TAB>branch<TAB>PR #<n><TAB><title><TAB><url>
 set -euo pipefail
 
+# Agent shells can overwrite PATH; DOTFILES_DIR survives.
+command -v wt-find >/dev/null || PATH="${DOTFILES_DIR:+$DOTFILES_DIR/bin:}$PATH"
+
 [[ $# -eq 0 ]] && set -- --root "${HOME}/Dev"
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/findpr.XXXXXX")"

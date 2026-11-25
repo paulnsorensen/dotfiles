@@ -6,6 +6,9 @@
 # itself and adds --force when the tree is dirty.
 set -euo pipefail
 
+# Agent shells can overwrite PATH; DOTFILES_DIR survives.
+command -v wt-sweep >/dev/null || PATH="${DOTFILES_DIR:+$DOTFILES_DIR/bin:}$PATH"
+
 # Shared helpers: the in-repo bin/lib, else the lib beside wt-sweep on PATH
 # (dots sync deploys this skill as a copy outside the repo).
 lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../../bin/lib/worktree.sh"

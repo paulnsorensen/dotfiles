@@ -181,6 +181,29 @@ STUB
     assert_contains "$output" "worktree remove --force .worktrees/alpha"
 }
 
+# Agent shells overwrite PATH, so only the exported DOTFILES_DIR is left.
+@test "wt-triage scripts resolve bin via DOTFILES_DIR when PATH lacks it" {
+    make_worktree alpha
+    PATH=/usr/bin:/bin
+    run "$SKILLS/wt-triage/scripts/snapshot.sh" --path "$DEV"
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "Summary:"
+
+    cp -r "$SKILLS/wt-triage" "$TMPROOT/deployed"
+    run "$TMPROOT/deployed/scripts/commands.sh" "$REPO/.worktrees/alpha" remove
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "worktree remove .worktrees/alpha"
+}
+
+@test "wt-find scripts resolve wt-find via DOTFILES_DIR when PATH lacks it" {
+    make_worktree alpha
+    echo change >> "$REPO/.worktrees/alpha/file.txt"
+    PATH=/usr/bin:/bin
+    run "$SKILLS/wt-find/scripts/find-touching.sh" file.txt --root "$DEV"
+    [ "$status" -eq 0 ]
+    assert_contains "$output" ".worktrees/alpha"
+}
+
 @test "commands.sh rejects an unknown action" {
     make_worktree alpha
     run "$SKILLS/wt-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" shred
