@@ -959,6 +959,40 @@ name_origin() {
   [[ -f "$SCAN/repo/.worktrees/site/sub/website/content/docs/draft.md" ]] || { echo "nested docs removed"; return 1; }
 }
 
+# add_claude_nx_files <name> — a SAFE worktree whose only ignored files are
+# Claude Code per-worktree files and Nx, Yarn, and Husky output.
+add_claude_nx_files() {
+  add_ignored_cache "$1" ".claude/settings.local.json" .claude/settings.local.json
+  local wt="$SCAN/repo/.worktrees/$1" file
+  exclude_in "$wt" ".claude/scheduled_tasks.lock" ".nx/" ".yarn/install-state.gz" ".husky/_/"
+  for file in .claude/scheduled_tasks.lock .nx/cache/x .nx/workspace-data/y .yarn/install-state.gz .husky/_/pre-commit; do
+    mkdir -p "$(dirname "$wt/$file")"
+    echo generated > "$wt/$file"
+  done
+}
+
+@test "auto removes a worktree whose ignored files are Claude, Nx, Yarn, and Husky output" {
+  add_claude_nx_files agentwt
+  assert_cache_safe agentwt
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  [[ ! -e "$SCAN/repo/.worktrees/agentwt" ]] || { echo "worktree not removed"; return 1; }
+}
+
+@test "a Claude launch.json next to regenerable output still WARNs and stays" {
+  add_claude_nx_files agentkeep
+  local wt="$SCAN/repo/.worktrees/agentkeep"
+  exclude_in "$wt" ".claude/launch.json"
+  echo mine > "$wt/.claude/launch.json"
+
+  run ccw-sweep --auto --path "$SCAN"
+  assert_success
+  assert_contains "[WARN] agentkeep"
+  assert_contains "ignored files: "
+  [[ -f "$wt/.claude/launch.json" ]] || { echo "launch.json removed"; return 1; }
+}
+
 @test "auto --archive archives an idle unmerged worktree whose ignored files are regenerable" {
   create_repo "$SCAN/repo"
   add_diverged_worktree "$SCAN/repo" "old-work"
