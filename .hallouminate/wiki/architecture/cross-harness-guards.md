@@ -153,6 +153,24 @@ Test gotcha: the guard always allows `/tmp` and `$TMPDIR`, and `TEST_HOME` lives
 
 The **secret-protection guard** (`sensitive-file-guard`) is the other cross-harness guard, declared in the `agents/hooks/` registry rather than here — it blocks `.env`/keys/credentials, is fail-open, and honors `CLAUDE_SENSITIVE_GUARD` / `CLAUDE_SENSITIVE_GUARD_ALLOW`. See [[agents-dir]] for the hook-registry mechanics.
 
+### jq field paths in Bash (PR #1669)
+
+The Bash tokenizer splits on `|`, `(`, `=`, and other shell characters. So the jq filter `to_entries[] | .key` gives a bare `.key` token, which the key-extension rule matched. In 14 days of Claude sessions, all 38 `.key` blocks came from jq programs.[^jq-paths]
+
+Decisions:
+
+- **The exemption needs a real jq invocation.** A quote-aware scan splits the command into simple commands. Only a command whose command word is `jq` (by name or path), or `gh` with `--jq`/`-q`, gets the exemption. A `jq` word anywhere else does not count: `echo jq; cat .key` stays denied. The first version matched any `jq` token, and two review bots found that bypass.
+- **A jq path starts with `.` and has no `/`.** This covers `.key`, `.[].key`, `.data.pem`, and `.secret`. The user approved this wider rule because exact bare tokens still blocked most jq work. `.env*` and credential basenames such as `.netrc` are never jq paths.
+- **Fail closed when the scan cannot follow the shell.** An unquoted `#`, `$'...'` or `$"..."` quoting, or an open quote gives no exemption. So does a jq command with `$(` or a backtick, or with `-f`/`--from-file`. A re-review showed that a comment or ANSI-C quote could hide `cat .key` inside the jq segment.
+- **File operands stay targets.** Redirect targets, `--rawfile`/`--slurpfile` files, gh `--input`, and `@file` values are never exempt.
+- **Accepted residual:** a positional jq file operand that looks like a jq path (`jq . .key`) is allowed.
+
+Gotcha: a non-jq command must give the same tokens as before. The scan splits only at characters that the tokenizer also splits on. The bats `guard` helper sends the event through an env var, and `guard_cmd` builds a Bash event from a `$'...'` string, so tests can hold single quotes.
+
+[^jq-paths]: `agents/lib/sensitive-file-guard.js` (`shellSegments`, `jqKind`, `fileOperands`, `isJqPath`, `bashTargets`); `tests/sensitive-file-guard.bats` (jq tests).
+
+_Source: PR #1669 review (CodeRabbit, Devin, two /age passes) · Updated: 2026-11-25._
+
 ### Tilth payload coverage (PR #891, merged)
 
 An audit at base `f5d1e1d` found that both guards missed current `edits[].path` requests: historical `files[].path` fixtures passed without checking the active MCP contract.[^tilth-payload]
