@@ -5,40 +5,6 @@
 # Output per match: path<TAB>branch<TAB>PR #<n><TAB><title><TAB><url>
 set -euo pipefail
 
-# Agent shells can overwrite PATH; DOTFILES_DIR survives.
-command -v wt-find >/dev/null || PATH="${DOTFILES_DIR:+$DOTFILES_DIR/bin:}$PATH"
-
-[[ $# -eq 0 ]] && set -- --root "${HOME}/Dev"
-
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/findpr.XXXXXX")"
-trap 'rm -rf "$tmp"' EXIT
-
-found=0
-while IFS=$'\t' read -r wt meta; do
-    [[ -d "$wt" ]] || continue
-    branch="${meta%% (*}"
-    [[ "$branch" == "(detached)" ]] && continue
-
-    origin_url="$(git -C "$wt" remote get-url origin 2>/dev/null || true)"
-    [[ -z "$origin_url" ]] && continue
-    slug="$(sed -E 's#^(git@[^:]+:|ssh://git@[^/]+/|https?://[^/]+/)##; s#\.git$##' <<<"$origin_url")"
-
-    cache="$tmp/${slug//\//__}.json"
-    if [[ ! -f "$cache" ]]; then
-        gh pr list -R "$slug" --state open \
-            --json number,headRefName,title,url >"$cache" 2>/dev/null \
-            || echo '[]' >"$cache"
-    fi
-
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        found=1
-        printf '%s\t%s\t%s\n' "$wt" "$branch" "$line"
-    done < <(jq -r --arg b "$branch" \
-        '.[] | select(.headRefName == $b) | "PR #\(.number)\t\(.title)\t\(.url)"' \
-        "$cache")
-done < <(wt-find "$@")
-
-if (( ! found )); then
-    echo "No open PR matches a local worktree (searched: wt-find $*)."
-fi
+# shellcheck source=skills/wt-find/scripts/find-pr-lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/find-pr-lib.sh"
+find_pr_main "$@"
