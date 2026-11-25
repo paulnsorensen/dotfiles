@@ -1,19 +1,24 @@
 #!/bin/bash
-# install-prompts.sh — wire agents/preamble.md into Codex and OpenCode.
+# install-prompts.sh — wire the tilth preamble plus agents/preamble.md into
+# Codex and OpenCode.
 #
-# Claude Code reads preamble.md directly via the cc/ccc/ccr wrappers
-# in zsh/claude.zsh (--system-prompt-file), so it is not handled here.
+# Claude Code gets the same join at launch through bin/dotsclaude
+# (--system-prompt-file), so it is not handled here.
+#
+# Each installed copy is the tilth preamble with preamble.md appended
+# (`tilth preamble --append`). tilth owns the tool-routing rules. When tilth
+# is missing or too old for --append, the copy is preamble.md alone.
 #
 # Per-harness mechanism:
 #
-#   Codex     — copy preamble.md to <CODEX_HOME>/preamble.md, then yq-edit
+#   Codex     — write the copy to <CODEX_HOME>/preamble.md, then yq-edit
 #               <CODEX_HOME>/config.toml to set
 #                 model_instructions_file = "<CODEX_HOME>/preamble.md"
 #               This REPLACES the bundled per-model system prompt
 #               (codex-rs/core/gpt_5_*_prompt.md). AGENTS.md cascade still
 #               loads as developer-role messages (untouched).
 #
-#   OpenCode  — copy preamble.md to <OPENCODE_HOME>/preamble.md. The
+#   OpenCode  — write the copy to <OPENCODE_HOME>/preamble.md. The
 #               `instructions` key in opencode.json (chezmoi/.chezmoidata/
 #               opencode.yaml) appends it to OpenCode's own system prompt.
 #
@@ -25,6 +30,7 @@
 #   OPENCODE_HOME     defaults to ~/.config/opencode
 #   INSTALL_PROMPTS_HAVE_CODEX       force-on/off codex detection (for tests)
 #   INSTALL_PROMPTS_HAVE_YQ          force-on/off yq detection (for tests)
+#   TILTH_BIN         the tilth binary; defaults to tilth on PATH
 
 set -euo pipefail
 
@@ -41,6 +47,27 @@ install_prompts_have() {
     command -v "$cmd" &>/dev/null
 }
 
+# install_prompts_write <preamble> <dest>
+# Writes the tilth preamble plus <preamble> to <dest>. Falls back to a plain
+# copy of <preamble> when tilth cannot join them.
+install_prompts_write() {
+    local preamble="$1" dest="$2" tmp
+    tmp="$(mktemp "$dest.XXXXXX")"
+    # shellcheck disable=SC2064 # expand $tmp now; the trap outlives this scope
+    trap "rm -f '$tmp'" EXIT
+    if "${TILTH_BIN:-tilth}" preamble --append "$preamble" >"$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
+        # mktemp creates 0600; keep the 0644 that the cp path gives.
+        chmod 0644 "$tmp"
+        mv -f "$tmp" "$dest"
+        echo "  Wrote tilth preamble + $(basename "$preamble") -> $dest"
+    else
+        rm -f "$tmp"
+        cp -f "$preamble" "$dest"
+        echo "  Copied $(basename "$preamble") -> $dest (tilth preamble --append unavailable)"
+    fi
+    trap - EXIT
+}
+
 install_prompts_wire_codex() {
     local preamble="$1"
     local codex_home="${CODEX_HOME:-$HOME/.codex}"
@@ -53,8 +80,7 @@ install_prompts_wire_codex() {
     }
 
     mkdir -p "$codex_home"
-    cp -f "$preamble" "$codex_prompt"
-    echo "  Copied preamble.md -> $codex_prompt"
+    install_prompts_write "$preamble" "$codex_prompt"
 
     if [[ ! -f "$codex_config" ]]; then
         echo "  Skipped $codex_config (not yet scaffolded; will pick up the prompt path on next dots sync)"
@@ -95,8 +121,7 @@ install_prompts_wire_opencode() {
     local opencode_home="${OPENCODE_HOME:-$HOME/.config/opencode}"
 
     mkdir -p "$opencode_home"
-    cp -f "$preamble" "$opencode_home/preamble.md"
-    echo "  Copied preamble.md -> $opencode_home/preamble.md"
+    install_prompts_write "$preamble" "$opencode_home/preamble.md"
 }
 
 install_prompts_main() {

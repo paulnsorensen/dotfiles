@@ -14,7 +14,7 @@
 #                                 whose marketplace.json names the marketplace
 #   - local:                      cheese-flow (out-of-repo); `path:` resolves the source dir
 #
-# Code intelligence is provided by tilth; keep routing in agents/preamble.md.
+# Code intelligence is provided by tilth; the tilth preamble owns its routing.
 #
 # Usage:
 #   plugin-sync           Sync plugins (install missing)

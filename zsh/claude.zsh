@@ -14,15 +14,15 @@ export ENABLE_CLAUDEAI_MCP_SERVERS=false
 # ═══════════════════════════════════════════════════════════════════
 # Quick Access
 # ═══════════════════════════════════════════════════════════════════
-# preamble.md replaces Claude's baked system prompt via --system-prompt-file.
 # CLAUDE.md auto-discovery, hooks, plugins, auto-memory all stay active —
 # only Anthropic's system prompt is swapped out. Symbol-level reads/edits
 # now route through Serena (MCP) instead of dynamically gated LSP plugins.
-# _cc_base — common launcher: prepends preamble flag, routes through
-# bin/cc-env-exec (when present) so the spawned claude loads fresh .env keys
+# _cc_base — common launcher. bin/dotsclaude owns the launch assembly: the
+# system prompt (the tilth preamble, then agents/preamble.md) and the
+# bin/cc-env-exec prefix, so the spawned claude loads fresh .env keys
 # at process start — keys never enter tmux's argv (`ps`-visible), and a
 # stale tmux server env can't strip them (a new session inherits the
-# SERVER's environment, not this client's). Then wraps in tmux unless
+# SERVER's environment, not this client's). _cc_base adds the tmux wrap unless
 # already inside tmux ($TMUX set) or tmux is not installed.
 # Inside tmux, only --new dedicates a session; everything else runs in place.
 _cc_base() {
@@ -41,11 +41,18 @@ _cc_base() {
     done
     set -- "${passthru[@]}"
 
-    local -a flags=()
-    [[ -f "$AGENTS_DOTFILES/preamble.md" ]] && flags+=(--system-prompt-file "$AGENTS_DOTFILES/preamble.md")
-    local -a cmd=(claude "${flags[@]}" "$@")
-    local launcher="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/cc-env-exec"
-    [[ -x "$launcher" ]] && cmd=("$launcher" "${cmd[@]}")
+    # CLAUDE_BIN=claude keeps the `claude` on PATH, so the bin/claude session
+    # guard still applies. Without bin/dotsclaude, run claude with no preamble.
+    local dotsclaude="${DOTFILES_DIR:-$HOME/Dev/dotfiles}/bin/dotsclaude"
+    # DOTFILES_DIR and a set TILTH_BIN go in argv because a new tmux session
+    # takes the server's environment, which can name another clone or tilth.
+    local -a cmd=(claude "$@")
+    if [[ -x "$dotsclaude" ]]; then
+        cmd=(env CLAUDE_BIN=claude DOTFILES_DIR="${dotsclaude%/bin/dotsclaude}"
+            ${TILTH_BIN:+TILTH_BIN="$TILTH_BIN"} "$dotsclaude" "$@")
+    else
+        print -u2 "cc: $dotsclaude missing; claude starts without the preamble"
+    fi
     # No tmux installed: run claude in place.
     if ! command -v tmux &>/dev/null; then
         "${cmd[@]}"

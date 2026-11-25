@@ -1,9 +1,27 @@
 # shellcheck shell=bash
-# preamble-wrappers.sh — launch logic for bin/dotscodex and bin/dotsopencode.
-# Each wrapper replaces its harness's native system prompt with
-# agents/preamble.md. The wrappers only parse and dispatch; the logic lives
-# here. Functions only — no top-level side effects, so sourcing is safe from
-# bats tests. Bash 3.2 compatible (macOS /bin/bash).
+# preamble-wrappers.sh — launch logic for bin/dotsclaude, bin/dotscodex, and
+# bin/dotsopencode. Each wrapper replaces its harness's native system prompt
+# with the tilth preamble followed by agents/preamble.md. The wrappers only
+# parse and dispatch; the logic lives here. Functions only — no top-level side
+# effects, so sourcing is safe from bats tests. Bash 3.2 compatible (macOS
+# /bin/bash).
+
+# dots_preamble_file <agents-preamble-path>
+# Prints the path of the system-prompt file. tilth owns the tool-routing rules,
+# so the file is the bundled tilth preamble with the agents preamble appended
+# (`tilth preamble --append <file> --path`). When tilth is missing or too old
+# for --append, prints the agents preamble path. Returns 1 when the agents
+# preamble is missing. TILTH_BIN overrides the tilth binary.
+dots_preamble_file() {
+    local preamble="$1" joined
+    [[ -f "$preamble" ]] || return 1
+    if joined=$("${TILTH_BIN:-tilth}" preamble --append "$preamble" --path 2>/dev/null) \
+        && [[ -f "$joined" ]]; then
+        printf '%s\n' "$joined"
+    else
+        printf '%s\n' "$preamble"
+    fi
+}
 
 # dots_codex_instructions_override <preamble-path>
 # Prints the `-c` value that sets model_instructions_file to the path.
@@ -21,16 +39,15 @@ dots_codex_instructions_override() {
 # Prints the preamble path for the OpenCode `instructions` list.
 # The installed copy wins, as the literal string ~/.config/opencode/preamble.md.
 # That string equals the global opencode.json entry, so OpenCode loads the
-# file once. The clone copy is the fallback. Returns 1 when neither exists.
+# file once. The fallback is dots_preamble_file on the clone copy. Returns 1
+# when neither exists.
 dots_opencode_preamble_path() {
     local agents_dir="$1"
     if [[ -f "$HOME/.config/opencode/preamble.md" ]]; then
         # shellcheck disable=SC2088 # literal tilde, see above
         printf '%s\n' "~/.config/opencode/preamble.md"
-    elif [[ -f "$agents_dir/preamble.md" ]]; then
-        printf '%s\n' "$agents_dir/preamble.md"
     else
-        return 1
+        dots_preamble_file "$agents_dir/preamble.md"
     fi
 }
 

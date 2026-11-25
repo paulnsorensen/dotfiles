@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC1090,SC2034,SC2317
-# Tests for chezmoi/lib/install-prompts.sh — wires agents/preamble.md as the
-# replacement Codex system prompt.
+# Tests for chezmoi/lib/install-prompts.sh — wires the tilth preamble plus
+# agents/preamble.md as the replacement Codex system prompt.
 
 load test_helper
 
@@ -15,6 +15,20 @@ setup() {
 Test preamble content for assertion checks.
 MD
     export CODEX_HOME="$TEST_HOME/.codex"
+    # Default: no tilth, so each installed copy equals the source preamble.
+    export TILTH_BIN="$TEST_HOME/no-tilth"
+}
+
+# Fake tilth with `preamble --append FILE` (tilth#475).
+_fake_tilth() {
+    TILTH_BIN="$TEST_HOME/tilth"
+    cat > "$TILTH_BIN" <<'SH'
+#!/bin/sh
+[ "$1" = preamble ] && [ "$2" = --append ] || exit 2
+printf '# tilth agent preamble\n\n'
+cat "$3"
+SH
+    chmod +x "$TILTH_BIN"
 }
 
 teardown() { teardown_test_env; }
@@ -50,6 +64,33 @@ teardown() { teardown_test_env; }
     assert_success
     assert_file_exists "$CODEX_HOME/preamble.md"
     diff "$PREAMBLE_SRC" "$CODEX_HOME/preamble.md"
+}
+
+@test "install-prompts.sh writes the tilth preamble plus preamble.md for Codex and OpenCode" {
+    _fake_tilth
+    export OPENCODE_HOME="$TEST_HOME/.config/opencode"
+    INSTALL_PROMPTS_HAVE_CODEX=1 \
+        run bash "$LIB" "$PREAMBLE_SRC"
+    assert_success
+    local dest
+    for dest in "$CODEX_HOME/preamble.md" "$OPENCODE_HOME/preamble.md"; do
+        [ "$(head -n1 "$dest")" = "# tilth agent preamble" ]
+        diff "$PREAMBLE_SRC" <(tail -n +3 "$dest")
+        [ "$(stat -c %a "$dest" 2>/dev/null || stat -f %Lp "$dest")" = 644 ]
+    done
+    [ -z "$(find "$CODEX_HOME" "$OPENCODE_HOME" -name 'preamble.md.*')" ]
+}
+
+@test "install-prompts.sh copies preamble.md alone when tilth lacks --append" {
+    printf '#!/bin/sh\nexit 2\n' > "$TEST_HOME/old-tilth"
+    chmod +x "$TEST_HOME/old-tilth"
+    export TILTH_BIN="$TEST_HOME/old-tilth"
+    INSTALL_PROMPTS_HAVE_CODEX=1 \
+        run bash "$LIB" "$PREAMBLE_SRC"
+    assert_success
+    assert_output_contains "--append unavailable"
+    diff "$PREAMBLE_SRC" "$CODEX_HOME/preamble.md"
+    [ -z "$(find "$CODEX_HOME" -name 'preamble.md.*')" ]
 }
 
 @test "install-prompts.sh skips config.toml edit when it doesn't exist yet" {
