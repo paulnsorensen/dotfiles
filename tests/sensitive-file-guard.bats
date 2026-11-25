@@ -36,18 +36,25 @@ teardown() {
     teardown_test_env
 }
 
-# Feed a PreToolUse event; echo "deny" or "allow".
+# Feed a PreToolUse event; echo "deny" or "allow". The event travels in an
+# environment variable, so the payload may hold a single quote.
 guard() {
     local tool="$1" input="$2"
-    local json
-    json=$(jq -nc --arg t "$tool" --argjson i "$input" '{tool_name:$t, tool_input:$i}')
-    run bash -c "printf '%s' '$json' | '$DEPLOY/hooks/sensitive-file-guard.sh'"
+    export GUARD_JSON
+    GUARD_JSON=$(jq -nc --arg t "$tool" --argjson i "$input" '{tool_name:$t, tool_input:$i}')
+    # shellcheck disable=SC2016  # $GUARD_JSON expands in the child shell
+    run bash -c 'printf "%s" "$GUARD_JSON" | "$1"' _ "$DEPLOY/hooks/sensitive-file-guard.sh"
     [ "$status" -eq 0 ]
     if [[ -z "$output" ]]; then
         echo "allow"
     else
         jq -r '.hookSpecificOutput.permissionDecision' <<<"$output"
     fi
+}
+
+# Feed a Bash event built from a raw command string (use $'...' for quotes).
+guard_cmd() {
+    guard Bash "$(jq -nc --arg c "$1" '{command:$c}')"
 }
 
 # ── .env files ───────────────────────────────────────────────────────
@@ -212,8 +219,9 @@ guard() {
 }
 
 # jq field access (regression: the tokenizer split `| .key` and `(.key==` into
-# a bare `.key` token, which the key-extension rule matched). A jq command may
-# keep a bare, stemless key-extension token. Each allow case has a deny twin.
+# a bare `.key` token, which the key-extension rule matched). Inside a real jq
+# invocation, a jq path token (starts with `.`, no `/`) is not a target. Each
+# allow case has a deny twin.
 
 @test "Bash jq to_entries .key is allowed" {
     [[ "$(guard Bash '{"command":"jq -r \"to_entries[] | .key\" data.json"}')" == "allow" ]]
@@ -249,6 +257,68 @@ guard() {
 
 @test "Bash jq reading a stemless key file by path is denied" {
     [[ "$(guard Bash '{"command":"jq -R . ./.key"}')" == "deny" ]]
+}
+
+@test "Bash jq dotted paths are allowed" {
+    [[ "$(guard Bash '{"command":"jq -r \".[].key\" d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"jq -r .data.key d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"jq \".items[0].pem\" d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"jq \".key,.pem\" d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"jq .secret d.json"}')" == "allow" ]]
+}
+
+@test "Bash jq reading a dotfile credential store is denied" {
+    [[ "$(guard Bash '{"command":"jq -R . .netrc"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"jq -R . .env.local"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"cat .data.key"}')" == "deny" ]]
+}
+
+@test "Bash jq by path, env prefix, or gh -q is allowed" {
+    [[ "$(guard Bash '{"command":"/usr/bin/jq -r .key d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"FOO=1 eatmydata jq -r .key d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"gh api x -q \".[].key\""}')" == "allow" ]]
+}
+
+@test "Bash -q without gh is not a jq invocation" {
+    [[ "$(guard Bash '{"command":"grep -q x .key"}')" == "deny" ]]
+}
+
+@test "Bash jq word outside a jq command does not exempt a key file" {
+    [[ "$(guard Bash '{"command":"echo jq; cat .key"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"cat .key | jq ."}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"echo --jq && cat .pem"}')" == "deny" ]]
+}
+
+@test "Bash command substitution inside a jq command is denied" {
+    # shellcheck disable=SC2016  # literal command text is the payload, not for expansion
+    [[ "$(guard Bash '{"command":"jq -n --arg k \"$(cat .key)\" ."}')" == "deny" ]]
+}
+
+@test "Bash jq file operands are denied" {
+    [[ "$(guard Bash '{"command":"jq . d.json >.key"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"jq -n --rawfile k .pem ."}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"jq -f .key d.json"}')" == "deny" ]]
+}
+
+@test "Bash comment, ANSI-C quote, or open quote cannot hide a command in a jq segment" {
+    [[ "$(guard_cmd $'jq . # it\'s\ncat .key\n#\'')" == "deny" ]]
+    [[ "$(guard_cmd $'jq -n $\'\\\'\' ; cat .key ; echo \'\'')" == "deny" ]]
+    [[ "$(guard_cmd $'jq -n 1 > $\'.key\'')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"jq \".key ; cat .key"}')" == "deny" ]]
+}
+
+@test "Bash gh file operands are denied" {
+    [[ "$(guard Bash '{"command":"gh api x -X POST --input .key --jq .id"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"gh api graphql -F query=@.pem -q .data"}')" == "deny" ]]
+}
+
+@test "Bash jq -f in a short flag cluster is denied" {
+    [[ "$(guard Bash '{"command":"jq -rf .key d.json"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"jq -f -r .key d.json"}')" == "deny" ]]
+}
+
+@test "Bash gh -f raw field with --jq path is allowed" {
+    [[ "$(guard Bash '{"command":"gh api graphql -f query=x --jq .data.key"}')" == "allow" ]]
 }
 
 @test "Bash cat README.md is allowed" {
