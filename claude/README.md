@@ -135,7 +135,7 @@ Source of truth: the `hooks` block in `claude/settings.json` (run `dots sync` to
 
 Source of truth: `claude/plugins/registry.yaml` (run `plugin-ls` to verify).
 
-Code intelligence is provided by tilth; its routing is defined in `agents/preamble.md`.
+Code intelligence is provided by tilth; its routing is defined in the tilth preamble, which the launchers put before `agents/preamble.md`.
 
 **Workflow Plugins** (from `anthropics/claude-code-plugins`):
 

@@ -303,8 +303,7 @@ block_sha() {
         assert_success
     done
     # Every code-reading prompt leaves tilth_read on its auto-expanding default.
-    run grep -Fq 'Omit `tilth_read` `mode` unless a section cannot answer' "$PREAMBLE"
-    assert_success
+    # The parent gets this rule from the tilth preamble, not agents/preamble.md.
     for agent in coder explorer reviewer taste-tester generalist roquefort-wrecker; do
         run grep -Fq 'Pass `mode: full` only when a section cannot answer the question' "$AGENTS_DIR/agent_definitions/$agent.md"
         assert_success

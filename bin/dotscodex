@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# dotscodex — run Codex with agents/preamble.md as its base instructions, for
-# launchers that exec a path (T3 Code, Conductor). Codex counterpart of
-# bin/dotsclaude.
+# dotscodex — run Codex with the tilth preamble and agents/preamble.md as its
+# base instructions, for launchers that exec a path (T3 Code, Conductor).
+# Codex counterpart of bin/dotsclaude.
 #
 # `-c model_instructions_file=...` replaces the bundled per-model prompt, the
 # same as the key that chezmoi/lib/install-prompts.sh writes to config.toml.
@@ -17,7 +17,8 @@ source "$SCRIPT_DIR/lib/preamble-wrappers.sh"
 AGENTS_DOTFILES="${AGENTS_DOTFILES:-${DOTFILES_DIR:-${SCRIPT_DIR%/bin}}/agents}"
 CODEX_BIN="${CODEX_BIN:-${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims/codex}"
 
-if override=$(dots_codex_instructions_override "$AGENTS_DOTFILES/preamble.md"); then
+if preamble=$(dots_preamble_file "$AGENTS_DOTFILES/preamble.md") \
+    && override=$(dots_codex_instructions_override "$preamble"); then
     exec "$CODEX_BIN" -c "$override" "$@"
 fi
 exec "$CODEX_BIN" "$@"
