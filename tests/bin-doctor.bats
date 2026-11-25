@@ -11,6 +11,7 @@ DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 REAL_DOTFILES_DIR="$DOTFILES_DIR"
 REAL_PATH="$PATH"
 REAL_HOME="$HOME"
+REAL_XDG_DATA_HOME="${XDG_DATA_HOME-}"
 CHEZMOI="$(command -v chezmoi || true)"
 
 setup() {
@@ -548,6 +549,8 @@ EOF
     local src="$REAL_DOTFILES_DIR/chezmoi" rendered primary_root
     export HOME="$REAL_HOME"
     export PATH="$REAL_PATH"
+    # A mise shim finds its tools under XDG_DATA_HOME, so chezmoi needs the real value.
+    if [[ -n "$REAL_XDG_DATA_HOME" ]]; then export XDG_DATA_HOME="$REAL_XDG_DATA_HOME"; else unset XDG_DATA_HOME; fi
     command -v git >/dev/null 2>&1 || skip "git not installed"
     # A worktree's git-common-dir points at the main repo's .git, so its
     # parent is the primary clone — not this worktree, even though the
