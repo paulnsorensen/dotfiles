@@ -295,6 +295,10 @@ claude:
       # Workflow runs only after an explicit user opt-in, and each child agent
       # still faces its own permission rules.
       - "Workflow"
+      # Remote Control pre-approves its read tools only, so each spawn or message
+      # asked the operator. A pre-approved create_session refuses an effort override.
+      - "mcp__claude-code-remote__create_session"
+      - "mcp__claude-code-remote__send_message"
       - "mcp__context7__*"
       - "mcp__hallouminate__*"
       - "mcp__plugin_playwright_playwright__*"
