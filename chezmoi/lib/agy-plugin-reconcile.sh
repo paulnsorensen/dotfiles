@@ -7,11 +7,85 @@
 #
 # Ownership boundary:
 #   - Installs desired plugins missing from `agy plugin list --json`.
-#   - Records managed plugin names in a manifest file
-#     (~/.gemini/config/.chezmoi-plugin-manifest).
+#   - Records plugins this run installed, plus earlier manifest entries that
+#     stay desired. It never adopts a plugin installed by hand.
 #   - Uninstalls retired plugins only when the manifest proves this reconciler
 #     owns them. Hand-installed and built-in plugins (such as swarm) stay.
+#   - After an install failure, it keeps every prior manifest entry, skips
+#     pruning, and returns 1.
 #   - Missing `agy` CLI warns and returns 0.
+#
+# Name lists are newline-separated strings. No mapfile or associative
+# arrays — the code must run under macOS /bin/bash 3.2.
+
+# _agy_has_line <needle> <newline_list>
+_agy_has_line() {
+    grep -qxF -- "$1" <<<"$2"
+}
+
+# _agy_install_missing <desired_tsv> <current_names>
+# Prints the names it installs, one per line, on fd 3. Returns 1 on any failure.
+_agy_install_missing() {
+    local desired_tsv="$1" current_names="$2"
+    local name source rc=0
+    while IFS=$'\t' read -r name source; do
+        [[ -z "$name" ]] && continue
+        _agy_has_line "$name" "$current_names" && continue
+        echo "  Installing agy plugin: $name ($source)"
+        if agy plugin install "$source" >/dev/null 2>&1 </dev/null; then
+            printf '%s\n' "$name" >&3
+        else
+            echo "  ERROR: 'agy plugin install $source' failed for $name" >&2
+            rc=1
+        fi
+    done <<<"$desired_tsv"
+    return "$rc"
+}
+
+# _agy_prune_retired <prior_names> <desired_names> <current_names>
+_agy_prune_retired() {
+    local prior_names="$1" desired_names="$2" current_names="$3"
+    local old rc=0
+    while IFS= read -r old; do
+        [[ -z "$old" ]] && continue
+        _agy_has_line "$old" "$desired_names" && continue
+        _agy_has_line "$old" "$current_names" || continue
+        echo "  Uninstalling retired agy plugin: $old"
+        if ! agy plugin uninstall "$old" >/dev/null 2>&1 </dev/null; then
+            echo "  ERROR: 'agy plugin uninstall $old' failed" >&2
+            rc=1
+        fi
+    done <<<"$prior_names"
+    return "$rc"
+}
+
+# _agy_write_manifest <manifest_path> <names>
+_agy_write_manifest() {
+    local manifest="$1" names="$2" manifest_tmp
+    mkdir -p "$(dirname "$manifest")"
+    manifest_tmp=$(mktemp "${manifest}.tmp.XXXXXX") || return 1
+    if ! printf '%s\n' "$names" | { grep -v '^$' || true; } | sort -u > "$manifest_tmp"; then
+        rm -f "$manifest_tmp"
+        echo "  ERROR: could not write agy plugin manifest" >&2
+        return 1
+    fi
+    if ! mv "$manifest_tmp" "$manifest"; then
+        rm -f "$manifest_tmp"
+        echo "  ERROR: could not replace agy plugin manifest" >&2
+        return 1
+    fi
+}
+
+# _agy_still_desired <prior_names> <desired_names>
+# Prints the prior entries that remain desired.
+_agy_still_desired() {
+    local item
+    while IFS= read -r item; do
+        [[ -z "$item" ]] && continue
+        _agy_has_line "$item" "$2" && printf '%s\n' "$item"
+    done <<<"$1"
+    return 0
+}
 
 # agy_plugin_reconcile <desired_tsv> <manifest_path>
 #   desired_tsv   — newline-separated `<name>\t<source>` lines
@@ -29,7 +103,7 @@ agy_plugin_reconcile() {
     fi
 
     local installed_json current_names=""
-    if ! installed_json=$(agy plugin list --json 2>/dev/null); then
+    if ! installed_json=$(agy plugin list --json 2>/dev/null </dev/null); then
         echo "  ERROR: 'agy plugin list --json' failed" >&2
         return 1
     fi
@@ -38,74 +112,21 @@ agy_plugin_reconcile() {
         return 1
     fi
 
-    # No mapfile — must run under macOS /bin/bash 3.2.
-    local -a desired_names=() prior_names=()
-    local name source rc=0
+    local desired_names prior_names="" installed_now rc=0
+    desired_names=$(cut -f1 <<<"$desired_tsv" | grep -v '^$' || true)
+    [[ -f "$manifest" ]] && prior_names=$(<"$manifest")
 
-    _agy_in() {
-        local needle="$1"; shift
-        local item
-        for item in "$@"; do
-            [[ "$item" == "$needle" ]] && return 0
-        done
+    installed_now=$(_agy_install_missing "$desired_tsv" "$current_names" 3>&1 1>&2) || rc=1
+
+    if (( rc != 0 )); then
+        _agy_write_manifest "$manifest" "$installed_now"$'\n'"$prior_names" || true
         return 1
-    }
-
-    while IFS=$'\t' read -r name source; do
-        [[ -z "$name" ]] && continue
-        desired_names+=("$name")
-        if grep -qxF "$name" <<<"$current_names"; then
-            continue
-        fi
-        echo "  Installing agy plugin: $name ($source)"
-        if ! agy plugin install "$source" >/dev/null 2>&1; then
-            echo "  ERROR: 'agy plugin install $source' failed for $name" >&2
-            rc=1
-        fi
-    done <<<"$desired_tsv"
-
-    if [[ -f "$manifest" ]]; then
-        local prior
-        while IFS= read -r prior; do
-            [[ -n "$prior" ]] && prior_names+=("$prior")
-        done < "$manifest"
     fi
 
-    # Prune only manifest-owned plugins, and only when every install succeeded.
-    if (( rc == 0 )); then
-        local old
-        for old in "${prior_names[@]:-}"; do
-            [[ -z "$old" ]] && continue
-            _agy_in "$old" "${desired_names[@]:-}" && continue
-            if grep -qxF "$old" <<<"$current_names"; then
-                echo "  Uninstalling retired agy plugin: $old"
-                if ! agy plugin uninstall "$old" >/dev/null 2>&1; then
-                    echo "  ERROR: 'agy plugin uninstall $old' failed" >&2
-                    rc=1
-                fi
-            fi
-        done
+    _agy_prune_retired "$prior_names" "$desired_names" "$current_names" || rc=1
+    if (( rc != 0 )); then
+        _agy_write_manifest "$manifest" "$installed_now"$'\n'"$prior_names" || true
+        return 1
     fi
-
-    if (( rc == 0 )); then
-        mkdir -p "$(dirname "$manifest")"
-        local manifest_tmp
-        manifest_tmp=$(mktemp "${manifest}.tmp.XXXXXX") || return 1
-        if (( ${#desired_names[@]} > 0 )); then
-            if ! printf '%s\n' "${desired_names[@]}" | sort -u > "$manifest_tmp"; then
-                rm -f "$manifest_tmp"
-                echo "  ERROR: could not write agy plugin manifest" >&2
-                return 1
-            fi
-        else
-            : > "$manifest_tmp"
-        fi
-        if ! mv "$manifest_tmp" "$manifest"; then
-            rm -f "$manifest_tmp"
-            echo "  ERROR: could not replace agy plugin manifest" >&2
-            return 1
-        fi
-    fi
-
-    return "$rc"
+    _agy_write_manifest "$manifest" "$installed_now"$'\n'"$(_agy_still_desired "$prior_names" "$desired_names")"
 }

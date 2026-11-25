@@ -11,7 +11,7 @@ setup() {
     export REGISTRY="$CZ_SRC/.chezmoidata/agy.yaml"
     export SETTINGS_SCRIPT="$CZ_SRC/dot_gemini/antigravity-cli/modify_private_settings.json"
     export MCP_SCRIPT="$CZ_SRC/dot_gemini/config/modify_private_mcp_config.json"
-    export SKILLS_MANIFEST="$CZ_SRC/dot_gemini/config/skills.json"
+    export SKILLS_TEMPLATE="$CZ_SRC/dot_gemini/config/skills.json.tmpl"
     export RECONCILE_LIB="$CZ_SRC/lib/agy-plugin-reconcile.sh"
 }
 
@@ -43,6 +43,18 @@ JSON
     [ "$(jq -r '.editorMode' <<<"$output")" = "vim" ]
     [ "$(jq -r '.trustedWorkspaces[0]' <<<"$output")" = "/home/tester/Dev" ]
     [ "$(jq -r '.model' <<<"$output")" = "Gemini 4 Neon (High)" ]
+}
+
+@test "agy settings report live permission entries that the registry render drops" {
+    run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SETTINGS_SCRIPT" <<'JSON'
+{"permissions":{"allow":["command(make)"]}}
+JSON
+    [ "$status" -eq 0 ]
+    local err="$stderr"
+    run jq -e '.permissions.allow | index("command(make)") == null' <<<"$output"
+    [ "$status" -eq 0 ]
+    [[ "$err" == *"WARNING"*'permissions.allow[command(make)]'* ]]
+    grep -qF 'dropped permissions.allow[command(make)]' "$DOTFILES_STATE_DIR/harness-drift/agy-settings"
 }
 
 @test "agy settings keep unknown live keys with a warning and clear drift when clean" {
@@ -98,10 +110,11 @@ JSON
     [ "$(jq -r '.mcpServers.context7.command' <<<"$output")" = "/usr/local/libexec/dotfiles/agent-secret-proxy" ]
     [ "$(jq -r '.mcpServers.tavily.command' <<<"$output")" = "/usr/local/libexec/dotfiles/agent-secret-proxy" ]
     [ "$(jq -r '.mcpServers.hallouminate.command' <<<"$output")" = "hallouminate" ]
-    run jq -e '.mcpServers | has("milknado") | not' <<<"$output"
+    local rendered="$output"
+    run jq -e '.mcpServers | has("milknado") | not' <<<"$rendered"
     [ "$status" -eq 0 ]
-    run jq -e '[.mcpServers | .. | objects | has("env")] | any' <<<"$output"
-    [ "$status" -ne 0 ]
+    run jq -e '[.mcpServers | .. | objects | has("env")] | any | not' <<<"$rendered"
+    [ "$status" -eq 0 ]
 
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" sh "$MCP_SCRIPT" <<'JSON'
 {"mcpServers":{"stale":{"command":"old"}},"extraKey":"kept"}
@@ -118,10 +131,13 @@ JSON
     [[ "$stderr" == *"not a JSON object"* ]]
 }
 
-@test "agy skills manifest points at the shared ~/.agents/skills cache" {
-    [ -f "$SKILLS_MANIFEST" ]
-    # shellcheck disable=SC2088
-    [ "$(jq -r '.entries[0].path' "$SKILLS_MANIFEST")" = '~/.agents/skills' ]
+@test "agy skills manifest renders an absolute path to the shared .agents/skills cache" {
+    command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
+    [ -f "$SKILLS_TEMPLATE" ]
+    [ ! -e "$CZ_SRC/dot_gemini/config/skills.json" ]
+    run chezmoi execute-template --source "$CZ_SRC" < "$SKILLS_TEMPLATE"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.entries[0].path' <<<"$output")" = "$HOME/.agents/skills" ]
     [ ! -e "$CZ_SRC/dot_gemini/config/exact_skills" ]
     [ ! -e "$CZ_SRC/dot_gemini/config/skills" ]
 }
@@ -196,6 +212,48 @@ MOCK
     [ "$(cat "$manifest")" = "retired-plugin" ]
 }
 
+@test "agy plugin reconciler never adopts a pre-existing plugin and keeps successful installs after a failure" {
+    local mock_bin="$TEST_HOME/bin"
+    local log="$TEST_HOME/agy-calls.log"
+    local manifest="$TEST_HOME/.gemini/config/.chezmoi-plugin-manifest"
+    mkdir -p "$mock_bin" "$(dirname "$manifest")"
+    printf 'retired-plugin\n' > "$manifest"
+
+    cat > "$mock_bin/agy" <<MOCK
+#!/bin/bash
+printf '%s\n' "\$*" >> "$log"
+if [[ "\$1" == "plugin" && "\$2" == "list" ]]; then
+    printf '[{"name":"retired-plugin"},{"name":"by-hand"}]\n'
+    exit 0
+fi
+if [[ "\$1" == "plugin" && "\$2" == "install" && "\$3" == *broken ]]; then
+    exit 1
+fi
+exit 0
+MOCK
+    chmod +x "$mock_bin/agy"
+
+    local desired
+    desired=$(printf 'by-hand\thttps://example.test/by-hand\nfresh\thttps://example.test/fresh\nbroken\thttps://example.test/broken\n')
+
+    # shellcheck disable=SC2016
+    run env PATH="$mock_bin:$PATH" bash -c 'source "$1"; agy_plugin_reconcile "$2" "$3"' \
+        _ "$RECONCILE_LIB" "$desired" "$manifest"
+    [ "$status" -ne 0 ]
+    ! grep -q 'plugin uninstall' "$log"
+    [ "$(cat "$manifest")" = "$(printf 'fresh\nretired-plugin')" ]
+
+    : > "$log"
+    desired=$(printf 'by-hand\thttps://example.test/by-hand\nfresh\thttps://example.test/fresh\n')
+    # shellcheck disable=SC2016
+    run env PATH="$mock_bin:$PATH" bash -c 'source "$1"; agy_plugin_reconcile "$2" "$3"' \
+        _ "$RECONCILE_LIB" "$desired" "$manifest"
+    [ "$status" -eq 0 ]
+    grep -qx 'plugin uninstall retired-plugin' "$log"
+    ! grep -q 'plugin uninstall by-hand' "$log"
+    [ "$(cat "$manifest")" = "fresh" ]
+}
+
 @test "agy plugin reconciler warns and returns 0 when agy CLI is missing" {
     local empty_bin="$TEST_HOME/empty-bin"
     mkdir -p "$empty_bin"
@@ -207,6 +265,52 @@ MOCK
         _ "$empty_bin" "$RECONCILE_LIB" "$TEST_HOME/manifest"
     [ "$status" -eq 0 ]
     [[ "$stderr" == *"agy CLI not found"* ]]
+}
+
+@test "sync_agy_plugins sends both real registry sources to agy plugin install" {
+    local mock_bin="$TEST_HOME/bin" log="$TEST_HOME/agy-calls.log"
+    mkdir -p "$mock_bin" "$TEST_HOME/.gemini/config"
+    cat > "$mock_bin/agy" <<MOCK
+#!/bin/bash
+printf '%s\n' "\$*" >> "$log"
+if [[ "\$1" == "plugin" && "\$2" == "list" ]]; then
+    printf '[]\n'
+fi
+exit 0
+MOCK
+    chmod +x "$mock_bin/agy"
+
+    # shellcheck disable=SC2016
+    run env HOME="$TEST_HOME" PATH="$mock_bin:$PATH" bash -c 'source "$1"; sync_agy_plugins "$2"' \
+        _ "$REAL_DOTFILES_DIR/.sync-lib.sh" "$REAL_DOTFILES_DIR"
+    [ "$status" -eq 0 ]
+    grep -qx 'plugin install https://github.com/paulnsorensen/milknado' "$log"
+    grep -qx 'plugin install https://github.com/paulnsorensen/hallouminate' "$log"
+}
+
+@test "sync_agy_plugins fails without uninstalling when the registry does not parse" {
+    local mock_bin="$TEST_HOME/bin" log="$TEST_HOME/agy-calls.log"
+    local root="$TEST_HOME/badroot" manifest="$TEST_HOME/.gemini/config/.chezmoi-plugin-manifest"
+    mkdir -p "$mock_bin" "$root/chezmoi/.chezmoidata" "$root/chezmoi/lib" "$(dirname "$manifest")"
+    printf 'agy: [unclosed\n' > "$root/chezmoi/.chezmoidata/agy.yaml"
+    cp "$RECONCILE_LIB" "$root/chezmoi/lib/agy-plugin-reconcile.sh"
+    printf 'retired-plugin\n' > "$manifest"
+    cat > "$mock_bin/agy" <<MOCK
+#!/bin/bash
+printf '%s\n' "\$*" >> "$log"
+if [[ "\$1" == "plugin" && "\$2" == "list" ]]; then
+    printf '[{"name":"retired-plugin"}]\n'
+fi
+exit 0
+MOCK
+    chmod +x "$mock_bin/agy"
+
+    # shellcheck disable=SC2016
+    run env HOME="$TEST_HOME" PATH="$mock_bin:$PATH" bash -c 'source "$1"; sync_agy_plugins "$2"' \
+        _ "$REAL_DOTFILES_DIR/.sync-lib.sh" "$root"
+    [ "$status" -ne 0 ]
+    ! grep -q 'plugin uninstall' "$log"
+    [ "$(cat "$manifest")" = "retired-plugin" ]
 }
 
 @test "chezmoi deploys Antigravity config without replacing runtime state" {
@@ -236,6 +340,5 @@ TOML
     [ "$(jq -r '.agentMode' "$destination/.gemini/antigravity-cli/settings.json")" = "auto" ]
     [ "$(jq -r '.trustedWorkspaces[0]' "$destination/.gemini/antigravity-cli/settings.json")" = "/work" ]
     [ "$(jq -r '.mcpServers.tilth.command' "$destination/.gemini/config/mcp_config.json")" = "tilth" ]
-    # shellcheck disable=SC2088
-    [ "$(jq -r '.entries[0].path' "$destination/.gemini/config/skills.json")" = '~/.agents/skills' ]
+    [ "$(jq -r '.entries[0].path' "$destination/.gemini/config/skills.json")" = "$destination/.agents/skills" ]
 }

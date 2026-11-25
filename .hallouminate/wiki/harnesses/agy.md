@@ -14,8 +14,8 @@ Chezmoi owns its global settings, MCP config, shared-skill discovery, and global
   Unknown live keys stay with a drift warning through `chezmoi/lib/drift-gate.sh`.
 - `chezmoi/dot_gemini/config/modify_private_mcp_config.json` authors `~/.gemini/config/mcp_config.json`.
   It replaces `.mcpServers` wholesale so removed servers do not linger.
-- `chezmoi/dot_gemini/config/skills.json` points `agy` at `~/.agents/skills`.
-  `agy` reads the shared skills cache directly with no copied tree.
+- `chezmoi/dot_gemini/config/skills.json.tmpl` renders an absolute `<home>/.agents/skills` path, because `agy` does not expand `~`.
+  `agy` reads the shared skills cache directly with no copied tree. `agy` 1.5.16+ also discovers `~/.agents/skills` natively.
 - `run_onchange_after_install-agents-doc.sh.tmpl` deploys `agents/AGENTS.md` to `~/.gemini/config/AGENTS.md`.
 - `~/.gemini/antigravity-cli/` and `~/.gemini/config/` are never `exact_` trees.
   `agy` stores `antigravity-oauth-token`, `conversations/`, `brain/`, `config.json`, and caches there.
@@ -25,11 +25,14 @@ Chezmoi owns its global settings, MCP config, shared-skill discovery, and global
 `agy.yaml` sets `agentMode: auto`, `enableTerminalSandbox: true`, `toolPermission: proceed-in-sandbox`, and `editorMode: vim`.
 Explicit `permissions.{allow,ask,deny}` rules apply in every mode, including `auto`, with `deny > ask > allow`.
 The modifier expands `${HOME}` in permission strings at apply time.
+The registry owns the permission lists. The modifier drops a live entry that the registry lacks and warns with its name.
+File rules take no globs, so `read_file(.env)` covers only a workspace-root `.env`.
+Use absolute `${HOME}/...` paths for home secrets. Denying `read_file` also denies `write_file`.
 
 **Linux AppArmor gotcha:** `agy` requires unprivileged Linux user namespaces for its terminal sandbox.
 When `kernel.apparmor_restrict_unprivileged_userns = 1` blocks `agy`, `agy` logs `Terminal sandbox unavailable` and falls back to `default` mode.
 Saved `settings.json` keys stay intact and take effect once the host allows user namespaces.
-`auto` mode also requires a personal Google account.
+`auto` mode is not available for business or enterprise accounts.
 
 ## MCP servers and native plugins
 

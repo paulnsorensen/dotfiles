@@ -1192,7 +1192,10 @@ sync_agy_plugins() {
     source "$lib"
 
     local desired
-    desired=$(yq -r '.agy.plugins // {} | to_entries | .[] | select(.value.source) | [.key, .value.source] | @tsv' "$reg")
+    if ! desired=$(yq -r '.agy.plugins // {} | to_entries | .[] | select(.value.source) | [.key, .value.source] | @tsv' "$reg"); then
+        log_error "could not parse agy registry: $reg"
+        return 1
+    fi
 
     agy_plugin_reconcile "$desired" "$HOME/.gemini/config/.chezmoi-plugin-manifest"
 }

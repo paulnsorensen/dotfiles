@@ -61,6 +61,16 @@ live_json=$(printf '%s' "$live_json" | jq --argjson r "$retired_paths" 'delpaths
 ignore_paths=$(drift_ignore_paths "$ignore")
 unknown=$(drift_unknown "$live_json" "$desired" "$ignore_paths")
 result=$(drift_preserve "$live_json" "$desired" "$unknown")
+# The registry owns permissions.allow/ask/deny. drift_unknown drops array
+# indices, so it never sees a live entry the registry lacks. Report each one.
+result=$(printf '%s' "$result" | jq -c --argjson live "$live_json" '
+    . as $r
+    | reduce ("allow", "ask", "deny") as $k (.;
+        .dropped += [
+            ($live.permissions? | objects | .[$k]? | arrays | .[])
+            | select(. as $e | ($r.doc.permissions[$k] // []) | any(. == $e) | not)
+            | "permissions.\($k)[\(.)]"
+        ])')
 desired=$(printf '%s' "$result" | jq '.doc')
 drift_report agy-settings "Antigravity settings.json" "$result" "$registry" "$ignore"
 desired=$(drift_overlay_ignored "$live_json" "$desired" "$ignore_paths")

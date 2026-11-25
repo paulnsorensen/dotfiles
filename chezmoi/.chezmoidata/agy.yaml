@@ -64,6 +64,9 @@ agy:
         - "command(security)"
         - "command(/usr/bin/security)"
         - "command(bws)"
+        # agy file rules take no globs, so `read_file(.env)` covers only a
+        # workspace-root `.env`. Denying read_file also denies write_file; the
+        # write_file twins stay as explicit belt and braces.
         - "read_file(.env)"
         - "write_file(.env)"
         - "read_file(${HOME}/.aws/credentials)"
@@ -72,10 +75,24 @@ agy:
         - "write_file(${HOME}/.gnupg)"
         - "read_file(${HOME}/.ssh/id_rsa)"
         - "write_file(${HOME}/.ssh/id_rsa)"
+        - "read_file(${HOME}/.ssh/id_dsa)"
+        - "write_file(${HOME}/.ssh/id_dsa)"
+        - "read_file(${HOME}/.ssh/id_ecdsa)"
+        - "write_file(${HOME}/.ssh/id_ecdsa)"
         - "read_file(${HOME}/.ssh/id_ed25519)"
         - "write_file(${HOME}/.ssh/id_ed25519)"
         - "read_file(${HOME}/.netrc)"
         - "write_file(${HOME}/.netrc)"
+        - "read_file(${HOME}/.git-credentials)"
+        - "write_file(${HOME}/.git-credentials)"
+        - "read_file(${HOME}/.npmrc)"
+        - "write_file(${HOME}/.npmrc)"
+        - "read_file(${HOME}/.pgpass)"
+        - "write_file(${HOME}/.pgpass)"
+        - "read_file(${HOME}/.pypirc)"
+        - "write_file(${HOME}/.pypirc)"
+        - "read_file(${HOME}/.kube/config)"
+        - "write_file(${HOME}/.kube/config)"
 
   # Managed ~/.gemini/config/mcp_config.json servers.
   # Secret-bearing servers connect through the root-owned broker sockets, so
