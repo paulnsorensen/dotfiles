@@ -133,3 +133,5 @@
 2026-11-18 · pr-1597-daemon-lifecycle · curated · architecture/config-drift.md · Record the new-install restart condition and stopped-daemon preservation. Package replacement alone does not update a running daemon.
 
 2026-11-22 · wiki-harvest-auto/dotfiles-20261122 · curated · harnesses/pi.md · Record the Pi CLI pin-test literal trap and the Pi 1.6.0 model and thinking-level limits.
+
+2026-11-25 · 563f01987f0def44 · merged · architecture/cross-harness-guards.md · Documented why jq binding analysis adds file operands without changing command or program recognition.

@@ -148,6 +148,42 @@ function shellSegments(command) {
   return segments;
 }
 
+// Keep shell word boundaries when selecting file-loading option operands.
+function shellWords(segment) {
+  const words = [];
+  let word = '';
+  let quote = '';
+  let started = false;
+  for (let i = 0; i < segment.length; i++) {
+    const c = segment[i];
+    if (c === '\\' && quote !== "'") {
+      if (i + 1 === segment.length) return null;
+      const next = segment[++i];
+      if (next === '\n') continue;
+      if (quote === '"' && !'\\$`"'.includes(next)) word += c + next;
+      else word += next;
+      started = true;
+    } else if (quote) {
+      if (c === quote) quote = '';
+      else word += c;
+      started = true;
+    } else if (c === "'" || c === '"') {
+      quote = c;
+      started = true;
+    } else if (/\s/.test(c)) {
+      if (started) words.push(word);
+      word = '';
+      started = false;
+    } else {
+      word += c;
+      started = true;
+    }
+  }
+  if (quote) return null;
+  if (started) words.push(word);
+  return words;
+}
+
 // Leading words that run the next word as the command.
 const COMMAND_WRAPPERS = new Set(['command', 'eatmydata', 'env', 'exec', 'nice', 'nohup', 'sudo', 'time', 'xargs']);
 
@@ -206,7 +242,24 @@ function bashTargets(command) {
     const kind = jqKind(words);
     if (!kind || /\$\(|`/.test(segment) || (kind === 'jq' && jqProgramFromFile(words))) return tokens;
     const operands = new Set(fileOperands(segment, words, kind));
-    return tokens.filter((t) => operands.has(t) || !isJqPath(t));
+    const targets = tokens.filter((t) => operands.has(t) || !isJqPath(t));
+    if (kind !== 'jq') return targets;
+    const boundWords = shellWords(segment);
+    if (!boundWords) return targets;
+    for (let i = 0; i < boundWords.length; i++) {
+      const word = boundWords[i];
+      if (word === '--') break;
+      if (word === '--rawfile' || word === '--slurpfile') {
+        const file = boundWords[i + 2];
+        if (file && !targets.includes(file)) targets.push(file);
+        i += 2;
+      } else if (word === '--arg' || word === '--argjson' || word === '--argfile') {
+        i += 2;
+      } else if (word === '--indent' || word === '-L' || word === '--library-path') {
+        i++;
+      }
+    }
+    return targets;
   });
 }
 

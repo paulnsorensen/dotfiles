@@ -300,6 +300,122 @@ guard_cmd() {
     [[ "$(guard Bash '{"command":"jq -f .key d.json"}')" == "deny" ]]
 }
 
+@test "Bash jq file-loading bindings keep the file operand" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        for (const command of process.argv.slice(2)) {
+            const targets = extractTargets("Bash", { command });
+            if (!targets.includes(".inventory") || targets.includes(".display")) {
+                throw new Error("Wrong targets for " + command + ": " + targets);
+            }
+        }
+    ' "$HOOK_JS" \
+        'jq -n --rawfile "label with spaces" .inventory .display' \
+        'jq -n --slurpfile "label with spaces" .inventory .display' \
+        'jq -n --rawfile label\ with\ spaces .inventory .display' \
+        'jq -n --slurpfile "" .inventory .display'
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq operand scan keeps non-jq markers and baseline escape targets" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const cases = [
+            ["j\\q -n .inventory .display", ".display"],
+            ["jq -n --rawfile k .inventory\\ .display", ".inventory\\"],
+        ];
+        for (const [command, expected] of cases) {
+            const targets = extractTargets("Bash", { command });
+            if (!targets.includes(expected)) {
+                throw new Error("Missing " + expected + " for " + command + ": " + targets);
+            }
+        }
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq file-loading returns complete quoted and escaped filenames" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const cases = [
+            ["jq -n --rawfile k \".inventory .display\" .filter", ".inventory .display"],
+            ["jq -n --slurpfile k .inventory\\ .display .filter", ".inventory .display"],
+            ["jq -n --rawfile k \".inventory\\path\" .filter", ".inventory\\path"],
+        ];
+        for (const [command, expected] of cases) {
+            const targets = extractTargets("Bash", { command });
+            if (!targets.includes(expected) || targets.includes(".filter")) {
+                throw new Error("Wrong targets for " + command + ": " + targets);
+            }
+        }
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq operand scan preserves quoted options and literal backslashes" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const cases = [
+            ["jq -n --rawfile \"label with spaces\" \".inventory\\path\" .filter", ".inventory\\path", ".inventory\\ath"],
+            ["jq -n \"--rawfile\" \"label with spaces\" \".inventory .display\" .filter", ".inventory .display", ""],
+        ];
+        for (const [command, expected, corrupted] of cases) {
+            const targets = extractTargets("Bash", { command });
+            if (!targets.includes(expected) || targets.includes(".filter") || (corrupted && targets.includes(corrupted))) {
+                throw new Error("Wrong targets for " + command + ": " + targets);
+            }
+        }
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq operand scan does not treat words after -- as options" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const command = "jq -n .display -- --rawfile \"label with spaces\" \".inventory .display\"";
+        const targets = extractTargets("Bash", { command });
+        if (targets.includes(".inventory .display")) throw new Error("Wrong targets: " + targets);
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq operand scan does not change unrelated paths on an unfinished word" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const targets = extractTargets("Bash", { command: "jq -n .display \\" });
+        if (targets.includes(".display")) throw new Error("Wrong targets: " + targets);
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq option values are not file-loading options" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const commands = [
+            "jq -n --arg label \"--rawfile\" \"public words\" .display",
+            "jq -n --arg \"--rawfile\" \"public words\" .display",
+            "jq -n --rawfile label \"--slurpfile\" \"public words\" .display",
+        ];
+        for (const command of commands) {
+            const targets = extractTargets("Bash", { command });
+            if (targets.includes(".display")) throw new Error("Wrong targets for " + command + ": " + targets);
+        }
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq continuation does not add a binding word as a file" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const command = "jq -n --rawfile label" + "\\" + "\n" + "with\\ spaces .inventory .display";
+        const targets = extractTargets("Bash", { command });
+        if (!targets.includes(".inventory") || targets.includes(".display")) {
+            throw new Error("Wrong targets: " + targets);
+        }
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
 @test "Bash comment, ANSI-C quote, or open quote cannot hide a command in a jq segment" {
     [[ "$(guard_cmd $'jq . # it\'s\ncat .key\n#\'')" == "deny" ]]
     [[ "$(guard_cmd $'jq -n $\'\\\'\' ; cat .key ; echo \'\'')" == "deny" ]]
