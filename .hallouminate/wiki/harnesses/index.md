@@ -1,6 +1,6 @@
 # Supported Harnesses
 
-The repo deploys shared agent configuration into seven active AI coding surfaces. Claude, Codex, Copilot, and Cursor are `ap` render targets. OMP, Pi, and OpenCode use native chezmoi configuration.
+The repo deploys shared agent configuration into eight active AI coding surfaces. Claude, Codex, Copilot, and Cursor are `ap` render targets. OMP, Pi, OpenCode, and Antigravity (`agy`) use native chezmoi configuration.
 
 - [[claude]] — Claude Code and an `ap` isolated-launch target.
   - [[claude-desktop-sessions]] defines how the Desktop Code tab starts sessions.
@@ -13,33 +13,34 @@ The repo deploys shared agent configuration into seven active AI coding surfaces
   - [[omp-plugins]] defines native marketplace and npm plugin ownership.
 - [[pi]] — upstream Pi, managed through `pi.yaml` and `dot_pi/`.
 - [[opencode]] — OpenCode, managed through `opencode.yaml` and `dot_config/opencode/`.
+- [[agy]] — Antigravity CLI, managed through `agy.yaml` and `dot_gemini/`.
 
 Retired: [[wheypoint-stop-hook]] records the removal of the automatic wheypoint Stop gate from every harness (PR #1267). The `/wheypoint` skill remains.
 
 ## Capability support matrix
 
-| Capability | Claude | Codex | Copilot | Cursor | OMP | Pi | OpenCode |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Hooks / extension events | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ post-idle plugin |
-| Sub-agents / agent defs | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ package | ✅ shared + advisor |
-| MCP servers | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ adapter | ✅ |
-| System prompt / instructions | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Native settings | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Shared skills | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Isolated closed-world launch | ✅ | ✅ | ✗ | ✗ | ✅ | ✗ | ✗ |
+| Capability | Claude | Codex | Copilot | Cursor | OMP | Pi | OpenCode | Agy |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Hooks / extension events | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ post-idle plugin | ✗ |
+| Sub-agents / agent defs | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ package | ✅ shared + advisor | ✗ |
+| MCP servers | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ adapter | ✅ | ✅ |
+| System prompt / instructions | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ `AGENTS.md` |
+| Native settings | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Shared skills | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ `skills.json` |
+| Isolated closed-world launch | ✅ | ✅ | ✗ | ✗ | ✅ | ✗ | ✗ | ✗ |
 
-OMP, Pi, and OpenCode remain native siblings rather than `ap` render targets. Their schemas and package systems need first-class ownership.
+OMP, Pi, OpenCode, and Agy remain native siblings rather than `ap` render targets. Their schemas and package systems need first-class ownership.
 
-Pi and OpenCode read the shared `~/.agents/skills` cache directly. They do not receive a copied skill tree.
+Pi, OpenCode, and Agy read the shared `~/.agents/skills` cache directly (Agy via `~/.gemini/config/skills.json`). They do not receive a copied skill tree.
 
 ## Repository mapping
 
 | Surface | Source of truth | Destinations |
 |---|---|---|
-| MCP servers | shared and native registries | harness-native MCP files; Pi uses built-in MCP from `agent/mcp.json`; OpenCode uses `opencode.json` `mcp` |
+| MCP servers | shared and native registries | harness-native MCP files; Pi uses built-in MCP from `agent/mcp.json`; OpenCode uses `opencode.json` `mcp`; Agy uses `~/.gemini/config/mcp_config.json` + native plugins |
 | Hooks | `agents/hooks/registry.yaml` plus native extensions | harness-native hooks, OMP/Pi TypeScript extensions, and OpenCode JavaScript plugins |
 | Sub-agents | `agents/registry.yaml` plus native packages | rendered definitions and native agent packages |
 | Skills | `skills/` plus `skills/_registry.yaml` | native trees and the shared `~/.agents/skills` cache |
 | System prompt | `agents/preamble.md` plus native addenda | Claude/Codex prompt files, OpenCode `instructions`, and OMP/Pi addenda |
-| Global instructions | `agents/AGENTS.md` | Claude, Codex, Pi, and OpenCode global context files |
-| Modal input | native package registries | OMP `@sysid/pi-vim`; Pi `pi-vim` |
+| Global instructions | `agents/AGENTS.md` | Claude, Codex, Pi, OpenCode, and Agy global context files |
+| Modal input | native package registries and settings | OMP `@sysid/pi-vim`; Pi `pi-vim`; Agy `editorMode: vim` |

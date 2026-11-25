@@ -1162,6 +1162,41 @@ sync_pi_packages() {
     fi
 }
 
+# Reconcile native Antigravity CLI plugins declared in
+# chezmoi/.chezmoidata/agy.yaml via `agy plugin install/uninstall`.
+#   sync_agy_plugins <dotfiles_root>
+sync_agy_plugins() {
+    local root="$1"
+    local reg="$root/chezmoi/.chezmoidata/agy.yaml"
+    local lib="$root/chezmoi/lib/agy-plugin-reconcile.sh"
+
+    if ! command -v agy &>/dev/null; then
+        log_warning "agy not found — skipping Antigravity plugin reconcile"
+        return 0
+    fi
+    if ! command -v yq &>/dev/null; then
+        log_warning "yq not found — skipping Antigravity plugin reconcile"
+        return 0
+    fi
+    if [[ ! -f "$reg" ]]; then
+        log_error "agy registry not found: $reg"
+        return 1
+    fi
+    if [[ ! -f "$lib" ]]; then
+        log_error "agy plugin reconcile lib not found: $lib"
+        return 1
+    fi
+
+    log_info "Reconciling Antigravity native plugins..."
+    # shellcheck source=chezmoi/lib/agy-plugin-reconcile.sh
+    source "$lib"
+
+    local desired
+    desired=$(yq -r '.agy.plugins // {} | to_entries | .[] | select(.value.source) | [.key, .value.source] | @tsv' "$reg")
+
+    agy_plugin_reconcile "$desired" "$HOME/.gemini/config/.chezmoi-plugin-manifest"
+}
+
 # Reconcile OMP marketplace plugins and pinned npm plugins against the
 # `.omp.plugins` and `.omp.npmPlugins` subtrees of
 # chezmoi/.chezmoidata/omp.yaml. Runs after chezmoi apply so the mcp.json

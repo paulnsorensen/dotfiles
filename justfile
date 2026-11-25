@@ -19,12 +19,15 @@ lint-shell:
     check() { xargs -P "$jobs" -n 1 shellcheck -x "$@"; }
     { find bin -type f; echo .sync; } | check -e SC1091 & bin=$!
     printf '%s\n' agents/mcp/sync.sh agents/hooks/sync.sh agents/hooks/lib.sh claude/plugins/sync.sh \
-        claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/claude-mcp-reconcile.sh \
-        chezmoi/lib/claude-plugin-reconcile.sh chezmoi/lib/install-agents-doc.sh \
-        chezmoi/lib/install-shared-assets.sh agents/hooks/session-start-cheese-flair.sh \
+        claude/lib/sync-common.sh agents/lib/cheese-flair.sh chezmoi/lib/agy-plugin-reconcile.sh \
+        chezmoi/lib/claude-mcp-reconcile.sh chezmoi/lib/claude-plugin-reconcile.sh \
+        chezmoi/lib/install-agents-doc.sh chezmoi/lib/install-shared-assets.sh \
+        agents/hooks/session-start-cheese-flair.sh \
         macos/.sync macos/lib.sh tests/run-tests.sh tests/install-bats.sh tests/lib/shard.sh \
         tests/workflows-test.sh tests/check-affected.sh | check -e SC1091 -s bash & lib=$!
-    echo chezmoi/private_dot_codex/modify_private_config.toml | check -s sh & sh=$!
+    printf '%s\n' chezmoi/private_dot_codex/modify_private_config.toml \
+        chezmoi/dot_gemini/antigravity-cli/modify_private_settings.json \
+        chezmoi/dot_gemini/config/modify_private_mcp_config.json | check -e SC1091 -s sh & sh=$!
     rc=0
     for pid in "$bin" "$lib" "$sh"; do wait "$pid" || rc=1; done
     (( rc == 0 )) && echo "shellcheck: ok"

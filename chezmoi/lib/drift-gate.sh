@@ -5,6 +5,7 @@
 #   chezmoi/dot_pi/private_agent/modify_settings.json (~/.pi/agent/settings.json)
 #   chezmoi/dot_config/opencode/modify_opencode.json (~/.config/opencode/opencode.json)
 #   chezmoi/dot_t3/userdata/modify_settings.json    (~/.t3/userdata/settings.json)
+#   chezmoi/dot_gemini/antigravity-cli/modify_private_settings.json (~/.gemini/antigravity-cli/settings.json)
 #
 # Policy: preserve and warn. A live key-path that the repo does not know about
 # is a key the harness introduced. The guard keeps its live value, prints a

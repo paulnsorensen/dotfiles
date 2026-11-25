@@ -115,9 +115,13 @@ setup() {
     mkdir -p "$FAKE_DOTFILES/packages"
     ln -s "$FAKE_DOTFILES_MASTER/packages/sync.sh" "$FAKE_DOTFILES/packages/sync.sh"
 
-    # Mock chezmoi/.chezmoidata/omp.yaml registry — empty plugin set
+    # Mock chezmoi/.chezmoidata/{omp,agy}.yaml registries — empty plugin sets
     mkdir -p "$FAKE_DOTFILES/chezmoi/.chezmoidata"
     printf 'omp:\n  plugins: {}\n' > "$FAKE_DOTFILES/chezmoi/.chezmoidata/omp.yaml"
+    printf 'agy:\n  plugins: {}\n' > "$FAKE_DOTFILES/chezmoi/.chezmoidata/agy.yaml"
+    mkdir -p "$FAKE_DOTFILES/chezmoi/lib"
+    ln -s "$REAL_DOTFILES_DIR/chezmoi/lib/agy-plugin-reconcile.sh" \
+        "$FAKE_DOTFILES/chezmoi/lib/agy-plugin-reconcile.sh"
 
     export PATH="$MOCK_BIN:$PATH"
 }

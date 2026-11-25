@@ -1,0 +1,107 @@
+# Antigravity CLI (agy) registry.
+# Chezmoi authors managed settings, MCP servers, and shared-skill discovery
+# while agy owns auth tokens, conversations, brain artifacts, caches, and
+# runtime UI keys under ~/.gemini/antigravity-cli and ~/.gemini/config.
+# Schema: https://antigravity.google/schemas/v1/settings.json
+
+agy:
+  settings:
+    $schema: https://antigravity.google/schemas/v1/settings.json
+    # Auto mode enables the OS terminal sandbox, approves workspace edits, and
+    # evaluates unsandboxed commands automatically. On Linux hosts where
+    # AppArmor restricts unprivileged user namespaces, agy preserves this key
+    # and falls back to default mode until namespaces are allowed.
+    agentMode: auto
+    enableTerminalSandbox: true
+    toolPermission: proceed-in-sandbox
+    colorScheme: colorblind-friendly dark
+    editorMode: vim
+    # Explicit allow, ask, and deny rules apply in every mode, including auto.
+    # Precedence: deny > ask > allow. ${HOME} expands at apply time.
+    permissions:
+      allow:
+        - "mcp(tilth/*)"
+        - "mcp(hallouminate/*)"
+        - "mcp(context7/*)"
+        - "mcp(tavily/*)"
+        - "mcp(milknado/*)"
+        - "command(bats)"
+        - "command(cargo build)"
+        - "command(cargo check)"
+        - "command(cargo clippy)"
+        - "command(cargo fmt)"
+        - "command(cargo nextest)"
+        - "command(cargo test)"
+        - "command(fd)"
+        - "command(gh issue list)"
+        - "command(gh issue view)"
+        - "command(gh pr checks)"
+        - "command(gh pr diff)"
+        - "command(gh pr list)"
+        - "command(gh pr view)"
+        - "command(gh repo view)"
+        - "command(gh run list)"
+        - "command(gh run view)"
+        - "command(git)"
+        - "command(jq)"
+        - "command(just)"
+        - "command(ls)"
+        - "command(node --test)"
+        - "command(pwd)"
+        - "command(uv run basedpyright)"
+        - "command(uv run mypy)"
+        - "command(uv run pytest)"
+        - "command(uv run ruff)"
+        - "command(which)"
+        - "command(wt-git)"
+        - "command(yq)"
+        - "read_url(github.com)"
+      ask:
+        - "command(git push)"
+        - "command(gh pr merge)"
+      deny:
+        - "command(sudo)"
+        - "command(security)"
+        - "command(/usr/bin/security)"
+        - "command(bws)"
+        - "read_file(.env)"
+        - "write_file(.env)"
+        - "read_file(${HOME}/.aws/credentials)"
+        - "write_file(${HOME}/.aws/credentials)"
+        - "read_file(${HOME}/.gnupg)"
+        - "write_file(${HOME}/.gnupg)"
+        - "read_file(${HOME}/.ssh/id_rsa)"
+        - "write_file(${HOME}/.ssh/id_rsa)"
+        - "read_file(${HOME}/.ssh/id_ed25519)"
+        - "write_file(${HOME}/.ssh/id_ed25519)"
+        - "read_file(${HOME}/.netrc)"
+        - "write_file(${HOME}/.netrc)"
+
+  # Managed ~/.gemini/config/mcp_config.json servers.
+  # Secret-bearing servers connect through the root-owned broker sockets, so
+  # this file holds no credentials. milknado is installed as a native agy
+  # plugin below, which registers its MCP server automatically.
+  mcpServers:
+    tilth:
+      command: tilth
+      args: ["--mcp", "--edit"]
+    context7:
+      command: /usr/local/libexec/dotfiles/agent-secret-proxy
+      args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
+    tavily:
+      command: /usr/local/libexec/dotfiles/agent-secret-proxy
+      args: ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
+    # Temporary fallback: agy plugin install loads hallouminate's 7 skills but
+    # drops its MCP server until plugins/hallouminate ships mcp_config.json.
+    # Remove once https://github.com/paulnsorensen/hallouminate/issues/812 lands.
+    hallouminate:
+      command: hallouminate
+      args: ["serve"]
+
+  # Native agy plugins reconciled by sync_agy_plugins via `agy plugin install`.
+  # Hand-installed and built-in plugins (such as swarm) are never touched.
+  plugins:
+    milknado:
+      source: https://github.com/paulnsorensen/milknado
+    hallouminate:
+      source: https://github.com/paulnsorensen/hallouminate
