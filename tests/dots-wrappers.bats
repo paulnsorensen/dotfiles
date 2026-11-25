@@ -45,13 +45,16 @@ teardown() { teardown_test_env; }
 
 config_of() { sed -n 's/^CONFIG=//p' <<<"$1"; }
 
-# claude.zsh sets AGENTS_DOTFILES to $DOTFILES_DIR/agents, and _cc_base names
-# the session before it checks TMUX. Without cc-env-exec it runs the `claude`
-# function that each cc test defines.
+# A clone at $TEST_HOME: cc runs its bin/dotsclaude with CLAUDE_BIN=claude,
+# and the fake harness is the `claude` on PATH. _cc_base names the session
+# before it checks TMUX. Without cc-env-exec, dotsclaude execs claude directly.
 _cc_fixture() {
     export DOTFILES_DIR="$TEST_HOME"
-    mkdir -p "$DOTFILES_DIR/bin"
-    cp "$REAL_DOTFILES_DIR/bin/cc-session-name" "$DOTFILES_DIR/bin/"
+    mkdir -p "$DOTFILES_DIR/bin/lib"
+    cp "$REAL_DOTFILES_DIR"/bin/{cc-session-name,dotsclaude} "$DOTFILES_DIR/bin/"
+    cp "$REAL_DOTFILES_DIR/bin/lib/preamble-wrappers.sh" "$DOTFILES_DIR/bin/lib/"
+    ln -s "$TEST_HOME/fakebin/harness" "$TEST_HOME/fakebin/claude"
+    export PATH="$TEST_HOME/fakebin:$PATH"
 }
 
 @test "dotsclaude replaces the system prompt with the preamble" {
@@ -102,9 +105,8 @@ _cc_fixture() {
     command -v zsh &>/dev/null || skip "zsh not installed"
     export TILTH_BIN="$TEST_HOME/fakebin/tilth"
     _cc_fixture
-    # TMUX set and no --new: _cc_base runs claude in place.
-    run zsh -fc 'export TMUX=x; source "$1"; claude() { print -rl -- "$@"; }; cc -p hi' \
-        _ "$REAL_DOTFILES_DIR/zsh/claude.zsh"
+    # TMUX set and no --new: _cc_base runs dotsclaude in place.
+    run zsh -fc 'export TMUX=x; source "$1"; cc -p hi' _ "$REAL_DOTFILES_DIR/zsh/claude.zsh"
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "--system-prompt-file" ]
     [ "${lines[1]}" = "$FAKE_TILTH_OUT" ]
@@ -115,9 +117,9 @@ _cc_fixture() {
     command -v zsh &>/dev/null || skip "zsh not installed"
     export TILTH_BIN="$TEST_HOME/fakebin/old-tilth"
     _cc_fixture
-    run zsh -fc 'export TMUX=x; source "$1"; claude() { print -rl -- "$@"; }; cc -p hi' \
-        _ "$REAL_DOTFILES_DIR/zsh/claude.zsh"
+    run zsh -fc 'export TMUX=x; source "$1"; cc -p hi' _ "$REAL_DOTFILES_DIR/zsh/claude.zsh"
     [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "--system-prompt-file" ]
     [ "${lines[1]}" = "$AGENTS_DOTFILES/preamble.md" ]
 }
 

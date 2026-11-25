@@ -29,7 +29,7 @@ Gotcha: `--setting-sources ""` closes the **MCP world and inherited settings** (
 
 ## System prompt replacement
 
-Only a launch flag replaces Claude's system prompt. `--system-prompt-file` (used by the `cc` wrappers and `bin/dotsclaude`) swaps the default text for `agents/preamble.md`; `--append-system-prompt-file` adds after it. No `settings.json` key does either. A plain `claude` launch, such as a mise shim behind a launcher, therefore sends Anthropic's default prompt. Codex and OpenCode differ: their global config files carry the override (see [[../architecture/t3-code-launch]]).
+Only a launch flag replaces Claude's system prompt. `--system-prompt-file` (set by `bin/dotsclaude`; the `cc` wrappers run it inside their tmux wrap) swaps the default text for the tilth preamble followed by `agents/preamble.md` (`tilth preamble --append`; see [[../architecture/t3-code-launch]]); `--append-system-prompt-file` adds after it. No `settings.json` key does either. A plain `claude` launch, such as a mise shim behind a launcher, therefore sends Anthropic's default prompt. Codex and OpenCode differ: their global config files carry the override (see [[../architecture/t3-code-launch]]).
 
 **Why an output style is not a substitute:** a custom output style looks like a settings-level route, but it never enters the system prompt. Claude Code 2.1.302 delivers the style as an `output_style_instructions` attachment, rendered as a `<system-reminder>` that starts `# Output Style: <name>` inside the first user message. The system blocks stay byte-identical to the default, and `keep-coding-instructions: false` removed nothing from them. So a style only appends, from a lower-authority position.
 

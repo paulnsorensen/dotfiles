@@ -58,9 +58,11 @@ replaces the native system prompt with the joined preamble that
 
 `<preamble>` is `tilth preamble --append <clone>/agents/preamble.md --path`.
 That file holds the bundled tilth preamble, then the agents preamble. tilth
-caches it under `~/.cache/tilth/`. The zsh `cc` launcher and
-`chezmoi/lib/install-prompts.sh` (for `~/.codex/preamble.md` and
-`~/.config/opencode/preamble.md`) use the same join.
+caches it under `~/.cache/tilth/`. The zsh `cc` launcher runs
+`bin/dotsclaude` with `CLAUDE_BIN=claude`, so one script builds every Claude
+launch. `chezmoi/lib/install-prompts.sh` (for `~/.codex/preamble.md` and
+`~/.config/opencode/preamble.md`) uses the same join. PR #1649 used a dotfiles
+shell join for this; tilth#475 replaced it.
 
 **Why:** the tilth binary ships the routing rules twice: in its MCP server
 instructions and in `prompts/preamble.md`. The agents preamble repeated

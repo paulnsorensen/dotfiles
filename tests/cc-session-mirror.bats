@@ -95,3 +95,25 @@ EOF
     grep -qx -- '-A' "$MOCK_ARGS_FILE"
     grep -qx -- "$SESSION_NAME" "$MOCK_ARGS_FILE"
 }
+
+# ── launch assembly: cc delegates to bin/dotsclaude ──────────────────────────
+
+@test "cc launches through bin/dotsclaude and keeps the claude on PATH" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    _mock_tmux
+    export MOCK_TMUX_SESSIONS=""
+    printf '%s\n' '#!/bin/sh' 'exit 0' > "$FIXTURE_DIR/bin/dotsclaude"
+    chmod +x "$FIXTURE_DIR/bin/dotsclaude"
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc --continue"
+    [ "$status" -eq 0 ]
+    grep -qx -- "env CLAUDE_BIN=claude $FIXTURE_DIR/bin/dotsclaude --continue" "$MOCK_ARGS_FILE"
+}
+
+@test "cc runs claude in place of a missing bin/dotsclaude" {
+    command -v zsh &>/dev/null || skip "zsh not installed"
+    _mock_tmux
+    export MOCK_TMUX_SESSIONS=""
+    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc --continue"
+    [ "$status" -eq 0 ]
+    grep -qx -- "claude --continue" "$MOCK_ARGS_FILE"
+}
