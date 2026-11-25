@@ -4,10 +4,12 @@
 #
 # Forks to chezmoi/lib/install-prompts.sh, which wires the tilth preamble plus
 # preamble.md for Codex and OpenCode.
-# Claude Code reads it through the cc/ccc/ccr zsh wrappers.
+# Claude Code gets its preamble through bin/dotsclaude.
 #
 # Prompts hash: {{ output "sh" "-c" (printf "shasum -a 256 %q/../agents/preamble.md 2>/dev/null | cut -d' ' -f1" .chezmoi.sourceDir) }}
-# tilth preamble hash: {{ output "sh" "-c" "tilth preamble 2>/dev/null | shasum -a 256 | cut -d' ' -f1" }}
+# Joined preamble hash: the output of `tilth preamble --append`, so a tilth
+# upgrade that adds --append or changes its text re-runs this script.
+# Joined preamble hash: {{ output "sh" "-c" (printf "tilth preamble --append %q/../agents/preamble.md 2>/dev/null | shasum -a 256 | cut -d' ' -f1" .chezmoi.sourceDir) }}
 
 set -euo pipefail
 

@@ -1,8 +1,9 @@
 #!/bin/bash
-# install-prompts.sh — wire agents/preamble.md into Codex and OpenCode.
+# install-prompts.sh — wire the tilth preamble plus agents/preamble.md into
+# Codex and OpenCode.
 #
-# Claude Code reads preamble.md directly via the cc/ccc/ccr wrappers
-# in zsh/claude.zsh (--system-prompt-file), so it is not handled here.
+# Claude Code gets the same join at launch through bin/dotsclaude
+# (--system-prompt-file), so it is not handled here.
 #
 # Each installed copy is the tilth preamble with preamble.md appended
 # (`tilth preamble --append`). tilth owns the tool-routing rules. When tilth
@@ -52,7 +53,11 @@ install_prompts_have() {
 install_prompts_write() {
     local preamble="$1" dest="$2" tmp
     tmp="$(mktemp "$dest.XXXXXX")"
+    # shellcheck disable=SC2064 # expand $tmp now; the trap outlives this scope
+    trap "rm -f '$tmp'" EXIT
     if "${TILTH_BIN:-tilth}" preamble --append "$preamble" >"$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
+        # mktemp creates 0600; keep the 0644 that the cp path gives.
+        chmod 0644 "$tmp"
         mv -f "$tmp" "$dest"
         echo "  Wrote tilth preamble + $(basename "$preamble") -> $dest"
     else
@@ -60,6 +65,7 @@ install_prompts_write() {
         cp -f "$preamble" "$dest"
         echo "  Copied $(basename "$preamble") -> $dest (tilth preamble --append unavailable)"
     fi
+    trap - EXIT
 }
 
 install_prompts_wire_codex() {

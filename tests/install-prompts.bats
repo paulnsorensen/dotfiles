@@ -76,6 +76,7 @@ teardown() { teardown_test_env; }
     for dest in "$CODEX_HOME/preamble.md" "$OPENCODE_HOME/preamble.md"; do
         [ "$(head -n1 "$dest")" = "# tilth agent preamble" ]
         diff "$PREAMBLE_SRC" <(tail -n +3 "$dest")
+        [ "$(stat -c %a "$dest" 2>/dev/null || stat -f %Lp "$dest")" = 644 ]
     done
     [ -z "$(find "$CODEX_HOME" "$OPENCODE_HOME" -name 'preamble.md.*')" ]
 }

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# dotsclaude — script form of the zsh `cc` function so Conductor (or any other
-# launcher that exec's a path) can use the same preamble wrapping.
-#
-# Mirrors zsh/claude.zsh:_cc_base() — intentionally without the tmux wrap.
+# dotsclaude — the Claude launch assembly: the system prompt (the tilth
+# preamble, then agents/preamble.md) and the cc-env-exec prefix. Launchers
+# that exec a path use it (T3 Code, Conductor). The zsh `cc` function runs it
+# inside its tmux wrap.
 set -euo pipefail
 
 # The clone is the parent of this script's directory unless DOTFILES_DIR is
@@ -23,8 +23,8 @@ if preamble=$(dots_preamble_file "$AGENTS_DOTFILES/preamble.md"); then
     flags+=(--system-prompt-file "$preamble")
 fi
 
-# Fresh .env keys at process start (mirrors _cc_base's launcher prefix) —
-# Conductor doesn't source zsh init, so .env keys may be absent from its env.
+# Fresh .env keys at process start. Conductor doesn't source zsh init, so
+# .env keys may be absent from its env.
 launcher="$DOTFILES_DIR/bin/cc-env-exec"
 # ${flags[@]+…} guard: bash 3.2 (macOS /bin/bash) treats an empty array
 # expansion as unbound under `set -u`.

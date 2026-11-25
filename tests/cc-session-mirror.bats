@@ -106,14 +106,15 @@ EOF
     chmod +x "$FIXTURE_DIR/bin/dotsclaude"
     run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc --continue"
     [ "$status" -eq 0 ]
-    grep -qx -- "env CLAUDE_BIN=claude $FIXTURE_DIR/bin/dotsclaude --continue" "$MOCK_ARGS_FILE"
+    grep -qx -- "env CLAUDE_BIN=claude DOTFILES_DIR=$FIXTURE_DIR $FIXTURE_DIR/bin/dotsclaude --continue" "$MOCK_ARGS_FILE"
 }
 
 @test "cc runs claude in place of a missing bin/dotsclaude" {
     command -v zsh &>/dev/null || skip "zsh not installed"
     _mock_tmux
     export MOCK_TMUX_SESSIONS=""
-    run zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc --continue"
+    run --separate-stderr zsh -fc "export DOTFILES_DIR='$FIXTURE_DIR'; cd '$FIXTURE_DIR'; unset TMUX; source '$CLAUDE_ZSH'; cc --continue"
     [ "$status" -eq 0 ]
     grep -qx -- "claude --continue" "$MOCK_ARGS_FILE"
+    [[ "$stderr" == *"starts without the preamble"* ]]
 }
