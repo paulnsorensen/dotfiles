@@ -52,7 +52,7 @@ setup_test_env() {
 
     # A mise shim fails once HOME and MISE_DATA_DIR move, so pin the real binary first.
     local cz_shim cz_real
-    cz_shim="$(command -v chezmoi 2>/dev/null)"
+    cz_shim="$(command -v chezmoi 2>/dev/null || true)"
     if [[ "$cz_shim" == */mise/shims/* ]] \
         && cz_real="$("$(readlink -f "$cz_shim")" which chezmoi 2>/dev/null)" && [[ -x "$cz_real" ]]; then
         mkdir -p "$TEST_HOME/.test-bin"
