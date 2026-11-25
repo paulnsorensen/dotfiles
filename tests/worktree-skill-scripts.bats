@@ -3,6 +3,10 @@
 
 DOTFILES_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")/.." && pwd)"
 SKILLS="$DOTFILES_DIR/skills"
+JQ_BIN="$(command -v jq)"
+if [[ "$JQ_BIN" == */mise/shims/jq ]]; then
+    JQ_BIN="$(mise which jq)"
+fi
 
 setup() {
     TMPROOT="$(mktemp -d)"
@@ -52,6 +56,14 @@ assert_not_contains() {
         echo "actual: $1" >&2
         return 1
     }
+}
+
+make_min_path() {
+    mkdir -p "$TMPROOT/minbin"
+    local tool
+    for tool in env bash git sed mktemp rm dirname basename date find; do
+        ln -s "$(command -v "$tool")" "$TMPROOT/minbin/$tool"
+    done
 }
 
 # ── wt-find/scripts/find-touching.sh ──────────────────────────
@@ -140,6 +152,133 @@ STUB
     assert_contains "$output" "No open PR matches a local worktree"
 }
 
+@test "find-pr.sh finds a PR from a copied skill under a reset PATH" {
+    make_worktree alpha
+    make_min_path
+    mkdir -p "$TMPROOT/xdg/mise/shims"
+    cat > "$TMPROOT/xdg/mise/shims/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' '[{"number":7,"headRefName":"worktree/alpha","title":"Fix auth","url":"https://example.test/pr/7"}]'
+STUB
+    chmod +x "$TMPROOT/xdg/mise/shims/gh"
+    ln -s "$JQ_BIN" "$TMPROOT/xdg/mise/shims/jq"
+    cp -r "$SKILLS/wt-find" "$TMPROOT/deployed"
+
+    run env PATH="$TMPROOT/minbin:$DOTFILES_DIR/bin" XDG_DATA_HOME="$TMPROOT/xdg" \
+        "$TMPROOT/deployed/scripts/find-pr.sh" --root "$DEV"
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "$REPO/.worktrees/alpha"
+    assert_contains "$output" $'worktree/alpha\tPR #7\tFix auth\thttps://example.test/pr/7'
+}
+
+@test "find-pr.sh reports a missing gh command as an error" {
+    make_worktree alpha
+    make_min_path
+    mkdir -p "$TMPROOT/xdg/mise/shims"
+    ln -s "$JQ_BIN" "$TMPROOT/xdg/mise/shims/jq"
+
+    run env PATH="$TMPROOT/minbin:$DOTFILES_DIR/bin" XDG_DATA_HOME="$TMPROOT/xdg" \
+        "$SKILLS/wt-find/scripts/find-pr.sh" --root "$DEV"
+    [ "$status" -ne 0 ]
+    assert_contains "$output" "gh"
+    assert_not_contains "$output" "No open PR matches"
+}
+
+@test "find-pr.sh reports a missing jq command as an error" {
+    make_worktree alpha
+    make_min_path
+    mkdir -p "$TMPROOT/xdg/mise/shims"
+    cat > "$TMPROOT/xdg/mise/shims/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' '[]'
+STUB
+    chmod +x "$TMPROOT/xdg/mise/shims/gh"
+
+    run env PATH="$TMPROOT/minbin:$DOTFILES_DIR/bin" XDG_DATA_HOME="$TMPROOT/xdg" \
+        "$SKILLS/wt-find/scripts/find-pr.sh" --root "$DEV"
+    [ "$status" -ne 0 ]
+    assert_contains "$output" "jq"
+    assert_not_contains "$output" "No open PR matches"
+}
+
+@test "find-pr.sh reports a failed GitHub query as an error" {
+    make_worktree alpha
+    mkdir -p "$TMPROOT/stub"
+    printf '#!/usr/bin/env bash\nexit 23\n' > "$TMPROOT/stub/gh"
+    chmod +x "$TMPROOT/stub/gh"
+
+    run env PATH="$TMPROOT/stub:$PATH" "$SKILLS/wt-find/scripts/find-pr.sh" --root "$DEV"
+    [ "$status" -ne 0 ]
+    assert_contains "$output" "GitHub PR lookup failed"
+    assert_not_contains "$output" "No open PR matches"
+}
+
+@test "find-pr.sh reports malformed GitHub JSON as an error" {
+    make_worktree alpha
+    mkdir -p "$TMPROOT/stub"
+    cat > "$TMPROOT/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' 'not-json'
+STUB
+    chmod +x "$TMPROOT/stub/gh"
+
+    run env PATH="$TMPROOT/stub:$PATH" "$SKILLS/wt-find/scripts/find-pr.sh" --root "$DEV"
+    [ "$status" -ne 0 ]
+    assert_contains "$output" "Invalid GitHub PR response"
+    assert_not_contains "$output" "No open PR matches"
+}
+
+@test "find-pr.sh reports failed worktree discovery as an error" {
+    mkdir -p "$TMPROOT/stub"
+    printf '#!/usr/bin/env bash\nexit 17\n' > "$TMPROOT/stub/wt-find"
+    chmod +x "$TMPROOT/stub/wt-find"
+
+    run env PATH="$TMPROOT/stub:$PATH" "$SKILLS/wt-find/scripts/find-pr.sh" --root "$DEV"
+    [ "$status" -ne 0 ]
+    assert_contains "$output" "Worktree discovery failed"
+    assert_not_contains "$output" "No open PR matches"
+}
+
+@test "find-pr.sh reports failed jq decoding as an error" {
+    make_worktree alpha
+    mkdir -p "$TMPROOT/stub"
+    cat > "$TMPROOT/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' '[]'
+STUB
+    cat > "$TMPROOT/stub/jq" <<'STUB'
+#!/usr/bin/env bash
+if [[ "$1" == -r ]]; then
+    exit 9
+fi
+exec "$REAL_JQ" "$@"
+STUB
+    chmod +x "$TMPROOT/stub/gh" "$TMPROOT/stub/jq"
+
+    run env REAL_JQ="$JQ_BIN" PATH="$TMPROOT/stub:$PATH" \
+        "$SKILLS/wt-find/scripts/find-pr.sh" --root "$DEV"
+    [ "$status" -ne 0 ]
+    assert_contains "$output" "GitHub PR response decode failed"
+    assert_not_contains "$output" "No open PR matches"
+}
+
+@test "find-pr.sh queries each origin only once" {
+    make_worktree alpha
+    make_worktree beta
+    mkdir -p "$TMPROOT/stub"
+    cat > "$TMPROOT/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+printf 'call\n' >> "$TMPROOT/gh-calls"
+printf '%s\n' '[]'
+STUB
+    chmod +x "$TMPROOT/stub/gh"
+
+    run env PATH="$TMPROOT/stub:$PATH" "$SKILLS/wt-find/scripts/find-pr.sh" --root "$DEV"
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "No open PR matches"
+    [ "$(wc -l < "$TMPROOT/gh-calls")" -eq 1 ]
+}
+
 # ── wt-triage/scripts/snapshot.sh ─────────────────────────────
 
 @test "snapshot.sh keeps DIRTY rows with reasons and drops SAFE rows" {
@@ -179,6 +318,29 @@ STUB
     run "$SKILLS/wt-triage/scripts/commands.sh" "$REPO/.worktrees/alpha" remove
     [ "$status" -eq 0 ]
     assert_contains "$output" "worktree remove --force .worktrees/alpha"
+}
+
+# Agent shells overwrite PATH, so only the exported DOTFILES_DIR is left.
+@test "wt-triage scripts resolve bin via DOTFILES_DIR when PATH lacks it" {
+    make_worktree alpha
+    PATH=/usr/bin:/bin
+    run "$SKILLS/wt-triage/scripts/snapshot.sh" --path "$DEV"
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "Summary:"
+
+    cp -r "$SKILLS/wt-triage" "$TMPROOT/deployed"
+    run "$TMPROOT/deployed/scripts/commands.sh" "$REPO/.worktrees/alpha" remove
+    [ "$status" -eq 0 ]
+    assert_contains "$output" "worktree remove .worktrees/alpha"
+}
+
+@test "wt-find scripts resolve wt-find via DOTFILES_DIR when PATH lacks it" {
+    make_worktree alpha
+    echo change >> "$REPO/.worktrees/alpha/file.txt"
+    PATH=/usr/bin:/bin
+    run "$SKILLS/wt-find/scripts/find-touching.sh" file.txt --root "$DEV"
+    [ "$status" -eq 0 ]
+    assert_contains "$output" ".worktrees/alpha"
 }
 
 @test "commands.sh rejects an unknown action" {
