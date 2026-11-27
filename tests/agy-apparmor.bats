@@ -47,6 +47,28 @@ teardown() { teardown_test_env; }
     assert_output_contains "unsafe binary path"
 }
 
+@test "render refuses a binary path outside the home directory" {
+    export MISE_DATA_DIR="/tmp/mise"
+    run agy_apparmor_render
+    assert_failure
+    assert_output_contains "unsafe binary path"
+}
+
+@test "render refuses every glob when HOME is empty" {
+    export HOME=""
+    export MISE_DATA_DIR="/tmp/mise"
+    run agy_apparmor_render
+    assert_failure
+    assert_output_contains "unsafe binary path"
+}
+
+@test "render refuses a binary path that climbs out of the home directory" {
+    export MISE_DATA_DIR="$HOME/../tmp/m"
+    run agy_apparmor_render
+    assert_failure
+    assert_output_contains "unsafe binary path"
+}
+
 @test "install skips when the kernel does not restrict user namespaces" {
     echo 0 > "$AGY_APPARMOR_SYSCTL"
     run agy_apparmor_install
@@ -67,12 +89,29 @@ teardown() { teardown_test_env; }
     [ "$(grep -c sudo "$TEST_HOME/sudo.log")" -eq 2 ]
 }
 
-@test "install does nothing when the installed profile is current" {
+@test "install keeps a current profile file and still loads it" {
     agy_apparmor_render > "$AGY_APPARMOR_DIR/antigravity"
     run agy_apparmor_install
     assert_success
     assert_output_contains "is current"
-    [ ! -e "$PARSER_LOG" ]
+    [ "$(cat "$PARSER_LOG")" = "-r $AGY_APPARMOR_DIR/antigravity" ]
+}
+
+@test "install retries the parser after a failed load left the file in place" {
+    PARSER_EXIT=1 run agy_apparmor_install
+    assert_failure
+    [ "$(wc -l < "$PARSER_LOG")" -eq 1 ]
+    run agy_apparmor_install
+    assert_success
+    assert_output_contains "loaded"
+    [ "$(wc -l < "$PARSER_LOG")" -eq 2 ]
+}
+
+@test "install fails when the current profile file does not load" {
+    agy_apparmor_render > "$AGY_APPARMOR_DIR/antigravity"
+    PARSER_EXIT=1 run agy_apparmor_install
+    assert_failure
+    assert_output_contains "could not install or load"
 }
 
 @test "install fails when apparmor_parser rejects the profile" {

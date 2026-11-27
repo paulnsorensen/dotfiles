@@ -172,11 +172,11 @@ MOCK
 
     # milknado was already installed; only hallouminate installs.
     grep -qx 'plugin install https://github.com/paulnsorensen/hallouminate' "$log"
-    ! grep -q 'plugin install https://github.com/paulnsorensen/milknado' "$log"
+    run ! grep -q 'plugin install https://github.com/paulnsorensen/milknado' "$log"
     # Only manifest-owned retired-plugin uninstalls; swarm and hand-installed stay.
     grep -qx 'plugin uninstall retired-plugin' "$log"
-    ! grep -q 'plugin uninstall swarm' "$log"
-    ! grep -q 'plugin uninstall hand-installed' "$log"
+    run ! grep -q 'plugin uninstall swarm' "$log"
+    run ! grep -q 'plugin uninstall hand-installed' "$log"
     [ "$(cat "$manifest")" = "$(printf 'hallouminate\nmilknado')" ]
 }
 
@@ -208,7 +208,7 @@ MOCK
     run env PATH="$mock_bin:$PATH" bash -c 'source "$1"; agy_plugin_reconcile "$2" "$3"' \
         _ "$RECONCILE_LIB" "$desired" "$manifest"
     [ "$status" -ne 0 ]
-    ! grep -q 'plugin uninstall' "$log"
+    run ! grep -q 'plugin uninstall' "$log"
     [ "$(cat "$manifest")" = "retired-plugin" ]
 }
 
@@ -240,7 +240,7 @@ MOCK
     run env PATH="$mock_bin:$PATH" bash -c 'source "$1"; agy_plugin_reconcile "$2" "$3"' \
         _ "$RECONCILE_LIB" "$desired" "$manifest"
     [ "$status" -ne 0 ]
-    ! grep -q 'plugin uninstall' "$log"
+    run ! grep -q 'plugin uninstall' "$log"
     [ "$(cat "$manifest")" = "$(printf 'fresh\nretired-plugin')" ]
 
     : > "$log"
@@ -250,8 +250,69 @@ MOCK
         _ "$RECONCILE_LIB" "$desired" "$manifest"
     [ "$status" -eq 0 ]
     grep -qx 'plugin uninstall retired-plugin' "$log"
-    ! grep -q 'plugin uninstall by-hand' "$log"
+    run ! grep -q 'plugin uninstall by-hand' "$log"
     [ "$(cat "$manifest")" = "fresh" ]
+}
+
+@test "agy plugin reconciler refuses to run when the manifest is unreadable" {
+    [ "$(id -u)" -ne 0 ] || skip "root reads a mode-000 manifest"
+    local mock_bin="$TEST_HOME/bin" log="$TEST_HOME/agy-calls.log"
+    local manifest="$TEST_HOME/.gemini/config/.chezmoi-plugin-manifest"
+    mkdir -p "$mock_bin" "$(dirname "$manifest")"
+    printf 'retired-plugin\nmilknado\n' > "$manifest"
+    chmod 000 "$manifest"
+    cat > "$mock_bin/agy" <<MOCK
+#!/bin/bash
+printf '%s\n' "\$*" >> "$log"
+if [[ "\$1" == "plugin" && "\$2" == "list" ]]; then
+    printf '[{"name":"retired-plugin"}]\n'
+fi
+exit 0
+MOCK
+    chmod +x "$mock_bin/agy"
+
+    local desired
+    desired=$(printf 'milknado\thttps://github.com/paulnsorensen/milknado\n')
+    # shellcheck disable=SC2016
+    run env PATH="$mock_bin:$PATH" bash -c 'source "$1"; agy_plugin_reconcile "$2" "$3"' \
+        _ "$RECONCILE_LIB" "$desired" "$manifest"
+    chmod 600 "$manifest"
+    [ "$status" -eq 1 ]
+    run ! grep -qE 'plugin (install|uninstall)' "$log"
+    [ "$(cat "$manifest")" = "$(printf 'retired-plugin\nmilknado')" ]
+}
+
+@test "agy plugin reconciler fails without changes when agy plugin list is not a JSON array" {
+    local mock_bin="$TEST_HOME/bin" log="$TEST_HOME/agy-calls.log"
+    local manifest="$TEST_HOME/.gemini/config/.chezmoi-plugin-manifest"
+    mkdir -p "$mock_bin" "$(dirname "$manifest")"
+    printf 'retired-plugin\n' > "$manifest"
+    cat > "$mock_bin/agy" <<MOCK
+#!/bin/bash
+printf '%s\n' "\$*" >> "$log"
+if [[ "\$1" == "plugin" && "\$2" == "list" ]]; then
+    case "\$AGY_LIST_MODE" in
+        fail) exit 1 ;;
+        bad) printf '{bad\n' ;;
+        object) printf '{}\n' ;;
+        null) printf 'null\n' ;;
+    esac
+fi
+exit 0
+MOCK
+    chmod +x "$mock_bin/agy"
+
+    local desired mode
+    desired=$(printf 'milknado\thttps://github.com/paulnsorensen/milknado\n')
+    for mode in fail bad object null; do
+        : > "$log"
+        # shellcheck disable=SC2016
+        run env AGY_LIST_MODE="$mode" PATH="$mock_bin:$PATH" bash -c 'source "$1"; agy_plugin_reconcile "$2" "$3"' \
+            _ "$RECONCILE_LIB" "$desired" "$manifest"
+        [ "$status" -ne 0 ] || { echo "mode $mode returned 0" >&2; return 1; }
+        run ! grep -qE 'plugin (install|uninstall)' "$log"
+        [ "$(cat "$manifest")" = "retired-plugin" ]
+    done
 }
 
 @test "agy plugin reconciler warns and returns 0 when agy CLI is missing" {
@@ -309,8 +370,106 @@ MOCK
     run env HOME="$TEST_HOME" PATH="$mock_bin:$PATH" bash -c 'source "$1"; sync_agy_plugins "$2"' \
         _ "$REAL_DOTFILES_DIR/.sync-lib.sh" "$root"
     [ "$status" -ne 0 ]
-    ! grep -q 'plugin uninstall' "$log"
+    run ! grep -q 'plugin uninstall' "$log"
     [ "$(cat "$manifest")" = "retired-plugin" ]
+}
+
+@test "sync_agy_plugins fails and names registry entries that lack a source" {
+    local mock_bin="$TEST_HOME/bin" log="$TEST_HOME/agy-calls.log"
+    local root="$TEST_HOME/nosource" manifest="$TEST_HOME/.gemini/config/.chezmoi-plugin-manifest"
+    mkdir -p "$mock_bin" "$root/chezmoi/.chezmoidata" "$root/chezmoi/lib" "$(dirname "$manifest")"
+    printf 'agy:\n  plugins:\n    good:\n      source: https://example.test/good\n    sourceless: {}\n    blank:\n      source: ""\n' \
+        > "$root/chezmoi/.chezmoidata/agy.yaml"
+    cp "$RECONCILE_LIB" "$root/chezmoi/lib/agy-plugin-reconcile.sh"
+    printf 'sourceless\n' > "$manifest"
+    cat > "$mock_bin/agy" <<MOCK
+#!/bin/bash
+printf '%s\n' "\$*" >> "$log"
+if [[ "\$1" == "plugin" && "\$2" == "list" ]]; then
+    printf '[{"name":"sourceless"}]\n'
+fi
+exit 0
+MOCK
+    chmod +x "$mock_bin/agy"
+
+    # shellcheck disable=SC2016
+    run env HOME="$TEST_HOME" PATH="$mock_bin:$PATH" bash -c 'source "$1"; sync_agy_plugins "$2"' \
+        _ "$REAL_DOTFILES_DIR/.sync-lib.sh" "$root"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"sourceless"* ]]
+    [[ "$output" == *"blank"* ]]
+    [[ "$output" != *"good"* ]]
+    [ ! -e "$log" ]
+    [ "$(cat "$manifest")" = "sourceless" ]
+}
+
+@test "sync_agy_plugins warns when the AppArmor profile is missing or stale and stays quiet when current" {
+    local mock_bin="$TEST_HOME/bin" dir="$TEST_HOME/apparmor.d"
+    mkdir -p "$mock_bin" "$dir" "$TEST_HOME/.gemini/config"
+    # shellcheck disable=SC2016
+    printf '#!/bin/bash\n[[ "$1 $2" == "plugin list" ]] && printf "[]\\n"\nexit 0\n' > "$mock_bin/agy"
+    chmod +x "$mock_bin/agy"
+    echo 1 > "$TEST_HOME/restrict_userns"
+    # shellcheck disable=SC2016
+    local cmd='source "$1"; sync_agy_plugins "$2"'
+
+    run env HOME="$TEST_HOME" PATH="$mock_bin:$PATH" MISE_DATA_DIR="$TEST_HOME/mise" \
+        AGY_APPARMOR_DIR="$dir" AGY_APPARMOR_SYSCTL="$TEST_HOME/restrict_userns" \
+        bash -c "$cmd" _ "$REAL_DOTFILES_DIR/.sync-lib.sh" "$REAL_DOTFILES_DIR"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"AppArmor profile is missing or stale"*"bin/linux-install"* ]]
+
+    printf 'stale\n' > "$dir/antigravity"
+    run env HOME="$TEST_HOME" PATH="$mock_bin:$PATH" MISE_DATA_DIR="$TEST_HOME/mise" \
+        AGY_APPARMOR_DIR="$dir" AGY_APPARMOR_SYSCTL="$TEST_HOME/restrict_userns" \
+        bash -c "$cmd" _ "$REAL_DOTFILES_DIR/.sync-lib.sh" "$REAL_DOTFILES_DIR"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"AppArmor profile is missing or stale"* ]]
+
+    # shellcheck disable=SC2016
+    run env HOME="$TEST_HOME" MISE_DATA_DIR="$TEST_HOME/mise" AGY_APPARMOR_SYSCTL="$TEST_HOME/restrict_userns" \
+        bash -c 'source "$1/bin/lib/agy-apparmor.sh"; agy_apparmor_render' _ "$REAL_DOTFILES_DIR"
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" > "$dir/antigravity"
+    run env HOME="$TEST_HOME" PATH="$mock_bin:$PATH" MISE_DATA_DIR="$TEST_HOME/mise" \
+        AGY_APPARMOR_DIR="$dir" AGY_APPARMOR_SYSCTL="$TEST_HOME/restrict_userns" \
+        bash -c "$cmd" _ "$REAL_DOTFILES_DIR/.sync-lib.sh" "$REAL_DOTFILES_DIR"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"AppArmor profile"* ]]
+}
+
+@test "sync_agy_plugins warns about the AppArmor profile when yq is missing" {
+    local mock_bin="$TEST_HOME/bin" dir="$TEST_HOME/apparmor.d"
+    mkdir -p "$mock_bin" "$dir" "$TEST_HOME/.gemini/config"
+    printf '#!/bin/bash\nexit 0\n' > "$mock_bin/agy"
+    chmod +x "$mock_bin/agy"
+    echo 1 > "$TEST_HOME/restrict_userns"
+    # shellcheck disable=SC2016
+    local cmd='source "$1"; command() { [[ "$1 $2" == "-v yq" ]] && return 1; builtin command "$@"; }; sync_agy_plugins "$2"'
+
+    run env HOME="$TEST_HOME" PATH="$mock_bin:$PATH" MISE_DATA_DIR="$TEST_HOME/mise" \
+        AGY_APPARMOR_DIR="$dir" AGY_APPARMOR_SYSCTL="$TEST_HOME/restrict_userns" \
+        bash -c "$cmd" _ "$REAL_DOTFILES_DIR/.sync-lib.sh" "$REAL_DOTFILES_DIR"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"yq not found"* ]]
+    [[ "$output" == *"AppArmor profile is missing or stale"* ]]
+}
+
+@test "sync_agy_plugins warns when the AppArmor profile cannot render" {
+    local mock_bin="$TEST_HOME/bin" dir="$TEST_HOME/apparmor.d"
+    mkdir -p "$mock_bin" "$dir" "$TEST_HOME/.gemini/config"
+    # shellcheck disable=SC2016
+    printf '#!/bin/bash\n[[ "$1 $2" == "plugin list" ]] && printf "[]\\n"\nexit 0\n' > "$mock_bin/agy"
+    chmod +x "$mock_bin/agy"
+    echo 1 > "$TEST_HOME/restrict_userns"
+    # shellcheck disable=SC2016
+    local cmd='source "$1"; sync_agy_plugins "$2"'
+
+    run env HOME="$TEST_HOME" PATH="$mock_bin:$PATH" MISE_DATA_DIR="/tmp/outside-home-mise" \
+        AGY_APPARMOR_DIR="$dir" AGY_APPARMOR_SYSCTL="$TEST_HOME/restrict_userns" \
+        bash -c "$cmd" _ "$REAL_DOTFILES_DIR/.sync-lib.sh" "$REAL_DOTFILES_DIR"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"AppArmor profile cannot render"*"unsafe binary path"* ]]
 }
 
 @test "chezmoi deploys Antigravity config without replacing runtime state" {

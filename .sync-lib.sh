@@ -1174,6 +1174,7 @@ sync_agy_plugins() {
         log_warning "agy not found — skipping Antigravity plugin reconcile"
         return 0
     fi
+    _sync_agy_apparmor_check "$root"
     if ! command -v yq &>/dev/null; then
         log_warning "yq not found — skipping Antigravity plugin reconcile"
         return 0
@@ -1191,13 +1192,41 @@ sync_agy_plugins() {
     # shellcheck source=chezmoi/lib/agy-plugin-reconcile.sh
     source "$lib"
 
-    local desired
-    if ! desired=$(yq -r '.agy.plugins // {} | to_entries | .[] | select(.value.source) | [.key, .value.source] | @tsv' "$reg"); then
+    local invalid desired
+    if ! invalid=$(yq -r '.agy.plugins // {} | to_entries | .[] | select((.value.source | tag) != "!!str" or .value.source == "") | .key' "$reg"); then
+        log_error "could not parse agy registry: $reg"
+        return 1
+    fi
+    if [[ -n "$invalid" ]]; then
+        log_error "agy registry entries without a source: ${invalid//$'\n'/, }"
+        return 1
+    fi
+    if ! desired=$(yq -r '.agy.plugins // {} | to_entries | .[] | [.key, .value.source] | @tsv' "$reg"); then
         log_error "could not parse agy registry: $reg"
         return 1
     fi
 
     agy_plugin_reconcile "$desired" "$HOME/.gemini/config/.chezmoi-plugin-manifest"
+}
+
+# Warn when the host needs the Antigravity AppArmor profile and it is missing or
+# stale. Sync never runs sudo; bin/linux-install installs the profile.
+#   _sync_agy_apparmor_check <dotfiles_root>
+_sync_agy_apparmor_check() {
+    local lib="$1/bin/lib/agy-apparmor.sh"
+    [[ -f "$lib" ]] || return 0
+    # shellcheck source=bin/lib/agy-apparmor.sh
+    source "$lib"
+    agy_apparmor_needed || return 0
+    local target="${AGY_APPARMOR_DIR:-/etc/apparmor.d}/antigravity" rendered
+    rendered=$(agy_apparmor_render 2>&1) || {
+        log_warning "Antigravity AppArmor profile cannot render: $rendered"
+        return 0
+    }
+    if [[ ! -f "$target" || "$(<"$target")" != "$rendered" ]]; then
+        log_warning "Antigravity AppArmor profile is missing or stale at $target; agy auto mode stays off. Run bin/linux-install to install it."
+    fi
+    return 0
 }
 
 # Reconcile OMP marketplace plugins and pinned npm plugins against the

@@ -107,26 +107,29 @@ agy_plugin_reconcile() {
         echo "  ERROR: 'agy plugin list --json' failed" >&2
         return 1
     fi
-    if ! current_names=$(jq -r 'if type == "array" then .[].name else empty end' <<<"$installed_json" 2>/dev/null); then
-        echo "  ERROR: 'agy plugin list --json' returned invalid JSON" >&2
+    if ! current_names=$(jq -r 'if type == "array" then .[].name else error("not an array") end' <<<"$installed_json" 2>/dev/null); then
+        echo "  ERROR: 'agy plugin list --json' did not return a JSON array" >&2
         return 1
     fi
 
-    local desired_names prior_names="" installed_now rc=0
+    local desired_names prior_names="" installed_now keep rc=0
     desired_names=$(cut -f1 <<<"$desired_tsv" | grep -v '^$' || true)
-    [[ -f "$manifest" ]] && prior_names=$(<"$manifest")
+    if [[ -f "$manifest" ]] && ! prior_names=$(<"$manifest"); then
+        echo "  ERROR: could not read agy plugin manifest: $manifest" >&2
+        return 1
+    fi
 
     installed_now=$(_agy_install_missing "$desired_tsv" "$current_names" 3>&1 1>&2) || rc=1
-
-    if (( rc != 0 )); then
-        _agy_write_manifest "$manifest" "$installed_now"$'\n'"$prior_names" || true
-        return 1
+    if (( rc == 0 )); then
+        _agy_prune_retired "$prior_names" "$desired_names" "$current_names" || rc=1
     fi
 
-    _agy_prune_retired "$prior_names" "$desired_names" "$current_names" || rc=1
+    # After a failure, keep every prior entry so a later run can retry the prune.
     if (( rc != 0 )); then
-        _agy_write_manifest "$manifest" "$installed_now"$'\n'"$prior_names" || true
-        return 1
+        keep="$prior_names"
+    else
+        keep=$(_agy_still_desired "$prior_names" "$desired_names")
     fi
-    _agy_write_manifest "$manifest" "$installed_now"$'\n'"$(_agy_still_desired "$prior_names" "$desired_names")"
+    _agy_write_manifest "$manifest" "$installed_now"$'\n'"$keep" || rc=1
+    return "$rc"
 }

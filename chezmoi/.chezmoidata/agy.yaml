@@ -21,8 +21,14 @@ agy:
     # agy checks each part of a pipeline or &&/||/; chain on its own, and a
     # $(...) or backtick substitution always asks. The command list mirrors
     # Claude's allow list without the broad code runners (python3, node, npx,
-    # uv, npm run, gh, dots). Those still ask, or go to auto mode's review once
-    # the terminal sandbox works (bin/lib/agy-apparmor.sh).
+    # uv, npm run, gh, dots) and without the shell file readers. Those still
+    # ask, or go to auto mode's review once the terminal sandbox works
+    # (bin/lib/agy-apparmor.sh).
+    # agy has no shell-level secret guard, and its file denies cover only the
+    # read_file and write_file tools. Shell file readers (cat, head, tail, jq,
+    # yq, rg, cp, duckdb, fd, sd, mv) stay out of allow until agy hooks exist.
+    # The git entry stays for parity with Claude. git can still read files and
+    # run code, so the shell guard stays partial until agy hooks exist.
     permissions:
       allow:
         - "mcp(tilth/*)"
@@ -39,14 +45,10 @@ agy:
         - "command(cargo fmt)"
         - "command(cargo nextest)"
         - "command(cargo test)"
-        - "command(cat)"
         - "command(cd)"
         - "command(chmod)"
-        - "command(cp)"
         - "command(dirname)"
-        - "command(duckdb)"
         - "command(echo)"
-        - "command(fd)"
         - "command(gh issue close)"
         - "command(gh issue comment)"
         - "command(gh issue create)"
@@ -66,13 +68,10 @@ agy:
         - "command(gh stack)"
         - "command(git)"
         - "command(go test)"
-        - "command(head)"
-        - "command(jq)"
         - "command(just)"
         - "command(ls)"
         - "command(mkdir)"
         - "command(mktemp)"
-        - "command(mv)"
         - "command(node --test)"
         - "command(npm test)"
         - "command(prek)"
@@ -81,11 +80,8 @@ agy:
         - "command(pwd)"
         - "command(pytest)"
         - "command(realpath)"
-        - "command(rg)"
-        - "command(sd)"
         - "command(sha256sum)"
         - "command(sleep)"
-        - "command(tail)"
         - "command(test)"
         - "command(tokei)"
         - "command(touch)"
@@ -97,7 +93,6 @@ agy:
         - "command(which)"
         - "command(wt-git)"
         - "command(wt-sweep)"
-        - "command(yq)"
         - "read_url(github.com)"
       ask:
         - "command(git push)"
@@ -136,6 +131,16 @@ agy:
         - "write_file(${HOME}/.pypirc)"
         - "read_file(${HOME}/.kube/config)"
         - "write_file(${HOME}/.kube/config)"
+        - "read_file(${HOME}/.ssh/id_ed25519_sk)"
+        - "write_file(${HOME}/.ssh/id_ed25519_sk)"
+        - "read_file(${HOME}/.ssh/id_ecdsa_sk)"
+        - "write_file(${HOME}/.ssh/id_ecdsa_sk)"
+        - "read_file(${HOME}/.config/gh/hosts.yml)"
+        - "write_file(${HOME}/.config/gh/hosts.yml)"
+        - "read_file(${HOME}/.docker/config.json)"
+        - "write_file(${HOME}/.docker/config.json)"
+        - "read_file(${HOME}/.gnupg/private-keys-v1.d)"
+        - "write_file(${HOME}/.gnupg/private-keys-v1.d)"
 
   # Managed ~/.gemini/config/mcp_config.json servers.
   # Secret-bearing servers connect through the root-owned broker sockets, so

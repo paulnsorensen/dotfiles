@@ -21,9 +21,9 @@ agy_apparmor_binary_glob() {
 
 # agy_apparmor_render — print the profile for the current user.
 agy_apparmor_render() {
-    local glob
+    local glob home="${HOME%/}"
     glob=$(agy_apparmor_binary_glob)
-    if [[ ! "$glob" =~ ^/[A-Za-z0-9._/*-]+$ ]]; then
+    if [[ -z "$home" || ! "$glob" =~ ^/[A-Za-z0-9._/*-]+$ || "$glob" == */../* || "$glob" == */./* || "$glob" != "$home"/* ]]; then
         echo "agy-apparmor: unsafe binary path: $glob" >&2
         return 1
     fi
@@ -49,16 +49,20 @@ agy_apparmor_install() {
     rendered=$(agy_apparmor_render) || return 1
     if [[ -f "$target" && "$(<"$target")" == "$rendered" ]]; then
         echo "agy-apparmor: $target is current"
-        return 0
-    fi
-    tmp=$(mktemp) || return 1
-    printf '%s\n' "$rendered" > "$tmp"
-    if ! ${as_root[@]+"${as_root[@]}"} install -m 0644 "$tmp" "$target" \
-        || ! ${as_root[@]+"${as_root[@]}"} apparmor_parser -r "$target"; then
+    else
+        tmp=$(mktemp) || return 1
+        printf '%s\n' "$rendered" > "$tmp"
+        if ! ${as_root[@]+"${as_root[@]}"} install -m 0644 "$tmp" "$target"; then
+            rm -f "$tmp"
+            echo "agy-apparmor: could not install or load $target" >&2
+            return 1
+        fi
         rm -f "$tmp"
+    fi
+    # Always load: an earlier run can leave the file in place with a failed load.
+    if ! ${as_root[@]+"${as_root[@]}"} apparmor_parser -r "$target"; then
         echo "agy-apparmor: could not install or load $target" >&2
         return 1
     fi
-    rm -f "$tmp"
     echo "agy-apparmor: loaded $target; restart agy to get auto mode"
 }

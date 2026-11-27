@@ -30,7 +30,9 @@ File rules take no globs, so `read_file(.env)` covers only a workspace-root `.en
 Use absolute `${HOME}/...` paths for home secrets. Denying `read_file` also denies `write_file`.
 `agy` checks each part of a pipeline or `&&`/`||`/`;` chain against the rules on its own.
 A `$(...)` or backtick substitution turns off prefix matching, so that command asks.
-The `command(...)` allow list mirrors Claude's list without the broad code runners (`python3`, `node`, `npx`, `uv`, `npm run`, `gh`, `dots`).
+The `command(...)` allow list mirrors Claude's list without the broad code runners (`python3`, `node`, `npx`, `uv`, `npm run`, `gh`, `dots`) and without the shell file readers.
+`agy` has no shell-level secret guard, so the shell file readers (`cat`, `head`, `tail`, `jq`, `yq`, `rg`, `cp`, `duckdb`, `fd`, `sd`, `mv`) stay out of `allow` until `agy` hooks exist.
+The `command(git)` entry stays for parity with Claude's `Bash(git:*)`. `git` can still read files and run code, so the shell guard stays partial.
 
 **Linux AppArmor gotcha:** `agy` requires unprivileged Linux user namespaces for its terminal sandbox.
 When `kernel.apparmor_restrict_unprivileged_userns = 1` blocks `agy`, its log says `auto mode is unavailable because the terminal sandbox is unavailable, falling back to default`.
@@ -39,6 +41,8 @@ Default mode then asks before each command that no `command(...)` rule allows.
 It renders `services/apparmor/antigravity` for every mise-installed `antigravity` binary and loads it as `/etc/apparmor.d/antigravity`.
 Like Ubuntu's `code` and `chrome` profiles, the profile is unconfined and only grants `userns`.
 Restart `agy` after the load.
+`dots sync` warns when the profile is missing or stale. It never runs `sudo`; run `bin/linux-install` to fix it.
+The attach path lies under `$HOME`, so any process of this user can get user namespaces there.
 `auto` mode is not available for business or enterprise accounts.
 
 ## MCP servers and native plugins
@@ -58,7 +62,7 @@ A manifest at `~/.gemini/config/.chezmoi-plugin-manifest` scopes removals to rep
 ## Deliberate exclusions and gaps
 
 - **Tilth shell-guard hook**: `tilth hook --host` supports `claude`, `copilot`, `cursor`, and `windsurf`, not `antigravity`.
-  We punt on Tilth reroute hooks for `agy` until `tilth` adds an Antigravity host adapter.
+  The repo does not install Tilth reroute hooks for `agy`. Add them when `tilth` gets an Antigravity host adapter.
 - **Version pin gate**: `mise` pins `aqua:google-antigravity/antigravity-cli`, and Renovate bumps it.
   `agy` ships a built-in self-updater that can advance the binary ahead of the mise pin, so `verify_harness_versions` omits `agy` (same as Claude).
 - **Hooks, subagents, preamble, and analytics**: deferred to follow-up slices (`~/.gemini/config/hooks.json`, `~/.gemini/config/agents/`, `~/.gemini/config/rules/preamble.md`, and a `session-analytics` adapter).
