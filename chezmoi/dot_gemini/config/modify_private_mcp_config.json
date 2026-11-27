@@ -1,0 +1,43 @@
+#!/bin/sh
+# Author Antigravity global MCP configuration from .chezmoidata/agy.yaml.
+#
+# Replaces the managed .mcpServers subtree wholesale so removed servers are
+# evicted, while preserving any unrelated top-level keys if present. Handles an
+# empty or whitespace-only live file cleanly (agy seeds an empty file).
+
+set -eu
+
+registry=${CHEZMOI_SOURCE_DIR:?CHEZMOI_SOURCE_DIR is unset}/.chezmoidata/agy.yaml
+live=$(cat)
+
+for tool in yq jq; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "modify_mcp_config.json: $tool missing; Antigravity MCP config is unchanged" >&2
+        printf '%s' "$live"
+        exit 0
+    fi
+done
+
+if [ ! -f "$registry" ]; then
+    echo "modify_mcp_config.json: registry missing: $registry" >&2
+    exit 1
+fi
+
+desired_servers=$(yq -o=json '.agy.mcpServers // {}' "$registry" | jq '.')
+if ! printf '%s' "$desired_servers" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    echo "modify_mcp_config.json: agy.mcpServers must be a map" >&2
+    exit 1
+fi
+
+if [ -z "$(printf '%s' "$live" | tr -d '[:space:]')" ]; then
+    jq -n --argjson servers "$desired_servers" '{mcpServers: $servers}'
+    exit 0
+fi
+
+live_json=$(printf '%s' "$live" | jq '.' 2>/dev/null) || live_json=
+if [ -z "$live_json" ] || ! printf '%s' "$live_json" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    echo "modify_mcp_config.json: live MCP config is not a JSON object" >&2
+    exit 1
+fi
+
+printf '%s' "$live_json" | jq --argjson servers "$desired_servers" '.mcpServers = $servers'

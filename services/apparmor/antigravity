@@ -1,0 +1,17 @@
+# Lets the Antigravity CLI (agy) terminal sandbox create user namespaces on
+# hosts that set kernel.apparmor_restrict_unprivileged_userns = 1.
+# bin/lib/agy-apparmor.sh replaces __AGY_BINARY_GLOB__ and installs the result
+# as /etc/apparmor.d/antigravity. Like Ubuntu's own code and chrome profiles,
+# the profile is unconfined: it names the binary and grants only userns.
+# The attach path lies under the user's home and the user can write to it.
+# Any process of this user can get user namespaces there.
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile antigravity __AGY_BINARY_GLOB__ flags=(unconfined) {
+  userns,
+  @{exec_path} mr,
+
+  include if exists <local/antigravity>
+}

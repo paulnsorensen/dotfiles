@@ -105,6 +105,19 @@ else
     warn "zsh not on PATH — skipping login-shell change"
 fi
 
+#-----------------------------------------------------------------------------
+# AppArmor profile for the Antigravity CLI terminal sandbox
+#-----------------------------------------------------------------------------
+# Ubuntu restricts unprivileged user namespaces. Without this profile, agy
+# drops auto mode and asks before most commands.
+# shellcheck source=bin/lib/agy-apparmor.sh
+if source "${SCRIPT_DIR}/lib/agy-apparmor.sh" && agy_apparmor_install; then
+    ok "Antigravity AppArmor profile ready"
+else
+    err "Antigravity AppArmor profile install failed"
+    FAILED+=("agy-apparmor")
+fi
+
 # All versioned CLI surfaces are installed by the pinned manifests. Do not add
 # native rustup/cargo/uv/npm/bun/duckdb installers here; run `dots sync` below.
 

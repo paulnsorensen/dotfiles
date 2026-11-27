@@ -1,0 +1,4 @@
+# Dot-paths retired from chezmoi/.chezmoidata/agy.yaml.
+# The guard chezmoi/dot_gemini/antigravity-cli/modify_private_settings.json deletes
+# these paths from the live file before the drift check runs, so retired keys
+# do not survive as unknown drift. Blank lines and "#" comments are ignored.

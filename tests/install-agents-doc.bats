@@ -102,6 +102,7 @@ TOML
     assert_success
     cmp -s "$REAL_DOTFILES_DIR/agents/AGENTS.md" "$destination/.pi/agent/AGENTS.md"
     cmp -s "$REAL_DOTFILES_DIR/agents/AGENTS.md" "$destination/.config/opencode/AGENTS.md"
+    cmp -s "$REAL_DOTFILES_DIR/agents/AGENTS.md" "$destination/.gemini/config/AGENTS.md"
 }
 
 @test "run-on-change installs the shared Sliced Bread reference" {
