@@ -41,6 +41,6 @@ Pi, OpenCode, and Agy read the shared `~/.agents/skills` cache directly (Agy via
 | Hooks | `agents/hooks/registry.yaml` plus native extensions | harness-native hooks, OMP/Pi TypeScript extensions, and OpenCode JavaScript plugins |
 | Sub-agents | `agents/registry.yaml` plus native packages | rendered definitions and native agent packages |
 | Skills | `skills/` plus `skills/_registry.yaml` | native trees and the shared `~/.agents/skills` cache |
-| System prompt | `agents/preamble.md` plus native addenda | Claude/Codex prompt files, OpenCode `instructions`, and OMP/Pi addenda |
+| System prompt | the tilth preamble plus `agents/preamble.md` (`tilth preamble --append`), and native addenda | Claude/Codex prompt files, OpenCode `instructions`, and OMP/Pi addenda |
 | Global instructions | `agents/AGENTS.md` | Claude, Codex, Pi, OpenCode, and Agy global context files |
 | Modal input | native package registries and settings | OMP `@sysid/pi-vim`; Pi `pi-vim`; Agy `editorMode: vim` |

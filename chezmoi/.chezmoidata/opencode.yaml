@@ -53,7 +53,8 @@ opencode:
     snapshot: true
     compaction:
       auto: true
-    # Load the shared preamble; custom work-agent prompts replace native guidance.
+    # Load the tilth preamble joined with the shared preamble (install-prompts.sh
+    # writes the file); custom work-agent prompts replace native guidance.
     # Global preferences load natively from ~/.config/opencode/AGENTS.md.
     instructions:
       - "~/.config/opencode/preamble.md"

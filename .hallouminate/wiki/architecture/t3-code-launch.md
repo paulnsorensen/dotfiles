@@ -45,12 +45,42 @@ Everything else (claude.ai connectors, plugins, tilth, context7) loads from
 
 T3 launches each harness through `providerInstances.<id>.config.binaryPath`.
 The registry points three instances at the `bin/dots*` wrappers. Each wrapper
-replaces the native system prompt with `agents/preamble.md`:
+replaces the native system prompt with the joined preamble that
+`dots_preamble_file` (`bin/lib/preamble-wrappers.sh`) returns. In the table,
+`<preamble>` is that file:
 
 | Instance | Wrapper | Mechanism |
 |---|---|---|
-| `claudeAgent` | `bin/dotsclaude` | `--system-prompt-file <clone>/agents/preamble.md`. T3 still appends its own blocks after the preamble. |
-| `codex` | `bin/dotscodex` | `-c model_instructions_file="<clone>/agents/preamble.md"` before the subcommand. T3 runs `<binaryPath> app-server`. |
+| `claudeAgent` | `bin/dotsclaude` | `--system-prompt-file <preamble>`. T3 still appends its own blocks after the preamble. |
+| `codex` | `bin/dotscodex` | `-c model_instructions_file="<preamble>"` before the subcommand. T3 runs `<binaryPath> app-server`. |
+
+### The tilth preamble owns file routing (2026-11-25)
+
+`<preamble>` is `tilth preamble --append <clone>/agents/preamble.md --path`.
+That file holds the bundled tilth preamble, then the agents preamble. tilth
+caches it under `~/.cache/tilth/`. The zsh `cc` launcher runs
+`bin/dotsclaude` with `CLAUDE_BIN=claude`, so one script builds every Claude
+launch. `chezmoi/lib/install-prompts.sh` (for `~/.codex/preamble.md` and
+`~/.config/opencode/preamble.md`) uses the same join. PR #1649 used a dotfiles
+shell join for this; tilth#475 replaced it.
+
+**Why:** the tilth binary ships the routing rules twice: in its MCP server
+instructions and in `prompts/preamble.md`. The agents preamble repeated
+them by hand (`cwd`, `mode`, no redirects, read sections) and drifted, for
+example to a `tilth_deps` tool that no longer exists. The agents preamble now
+keeps only rules that tilth does not state. Codex gets the routing rules
+even if it does not show MCP instructions to the model.
+
+**Fallback:** when tilth is missing or predates `--append` (tilth#475), the
+launchers pass `agents/preamble.md` alone. Claude still gets the routing
+rules from the tilth MCP server instructions.
+
+**Cost:** the joined prompt is 1,188 o200k tokens (tilth 677 + agents
+511), against 575 before. `agents/instruction-budgets.toml` budgets only
+the agents part. tilth's Communication, Safety, and Verification sections
+repeat `agents/AGENTS.md`. That file cannot drop them, because sub-agents and
+Pi load it without the preamble.
+
 | `opencode` | `bin/dotsopencode` | Merges work-agent prompts and the preamble path into `OPENCODE_CONFIG_CONTENT`. T3 runs `<binaryPath> serve` and sets that variable (`"{}"` by default). |
 
 **Why wrappers when config already does it:** Codex reads

@@ -36,18 +36,25 @@ teardown() {
     teardown_test_env
 }
 
-# Feed a PreToolUse event; echo "deny" or "allow".
+# Feed a PreToolUse event; echo "deny" or "allow". The event travels in an
+# environment variable, so the payload may hold a single quote.
 guard() {
     local tool="$1" input="$2"
-    local json
-    json=$(jq -nc --arg t "$tool" --argjson i "$input" '{tool_name:$t, tool_input:$i}')
-    run bash -c "printf '%s' '$json' | '$DEPLOY/hooks/sensitive-file-guard.sh'"
+    export GUARD_JSON
+    GUARD_JSON=$(jq -nc --arg t "$tool" --argjson i "$input" '{tool_name:$t, tool_input:$i}')
+    # shellcheck disable=SC2016  # $GUARD_JSON expands in the child shell
+    run bash -c 'printf "%s" "$GUARD_JSON" | "$1"' _ "$DEPLOY/hooks/sensitive-file-guard.sh"
     [ "$status" -eq 0 ]
     if [[ -z "$output" ]]; then
         echo "allow"
     else
         jq -r '.hookSpecificOutput.permissionDecision' <<<"$output"
     fi
+}
+
+# Feed a Bash event built from a raw command string (use $'...' for quotes).
+guard_cmd() {
+    guard Bash "$(jq -nc --arg c "$1" '{command:$c}')"
 }
 
 # ── .env files ───────────────────────────────────────────────────────
@@ -209,6 +216,225 @@ guard() {
 @test "Bash backtick cat .env is denied" {
     # shellcheck disable=SC2016  # literal command text is the payload, not for expansion
     [[ "$(guard Bash '{"command":"echo `cat .env`"}')" == "deny" ]]
+}
+
+# jq field access (regression: the tokenizer split `| .key` and `(.key==` into
+# a bare `.key` token, which the key-extension rule matched). Inside a real jq
+# invocation, a jq path token (starts with `.`, no `/`) is not a target. Each
+# allow case has a deny twin.
+
+@test "Bash jq to_entries .key is allowed" {
+    [[ "$(guard Bash '{"command":"jq -r \"to_entries[] | .key\" data.json"}')" == "allow" ]]
+}
+
+@test "Bash cat .key without jq is denied" {
+    [[ "$(guard Bash '{"command":"cat .key"}')" == "deny" ]]
+}
+
+@test "Bash jq select(.key==x) is allowed" {
+    [[ "$(guard Bash '{"command":"jq \"select(.key==\\\"x\\\")\" data.json"}')" == "allow" ]]
+}
+
+@test "Bash jq reading a stemmed key file is denied" {
+    [[ "$(guard Bash '{"command":"jq . server.key"}')" == "deny" ]]
+}
+
+@test "Bash gh api --jq .key is allowed" {
+    [[ "$(guard Bash '{"command":"gh api repos/o/r/keys --jq \".[]|.key\""}')" == "allow" ]]
+}
+
+@test "Bash cat server.key without jq is denied" {
+    [[ "$(guard Bash '{"command":"cat server.key"}')" == "deny" ]]
+}
+
+@test "Bash jq .pem field is allowed" {
+    [[ "$(guard Bash '{"command":"jq -r .pem cert.json"}')" == "allow" ]]
+}
+
+@test "Bash jq reading .env is denied" {
+    [[ "$(guard Bash '{"command":"jq -R . .env"}')" == "deny" ]]
+}
+
+@test "Bash jq reading a stemless key file by path is denied" {
+    [[ "$(guard Bash '{"command":"jq -R . ./.key"}')" == "deny" ]]
+}
+
+@test "Bash jq dotted paths are allowed" {
+    [[ "$(guard Bash '{"command":"jq -r \".[].key\" d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"jq -r .data.key d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"jq \".items[0].pem\" d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"jq \".key,.pem\" d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"jq .secret d.json"}')" == "allow" ]]
+}
+
+@test "Bash jq reading a dotfile credential store is denied" {
+    [[ "$(guard Bash '{"command":"jq -R . .netrc"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"jq -R . .env.local"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"cat .data.key"}')" == "deny" ]]
+}
+
+@test "Bash jq by path, env prefix, or gh -q is allowed" {
+    [[ "$(guard Bash '{"command":"/usr/bin/jq -r .key d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"FOO=1 eatmydata jq -r .key d.json"}')" == "allow" ]]
+    [[ "$(guard Bash '{"command":"gh api x -q \".[].key\""}')" == "allow" ]]
+}
+
+@test "Bash -q without gh is not a jq invocation" {
+    [[ "$(guard Bash '{"command":"grep -q x .key"}')" == "deny" ]]
+}
+
+@test "Bash jq word outside a jq command does not exempt a key file" {
+    [[ "$(guard Bash '{"command":"echo jq; cat .key"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"cat .key | jq ."}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"echo --jq && cat .pem"}')" == "deny" ]]
+}
+
+@test "Bash command substitution inside a jq command is denied" {
+    # shellcheck disable=SC2016  # literal command text is the payload, not for expansion
+    [[ "$(guard Bash '{"command":"jq -n --arg k \"$(cat .key)\" ."}')" == "deny" ]]
+}
+
+@test "Bash jq file operands are denied" {
+    [[ "$(guard Bash '{"command":"jq . d.json >.key"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"jq -n --rawfile k .pem ."}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"jq -f .key d.json"}')" == "deny" ]]
+}
+
+@test "Bash jq file-loading bindings keep the file operand" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        for (const command of process.argv.slice(2)) {
+            const targets = extractTargets("Bash", { command });
+            if (!targets.includes(".inventory") || targets.includes(".display")) {
+                throw new Error("Wrong targets for " + command + ": " + targets);
+            }
+        }
+    ' "$HOOK_JS" \
+        'jq -n --rawfile "label with spaces" .inventory .display' \
+        'jq -n --slurpfile "label with spaces" .inventory .display' \
+        'jq -n --rawfile label\ with\ spaces .inventory .display' \
+        'jq -n --slurpfile "" .inventory .display'
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq operand scan keeps non-jq markers and baseline escape targets" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const cases = [
+            ["j\\q -n .inventory .display", ".display"],
+            ["jq -n --rawfile k .inventory\\ .display", ".inventory\\"],
+        ];
+        for (const [command, expected] of cases) {
+            const targets = extractTargets("Bash", { command });
+            if (!targets.includes(expected)) {
+                throw new Error("Missing " + expected + " for " + command + ": " + targets);
+            }
+        }
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq file-loading returns complete quoted and escaped filenames" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const cases = [
+            ["jq -n --rawfile k \".inventory .display\" .filter", ".inventory .display"],
+            ["jq -n --slurpfile k .inventory\\ .display .filter", ".inventory .display"],
+            ["jq -n --rawfile k \".inventory\\path\" .filter", ".inventory\\path"],
+        ];
+        for (const [command, expected] of cases) {
+            const targets = extractTargets("Bash", { command });
+            if (!targets.includes(expected) || targets.includes(".filter")) {
+                throw new Error("Wrong targets for " + command + ": " + targets);
+            }
+        }
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq operand scan preserves quoted options and literal backslashes" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const cases = [
+            ["jq -n --rawfile \"label with spaces\" \".inventory\\path\" .filter", ".inventory\\path", ".inventory\\ath"],
+            ["jq -n \"--rawfile\" \"label with spaces\" \".inventory .display\" .filter", ".inventory .display", ""],
+        ];
+        for (const [command, expected, corrupted] of cases) {
+            const targets = extractTargets("Bash", { command });
+            if (!targets.includes(expected) || targets.includes(".filter") || (corrupted && targets.includes(corrupted))) {
+                throw new Error("Wrong targets for " + command + ": " + targets);
+            }
+        }
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq operand scan does not treat words after -- as options" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const command = "jq -n .display -- --rawfile \"label with spaces\" \".inventory .display\"";
+        const targets = extractTargets("Bash", { command });
+        if (targets.includes(".inventory .display")) throw new Error("Wrong targets: " + targets);
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq operand scan does not change unrelated paths on an unfinished word" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const targets = extractTargets("Bash", { command: "jq -n .display \\" });
+        if (targets.includes(".display")) throw new Error("Wrong targets: " + targets);
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq option values are not file-loading options" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const commands = [
+            "jq -n --arg label \"--rawfile\" \"public words\" .display",
+            "jq -n --arg \"--rawfile\" \"public words\" .display",
+            "jq -n --rawfile label \"--slurpfile\" \"public words\" .display",
+        ];
+        for (const command of commands) {
+            const targets = extractTargets("Bash", { command });
+            if (targets.includes(".display")) throw new Error("Wrong targets for " + command + ": " + targets);
+        }
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash jq continuation does not add a binding word as a file" {
+    run node -e '
+        const { extractTargets } = require(process.argv[1]);
+        const command = "jq -n --rawfile label" + "\\" + "\n" + "with\\ spaces .inventory .display";
+        const targets = extractTargets("Bash", { command });
+        if (!targets.includes(".inventory") || targets.includes(".display")) {
+            throw new Error("Wrong targets: " + targets);
+        }
+    ' "$HOOK_JS"
+    [ "$status" -eq 0 ]
+}
+
+@test "Bash comment, ANSI-C quote, or open quote cannot hide a command in a jq segment" {
+    [[ "$(guard_cmd $'jq . # it\'s\ncat .key\n#\'')" == "deny" ]]
+    [[ "$(guard_cmd $'jq -n $\'\\\'\' ; cat .key ; echo \'\'')" == "deny" ]]
+    [[ "$(guard_cmd $'jq -n 1 > $\'.key\'')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"jq \".key ; cat .key"}')" == "deny" ]]
+}
+
+@test "Bash gh file operands are denied" {
+    [[ "$(guard Bash '{"command":"gh api x -X POST --input .key --jq .id"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"gh api graphql -F query=@.pem -q .data"}')" == "deny" ]]
+}
+
+@test "Bash jq -f in a short flag cluster is denied" {
+    [[ "$(guard Bash '{"command":"jq -rf .key d.json"}')" == "deny" ]]
+    [[ "$(guard Bash '{"command":"jq -f -r .key d.json"}')" == "deny" ]]
+}
+
+@test "Bash gh -f raw field with --jq path is allowed" {
+    [[ "$(guard Bash '{"command":"gh api graphql -f query=x --jq .data.key"}')" == "allow" ]]
 }
 
 @test "Bash cat README.md is allowed" {

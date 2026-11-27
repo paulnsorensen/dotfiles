@@ -6,6 +6,9 @@
 # and the summary block.
 set -euo pipefail
 
+# Agent shells can overwrite PATH; DOTFILES_DIR survives.
+command -v wt-sweep >/dev/null || PATH="${DOTFILES_DIR:+$DOTFILES_DIR/bin:}$PATH"
+
 esc="$(printf '\033')"
 
 wt-sweep --dry-run "$@" \

@@ -106,8 +106,161 @@ function isSensitive(rawPath) {
 function bashTokens(command) {
   return String(command)
     .split(/[\s=<>|&@;()$`]+/)
-    .map((t) => t.replace(/^['"]|['"]$/g, ''))
+    .map(unquote)
     .filter(Boolean);
+}
+
+function unquote(token) {
+  return token.replace(/^['"]|['"]$/g, '');
+}
+
+// Split a command into simple commands at the unquoted separators (`|`, `;`,
+// `&`, `(`, `)`, backtick, newline). Quoted text stays whole, so the jq
+// filter in `jq 'to_entries[] | .key'` stays inside its jq command.
+// Return null when this scan cannot follow the shell: an unquoted `#`
+// (comment), `$'...'` or `$"..."` quoting, or an open quote at the end.
+function shellSegments(command) {
+  const segments = [];
+  const s = String(command);
+  let cur = '';
+  let quote = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\' && quote !== "'" && i + 1 < s.length) {
+      cur += c + s[++i];
+    } else if (quote) {
+      cur += c;
+      if (c === quote) quote = '';
+    } else if (c === '#' || (c === '$' && (s[i + 1] === "'" || s[i + 1] === '"'))) {
+      return null;
+    } else if (c === "'" || c === '"') {
+      quote = c;
+      cur += c;
+    } else if ('|;&()`\n'.includes(c)) {
+      segments.push(cur);
+      cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  if (quote) return null;
+  segments.push(cur);
+  return segments;
+}
+
+// Keep shell word boundaries when selecting file-loading option operands.
+function shellWords(segment) {
+  const words = [];
+  let word = '';
+  let quote = '';
+  let started = false;
+  for (let i = 0; i < segment.length; i++) {
+    const c = segment[i];
+    if (c === '\\' && quote !== "'") {
+      if (i + 1 === segment.length) return null;
+      const next = segment[++i];
+      if (next === '\n') continue;
+      if (quote === '"' && !'\\$`"'.includes(next)) word += c + next;
+      else word += next;
+      started = true;
+    } else if (quote) {
+      if (c === quote) quote = '';
+      else word += c;
+      started = true;
+    } else if (c === "'" || c === '"') {
+      quote = c;
+      started = true;
+    } else if (/\s/.test(c)) {
+      if (started) words.push(word);
+      word = '';
+      started = false;
+    } else {
+      word += c;
+      started = true;
+    }
+  }
+  if (quote) return null;
+  if (started) words.push(word);
+  return words;
+}
+
+// Leading words that run the next word as the command.
+const COMMAND_WRAPPERS = new Set(['command', 'eatmydata', 'env', 'exec', 'nice', 'nohup', 'sudo', 'time', 'xargs']);
+
+// 'jq' when a simple command runs jq by name or path, 'gh' when it runs `gh`
+// with `--jq` or `-q`, else ''. Leading `VAR=value` words and wrappers are
+// skipped.
+function jqKind(words) {
+  let i = 0;
+  while (i < words.length && (/^[A-Za-z_]\w*=/.test(words[i]) || COMMAND_WRAPPERS.has(words[i]))) i++;
+  const cmd = path.basename(words[i] || '');
+  if (cmd === 'jq') return 'jq';
+  if (cmd === 'gh' && words.some((w) => w === '-q' || w === '--jq' || w.startsWith('--jq='))) return 'gh';
+  return '';
+}
+
+// True when jq reads its program from a file (`-f`, `-rf`, `--from-file`).
+// Then the first positional word is a file, not a filter.
+function jqProgramFromFile(words) {
+  return words.some((w) => /^-[A-Za-z]*f[A-Za-z]*$/.test(w) || w === '--from-file');
+}
+
+// Files the command reads, writes, or sends by option or redirect: the file
+// of jq `--rawfile`/`--slurpfile <name> <file>`, gh `--input <file>`, each
+// `@<file>` value (gh `-F key=@file`), and each `<` / `>` target.
+function fileOperands(segment, words, kind) {
+  const out = [];
+  words.forEach((w, i) => {
+    if (w === '--rawfile' || w === '--slurpfile') out.push(words[i + 2]);
+    if (kind === 'gh' && w === '--input') out.push(words[i + 1]);
+    if (kind === 'gh' && w.startsWith('--input=')) out.push(w.slice('--input='.length));
+  });
+  for (const m of segment.matchAll(/(?:[<>]+&?\s*|@)([^\s<>|;&()]+)/g)) out.push(m[1]);
+  return out.filter(Boolean).flatMap(bashTokens);
+}
+
+// A jq path such as `.key`, `.[].key`, or `.data.pem` starts with `.` and has
+// no `/`. The split above makes it a token that the key-extension and
+// `.secret` rules match. `.env*` and credential basenames such as `.netrc`
+// are never jq paths.
+function isJqPath(token) {
+  return /^\.[^/]*$/.test(token) && !isEnvFile(token) && !SENSITIVE_BASENAMES.has(token);
+}
+
+// Bash targets: every token, except that a jq command drops its jq paths.
+// No token is dropped when shellSegments cannot follow the command, when a
+// jq command holds a command substitution (`$(...)` or a backtick), or when
+// jq reads its program from a file. A file operand stays a target.
+// Residual risk: a positional jq file operand that looks like a jq path
+// (`jq . .key`) is not a target.
+function bashTargets(command) {
+  const segments = shellSegments(command);
+  if (!segments) return bashTokens(command);
+  return segments.flatMap((segment) => {
+    const tokens = bashTokens(segment);
+    const words = segment.trim().split(/\s+/).map(unquote);
+    const kind = jqKind(words);
+    if (!kind || /\$\(|`/.test(segment) || (kind === 'jq' && jqProgramFromFile(words))) return tokens;
+    const operands = new Set(fileOperands(segment, words, kind));
+    const targets = tokens.filter((t) => operands.has(t) || !isJqPath(t));
+    if (kind !== 'jq') return targets;
+    const boundWords = shellWords(segment);
+    if (!boundWords) return targets;
+    for (let i = 0; i < boundWords.length; i++) {
+      const word = boundWords[i];
+      if (word === '--') break;
+      if (word === '--rawfile' || word === '--slurpfile') {
+        const file = boundWords[i + 2];
+        if (file && !targets.includes(file)) targets.push(file);
+        i += 2;
+      } else if (word === '--arg' || word === '--argjson' || word === '--argfile') {
+        i += 2;
+      } else if (word === '--indent' || word === '-L' || word === '--library-path') {
+        i++;
+      }
+    }
+    return targets;
+  });
 }
 
 // Codex routes file edits through `apply_patch`, whose tool_input.command is a
@@ -192,7 +345,7 @@ function tilthSearchTargets(input) {
 function extractTargets(toolName, input) {
   if (!input) return [];
   if (toolName === SEARCH_TOOL) return tilthSearchTargets(input);
-  if (toolName === 'Bash') return bashTokens(input.command || '');
+  if (toolName === 'Bash') return bashTargets(input.command || '');
   // Codex apply_patch: target paths live in the patch headers (command field).
   if (toolName === 'apply_patch') return applyPatchTargets(input.command || '');
   if (READ_TOOLS.has(toolName) || EDIT_TOOLS.has(toolName)) {

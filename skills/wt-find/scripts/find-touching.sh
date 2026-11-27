@@ -6,6 +6,9 @@
 # Output per match: path<TAB>branch (age), then the touched files indented.
 set -euo pipefail
 
+# Agent shells can overwrite PATH; DOTFILES_DIR survives.
+command -v wt-find >/dev/null || PATH="${DOTFILES_DIR:+$DOTFILES_DIR/bin:}$PATH"
+
 spec="${1:?usage: find-touching.sh <pathspec> [wt-find flags...]}"
 shift
 [[ $# -eq 0 ]] && set -- --root "${HOME}/Dev"

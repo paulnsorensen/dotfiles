@@ -32,6 +32,8 @@ max_tokens = 960
 # 530: parallel-call batching and read-section handoff rules (2026-09-28).
 # 575: tilth_write TAG, create_file, JSON-escape, and no-redirect rules; 14-day
 # session analytics showed 12.7% tilth_write errors and 205 redirect blocks (2026-10-01).
+# The launchers prepend the tilth preamble (677 o200k tokens, not budgeted
+# here) and the routing lines it covers left this file (2026-11-25).
 path = "agents/preamble.md"
 max_tokens = 575
 

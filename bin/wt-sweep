@@ -122,6 +122,10 @@ CHEESE_ARCHIVE="$(wt_env SWEEP_CHEESE_ARCHIVE "${HOME}/.local/share/ccw-sweep/ch
 #   *.pyz                 built zipapps (easy-cheese ignores skills/*/scripts/*.pyz)
 #   <repo>:/.claude/workflows  milknado copies it in at session start (easy-cheese,
 #                         hallouminate); other repos can keep their own scripts there
+#   /.claude/scheduled_tasks.lock
+#                         Claude Code writes this lock in each worktree it makes
+#   /.nx/cache /.nx/workspace-data /.yarn/install-state.gz /.husky/_
+#                         Nx cache and graph, Yarn install state, hooks husky generates
 #   easy-cheese:...       generated Starlight docs and sidebar (src/ before the
 #                         website/ move), browser test output, `just vendor` output
 #   tdbr:...              GodotEnv-managed addons and cache, gdUnit4 reports
@@ -132,7 +136,9 @@ easy-cheese:/.claude/workflows hallouminate:/.claude/workflows
 easy-cheese:website/content/docs easy-cheese:website/sidebar.mjs
 easy-cheese:src/content/docs easy-cheese:src/sidebar.mjs
 easy-cheese:frontend/mold-review/test-results easy-cheese:frontend/mold-review/playwright-report
-easy-cheese:/vendor tdbr:/addons tdbr:/.addons tdbr:/reports"
+easy-cheese:/vendor tdbr:/addons tdbr:/.addons tdbr:/reports
+/.claude/scheduled_tasks.lock
+/.nx/cache /.nx/workspace-data /.yarn/install-state.gz /.husky/_"
 REGENERABLE_DEFAULT="${REGENERABLE_DEFAULT//$'\n'/ }"
 # Split on whitespace into globs; read -a never expands them against files.
 read -r -a REGENERABLE <<<"$(wt_env SWEEP_REGENERABLE "$REGENERABLE_DEFAULT")"

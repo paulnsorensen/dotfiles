@@ -64,6 +64,8 @@ by the stale `lib/tool-reroute.js` and `lib/reroute/` disappearing on first sync
 
 ## Gotchas worth remembering
 
+- **Milknado startup.** Global Codex runs Milknado from Git with `uvx --python 3.13`.[^milknado]
+  Without the pin, `uvx` can select CPython 3.15. OR-Tools 9.15.6755 has no matching wheel, so startup stops before MCP initialization.[^ortools]
 - **chezmoi attribute order**: `modify_private_config.toml`, *not*
   `private_modify_config.toml`. With the attributes reversed chezmoi silently stops
   recognising the file as a modify script — `chezmoi managed` drops
@@ -121,3 +123,5 @@ See also [[codex-first-class-review]], [[../harnesses/codex-hooks-schema]],
 
 [^1]: chezmoi/private_dot_codex/modify_private_config.toml; agents/hooks/registry.yaml
 [^2]: agents/registry.yaml; agent-profile/agent_profile/shared.py:63-108; tests/sync-codex-sources.bats
+[^milknado]: `chezmoi/.chezmoidata/codex.yaml:83-85`.
+[^ortools]: [OR-Tools 9.15.6755 release files](https://pypi.org/project/ortools/9.15.6755/#files).

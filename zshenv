@@ -69,6 +69,12 @@ if [[ -d "$HOME/.dotnet" ]]; then
   [[ ":$PATH:" != *":$DOTNET_ROOT:"* ]] && export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"
 fi
 
+# dotfiles bin/ for non-interactive shells (e.g. agent Bash tools). Only zshenv
+# runs there, and an exported DOTFILES_DIR survives a wrapper's PATH overwrite.
+# Interactive shells get both via zshrc and zsh/core.zsh.
+export DOTFILES_DIR="${DOTFILES_DIR:-${${(%):-%N}:A:h}}"
+[[ -d "$DOTFILES_DIR/bin" ]] && path=("$DOTFILES_DIR/bin" $path)
+
 # mise shims must remain first after every later PATH prepend above. Plain
 # PATH manipulation keeps non-interactive shells fast; interactive activation
 # stays in zsh/core.zsh. `path` is unique, so this also moves a later copy.
