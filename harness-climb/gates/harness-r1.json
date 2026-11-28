@@ -1,0 +1,13 @@
+{
+  "component": "preamble",
+  "direction": "lower",
+  "guard_composite_version": 1,
+  "intervention": "ff5f5e69f744ea7eae05eb36fd481767b75e46f8",
+  "min_sessions": 20,
+  "round": 1,
+  "soak_days": 7,
+  "sync_grace_days": 3,
+  "targeted_query": "SELECT u.harness, u.sessionId,\n       avg(CASE WHEN EXISTS (\n           SELECT 1 FROM tool_results r\n           WHERE r.harness = u.harness\n             AND r.sessionId = u.sessionId\n             AND r.tool_use_id = u.tool_use_id\n             AND r.is_error = 'true'\n             AND (r.content LIKE '%not a shell reader%'\n                  OR r.content LIKE '%not a raw search tool%'\n                  OR r.content LIKE '%Blocked: shell write-redirect to %')\n       ) THEN 1.0 ELSE 0.0 END) AS value\nFROM (\n    SELECT DISTINCT harness, sessionId, tool_use_id\n    FROM tool_uses\n    WHERE harness IN ('claude','codex')\n      AND tool_name IN ('Bash', 'exec', 'exec_command', 'shell')\n) u\nGROUP BY u.harness, u.sessionId",
+  "thread": "harness",
+  "token_per_gain": 1.0
+}

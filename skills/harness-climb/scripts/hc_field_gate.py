@@ -82,6 +82,22 @@ def _judge_rows(
     return {**out, "harnesses": per, "candidate": candidate, "action": action}
 
 
+def _anchor(repo: Path, gate: dict[str, Any], merge: str) -> str:
+    """The commit that the windows measure: the gate's intervention, else the merge.
+
+    An intervention lets a gate measure a change that an earlier PR merged.
+    It must be an ancestor of the merge commit.
+    """
+    intervention = gate.get("intervention")
+    if intervention is None:
+        return merge
+    if not hc_git.is_ancestor(repo, intervention, merge):
+        raise hc_git.GitError(
+            f"gate intervention {intervention} is not an ancestor of {merge}"
+        )
+    return intervention
+
+
 def field_gate(
     repo: Path,
     thread: str,
@@ -109,19 +125,20 @@ def field_gate(
     }
     if gate["guard_composite_version"] not in hc_stats.GUARD_COMPOSITE:
         return {**out, **_both("guard-version-unknown")}
+    anchor = _anchor(repo, gate, merge)
     history = hc_git.parse_sync_history(history_text)
-    sync = hc_git.first_sync_containing(repo, merge, history)
+    sync = hc_git.first_sync_containing(repo, anchor, history)
     if sync is not None:
         out["sync"] = {"epoch": sync[0], "sha": sync[1]}
     grace = gate["sync_grace_days"] * hc_stats.DAY
-    grace_end = hc_git.commit_time(repo, merge) + grace
+    grace_end = hc_git.commit_time(repo, anchor) + grace
     early = _early_verdict(out, gate, sync, grace_end, now)
     if early is not None:
         return early
     after_start = float(sync[0])
     soak = gate["soak_days"] * hc_stats.DAY
     if hc_git.has_regressing_sync(
-        repo, merge, history, after_start, after_start + soak
+        repo, anchor, history, after_start, after_start + soak
     ):
         return {**out, **_both("sync-regressed")}
     return _judge_rows(out, gate, rows, db, after_start)

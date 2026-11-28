@@ -23,6 +23,7 @@ GATE_DEFAULTS: dict[str, Any] = {
 DIRECTIONS = ("lower", "higher")
 GATE_REQUIRED = ("thread", "round", "component", "targeted_query")
 _GATE_PATH = re.compile(rf"^{re.escape(GATE_DIR)}/(.+)-r(\d+)\.json$")
+_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 def gate_path(thread: str, rnd: int) -> str:
@@ -55,6 +56,11 @@ def normalize_gate(raw: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"gate {key} must be a finite non-negative number")
     if gate["soak_days"] <= 0:
         raise ValueError("gate soak_days must be positive")
+    intervention = gate.get("intervention")
+    if intervention is not None and (
+        not isinstance(intervention, str) or not _SHA.match(intervention)
+    ):
+        raise ValueError("gate intervention must be a full 40-character commit sha")
     return gate
 
 

@@ -432,6 +432,39 @@ class GateCase(RepoCase):
         self.assertEqual(got["harnesses"]["claude"]["verdict"], "keep")
         self.assertEqual(got["candidate"], "keep")
 
+    def _later_gate(self, **over: Any) -> str:
+        """A later commit that adds a round-2 gate file with `over` settings."""
+        return self.commit(
+            {"harness-climb/gates/t1-r2.json": json.dumps(gate_json(rnd=2, **over))},
+            date=T0 + 5 * DAY,
+        )
+
+    def _run_round_2(self, merge: str) -> dict[str, Any]:
+        return hc_field_gate.field_gate(
+            self.repo, "t1", 2, merge, self.history, self.rows, AFTER + 9 * DAY
+        )
+
+    def test_intervention_anchors_the_windows_on_an_earlier_commit(self) -> None:
+        got = self._run_round_2(self._later_gate(intervention=self.merge))
+        self.assertEqual(got["sync"]["epoch"], AFTER)
+        self.assertEqual(got["candidate"], "keep")
+
+    def test_without_intervention_a_later_gate_misses_the_earlier_sync(self) -> None:
+        got = self._run_round_2(self._later_gate())
+        self.assertEqual(got["candidate"], "inconclusive")
+        self.assertEqual(
+            {v["reason"] for v in got["harnesses"].values()}, {"sync-late"}
+        )
+
+    def test_intervention_outside_the_merge_history_is_an_error(self) -> None:
+        with self.assertRaisesRegex(hc_git.GitError, "not an ancestor"):
+            self._run_round_2(self._later_gate(intervention="0" * 40))
+
+    def test_intervention_must_be_a_full_sha(self) -> None:
+        for bad in (self.merge[:8], 42, ""):
+            with self.assertRaisesRegex(ValueError, "intervention"):
+                hc_gate.normalize_gate(gate_json(intervention=bad))
+
     def test_sync_inside_the_window_without_the_merge_is_sync_regressed(self) -> None:
         history = f"{self.history}{AFTER + DAY} {self.base}\n"
         got = self.run_gate(history)
