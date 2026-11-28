@@ -107,9 +107,12 @@ JSON
     run yq -o=json -I=0 '.pi.settings.packages' "$REGISTRY"
     [ "$status" -eq 0 ]
     # Renovate bumps the versions; assert the package set, order, and exact-pin shape.
+    # capture yields nothing for a non-matching entry, so check every entry first.
     names='["pi-subagents","pi-web-access","@gotgenes/pi-permission-system","pi-vim"]'
     run jq -e --argjson names "$names" '
-        map(capture("^npm:(?<name>.+)@[0-9]+\\.[0-9]+\\.[0-9]+$").name) == $names
+        length == ($names | length)
+        and all(.[]; test("^npm:.+@[0-9]+\\.[0-9]+\\.[0-9]+$"))
+        and map(capture("^npm:(?<name>.+)@[0-9]+\\.[0-9]+\\.[0-9]+$").name) == $names
     ' <<<"$output"
     [ "$status" -eq 0 ]
 }
@@ -173,6 +176,8 @@ TOML
 
 @test "pi CLI install is pinned and lifecycle scripts are disabled" {
     [ "$(yq -r '.packages[] | select(has("pi")) | .pi.pkg' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "@earendil-works/pi-coding-agent" ]
-    [[ "$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
     [ "$(yq -o=json -I=0 '.packages[] | select(has("pi")) | .pi.flags' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = '["--ignore-scripts"]' ]
+    # Renovate bumps the version; assert an exact x.y.z pin.
+    yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml" \
+        | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+'
 }
