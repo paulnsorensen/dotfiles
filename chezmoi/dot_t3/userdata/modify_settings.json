@@ -12,7 +12,9 @@
 #
 # A literal `$HOME` inside a registry string expands to the target home
 # directory, and `$DOTFILES` expands to the clone (the parent of the chezmoi
-# source directory), because chezmoi data files are not templated.
+# source directory), because chezmoi data files are not templated. When the
+# source is a linked Git worktree, `$DOTFILES` expands to the main checkout.
+# A worktree can be removed, and T3 then loses every wrapper binaryPath.
 
 set -eu
 
@@ -38,6 +40,14 @@ fi
 home=${CHEZMOI_HOME_DIR:-${HOME:?HOME is unset}}
 # -P resolves a symlinked source dir to the real clone, as the wrappers do.
 dotfiles=$(cd -P "$CHEZMOI_SOURCE_DIR/.." && pwd)
+# A linked worktree has a common .git directory in the main checkout.
+if top=$(git -C "$dotfiles" rev-parse --show-toplevel 2>/dev/null) \
+    && [ "$(cd -P "$top" && pwd)" = "$dotfiles" ] \
+    && common=$(git -C "$dotfiles" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
+    && [ "$(basename "$common")" = .git ] \
+    && [ -d "$(dirname "$common")/chezmoi" ]; then
+    dotfiles=$(cd -P "$(dirname "$common")" && pwd)
+fi
 desired=$(yq -o=json '.t3.settings' "$registry" \
     | jq --arg home "$home" --arg dotfiles "$dotfiles" \
         'walk(if type == "string" then gsub("\\$DOTFILES"; $dotfiles) | gsub("\\$HOME"; $home) else . end)')

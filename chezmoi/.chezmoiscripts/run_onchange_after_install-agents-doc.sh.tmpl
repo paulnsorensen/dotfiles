@@ -26,11 +26,20 @@ INSTALLER="$SOURCE_DIR/lib/install-agents-doc.sh"
 # isolated Antigravity ACP profile. Pointing ~/.gemini/AGENTS.md at
 # config/AGENTS.md satisfies T3 while letting standalone agy deduplicate both
 # paths by resolved file path instead of loading global rules twice.
-if [[ -d "$HOME/.gemini/AGENTS.md" && ! -L "$HOME/.gemini/AGENTS.md" ]]; then
-    echo "install-agents-doc: refusing to replace directory $HOME/.gemini/AGENTS.md" >&2
+# No other source manages ~/.gemini/AGENTS.md, so a regular file there with
+# different content is the user's own. Keep it as a timestamped backup.
+gemini_agents="$HOME/.gemini/AGENTS.md"
+if [[ -d "$gemini_agents" && ! -L "$gemini_agents" ]]; then
+    echo "install-agents-doc: refusing to replace directory $gemini_agents" >&2
     exit 1
 fi
-ln -sfn config/AGENTS.md "$HOME/.gemini/AGENTS.md"
+if [[ -f "$gemini_agents" && ! -L "$gemini_agents" ]] \
+    && ! cmp -s "$gemini_agents" "$HOME/.gemini/config/AGENTS.md"; then
+    backup="$gemini_agents.bak.$(date +%Y%m%d%H%M%S)"
+    mv -- "$gemini_agents" "$backup"
+    echo "install-agents-doc: moved $gemini_agents to $backup" >&2
+fi
+ln -sfn config/AGENTS.md "$gemini_agents"
 
 # Shared architecture reference → harness-neutral location
 "$INSTALLER" "$DOTFILES_ROOT/agents/reference/sliced-bread.md" \

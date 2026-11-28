@@ -92,8 +92,8 @@ teardown() { teardown_test_env; }
     local rendered="$TEST_HOME/install-agents-doc.sh"
     local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl"
     mkdir -p "$destination/.gemini"
-    # Pre-existing regular file at ~/.gemini/AGENTS.md must be replaced by the symlink.
-    printf '# stale regular file\n' > "$destination/.gemini/AGENTS.md"
+    # A user-written ~/.gemini/AGENTS.md is kept as a backup, then replaced by the symlink.
+    printf '# my own gemini rules\n' > "$destination/.gemini/AGENTS.md"
     cat > "$cfg" <<TOML
 sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
 destDir = "$destination"
@@ -109,6 +109,18 @@ TOML
     [[ -L "$destination/.gemini/AGENTS.md" ]]
     [ "$(readlink "$destination/.gemini/AGENTS.md")" = "config/AGENTS.md" ]
     cmp -s "$REAL_DOTFILES_DIR/agents/AGENTS.md" "$destination/.gemini/AGENTS.md"
+    local backups=("$destination"/.gemini/AGENTS.md.bak.*)
+    [ "${#backups[@]}" -eq 1 ]
+    [ "$(cat "${backups[0]}")" = "# my own gemini rules" ]
+
+    # A file identical to config/AGENTS.md is replaced without a backup.
+    rm -f "$destination/.gemini/AGENTS.md" "${backups[0]}"
+    cp "$destination/.gemini/config/AGENTS.md" "$destination/.gemini/AGENTS.md"
+    run env HOME="$destination" bash "$rendered"
+    assert_success
+    [[ -L "$destination/.gemini/AGENTS.md" ]]
+    backups=("$destination"/.gemini/AGENTS.md.bak.*)
+    [ ! -e "${backups[0]}" ]
 }
 
 @test "run-on-change installs the shared Sliced Bread reference" {

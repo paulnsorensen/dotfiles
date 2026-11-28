@@ -121,8 +121,10 @@ On `acp` launches, `bin/dotsagy/agy` bridges the remaining managed config into `
 
 - Links `<profile>/config/mcp_config.json` (replacing a 0-byte file seeded by `agy`), `<profile>/config/plugins`, and `<profile>/config/AGENTS.md` to `~/.gemini/config/`.
 - Merges `enableTerminalSandbox` and `permissions` (adding `mcp(t3-code/*)`) from `~/.gemini/antigravity-cli/settings.json` into `<profile>/antigravity-acp/settings.json` without overwriting T3's `auth` or `gcp` keys.
-  It leaves `toolPermission` unset so T3's `approval-required` mode keeps prompting for review.
+  The wrapper copies the full `allow` list on purpose: its goal is that approval prompts do not block a T3 Antigravity thread.
+  It leaves `toolPermission` unset, so the T3 runtime mode controls prompts.
 - `run_onchange_after_install-agents-doc.sh.tmpl` also symlinks `~/.gemini/AGENTS.md` to `config/AGENTS.md` so T3 links it natively while standalone `agy` deduplicates both paths by resolved file path.
+  A regular file there with different content moves to `AGENTS.md.bak.<timestamp>` first.
 
 Verified against `agy` 1.5.18 and T3 0.1.13:
 
@@ -299,10 +301,12 @@ Keep the device code, OAuth token, and `secrets/` files out of Git.
   add new T3 UI keys to `lib/t3-settings-ignore.txt`, not to the registry.
 - The registry writes each wrapper path as `$DOTFILES/bin/dots*` (`$DOTFILES/bin/dotsagy/agy` for Antigravity). The modify
   script expands `$DOTFILES` to the parent of the chezmoi source directory,
-  so the path follows the clone and does not assume `~/Dev/dotfiles`. A
-  `chezmoi apply` from a worktree source writes that worktree path; deploy
-  through `dots sync` from the main clone. The wrappers find `agents/` from
-  their own location unless `DOTFILES_DIR` or `AGENTS_DOTFILES` is set.
+  so the path follows the clone and does not assume `~/Dev/dotfiles`. When
+  that source is a linked Git worktree, it expands to the main checkout
+  instead. A removed worktree once left T3 with dead wrapper paths, and each
+  settings rewrite restarts T3 provider instances. A new wrapper therefore
+  reaches T3 only after it merges to the main checkout. The wrappers find
+  `agents/` from their own location unless `DOTFILES_DIR` or `AGENTS_DOTFILES` is set.
 - Tests: `tests/t3-config.bats` (settings), `tests/dots-wrappers.bats`
   (wrappers), and `tests/lib-t3-service.bats` (service upgrade).
 - T3 publishes server themes from `~/.t3/userdata/themes/<id>.json`; the

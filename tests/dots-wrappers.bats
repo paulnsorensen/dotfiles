@@ -596,3 +596,36 @@ JSON
         "$race_prof/antigravity-acp/settings.json"
     [ "$status" -eq 0 ]
 }
+
+@test "dotsagy replaces a profile symlink to a directory without writing into that directory" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+    local foreign="$TEST_HOME/foreign-dir"
+    mkdir -p "$foreign"
+    rm -f "$AGY_PROFILE/config/mcp_config.json"
+    ln -s "$foreign" "$AGY_PROFILE/config/mcp_config.json"
+
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    [ "$(readlink "$AGY_PROFILE/config/mcp_config.json")" = "$AGY_USER_GEMINI_DIR/config/mcp_config.json" ]
+    [ -z "$(ls -A "$foreign")" ]
+}
+
+@test "dotsagy runs agy unchanged when its library is missing" {
+    _agy_fixture
+    local clone="$TEST_HOME/no-lib"
+    mkdir -p "$clone/bin/dotsagy"
+    cp "$REAL_DOTFILES_DIR/bin/dotsagy/agy" "$clone/bin/dotsagy/agy"
+
+    run --separate-stderr "$clone/bin/dotsagy/agy" --version
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "--version" ]
+    [[ "$stderr" == *"wrapper library missing"* ]]
+
+    run --separate-stderr "$clone/bin/dotsagy/agy" acp --gemini-dir "$AGY_PROFILE"
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "acp" ]
+    [ ! -L "$AGY_PROFILE/config/mcp_config.json" ]
+}

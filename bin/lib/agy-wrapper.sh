@@ -67,6 +67,12 @@ _dots_agy_jq_bin() {
     return 1
 }
 
+# _dots_agy_is_link_to <path> <target>
+# Return 0 when <path> is a symlink whose text is exactly <target>.
+_dots_agy_is_link_to() {
+    [[ -L "$1" && "$(readlink "$1" 2>/dev/null || true)" == "$2" ]]
+}
+
 # dots_agy_parse_acp_args <argv...>
 # When argv invokes `acp` with a gemini profile directory (via --gemini-dir /
 # --gemini_dir or GEMINI_HOME), sets DOTS_AGY_PROFILE_DIR and
@@ -162,16 +168,23 @@ dots_agy_link_file() {
     dst_dir="$(dirname -- "$dst")"
     base="$(basename -- "$dst")"
     mkdir -p -- "$dst_dir"
+    # mv follows a symlink to a directory and puts the new link inside that
+    # directory. Remove such a link first so mv replaces <dst> itself.
+    if [[ -L "$dst" && -d "$dst" ]]; then
+        rm -f -- "$dst"
+    fi
     tmp="$dst_dir/.$base.$$.$RANDOM"
     rm -f -- "$tmp"
     if ln -s -- "$src" "$tmp" 2>/dev/null && mv -f -- "$tmp" "$dst" 2>/dev/null; then
+        _dots_agy_is_link_to "$dst" "$src" && return 0
+        # A directory appeared at <dst> after the check; undo the nested link.
+        rm -f -- "$dst/${tmp##*/}"
+        echo "dotsagy: $dst is a directory; left unchanged" >&2
         return 0
     fi
     rm -f -- "$tmp"
     # Concurrent launcher may have already installed the target link.
-    if [[ -L "$dst" && "$(readlink "$dst" 2>/dev/null || true)" == "$src" ]]; then
-        return 0
-    fi
+    _dots_agy_is_link_to "$dst" "$src" && return 0
     echo "dotsagy: failed to link $dst -> $src" >&2
     return 0
 }
@@ -210,12 +223,17 @@ dots_agy_link_dir() {
 
     mkdir -p -- "$(dirname -- "$dst")"
     if ln -sfn -- "$src" "$dst" 2>/dev/null; then
+        _dots_agy_is_link_to "$dst" "$src" && return 0
+        # agy recreated <dst> as a directory after rmdir, so ln put the link
+        # inside it. Remove that nested link.
+        if _dots_agy_is_link_to "$dst/${src##*/}" "$src"; then
+            rm -f -- "$dst/${src##*/}"
+        fi
+        echo "dotsagy: $dst is a directory; left unchanged" >&2
         return 0
     fi
     # Concurrent launcher may have already installed the target link.
-    if [[ -L "$dst" && "$(readlink "$dst" 2>/dev/null || true)" == "$src" ]]; then
-        return 0
-    fi
+    _dots_agy_is_link_to "$dst" "$src" && return 0
     echo "dotsagy: failed to link $dst -> $src" >&2
     return 0
 }
@@ -223,8 +241,12 @@ dots_agy_link_dir() {
 # dots_agy_merge_settings <user-settings> <profile-settings>
 # Merge managed enableTerminalSandbox and permissions (ensuring mcp(t3-code/*)
 # in permissions.allow) from <user-settings> into <profile-settings>, keeping
-# T3-owned keys such as auth and gcp intact. Intentionally skips toolPermission
-# so T3's approval-required mode still prompts for review.
+# T3-owned keys such as auth and gcp intact.
+#
+# The full allow list is copied on purpose. The wrapper must not let approval
+# prompts block a T3 thread, so the managed grants let routine commands and
+# MCP calls run without a prompt. ask and deny still apply. The wrapper skips
+# toolPermission because T3 sets the runtime mode for the thread.
 #
 # Note: in agy 1.5.18, ACP's server.loadSettings reads enableTerminalSandbox
 # while ignoring permissions.{allow,ask,deny} (T3 auto-allows t3-code/* MCP
