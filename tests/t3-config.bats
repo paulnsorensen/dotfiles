@@ -64,7 +64,7 @@ setup() {
     done
 }
 
-@test "t3 antigravity instance launches the mise agy shim" {
+@test "t3 antigravity instance launches the dotsagy wrapper" {
     run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SCRIPT" <<'JSON'
 {
   "providerInstances": {
@@ -73,8 +73,12 @@ setup() {
 }
 JSON
     [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    local d="$REAL_DOTFILES_DIR"
     run jq -c '.providerInstances.antigravity | [.driver, .enabled, .config.authMethod, .config.binaryPath]' <<<"$output"
-    [ "$output" = '["antigravity",true,"oauth-personal","/home/tester/.local/share/mise/shims/agy"]' ]
+    [ "$output" = '["antigravity",true,"oauth-personal","'"$d"'/bin/dotsagy/agy"]' ]
+    [ -x "$REAL_DOTFILES_DIR/bin/dotsagy/agy" ]
+    [ "$(basename "$REAL_DOTFILES_DIR/bin/dotsagy/agy")" = "agy" ]
 }
 
 @test "t3 wrapper paths follow a clone outside ~/Dev" {
@@ -87,10 +91,11 @@ JSON
     cp "$CZ_SRC"/lib/drift-gate.sh "$CZ_SRC"/lib/t3-settings-*.txt "$clone/chezmoi/lib/"
     run env CHEZMOI_SOURCE_DIR="$clone/chezmoi" HOME=/home/tester sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
-    run jq -r '.providerInstances | .claudeAgent, .codex, .opencode | .config.binaryPath' <<<"$output"
+    run jq -r '.providerInstances | .claudeAgent, .codex, .opencode, .antigravity | .config.binaryPath' <<<"$output"
     [ "${lines[0]}" = "$clone/bin/dotsclaude" ]
     [ "${lines[1]}" = "$clone/bin/dotscodex" ]
     [ "${lines[2]}" = "$clone/bin/dotsopencode" ]
+    [ "${lines[3]}" = "$clone/bin/dotsagy/agy" ]
 }
 
 @test "t3 wrapper paths resolve a symlinked chezmoi source to the real clone" {

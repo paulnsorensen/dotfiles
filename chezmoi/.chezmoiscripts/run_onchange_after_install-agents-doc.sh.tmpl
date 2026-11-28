@@ -22,6 +22,16 @@ INSTALLER="$SOURCE_DIR/lib/install-agents-doc.sh"
     "$HOME/.config/opencode/AGENTS.md" \
     "$HOME/.gemini/config/AGENTS.md"
 
+# T3 Code links ~/.gemini/AGENTS.md (not ~/.gemini/config/AGENTS.md) into its
+# isolated Antigravity ACP profile. Pointing ~/.gemini/AGENTS.md at
+# config/AGENTS.md satisfies T3 while letting standalone agy deduplicate both
+# paths by resolved file path instead of loading global rules twice.
+if [[ -d "$HOME/.gemini/AGENTS.md" && ! -L "$HOME/.gemini/AGENTS.md" ]]; then
+    echo "install-agents-doc: refusing to replace directory $HOME/.gemini/AGENTS.md" >&2
+    exit 1
+fi
+ln -sfn config/AGENTS.md "$HOME/.gemini/AGENTS.md"
+
 # Shared architecture reference → harness-neutral location
 "$INSTALLER" "$DOTFILES_ROOT/agents/reference/sliced-bread.md" \
     "$HOME/.agents/reference/sliced-bread.md"

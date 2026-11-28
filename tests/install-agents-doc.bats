@@ -85,13 +85,15 @@ teardown() { teardown_test_env; }
     assert_file_exists "$target"
 }
 
-@test "rendered run-on-change installs shared instructions for Pi and OpenCode" {
+@test "rendered run-on-change installs shared instructions for Pi, OpenCode, and Antigravity" {
     command -v chezmoi >/dev/null 2>&1 || skip "chezmoi not installed"
     local cfg="$TEST_HOME/chezmoi.toml"
     local destination="$TEST_HOME/home"
     local rendered="$TEST_HOME/install-agents-doc.sh"
     local template="$REAL_DOTFILES_DIR/chezmoi/.chezmoiscripts/run_onchange_after_install-agents-doc.sh.tmpl"
-    mkdir -p "$destination"
+    mkdir -p "$destination/.gemini"
+    # Pre-existing regular file at ~/.gemini/AGENTS.md must be replaced by the symlink.
+    printf '# stale regular file\n' > "$destination/.gemini/AGENTS.md"
     cat > "$cfg" <<TOML
 sourceDir = "$REAL_DOTFILES_DIR/chezmoi"
 destDir = "$destination"
@@ -103,6 +105,10 @@ TOML
     cmp -s "$REAL_DOTFILES_DIR/agents/AGENTS.md" "$destination/.pi/agent/AGENTS.md"
     cmp -s "$REAL_DOTFILES_DIR/agents/AGENTS.md" "$destination/.config/opencode/AGENTS.md"
     cmp -s "$REAL_DOTFILES_DIR/agents/AGENTS.md" "$destination/.gemini/config/AGENTS.md"
+    [[ ! -L "$destination/.gemini/config/AGENTS.md" ]]
+    [[ -L "$destination/.gemini/AGENTS.md" ]]
+    [ "$(readlink "$destination/.gemini/AGENTS.md")" = "config/AGENTS.md" ]
+    cmp -s "$REAL_DOTFILES_DIR/agents/AGENTS.md" "$destination/.gemini/AGENTS.md"
 }
 
 @test "run-on-change installs the shared Sliced Bread reference" {
