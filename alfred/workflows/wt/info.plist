@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>bundleid</key>
+	<string>dev.paulnsorensen.dotfiles.wt</string>
+	<key>category</key>
+	<string>Productivity</string>
+	<key>connections</key>
+	<dict>
+		<key>35A15147-24A5-4DF7-8CD7-DDE2739D1E1A</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>50769E75-FF47-401A-B890-8F43C5E53801</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>50769E75-FF47-401A-B890-8F43C5E53801</string>
+				<key>modifiers</key>
+				<integer>1048576</integer>
+				<key>modifiersubtext</key>
+				<string>Open in Zed</string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>50769E75-FF47-401A-B890-8F43C5E53801</string>
+				<key>modifiers</key>
+				<integer>524288</integer>
+				<key>modifiersubtext</key>
+				<string>Copy path</string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+	</dict>
+	<key>createdby</key>
+	<string>dotfiles</string>
+	<key>description</key>
+	<string>Open git worktrees from ~/Dev and ~/.t3/worktrees</string>
+	<key>disabled</key>
+	<false/>
+	<key>name</key>
+	<string>Worktrees</string>
+	<key>objects</key>
+	<array>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>alfredfiltersresults</key>
+				<true/>
+				<key>alfredfiltersresultsmatchmode</key>
+				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<true/>
+				<key>argumenttrimmode</key>
+				<integer>0</integer>
+				<key>argumenttype</key>
+				<integer>1</integer>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>keyword</key>
+				<string>wt</string>
+				<key>queuedelaycustom</key>
+				<integer>3</integer>
+				<key>queuedelayimmediatelyinitially</key>
+				<true/>
+				<key>queuedelaymode</key>
+				<integer>0</integer>
+				<key>queuemode</key>
+				<integer>1</integer>
+				<key>runningsubtext</key>
+				<string>Finding worktrees…</string>
+				<key>script</key>
+				<string>exec "${dotfiles_dir:-$HOME/Dev/dotfiles}/bin/alfred-wt" list</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>subtext</key>
+				<string>↩ session · ⌘↩ Zed · ⌥↩ copy path</string>
+				<key>title</key>
+				<string>Worktrees</string>
+				<key>type</key>
+				<integer>0</integer>
+				<key>withspace</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.input.scriptfilter</string>
+			<key>uid</key>
+			<string>35A15147-24A5-4DF7-8CD7-DDE2739D1E1A</string>
+			<key>version</key>
+			<integer>3</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>script</key>
+				<string>exec "${dotfiles_dir:-$HOME/Dev/dotfiles}/bin/alfred-wt" open "${wt_action:-terminal}" "$1"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>50769E75-FF47-401A-B890-8F43C5E53801</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+	</array>
+	<key>readme</key>
+	<string>Type `wt` and part of a repo, slug, or branch name.
+
+↩ opens Ghostty and starts the cc tmux session in the worktree.
+⌘↩ opens the worktree in Zed.
+⌥↩ copies the worktree path.
+
+Source: alfred/workflows/wt/ in the dotfiles repo. Reinstall with `alfred-wt install`.</string>
+	<key>uidata</key>
+	<dict>
+		<key>35A15147-24A5-4DF7-8CD7-DDE2739D1E1A</key>
+		<dict>
+			<key>xpos</key>
+			<real>40</real>
+			<key>ypos</key>
+			<real>40</real>
+		</dict>
+		<key>50769E75-FF47-401A-B890-8F43C5E53801</key>
+		<dict>
+			<key>xpos</key>
+			<real>280</real>
+			<key>ypos</key>
+			<real>40</real>
+		</dict>
+	</dict>
+	<key>variables</key>
+	<dict>
+		<key>dotfiles_dir</key>
+		<string>__DOTFILES_DIR__</string>
+	</dict>
+	<key>version</key>
+	<string>1.0.0</string>
+	<key>webaddress</key>
+	<string></string>
+</dict>
+</plist>
