@@ -44,4 +44,4 @@ pi:
       # renovate: datasource=npm depName=@gotgenes/pi-permission-system
       - npm:@gotgenes/pi-permission-system@42.0.0
       # renovate: datasource=npm depName=pi-vim
-      - npm:pi-vim@0.14.2
+      - npm:pi-vim@0.16.0
