@@ -106,7 +106,15 @@ JSON
 @test "pi registry pins the selected mainstream packages" {
     run yq -o=json -I=0 '.pi.settings.packages' "$REGISTRY"
     [ "$status" -eq 0 ]
-    [ "$output" = '["npm:pi-subagents@0.77.0","npm:pi-web-access@0.37.0","npm:@gotgenes/pi-permission-system@42.0.0","npm:pi-vim@0.14.2"]' ]
+    # Renovate bumps the versions; assert the package set, order, and exact-pin shape.
+    # capture yields nothing for a non-matching entry, so check every entry first.
+    names='["pi-subagents","pi-web-access","@gotgenes/pi-permission-system","pi-vim"]'
+    run jq -e --argjson names "$names" '
+        length == ($names | length)
+        and all(.[]; test("^npm:.+@[0-9]+\\.[0-9]+\\.[0-9]+$"))
+        and map(capture("^npm:(?<name>.+)@[0-9]+\\.[0-9]+\\.[0-9]+$").name) == $names
+    ' <<<"$output"
+    [ "$status" -eq 0 ]
 }
 
 @test "pi uses shared agent skills instead of a copied skill tree" {
@@ -168,6 +176,8 @@ TOML
 
 @test "pi CLI install is pinned and lifecycle scripts are disabled" {
     [ "$(yq -r '.packages[] | select(has("pi")) | .pi.pkg' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "@earendil-works/pi-coding-agent" ]
-    [ "$(yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = "1.5.0" ]
     [ "$(yq -o=json -I=0 '.packages[] | select(has("pi")) | .pi.flags' "$REAL_DOTFILES_DIR/packages/packages.yaml")" = '["--ignore-scripts"]' ]
+    # Renovate bumps the version; assert an exact x.y.z pin.
+    yq -r '.packages[] | select(has("pi")) | .pi.version' "$REAL_DOTFILES_DIR/packages/packages.yaml" \
+        | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+'
 }

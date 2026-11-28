@@ -14,6 +14,7 @@ contents, monkeypatching ``os.execvp`` so nothing actually launches.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -964,9 +965,12 @@ def test_oss_docs_profile_writes_pinned_playwright_mcp_for_codex(
     scratch.mkdir()
     _, env = overlay._build_isolated_codex(manifest, profile, scratch)
     cfg = _codex_config(env)
+    playwright = next(mcp for mcp in manifest.mcps if mcp["name"] == "playwright")
+    assert playwright["args"][:-1] == ["-y"]
+    assert re.fullmatch(r"@playwright/mcp@\d+\.\d+\.\d+", playwright["args"][-1])
     assert cfg["mcp_servers"]["playwright"] == {
         "command": "npx",
-        "args": ["-y", "@playwright/mcp@0.0.84"],
+        "args": playwright["args"],
     }
     assert cfg["mcp_servers"]["context7"] == {
         "command": "agent-secret-proxy",
