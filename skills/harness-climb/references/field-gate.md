@@ -12,12 +12,13 @@ It reads every setting from the gate file in the merge commit. A working-tree ed
 - `direction` — `lower` or `higher`. It says which way `value` must move for a gain.
 - `guard_composite_version` — the guard set that applies. An unknown version gives `inconclusive`.
 - `min_sessions`, `soak_days`, `sync_grace_days`, `token_per_gain` — gate thresholds.
+- `intervention` — optional full commit SHA. Use it when an earlier PR merged the measured change. It must be an ancestor of the merge commit. The windows and the grace then use this commit instead of the merge commit.
 
 Scope the targeted query to `harness IN ('claude','codex')`.
 
 ## Windows
 
-- The after window starts at the first line of `sync-history.log` whose SHA contains the merge commit. It lasts `soak_days`.
+- The after window starts at the first clean line of `sync-history.log` whose SHA contains the merge commit. It lasts `soak_days`. Each rule in this section reads `intervention` for the merge commit when the gate file sets it.
 - No such line, and `now` is not past `sync_grace_days` after the merge commit time, gives `not-due`. The ledger stays `pending`.
 - No such line after that grace gives `inconclusive` with reason `sync-late`.
 - A sync later than `sync_grace_days` after the merge gives `inconclusive` with reason `sync-late`.
