@@ -377,6 +377,7 @@ claude:
     - python-bdd
     - python-scaffold
     - rennet
+    - review-leverage
     - session-analytics
     - steel-thread
     - term-theme
