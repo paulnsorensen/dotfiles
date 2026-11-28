@@ -120,6 +120,18 @@ STDIN"
     [ "$status" -ne 0 ]
 }
 
+@test "modify_settings: remote session spawn and message tools are pre-approved" {
+    run bash -c "CHEZMOI_SOURCE_DIR='$CZ_SRC' sh '$SCRIPT' </dev/null >'$OUT'"
+    [ "$status" -eq 0 ]
+    local tool
+    for tool in create_session send_message; do
+        jq -e --arg rule "mcp__claude-code-remote__$tool" '.permissions.allow | index($rule)' "$OUT" >/dev/null
+    done
+    # The whole server stays out of the allow list, so its other tools keep their prompt.
+    run jq -e '.permissions.allow | index("mcp__claude-code-remote__*")' "$OUT"
+    [ "$status" -ne 0 ]
+}
+
 @test "modify_settings: unknown top-level key is kept, warned on stderr, and recorded" {
     run_modify '{"model":"drifted","someNewClaudeKey":"x"}'
     [ "$status" -eq 0 ]
