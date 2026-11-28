@@ -1,0 +1,172 @@
+# Antigravity CLI (agy) registry.
+# Chezmoi authors managed settings, MCP servers, and shared-skill discovery
+# while agy owns auth tokens, conversations, brain artifacts, caches, and
+# runtime UI keys under ~/.gemini/antigravity-cli and ~/.gemini/config.
+# Schema: https://antigravity.google/schemas/v1/settings.json
+
+agy:
+  settings:
+    $schema: https://antigravity.google/schemas/v1/settings.json
+    # Auto mode enables the OS terminal sandbox, approves workspace edits, and
+    # evaluates unsandboxed commands automatically. On Linux hosts where
+    # AppArmor restricts unprivileged user namespaces, agy preserves this key
+    # and falls back to default mode until namespaces are allowed.
+    agentMode: auto
+    enableTerminalSandbox: true
+    toolPermission: proceed-in-sandbox
+    colorScheme: colorblind-friendly dark
+    editorMode: vim
+    # Explicit allow, ask, and deny rules apply in every mode, including auto.
+    # Precedence: deny > ask > allow. ${HOME} expands at apply time.
+    # agy checks each part of a pipeline or &&/||/; chain on its own, and a
+    # $(...) or backtick substitution always asks. The command list mirrors
+    # Claude's allow list without the broad code runners (python3, node, npx,
+    # uv, npm run, gh, dots) and without the shell file readers. Those still
+    # ask, or go to auto mode's review once the terminal sandbox works
+    # (bin/lib/agy-apparmor.sh).
+    # agy has no shell-level secret guard, and its file denies cover only the
+    # read_file and write_file tools. Shell file readers (cat, head, tail, jq,
+    # yq, rg, cp, duckdb, fd, sd, mv) stay out of allow until agy hooks exist.
+    # The git entry stays for parity with Claude. git can still read files and
+    # run code, so the shell guard stays partial until agy hooks exist.
+    permissions:
+      allow:
+        - "mcp(tilth/*)"
+        - "mcp(hallouminate/*)"
+        - "mcp(context7/*)"
+        - "mcp(tavily/*)"
+        - "mcp(milknado/*)"
+        - "command(ast-grep)"
+        - "command(basename)"
+        - "command(bats)"
+        - "command(cargo build)"
+        - "command(cargo check)"
+        - "command(cargo clippy)"
+        - "command(cargo fmt)"
+        - "command(cargo nextest)"
+        - "command(cargo test)"
+        - "command(cd)"
+        - "command(chmod)"
+        - "command(dirname)"
+        - "command(echo)"
+        - "command(gh issue close)"
+        - "command(gh issue comment)"
+        - "command(gh issue create)"
+        - "command(gh issue list)"
+        - "command(gh issue view)"
+        - "command(gh pr checks)"
+        - "command(gh pr comment)"
+        - "command(gh pr create)"
+        - "command(gh pr diff)"
+        - "command(gh pr edit)"
+        - "command(gh pr list)"
+        - "command(gh pr view)"
+        - "command(gh repo view)"
+        - "command(gh run list)"
+        - "command(gh run view)"
+        - "command(gh run watch)"
+        - "command(gh stack)"
+        - "command(git)"
+        - "command(go test)"
+        - "command(just)"
+        - "command(ls)"
+        - "command(mkdir)"
+        - "command(mktemp)"
+        - "command(node --test)"
+        - "command(npm test)"
+        - "command(prek)"
+        - "command(printf)"
+        - "command(procs)"
+        - "command(pwd)"
+        - "command(pytest)"
+        - "command(realpath)"
+        - "command(sha256sum)"
+        - "command(sleep)"
+        - "command(test)"
+        - "command(tokei)"
+        - "command(touch)"
+        - "command(uv run basedpyright)"
+        - "command(uv run mypy)"
+        - "command(uv run pytest)"
+        - "command(uv run ruff)"
+        - "command(wc)"
+        - "command(which)"
+        - "command(wt-git)"
+        - "command(wt-sweep)"
+        - "read_url(github.com)"
+      ask:
+        - "command(git push)"
+        - "command(gh pr merge)"
+      deny:
+        - "command(sudo)"
+        - "command(security)"
+        - "command(/usr/bin/security)"
+        - "command(bws)"
+        # agy file rules take no globs, so `read_file(.env)` covers only a
+        # workspace-root `.env`. Denying read_file also denies write_file; the
+        # write_file twins stay as explicit belt and braces.
+        - "read_file(.env)"
+        - "write_file(.env)"
+        - "read_file(${HOME}/.aws/credentials)"
+        - "write_file(${HOME}/.aws/credentials)"
+        - "read_file(${HOME}/.gnupg)"
+        - "write_file(${HOME}/.gnupg)"
+        - "read_file(${HOME}/.ssh/id_rsa)"
+        - "write_file(${HOME}/.ssh/id_rsa)"
+        - "read_file(${HOME}/.ssh/id_dsa)"
+        - "write_file(${HOME}/.ssh/id_dsa)"
+        - "read_file(${HOME}/.ssh/id_ecdsa)"
+        - "write_file(${HOME}/.ssh/id_ecdsa)"
+        - "read_file(${HOME}/.ssh/id_ed25519)"
+        - "write_file(${HOME}/.ssh/id_ed25519)"
+        - "read_file(${HOME}/.netrc)"
+        - "write_file(${HOME}/.netrc)"
+        - "read_file(${HOME}/.git-credentials)"
+        - "write_file(${HOME}/.git-credentials)"
+        - "read_file(${HOME}/.npmrc)"
+        - "write_file(${HOME}/.npmrc)"
+        - "read_file(${HOME}/.pgpass)"
+        - "write_file(${HOME}/.pgpass)"
+        - "read_file(${HOME}/.pypirc)"
+        - "write_file(${HOME}/.pypirc)"
+        - "read_file(${HOME}/.kube/config)"
+        - "write_file(${HOME}/.kube/config)"
+        - "read_file(${HOME}/.ssh/id_ed25519_sk)"
+        - "write_file(${HOME}/.ssh/id_ed25519_sk)"
+        - "read_file(${HOME}/.ssh/id_ecdsa_sk)"
+        - "write_file(${HOME}/.ssh/id_ecdsa_sk)"
+        - "read_file(${HOME}/.config/gh/hosts.yml)"
+        - "write_file(${HOME}/.config/gh/hosts.yml)"
+        - "read_file(${HOME}/.docker/config.json)"
+        - "write_file(${HOME}/.docker/config.json)"
+        - "read_file(${HOME}/.gnupg/private-keys-v1.d)"
+        - "write_file(${HOME}/.gnupg/private-keys-v1.d)"
+
+  # Managed ~/.gemini/config/mcp_config.json servers.
+  # Secret-bearing servers connect through the root-owned broker sockets, so
+  # this file holds no credentials. milknado is installed as a native agy
+  # plugin below, which registers its MCP server automatically.
+  mcpServers:
+    tilth:
+      command: tilth
+      args: ["--mcp", "--edit"]
+    context7:
+      command: /usr/local/libexec/dotfiles/agent-secret-proxy
+      args: ["--socket", "/var/run/dotfiles-agent-secrets/context7.sock"]
+    tavily:
+      command: /usr/local/libexec/dotfiles/agent-secret-proxy
+      args: ["--socket", "/var/run/dotfiles-agent-secrets/tavily.sock"]
+    # Temporary fallback: agy plugin install loads hallouminate's 7 skills but
+    # drops its MCP server until plugins/hallouminate ships mcp_config.json.
+    # Remove once https://github.com/paulnsorensen/hallouminate/issues/812 lands.
+    hallouminate:
+      command: hallouminate
+      args: ["serve"]
+
+  # Native agy plugins reconciled by sync_agy_plugins via `agy plugin install`.
+  # Hand-installed and built-in plugins (such as swarm) are never touched.
+  plugins:
+    milknado:
+      source: https://github.com/paulnsorensen/milknado
+    hallouminate:
+      source: https://github.com/paulnsorensen/hallouminate

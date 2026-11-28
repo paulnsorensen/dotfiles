@@ -47,7 +47,7 @@ MOCK
     # Mock bootstrap/runtime commands — no-ops. tilth is mocked because .sync
     # runs `tilth install claude-code` under pipefail: a failure of the host
     # binary would abort the sync before it prints its failure summary.
-    for cmd in brew prek uv tmux yq omp chezmoi tilth; do
+    for cmd in brew prek uv tmux yq omp chezmoi tilth agy; do
         printf '#!/bin/bash\nexit 0\n' > "$MOCK_BIN/$cmd"
         chmod +x "$MOCK_BIN/$cmd"
     done
@@ -115,9 +115,13 @@ setup() {
     mkdir -p "$FAKE_DOTFILES/packages"
     ln -s "$FAKE_DOTFILES_MASTER/packages/sync.sh" "$FAKE_DOTFILES/packages/sync.sh"
 
-    # Mock chezmoi/.chezmoidata/omp.yaml registry — empty plugin set
+    # Mock chezmoi/.chezmoidata/{omp,agy}.yaml registries — empty plugin sets
     mkdir -p "$FAKE_DOTFILES/chezmoi/.chezmoidata"
     printf 'omp:\n  plugins: {}\n' > "$FAKE_DOTFILES/chezmoi/.chezmoidata/omp.yaml"
+    printf 'agy:\n  plugins: {}\n' > "$FAKE_DOTFILES/chezmoi/.chezmoidata/agy.yaml"
+    mkdir -p "$FAKE_DOTFILES/chezmoi/lib"
+    ln -s "$REAL_DOTFILES_DIR/chezmoi/lib/agy-plugin-reconcile.sh" \
+        "$FAKE_DOTFILES/chezmoi/lib/agy-plugin-reconcile.sh"
 
     export PATH="$MOCK_BIN:$PATH"
 }
@@ -262,6 +266,23 @@ MOCK
     assert_output_contains "Sync completed with FAILURES in: pi-packages"
     [[ ! -e "$TEST_HOME/.local/state/dotfiles/sync-history.log" ]]
     assert_file_exists "$TEST_HOME/.local/state/dotfiles/last_sync"
+}
+
+@test "agy plugin reconcile failure reaches the sync summary" {
+    mock_git_head
+    cd "$FAKE_DOTFILES"
+    printf '#!/bin/bash\nexit 0\n' > "$FAKE_DOTFILES/chezmoi/.sync"
+    rm -f "$MOCK_BIN/agy"
+    cat > "$MOCK_BIN/agy" <<'MOCK'
+#!/bin/bash
+[[ "$1 $2" == "plugin list" ]] && exit 1
+exit 0
+MOCK
+    chmod +x "$MOCK_BIN/agy"
+
+    run bash "$SYNC_SCRIPT"
+    assert_failure
+    assert_output_contains "Sync completed with FAILURES in: agy-plugins"
 }
 
 

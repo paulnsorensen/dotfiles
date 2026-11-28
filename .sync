@@ -139,6 +139,9 @@ run_sync() {
     if ! sync_pi_packages; then
         SYNC_FAILURES+=("pi-packages")
     fi
+    if ! sync_agy_plugins "$dir"; then
+        SYNC_FAILURES+=("agy-plugins")
+    fi
 
     unset DOTFILES_DEV
 

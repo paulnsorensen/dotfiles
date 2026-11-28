@@ -38,7 +38,7 @@ SH
     export OPENCODE_BIN="$TEST_HOME/fakebin/harness"
     # No cc-env-exec here, so dotsclaude execs the harness directly.
     export DOTFILES_DIR="$TEST_HOME/no-dotfiles"
-    unset OPENCODE_CONFIG_CONTENT
+    unset OPENCODE_CONFIG_CONTENT GEMINI_HOME
 }
 
 teardown() { teardown_test_env; }
@@ -290,4 +290,356 @@ SH
     run "$REAL_DOTFILES_DIR/bin/dotsopencode" serve
     [ "$status" -eq 0 ]
     [ "$(config_of "$output")" = "<unset>" ]
+}
+
+# ── bin/dotsagy/agy (Antigravity ACP wrapper) ───────────────────────────────
+
+_agy_fixture() {
+    export AGY_BIN="$TEST_HOME/fakebin/harness"
+    export AGY_USER_GEMINI_DIR="$TEST_HOME/user-gemini"
+    export AGY_PROFILE="$TEST_HOME/t3-profile"
+    mkdir -p "$AGY_USER_GEMINI_DIR/antigravity-cli" \
+        "$AGY_USER_GEMINI_DIR/config/plugins/milknado" \
+        "$AGY_PROFILE/antigravity-acp" \
+        "$AGY_PROFILE/config"
+    cat > "$AGY_USER_GEMINI_DIR/antigravity-cli/settings.json" <<'JSON'
+{
+  "agentMode": "auto",
+  "enableTerminalSandbox": true,
+  "toolPermission": "proceed-in-sandbox",
+  "permissions": {
+    "allow": ["mcp(tilth/*)", "command(git)"],
+    "ask": ["command(git push)"],
+    "deny": ["command(sudo)"]
+  }
+}
+JSON
+    printf '{"mcpServers":{"tilth":{"command":"tilth"}}}\n' > "$AGY_USER_GEMINI_DIR/config/mcp_config.json"
+    printf '# Global rules\n' > "$AGY_USER_GEMINI_DIR/config/AGENTS.md"
+    printf '{"name":"milknado"}\n' > "$AGY_USER_GEMINI_DIR/config/plugins/milknado/plugin.json"
+    printf '{"auth":{"type":"oauth-personal"},"gcp":{"project":"p1"}}\n' > "$AGY_PROFILE/antigravity-acp/settings.json"
+    # agy seeds a 0-byte mcp_config.json on first boot.
+    : > "$AGY_PROFILE/config/mcp_config.json"
+}
+
+@test "dotsagy merges managed settings, preserves T3 auth/gcp, and links user config" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    [ "${lines[0]}" = "acp" ]
+    [ "${lines[1]}" = "--gemini-dir" ]
+    [ "${lines[2]}" = "$AGY_PROFILE" ]
+    [ "${lines[3]}" = "--app-data-dir" ]
+    [ "${lines[4]}" = "antigravity-acp" ]
+
+    # T3 auth/gcp preserved; enableTerminalSandbox, toolPermission, and
+    # permissions merged so prompts do not block; agentMode not copied.
+    run jq -e '
+        .auth.type == "oauth-personal"
+        and .gcp.project == "p1"
+        and .enableTerminalSandbox == true
+        and .toolPermission == "proceed-in-sandbox"
+        and (has("agentMode") | not)
+        and .permissions.allow == ["mcp(tilth/*)", "command(git)", "mcp(t3-code/*)"]
+        and .permissions.ask == ["command(git push)"]
+        and .permissions.deny == ["command(sudo)"]
+    ' "$AGY_PROFILE/antigravity-acp/settings.json"
+    [ "$status" -eq 0 ]
+
+    # Links replace the 0-byte mcp_config.json and populate plugins + AGENTS.md.
+    [[ -L "$AGY_PROFILE/config/mcp_config.json" ]]
+    [ "$(readlink "$AGY_PROFILE/config/mcp_config.json")" = "$AGY_USER_GEMINI_DIR/config/mcp_config.json" ]
+    [[ -L "$AGY_PROFILE/config/plugins" ]]
+    [ "$(readlink "$AGY_PROFILE/config/plugins")" = "$AGY_USER_GEMINI_DIR/config/plugins" ]
+    [[ -L "$AGY_PROFILE/config/AGENTS.md" ]]
+    [ "$(readlink "$AGY_PROFILE/config/AGENTS.md")" = "$AGY_USER_GEMINI_DIR/config/AGENTS.md" ]
+}
+
+@test "dotsagy does not duplicate mcp(t3-code/*) across repeated launches" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+
+    run "$REAL_DOTFILES_DIR/bin/dotsagy/agy" acp --gemini-dir="$AGY_PROFILE" --app-data-dir=antigravity-acp
+    [ "$status" -eq 0 ]
+    run "$REAL_DOTFILES_DIR/bin/dotsagy/agy" acp --gemini_dir "$AGY_PROFILE" --app_data_dir antigravity-acp
+    [ "$status" -eq 0 ]
+
+    run jq -e '[.permissions.allow[] | select(. == "mcp(t3-code/*)")] | length == 1' \
+        "$AGY_PROFILE/antigravity-acp/settings.json"
+    [ "$status" -eq 0 ]
+}
+
+@test "dotsagy preserves non-empty profile config files and directories" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+    printf '{"mcpServers":{"custom":{"command":"custom"}}}\n' > "$AGY_PROFILE/config/mcp_config.json"
+    mkdir -p "$AGY_PROFILE/config/plugins/local-only"
+    printf '{"name":"local-only"}\n' > "$AGY_PROFILE/config/plugins/local-only/plugin.json"
+
+    run "$REAL_DOTFILES_DIR/bin/dotsagy/agy" acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [[ ! -L "$AGY_PROFILE/config/mcp_config.json" ]]
+    [[ ! -L "$AGY_PROFILE/config/plugins" ]]
+    grep -q '"custom"' "$AGY_PROFILE/config/mcp_config.json"
+    [ -f "$AGY_PROFILE/config/plugins/local-only/plugin.json" ]
+}
+
+@test "dotsagy replaces an empty plugins dir and cleans stale symlinks when source disappears" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+    mkdir -p "$AGY_PROFILE/config/plugins"
+
+    run "$REAL_DOTFILES_DIR/bin/dotsagy/agy" acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [[ -L "$AGY_PROFILE/config/plugins" ]]
+
+    rm "$AGY_USER_GEMINI_DIR/config/mcp_config.json"
+    rm -rf "$AGY_USER_GEMINI_DIR/config/plugins"
+    run "$REAL_DOTFILES_DIR/bin/dotsagy/agy" acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [ ! -L "$AGY_PROFILE/config/mcp_config.json" ]
+    [ ! -L "$AGY_PROFILE/config/plugins" ]
+}
+
+@test "dotsagy passes through non-acp calls and skips self-linking when profile equals user dir" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+
+    run "$REAL_DOTFILES_DIR/bin/dotsagy/agy" --version
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "--version" ]
+    [[ ! -L "$AGY_PROFILE/config/mcp_config.json" ]]
+
+    run "$REAL_DOTFILES_DIR/bin/dotsagy/agy" acp --gemini-dir "$AGY_USER_GEMINI_DIR" --app-data-dir antigravity-cli
+    [ "$status" -eq 0 ]
+    [[ ! -L "$AGY_USER_GEMINI_DIR/config/mcp_config.json" ]]
+    [[ ! -L "$AGY_USER_GEMINI_DIR/config/plugins" ]]
+    [[ ! -L "$AGY_USER_GEMINI_DIR/config/AGENTS.md" ]]
+}
+
+@test "dotsagy still links config and execs cleanly when jq is missing or JSON is malformed" {
+    _agy_fixture
+    local nojq="$TEST_HOME/nojq"
+    mkdir -p "$nojq"
+    for cmd in bash dirname basename mkdir ln rm readlink mv mktemp cat; do
+        ln -s "$(command -v "$cmd")" "$nojq/$cmd"
+    done
+    # Isolate XDG_DATA_HOME so the mise shim fallback is also absent.
+    run --separate-stderr /usr/bin/env PATH="$nojq" HOME="$TEST_HOME" XDG_DATA_HOME="$TEST_HOME/empty-xdg" \
+        AGY_BIN="$AGY_BIN" AGY_USER_GEMINI_DIR="$AGY_USER_GEMINI_DIR" \
+        "$REAL_DOTFILES_DIR/bin/dotsagy/agy" acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "acp" ]
+    [[ "$stderr" == *"jq missing"* ]]
+    [[ -L "$AGY_PROFILE/config/mcp_config.json" ]]
+    [[ -L "$AGY_PROFILE/config/plugins" ]]
+    [[ -L "$AGY_PROFILE/config/AGENTS.md" ]]
+
+    command -v jq >/dev/null 2>&1 || return 0
+    printf '{bad\n' > "$AGY_PROFILE/antigravity-acp/settings.json"
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "acp" ]
+    [[ "$stderr" == *"not a JSON object"* ]]
+    [ "$(cat "$AGY_PROFILE/antigravity-acp/settings.json")" = "{bad" ]
+}
+
+@test "dotsagy resolves its library through a symlinked bin directory" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+    local clone="$TEST_HOME/code/my dots"
+    mkdir -p "$clone/bin/dotsagy" "$clone/bin/lib"
+    cp "$REAL_DOTFILES_DIR/bin/dotsagy/agy" "$clone/bin/dotsagy/agy"
+    cp "$REAL_DOTFILES_DIR/bin/lib/agy-wrapper.sh" "$clone/bin/lib/agy-wrapper.sh"
+    ln -s "$clone/bin" "$TEST_HOME/linkbin"
+
+    run --separate-stderr "$TEST_HOME/linkbin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    [[ -L "$AGY_PROFILE/config/mcp_config.json" ]]
+    run jq -e '.enableTerminalSandbox == true' "$AGY_PROFILE/antigravity-acp/settings.json"
+    [ "$status" -eq 0 ]
+}
+
+@test "agy-wrapper library functions keep the caller shell usable under strict mode" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    run bash -c '
+        set -euo pipefail
+        unset GEMINI_HOME
+        source "$1/bin/lib/agy-wrapper.sh"
+        dots_agy_parse_acp_args --version || echo "non-acp"
+        dots_agy_parse_acp_args acp || echo "no-profile"
+        dots_agy_parse_acp_args acp --gemini-dir --app-data-dir antigravity-acp || echo "flag-rejected"
+        GEMINI_HOME="$2/prof" dots_agy_parse_acp_args acp --app-data-dir ""
+        printf "%s|%s\n" "$DOTS_AGY_PROFILE_DIR" "$DOTS_AGY_APP_DATA_DIR"
+    ' _ "$REAL_DOTFILES_DIR" "$TEST_HOME"
+    [ "$status" -eq 0 ]
+    [ "$output" = $'non-acp\nno-profile\nflag-rejected\n'"$TEST_HOME/prof|antigravity-cli" ]
+}
+
+@test "dotsagy handles zero arguments, whitespace-only settings, multi-doc JSON, and 0600 mode" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+
+    # Zero-argument invocation passes through cleanly under strict mode.
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy"
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+
+    # Whitespace-only profile settings.json is treated as {} and written 0600.
+    printf '  \n\t\n' > "$AGY_PROFILE/antigravity-acp/settings.json"
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    run jq -e '.enableTerminalSandbox == true and (.permissions.allow | index("mcp(t3-code/*)") != null)' \
+        "$AGY_PROFILE/antigravity-acp/settings.json"
+    [ "$status" -eq 0 ]
+    local mode
+    mode="$(stat -c '%a' "$AGY_PROFILE/antigravity-acp/settings.json" 2>/dev/null \
+        || stat -f '%Lp' "$AGY_PROFILE/antigravity-acp/settings.json")"
+    [ "$mode" = "600" ]
+
+    # Multi-document JSON is rejected rather than corrupting profile settings.
+    printf '{"a":1}{"b":2}\n' > "$AGY_PROFILE/antigravity-acp/settings.json"
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [[ "$stderr" == *"not a JSON object"* ]]
+    [ "$(cat "$AGY_PROFILE/antigravity-acp/settings.json")" = '{"a":1}{"b":2}' ]
+}
+
+@test "dotsagy respects existing boolean enableTerminalSandbox, false values, and permissions without allow" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+    cat > "$AGY_USER_GEMINI_DIR/antigravity-cli/settings.json" <<'JSON'
+{
+  "enableTerminalSandbox": false,
+  "permissions": {
+    "deny": ["command(sudo)"]
+  }
+}
+JSON
+    printf '{"auth":{"type":"oauth-personal"},"enableTerminalSandbox":null}\n' \
+        > "$AGY_PROFILE/antigravity-acp/settings.json"
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    run jq -e '
+        .enableTerminalSandbox == false
+        and .permissions.allow == ["mcp(t3-code/*)"]
+        and .permissions.deny == ["command(sudo)"]
+    ' "$AGY_PROFILE/antigravity-acp/settings.json"
+    [ "$status" -eq 0 ]
+
+    # Existing boolean enableTerminalSandbox in profile wins over user setting.
+    cat > "$AGY_USER_GEMINI_DIR/antigravity-cli/settings.json" <<'JSON'
+{"enableTerminalSandbox": true}
+JSON
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    run jq -e '.enableTerminalSandbox == false' "$AGY_PROFILE/antigravity-acp/settings.json"
+    [ "$status" -eq 0 ]
+}
+
+@test "dotsagy keeps a toolPermission already set in the profile" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+    printf '{"auth":{"type":"oauth-personal"},"toolPermission":"request-review"}\n' \
+        > "$AGY_PROFILE/antigravity-acp/settings.json"
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    run jq -e '.toolPermission == "request-review" and .auth.type == "oauth-personal"' \
+        "$AGY_PROFILE/antigravity-acp/settings.json"
+    [ "$status" -eq 0 ]
+}
+
+@test "dotsagy supports absolute app-data-dir, retargets stale links, and survives concurrent launches" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+    local abs_app="$TEST_HOME/abs-app-data"
+    mkdir -p "$abs_app"
+    printf '{"auth":{"type":"oauth-personal"}}\n' > "$abs_app/settings.json"
+
+    # Point existing symlinks at a stale target; dotsagy must retarget both.
+    ln -sfn "$TEST_HOME/old-mcp.json" "$AGY_PROFILE/config/mcp_config.json"
+    ln -sfn "$TEST_HOME/old-plugins" "$AGY_PROFILE/config/plugins"
+
+    # Reject root app-data-dir without touching /settings.json; honor real absolute path.
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir /
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    [ "$(readlink "$AGY_PROFILE/config/mcp_config.json")" = "$AGY_USER_GEMINI_DIR/config/mcp_config.json" ]
+    [ "$(readlink "$AGY_PROFILE/config/plugins")" = "$AGY_USER_GEMINI_DIR/config/plugins" ]
+
+    run --separate-stderr env CDPATH=".:$TEST_HOME" "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir "$abs_app"
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    run jq -e '.auth.type == "oauth-personal" and .enableTerminalSandbox == true' "$abs_app/settings.json"
+    [ "$status" -eq 0 ]
+
+    # Concurrent spawns on a fresh profile must both exit 0 with clean stderr.
+    local race_prof="$TEST_HOME/race-profile"
+    mkdir -p "$race_prof/antigravity-acp" "$race_prof/config"
+    printf '{"auth":{"type":"oauth-personal"}}\n' > "$race_prof/antigravity-acp/settings.json"
+    : > "$race_prof/config/mcp_config.json"
+    local err1="$TEST_HOME/race1.err" err2="$TEST_HOME/race2.err"
+    "$REAL_DOTFILES_DIR/bin/dotsagy/agy" acp --gemini-dir "$race_prof" --app-data-dir antigravity-acp >/dev/null 2>"$err1" &
+    local p1=$!
+    "$REAL_DOTFILES_DIR/bin/dotsagy/agy" acp --gemini-dir "$race_prof" --app-data-dir antigravity-acp >/dev/null 2>"$err2" &
+    local p2=$!
+    wait "$p1"
+    wait "$p2"
+    [ ! -s "$err1" ]
+    [ ! -s "$err2" ]
+    [[ -L "$race_prof/config/mcp_config.json" ]]
+    [[ -L "$race_prof/config/plugins" ]]
+    run jq -e '.auth.type == "oauth-personal" and .enableTerminalSandbox == true' \
+        "$race_prof/antigravity-acp/settings.json"
+    [ "$status" -eq 0 ]
+}
+
+@test "dotsagy replaces a profile symlink to a directory without writing into that directory" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+    local foreign="$TEST_HOME/foreign-dir"
+    mkdir -p "$foreign"
+    rm -f "$AGY_PROFILE/config/mcp_config.json"
+    ln -s "$foreign" "$AGY_PROFILE/config/mcp_config.json"
+
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    [ "$(readlink "$AGY_PROFILE/config/mcp_config.json")" = "$AGY_USER_GEMINI_DIR/config/mcp_config.json" ]
+    [ -z "$(ls -A "$foreign")" ]
+}
+
+@test "dotsagy runs agy unchanged when its library is missing" {
+    _agy_fixture
+    local clone="$TEST_HOME/no-lib"
+    mkdir -p "$clone/bin/dotsagy"
+    cp "$REAL_DOTFILES_DIR/bin/dotsagy/agy" "$clone/bin/dotsagy/agy"
+
+    run --separate-stderr "$clone/bin/dotsagy/agy" --version
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "--version" ]
+    [[ "$stderr" == *"wrapper library missing"* ]]
+
+    run --separate-stderr "$clone/bin/dotsagy/agy" acp --gemini-dir "$AGY_PROFILE"
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "acp" ]
+    [ ! -L "$AGY_PROFILE/config/mcp_config.json" ]
 }

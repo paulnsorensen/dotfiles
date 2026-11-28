@@ -62,7 +62,7 @@ packages:
 
   # AI harnesses not owned by mise
   # renovate: datasource=npm depName=@earendil-works/pi-coding-agent
-  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "1.5.0", flags: ["--ignore-scripts"] }
+  - pi: { source: npm, pkg: "@earendil-works/pi-coding-agent", version: "1.7.0", flags: ["--ignore-scripts"] }
 
   # LSP servers not owned by mise
   # renovate: datasource=npm depName=@vtsls/language-server
@@ -80,19 +80,19 @@ packages:
   # renovate: datasource=npm depName=eslint
   - eslint: { source: npm, version: "10.15.0" }
   # renovate: datasource=npm depName=markdownlint-cli2
-  - markdownlint-cli2: { source: npm, version: "0.24.1" }
+  - markdownlint-cli2: { source: npm, version: "0.24.2" }
   # renovate: datasource=npm depName=@withgraphite/graphite-cli
   - graphite: { source: npm, pkg: "@withgraphite/graphite-cli", platform: linux, version: "1.8.6" } # `gt` — stacked-diff PR workflow
 
   # Zed external-agent adapters (ACP)
   # renovate: datasource=npm depName=@agentclientprotocol/codex-acp
-  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "2.12.0", platform: mac } # runs Codex as a Zed ACP agent
+  - codex-acp: { source: npm, pkg: "@agentclientprotocol/codex-acp", version: "2.12.1", platform: mac } # runs Codex as a Zed ACP agent
 
   # uv tools (Python)
   # renovate: datasource=pypi depName=ralphify
   - ralphify: { source: uv, version: "0.3.0" }
   # renovate: datasource=pypi depName=ruff
-  - ruff: { source: uv, version: "0.17.5" } # Python linter (just lint-python)
+  - ruff: { source: uv, version: "0.17.6" } # Python linter (just lint-python)
   # renovate: datasource=pypi depName=check-jsonschema
   - check-jsonschema: { source: uv, version: "0.39.0" }
   # renovate: datasource=git-refs depName=agentskills/agentskills

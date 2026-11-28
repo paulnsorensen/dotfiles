@@ -18,6 +18,14 @@ setup() {
     export CZ_SRC="$REAL_DOTFILES_DIR/chezmoi"
     export REGISTRY="$CZ_SRC/.chezmoidata/t3.yaml"
     export SCRIPT="$CZ_SRC/dot_t3/userdata/modify_settings.json"
+    # The guard renders the main checkout when the tests run in a linked worktree.
+    MAIN_DOTFILES_DIR="$REAL_DOTFILES_DIR"
+    local common
+    if common=$(git -C "$REAL_DOTFILES_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
+        && [ "$(basename "$common")" = .git ]; then
+        MAIN_DOTFILES_DIR=$(cd -P "$(dirname "$common")" && pwd)
+    fi
+    export MAIN_DOTFILES_DIR
 }
 
 @test "t3 registry forces an explicit permission mode and a settings file" {
@@ -57,14 +65,14 @@ setup() {
     run env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
     run jq -c '.providerInstances | [.claudeAgent, .codex, .opencode] | map([.driver, .config.binaryPath])' <<<"$output"
-    local d="$REAL_DOTFILES_DIR"
+    local d="$MAIN_DOTFILES_DIR"
     [ "$output" = '[["claudeAgent","'"$d"'/bin/dotsclaude"],["codex","'"$d"'/bin/dotscodex"],["opencode","'"$d"'/bin/dotsopencode"]]' ]
     for wrapper in dotsclaude dotscodex dotsopencode; do
         [ -x "$REAL_DOTFILES_DIR/bin/$wrapper" ]
     done
 }
 
-@test "t3 antigravity instance launches the mise agy shim" {
+@test "t3 antigravity instance launches the dotsagy wrapper" {
     run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SCRIPT" <<'JSON'
 {
   "providerInstances": {
@@ -73,8 +81,12 @@ setup() {
 }
 JSON
     [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    local d="$MAIN_DOTFILES_DIR"
     run jq -c '.providerInstances.antigravity | [.driver, .enabled, .config.authMethod, .config.binaryPath]' <<<"$output"
-    [ "$output" = '["antigravity",true,"oauth-personal","/home/tester/.local/share/mise/shims/agy"]' ]
+    [ "$output" = '["antigravity",true,"oauth-personal","'"$d"'/bin/dotsagy/agy"]' ]
+    [ -x "$REAL_DOTFILES_DIR/bin/dotsagy/agy" ]
+    [ "$(basename "$REAL_DOTFILES_DIR/bin/dotsagy/agy")" = "agy" ]
 }
 
 @test "t3 wrapper paths follow a clone outside ~/Dev" {
@@ -87,10 +99,11 @@ JSON
     cp "$CZ_SRC"/lib/drift-gate.sh "$CZ_SRC"/lib/t3-settings-*.txt "$clone/chezmoi/lib/"
     run env CHEZMOI_SOURCE_DIR="$clone/chezmoi" HOME=/home/tester sh "$SCRIPT" </dev/null
     [ "$status" -eq 0 ]
-    run jq -r '.providerInstances | .claudeAgent, .codex, .opencode | .config.binaryPath' <<<"$output"
+    run jq -r '.providerInstances | .claudeAgent, .codex, .opencode, .antigravity | .config.binaryPath' <<<"$output"
     [ "${lines[0]}" = "$clone/bin/dotsclaude" ]
     [ "${lines[1]}" = "$clone/bin/dotscodex" ]
     [ "${lines[2]}" = "$clone/bin/dotsopencode" ]
+    [ "${lines[3]}" = "$clone/bin/dotsagy/agy" ]
 }
 
 @test "t3 wrapper paths resolve a symlinked chezmoi source to the real clone" {
@@ -107,6 +120,31 @@ JSON
     [ "$output" = "$real/bin/dotscodex" ]
 }
 
+@test "t3 wrapper paths render the main checkout when the source is a linked worktree" {
+    command -v git >/dev/null 2>&1 || skip "git not installed"
+    local main="$TEST_HOME/code/main dots" wt="$TEST_HOME/code/wt dots"
+    mkdir -p "$main/chezmoi/lib" "$main/chezmoi/.chezmoidata"
+    cp "$REGISTRY" "$main/chezmoi/.chezmoidata/t3.yaml"
+    cp "$CZ_SRC"/lib/drift-gate.sh "$CZ_SRC"/lib/t3-settings-*.txt "$main/chezmoi/lib/"
+    git -C "$main" init -q
+    git -C "$main" add -A
+    git -C "$main" -c user.name=t -c user.email=t@example.com commit -qm init
+    git -C "$main" worktree add -q -b wt-test "$wt"
+    main=$(cd -P "$main" && pwd)
+    wt=$(cd -P "$wt" && pwd)
+
+    run env CHEZMOI_SOURCE_DIR="$wt/chezmoi" HOME=/home/tester sh "$SCRIPT" </dev/null
+    [ "$status" -eq 0 ]
+    run jq -r '.providerInstances | .claudeAgent, .antigravity | .config.binaryPath' <<<"$output"
+    [ "${lines[0]}" = "$main/bin/dotsclaude" ]
+    [ "${lines[1]}" = "$main/bin/dotsagy/agy" ]
+
+    # The main checkout itself still renders its own paths.
+    run env CHEZMOI_SOURCE_DIR="$main/chezmoi" HOME=/home/tester sh "$SCRIPT" </dev/null
+    [ "$status" -eq 0 ]
+    run jq -r '.providerInstances.codex.config.binaryPath' <<<"$output"
+    [ "$output" = "$main/bin/dotscodex" ]
+}
 @test "t3 settings preserve UI state and reset managed drift" {
     run --separate-stderr env CHEZMOI_SOURCE_DIR="$CZ_SRC" HOME=/home/tester sh "$SCRIPT" <<'JSON'
 {
@@ -135,8 +173,8 @@ JSON
     [ "$output" = '[true,null,"worktree","dotfiles-theme","2026-11-01T00:00:00.000Z",false,true,"",[]]' ]
     run jq -r '.providerInstances.claudeAgent.config.launchArgs, .providerInstances.claudeAgent.config.binaryPath, .providerInstances.opencode.config.binaryPath' <<<"$rendered"
     [ "${lines[0]}" = "--permission-mode auto --settings /home/tester/.t3/userdata/claude-settings.json" ]
-    [ "${lines[1]}" = "$REAL_DOTFILES_DIR/bin/dotsclaude" ]
-    [ "${lines[2]}" = "$REAL_DOTFILES_DIR/bin/dotsopencode" ]
+    [ "${lines[1]}" = "$MAIN_DOTFILES_DIR/bin/dotsclaude" ]
+    [ "${lines[2]}" = "$MAIN_DOTFILES_DIR/bin/dotsopencode" ]
     run jq -e 'has("providers") | not' <<<"$rendered"
     [ "$status" -eq 0 ]
 }
