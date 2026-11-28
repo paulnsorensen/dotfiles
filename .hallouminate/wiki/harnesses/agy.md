@@ -17,6 +17,7 @@ Chezmoi owns its global settings, MCP config, shared-skill discovery, and global
 - `chezmoi/dot_gemini/config/skills.json.tmpl` renders an absolute `<home>/.agents/skills` path, because `agy` does not expand `~`.
   `agy` reads the shared skills cache directly with no copied tree. `agy` 1.5.16+ also discovers `~/.agents/skills` natively.
 - `run_onchange_after_install-agents-doc.sh.tmpl` deploys `agents/AGENTS.md` to `~/.gemini/config/AGENTS.md`.
+  It also symlinks `~/.gemini/AGENTS.md` to `config/AGENTS.md` so T3 Code finds the global rules while standalone `agy` deduplicates both paths.
 - `~/.gemini/antigravity-cli/` and `~/.gemini/config/` are never `exact_` trees.
   `agy` stores `antigravity-oauth-token`, `conversations/`, `brain/`, `config.json`, and caches there.
 
@@ -59,6 +60,34 @@ A manifest at `~/.gemini/config/.chezmoi-plugin-manifest` scopes removals to rep
   Tracked in `paulnsorensen/hallouminate#812`.
   Until that issue lands, `agy.yaml` installs the plugin for its 7 wiki skills and keeps a temporary `hallouminate` server in `mcp_config.json`.
 
+## T3 Code ACP integration
+
+T3 Code runs `agy acp --gemini-dir <profile> --app-data-dir antigravity-acp` with `GEMINI_HOME=<profile>`.
+Before each spawn, T3 overwrites `<profile>/antigravity-acp/settings.json` with `auth` and optional `gcp` keys only.
+T3 links skills, `~/.gemini/AGENTS.md`, `GEMINI.md`, and `config/skills.json` into `<profile>/`, but omits `config/mcp_config.json` and `config/plugins`.
+
+`chezmoi/.chezmoidata/t3.yaml` points `providerInstances.antigravity.config.binaryPath` at `$DOTFILES/bin/dotsagy/agy`.
+The `dotsagy/` directory keeps the basename `agy` (required by T3 `AntigravityInstallation`) without shadowing the mise shim on interactive `PATH`.
+On `acp` launches, `bin/lib/agy-wrapper.sh` prepares `<profile>` before `exec`ing the mise `agy` shim:
+
+- Links `<profile>/config/mcp_config.json`, `<profile>/config/plugins`, and `<profile>/config/AGENTS.md` to `~/.gemini/config/`.
+  It replaces an empty 0-byte `mcp_config.json` that `agy` seeds on first boot, while leaving non-empty profile files intact.
+- Merges `enableTerminalSandbox` and `permissions` (adding `mcp(t3-code/*)` to `permissions.allow`) from `~/.gemini/antigravity-cli/settings.json` into `<profile>/antigravity-acp/settings.json`, preserving T3's `auth` and `gcp` keys.
+  It also copies `toolPermission` and the full `allow` list, so approval prompts do not block a T3 thread, also in `approval-required` mode.
+  A `toolPermission` string already in the profile wins.
+- `exec`s the mise `agy` shim so `/etc/apparmor.d/antigravity` still attaches to the resolved `antigravity` binary.
+
+**Verified `agy` 1.5.18 / T3 0.1.13 caveats:**
+
+- `agy` 1.5.18 ACP `server.loadSettings` reads `enableTerminalSandbox`, `toolPermission`, `allowNonWorkspaceAccess`, and `includeDefaultCustomizations`, but ignores `permissions.{allow,ask,deny}`.
+  Its `settingsProvider.GetGlobalPermissionGrants` returns `nil`, and `PermissionGrants` passes an empty grant set.
+  T3's `antigravityPermissionDisposition` already auto-allows `t3-code/*` MCP calls in `auto` and `auto-accept-edits` modes.
+  Merging `permissions` keeps the profile ready when upstream `agy` ACP adds permission-rule support.
+- T3's `isAntigravityTextGenerationAvailable` disables Antigravity title generation when `<profile>/config/mcp_config.json` defines non-empty `mcpServers`.
+  Because `t3.yaml` keeps Codex as the default system model, title generation stays unaffected.
+- `agy` splits MCP tools into eager and lazy sets through `SplitEnabledToolsByEagerLazy` under `customization_token_budget`.
+  Global `AGENTS.md` uses the separate 20,000-token `defaultRulesBudget`.
+
 ## Deliberate exclusions and gaps
 
 - **Tilth shell-guard hook**: `tilth hook --host` supports `claude`, `copilot`, `cursor`, and `windsurf`, not `antigravity`.
@@ -70,6 +99,7 @@ A manifest at `~/.gemini/config/.chezmoi-plugin-manifest` scopes removals to rep
 ## Validation
 
 `tests/agy-config.bats` tests settings rendering, `${HOME}` expansion, drift preservation, retired-key deletion, MCP authority, `skills.json`, plugin reconciliation, and sandboxed chezmoi apply.
-`tests/install-agents-doc.bats` verifies `~/.gemini/config/AGENTS.md` deployment.
+`tests/install-agents-doc.bats` verifies `~/.gemini/config/AGENTS.md` deployment and the `~/.gemini/AGENTS.md` symlink.
+`tests/dots-wrappers.bats` and `tests/t3-config.bats` verify `bin/dotsagy/agy`, `bin/lib/agy-wrapper.sh`, and T3 `binaryPath` wiring.
 
-Related: [[index]], [[pi]], [[opencode]], [[../operations/sync-and-chezmoi]].
+Related: [[index]], [[pi]], [[opencode]], [[../architecture/t3-code-launch]], [[../operations/sync-and-chezmoi]].

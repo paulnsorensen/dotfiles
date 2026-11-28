@@ -107,17 +107,34 @@ Verification on 2026-10-18:
 - `tests/dots-wrappers.bats` covers the launch lines, the TOML escape, the
   caller-config merge, and prompt parity with the OpenCode registry.
 
-## Antigravity binaryPath (mise agy)
+## Antigravity binaryPath (`bin/dotsagy/agy`)
 
-The `antigravity` instance has no preamble wrapper. Its `binaryPath` is
-`$HOME/.local/share/mise/shims/agy`. An empty `binaryPath` makes T3 install
-and run its own managed runtime under `~/.t3/userdata/providers/antigravity/`.
+The `antigravity` instance uses `$DOTFILES/bin/dotsagy/agy` (backed by `bin/lib/agy-wrapper.sh`) instead of a preamble wrapper.
+An empty `binaryPath` makes T3 install and run its own managed runtime under `~/.t3/userdata/providers/antigravity/`.
 That copy does not follow the mise pin or the Renovate 4-hour soak.
 
-T3 accepts a custom path only when its basename is `agy` or `antigravity`.
-The shim passes this check. Its target is the `mise` binary, so the shim
-works under the bare systemd PATH of `t3code.service`. The registry owns only
-the `binaryPath` leaf. T3 keeps `enabled`, `authMethod`, and `customModels`.
+T3 `AntigravityInstallation` accepts a custom path only when the basename of the path or its `realPath` is `agy` or `antigravity`.
+Placing the wrapper at `bin/dotsagy/agy` satisfies that check and keeps it off interactive `PATH`, so interactive `agy` still runs the mise shim.
+Before each spawn, T3 overwrites `<profile>/antigravity-acp/settings.json` with `auth` and optional `gcp` keys only.
+It links skills, `~/.gemini/AGENTS.md`, `GEMINI.md`, and `config/skills.json`, but omits `config/mcp_config.json` and `config/plugins`.
+On `acp` launches, `bin/dotsagy/agy` bridges the remaining managed config into `<profile>` and `exec`s `$HOME/.local/share/mise/shims/agy`:
+
+- Links `<profile>/config/mcp_config.json` (replacing a 0-byte file seeded by `agy`), `<profile>/config/plugins`, and `<profile>/config/AGENTS.md` to `~/.gemini/config/`.
+- Merges `enableTerminalSandbox`, `toolPermission`, and `permissions` (adding `mcp(t3-code/*)`) from `~/.gemini/antigravity-cli/settings.json` into `<profile>/antigravity-acp/settings.json` without overwriting T3's `auth` or `gcp` keys.
+  Its goal is that approval prompts do not block a T3 Antigravity thread.
+  `agy` ACP reads `toolPermission` (`proceed-in-sandbox`), so commands run without a prompt, also in T3's `approval-required` mode.
+  A `toolPermission` string already in the profile wins. The full `allow` list is copied for the same goal.
+- `run_onchange_after_install-agents-doc.sh.tmpl` also symlinks `~/.gemini/AGENTS.md` to `config/AGENTS.md` so T3 links it natively while standalone `agy` deduplicates both paths by resolved file path.
+  A regular file there with different content moves to `AGENTS.md.bak.<timestamp>` first.
+
+Verified against `agy` 1.5.18 and T3 0.1.13:
+
+- `agy` 1.5.18 ACP reads `enableTerminalSandbox` from `<profile>/antigravity-acp/settings.json` but ignores `permissions.{allow,ask,deny}` (`settingsProvider.GetGlobalPermissionGrants` returns `nil`).
+  T3's `antigravityPermissionDisposition` auto-allows `t3-code/*` MCP calls in `auto` and `auto-accept-edits` modes.
+- T3's `isAntigravityTextGenerationAvailable` disables Antigravity title generation when `<profile>/config/mcp_config.json` has non-empty `mcpServers`.
+  This tradeoff has no effect while Codex stays the default system model.
+- `exec`ing the mise shim resolves to the mise-installed `antigravity` binary, so `/etc/apparmor.d/antigravity` still attaches on Linux.
+- The registry owns only the `binaryPath` leaf. T3 keeps `enabled`, `authMethod`, and `customModels`.
 
 ## Why the permission mode matters
 
@@ -149,7 +166,7 @@ looked like a T3 MCP problem.
 
 | Source | Target | Purpose |
 |---|---|---|
-| `chezmoi/.chezmoidata/t3.yaml` → `dot_t3/userdata/modify_settings.json` | `~/.t3/userdata/settings.json` | Merges `defaultModelSelection` and `providerInstances.{claudeAgent,codex,opencode}` (`driver`, `config.binaryPath`, and the claudeAgent `config.launchArgs`) into the live file. T3 rewrites this file from its UI, so the guard preserves UI state through `lib/drift-gate.sh` with `lib/t3-settings-ignore.txt`. `lib/t3-settings-retired.txt` deletes the legacy `providers` map. |
+| `chezmoi/.chezmoidata/t3.yaml` → `dot_t3/userdata/modify_settings.json` | `~/.t3/userdata/settings.json` | Merges `defaultModelSelection` and `providerInstances.{claudeAgent,codex,opencode,antigravity}` (`driver`, `config.binaryPath`, and the claudeAgent `config.launchArgs`) into the live file. T3 rewrites this file from its UI, so the guard preserves UI state through `lib/drift-gate.sh` with `lib/t3-settings-ignore.txt`. `lib/t3-settings-retired.txt` deletes the legacy `providers` map. |
 | `dot_t3/userdata/claude-settings.json` | `~/.t3/userdata/claude-settings.json` | Passed via `--settings`. Sets `disableClaudeAiConnectors: true` for T3 sessions only, so the connectors never push tilth into the deferred tool list. |
 | `dot_config/systemd/user/t3code.service.d/telemetry.conf` (Linux only) | `~/.config/systemd/user/t3code.service.d/telemetry.conf` | Sets `T3CODE_TELEMETRY_ENABLED=false` for the background service. A drop-in, because `t3 service install` and `t3 update` rewrite the unit file. `run_onchange_after_reload-t3-service.sh.tmpl` runs `daemon-reload` only; the setting applies at the next service restart. |
 | `zsh/core.zsh` | shell profile | Exports `T3CODE_TELEMETRY_ENABLED=false` for the macOS desktop app, which reads the shell profile, and for foreground `t3 serve`. |
@@ -280,15 +297,17 @@ Keep the device code, OAuth token, and `secrets/` files out of Git.
   after `dots sync`.
 - The T3 provider instance key is `claudeAgent`, not `claude`.
 - The registry owns `defaultModelSelection`, each instance `driver`, the
-  three `binaryPath` leaves, and the claudeAgent `launchArgs`. Enable toggles, credentials,
+  four `binaryPath` leaves, and the claudeAgent `launchArgs`. Enable toggles, credentials,
   custom models, `defaultThreadEnvMode`, and sidebar state stay T3-owned;
   add new T3 UI keys to `lib/t3-settings-ignore.txt`, not to the registry.
-- The registry writes each wrapper path as `$DOTFILES/bin/dots*`. The modify
+- The registry writes each wrapper path as `$DOTFILES/bin/dots*` (`$DOTFILES/bin/dotsagy/agy` for Antigravity). The modify
   script expands `$DOTFILES` to the parent of the chezmoi source directory,
-  so the path follows the clone and does not assume `~/Dev/dotfiles`. A
-  `chezmoi apply` from a worktree source writes that worktree path; deploy
-  through `dots sync` from the main clone. The wrappers find `agents/` from
-  their own location unless `DOTFILES_DIR` or `AGENTS_DOTFILES` is set.
+  so the path follows the clone and does not assume `~/Dev/dotfiles`. When
+  that source is a linked Git worktree, it expands to the main checkout
+  instead. A removed worktree once left T3 with dead wrapper paths, and each
+  settings rewrite restarts T3 provider instances. A new wrapper therefore
+  reaches T3 only after it merges to the main checkout. The wrappers find
+  `agents/` from their own location unless `DOTFILES_DIR` or `AGENTS_DOTFILES` is set.
 - Tests: `tests/t3-config.bats` (settings), `tests/dots-wrappers.bats`
   (wrappers), and `tests/lib-t3-service.bats` (service upgrade).
 - T3 publishes server themes from `~/.t3/userdata/themes/<id>.json`; the

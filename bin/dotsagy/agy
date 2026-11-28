@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# agy — Antigravity ACP wrapper for T3 Code (providerInstances.antigravity).
+#
+# T3's AntigravityInstallation requires the custom binaryPath basename to be
+# `agy` or `antigravity`, so this script lives under bin/dotsagy/ rather than
+# bin/ (which also keeps it off interactive PATH so it never shadows the mise
+# agy shim). Before exec'ing the mise agy binary, it bridges managed settings
+# and ~/.gemini/config/{mcp_config.json,plugins,AGENTS.md} into T3's isolated
+# ACP profile directory. Exec'ing the mise shim preserves the Linux AppArmor
+# profile (/etc/apparmor.d/antigravity) on the resolved antigravity binary.
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH='' cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+AGY_BIN="${AGY_BIN:-${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims/agy}"
+USER_GEMINI_DIR="${AGY_USER_GEMINI_DIR:-$HOME/.gemini}"
+
+# Without the library, run agy unchanged so T3 keeps its version probe and
+# ACP launch.
+# shellcheck source=bin/lib/agy-wrapper.sh
+if ! source "${SCRIPT_DIR%/dotsagy}/lib/agy-wrapper.sh" 2>/dev/null; then
+    echo "dotsagy: wrapper library missing; running agy without profile setup" >&2
+    exec "$AGY_BIN" ${1+"$@"}
+fi
+
+# ACP uses stdout for JSON-RPC; keep profile setup off stdout.
+dots_agy_prepare_acp "$USER_GEMINI_DIR" ${1+"$@"} >/dev/null || true
+exec "$AGY_BIN" ${1+"$@"}
