@@ -73,8 +73,8 @@ On `acp` launches, `bin/lib/agy-wrapper.sh` prepares `<profile>` before `exec`in
 - Links `<profile>/config/mcp_config.json`, `<profile>/config/plugins`, and `<profile>/config/AGENTS.md` to `~/.gemini/config/`.
   It replaces an empty 0-byte `mcp_config.json` that `agy` seeds on first boot, while leaving non-empty profile files intact.
 - Merges `enableTerminalSandbox` and `permissions` (adding `mcp(t3-code/*)` to `permissions.allow`) from `~/.gemini/antigravity-cli/settings.json` into `<profile>/antigravity-acp/settings.json`, preserving T3's `auth` and `gcp` keys.
-  It copies the full `allow` list on purpose, so approval prompts do not block a T3 thread.
-  It skips `toolPermission`, so the T3 runtime mode controls prompts.
+  It also copies `toolPermission` and the full `allow` list, so approval prompts do not block a T3 thread, also in `approval-required` mode.
+  A `toolPermission` string already in the profile wins.
 - `exec`s the mise `agy` shim so `/etc/apparmor.d/antigravity` still attaches to the resolved `antigravity` binary.
 
 **Verified `agy` 1.5.18 / T3 0.1.13 caveats:**

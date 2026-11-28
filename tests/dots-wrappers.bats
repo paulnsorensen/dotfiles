@@ -336,13 +336,13 @@ JSON
     [ "${lines[3]}" = "--app-data-dir" ]
     [ "${lines[4]}" = "antigravity-acp" ]
 
-    # T3 auth/gcp preserved; enableTerminalSandbox and permissions merged;
-    # toolPermission and agentMode intentionally not copied.
+    # T3 auth/gcp preserved; enableTerminalSandbox, toolPermission, and
+    # permissions merged so prompts do not block; agentMode not copied.
     run jq -e '
         .auth.type == "oauth-personal"
         and .gcp.project == "p1"
         and .enableTerminalSandbox == true
-        and (has("toolPermission") | not)
+        and .toolPermission == "proceed-in-sandbox"
         and (has("agentMode") | not)
         and .permissions.allow == ["mcp(tilth/*)", "command(git)", "mcp(t3-code/*)"]
         and .permissions.ask == ["command(git push)"]
@@ -547,6 +547,20 @@ JSON
         acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
     [ "$status" -eq 0 ]
     run jq -e '.enableTerminalSandbox == false' "$AGY_PROFILE/antigravity-acp/settings.json"
+    [ "$status" -eq 0 ]
+}
+
+@test "dotsagy keeps a toolPermission already set in the profile" {
+    command -v jq >/dev/null 2>&1 || skip "jq not installed"
+    _agy_fixture
+    printf '{"auth":{"type":"oauth-personal"},"toolPermission":"request-review"}\n' \
+        > "$AGY_PROFILE/antigravity-acp/settings.json"
+    run --separate-stderr "$REAL_DOTFILES_DIR/bin/dotsagy/agy" \
+        acp --gemini-dir "$AGY_PROFILE" --app-data-dir antigravity-acp
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    run jq -e '.toolPermission == "request-review" and .auth.type == "oauth-personal"' \
+        "$AGY_PROFILE/antigravity-acp/settings.json"
     [ "$status" -eq 0 ]
 }
 

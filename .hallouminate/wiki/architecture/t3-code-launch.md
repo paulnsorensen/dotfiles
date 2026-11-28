@@ -120,9 +120,10 @@ It links skills, `~/.gemini/AGENTS.md`, `GEMINI.md`, and `config/skills.json`, b
 On `acp` launches, `bin/dotsagy/agy` bridges the remaining managed config into `<profile>` and `exec`s `$HOME/.local/share/mise/shims/agy`:
 
 - Links `<profile>/config/mcp_config.json` (replacing a 0-byte file seeded by `agy`), `<profile>/config/plugins`, and `<profile>/config/AGENTS.md` to `~/.gemini/config/`.
-- Merges `enableTerminalSandbox` and `permissions` (adding `mcp(t3-code/*)`) from `~/.gemini/antigravity-cli/settings.json` into `<profile>/antigravity-acp/settings.json` without overwriting T3's `auth` or `gcp` keys.
-  The wrapper copies the full `allow` list on purpose: its goal is that approval prompts do not block a T3 Antigravity thread.
-  It leaves `toolPermission` unset, so the T3 runtime mode controls prompts.
+- Merges `enableTerminalSandbox`, `toolPermission`, and `permissions` (adding `mcp(t3-code/*)`) from `~/.gemini/antigravity-cli/settings.json` into `<profile>/antigravity-acp/settings.json` without overwriting T3's `auth` or `gcp` keys.
+  Its goal is that approval prompts do not block a T3 Antigravity thread.
+  `agy` ACP reads `toolPermission` (`proceed-in-sandbox`), so commands run without a prompt, also in T3's `approval-required` mode.
+  A `toolPermission` string already in the profile wins. The full `allow` list is copied for the same goal.
 - `run_onchange_after_install-agents-doc.sh.tmpl` also symlinks `~/.gemini/AGENTS.md` to `config/AGENTS.md` so T3 links it natively while standalone `agy` deduplicates both paths by resolved file path.
   A regular file there with different content moves to `AGENTS.md.bak.<timestamp>` first.
 

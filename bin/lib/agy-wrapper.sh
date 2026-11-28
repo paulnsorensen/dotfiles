@@ -7,8 +7,9 @@
 # auth/gcp keys only and links only skills, ~/.gemini/AGENTS.md, GEMINI.md, and
 # config/skills.json into <profile>. This library bridges the missing managed
 # config into the isolated profile before exec'ing the mise agy binary:
-#   - merges enableTerminalSandbox and permissions (adding mcp(t3-code/*)) from
-#     ~/.gemini/antigravity-cli/settings.json while preserving T3's auth/gcp
+#   - merges enableTerminalSandbox, toolPermission, and permissions (adding
+#     mcp(t3-code/*)) from ~/.gemini/antigravity-cli/settings.json while
+#     preserving T3's auth/gcp
 #   - links config/mcp_config.json, config/plugins, and config/AGENTS.md
 #
 # ACP uses stdout for JSON-RPC, so functions in this file must never write to
@@ -239,19 +240,21 @@ dots_agy_link_dir() {
 }
 
 # dots_agy_merge_settings <user-settings> <profile-settings>
-# Merge managed enableTerminalSandbox and permissions (ensuring mcp(t3-code/*)
-# in permissions.allow) from <user-settings> into <profile-settings>, keeping
-# T3-owned keys such as auth and gcp intact.
+# Merge managed enableTerminalSandbox, toolPermission, and permissions
+# (ensuring mcp(t3-code/*) in permissions.allow) from <user-settings> into
+# <profile-settings>, keeping T3-owned keys such as auth and gcp intact.
 #
-# The full allow list is copied on purpose. The wrapper must not let approval
-# prompts block a T3 thread, so the managed grants let routine commands and
-# MCP calls run without a prompt. ask and deny still apply. The wrapper skips
-# toolPermission because T3 sets the runtime mode for the thread.
+# The wrapper must not let approval prompts block a T3 thread. agy ACP reads
+# toolPermission (for example proceed-in-sandbox), so the managed value lets
+# commands run without a prompt, also in T3's approval-required mode. A
+# toolPermission string already in the profile wins, as T3 or the user set it.
+# The full allow list is copied for the same reason.
 #
 # Note: in agy 1.5.18, ACP's server.loadSettings reads enableTerminalSandbox
-# while ignoring permissions.{allow,ask,deny} (T3 auto-allows t3-code/* MCP
-# calls in auto and auto-accept-edits modes). Merging permissions keeps the
-# profile ready as soon as agy ACP honors permission rules.
+# and toolPermission while ignoring permissions.{allow,ask,deny} (T3
+# auto-allows t3-code/* MCP calls in auto and auto-accept-edits modes).
+# Merging permissions keeps the profile ready as soon as agy ACP honors
+# permission rules.
 dots_agy_merge_settings() {
     local user_settings="$1" profile_settings="$2"
     local real_src real_dst jq_bin existing merged tmp profile_dir
@@ -289,6 +292,9 @@ dots_agy_merge_settings() {
         | (if ($u | has("enableTerminalSandbox")) and (($u.enableTerminalSandbox | type) == "boolean")
                and (($base.enableTerminalSandbox | type) != "boolean")
            then .enableTerminalSandbox = $u.enableTerminalSandbox
+           else . end)
+        | (if (($u.toolPermission | type) == "string") and (($base.toolPermission | type) != "string")
+           then .toolPermission = $u.toolPermission
            else . end)
         | (if ($u | has("permissions")) and (($u.permissions | type) == "object")
            then .permissions = (
