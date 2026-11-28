@@ -295,6 +295,18 @@ claude:
       # Workflow runs only after an explicit user opt-in, and each child agent
       # still faces its own permission rules.
       - "Workflow"
+      # Cloud sessions add the claude-code-remote server. These tools only
+      # read; tools that create, message, or archive sessions still ask.
+      - "mcp__claude-code-remote__check_repo_access"
+      - "mcp__claude-code-remote__get_event"
+      - "mcp__claude-code-remote__get_session"
+      - "mcp__claude-code-remote__get_trigger"
+      - "mcp__claude-code-remote__list_computer_folders"
+      - "mcp__claude-code-remote__list_environments"
+      - "mcp__claude-code-remote__list_events"
+      - "mcp__claude-code-remote__list_repos"
+      - "mcp__claude-code-remote__list_sessions"
+      - "mcp__claude-code-remote__list_triggers"
       - "mcp__context7__*"
       - "mcp__hallouminate__*"
       - "mcp__plugin_playwright_playwright__*"
